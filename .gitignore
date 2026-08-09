@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Local GitNexus index and generated agent integration
+/.gitnexus/
+/.claude/skills/gitnexus/
+/.claude/skills/gitnexus-*/
+/.agents/skills/gitnexus/
+/.agents/skills/gitnexus-*/
+/CLAUDE.md
