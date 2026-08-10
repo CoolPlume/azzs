@@ -6,7 +6,7 @@
 - 适用范围：公开 GitHub 源码仓库、C++/WinRT + XAML + Windows App SDK 构建、x64/ARM64 制品、未签名 ZIP/Win32/传统安装器、GitHub Actions、GitHub Releases、SBOM、许可与 NOTICE、Windows 实机证据
 - 来源边界：只采用 GitHub Docs、GitHub 官方 `actions/*` 仓库、Microsoft Learn、Microsoft 官方仓库、SPDX 与 CycloneDX 一手资料。通过 `agent-reach` 的 GitHub CLI 和 Jina Reader 读取；Exa 在本次环境中不可用，未用博客、论坛或二手教程补空白
 - 操作边界：没有创建 workflow、运行 Windows 构建、上传制品、启用 Actions、修改 Release、规格、ADR、事项或领域文档
-- 后续决定：本研究完成后，维护者已按 [ADR-0044](../adr/0044-github-actions-for-automatic-beta-release.md) 选择 GitHub Actions 作为自动 beta 发布载体；下文“尚未决定”的表述保留为研究时点记录，不再代表当前决定前沿。
+- 后续决定：本研究完成后，维护者已先按 [ADR-0044](../adr/0044-github-actions-for-automatic-beta-release.md) 选择 GitHub Actions 作为自动 beta 发布载体，随后由 [ADR-0045](../adr/0045-separate-read-only-ci-from-release-permissions.md) 取代其“首次源码基线保持关闭”的时序；下文“尚未决定”的表述保留为研究时点记录，不再代表当前决定前沿。
 
 本文把四类容易混淆的事实分开：**构建发生在哪里**、**下载字节是否与参照一致**、**字节是否能追溯到某个源码与工作流**、**字节是否在目标 Windows 上真实可用**。任一类证据都不能自动替代另外三类。
 
@@ -69,7 +69,7 @@ CycloneDX 1.7 可以表达组件、直接/传递依赖、许可、完整性状�
 | [ADR-0022](../adr/0022-cpp26-with-newest-stable-toolchain.md) | 最新稳定工具链，禁止未稳定能力进入稳定接口 | GitHub ARM64 + VS 2026 镜像仍为 preview；所有 hosted image 内工具版本会滚动 |
 | [事项 21](../../.scratch/windows-initial-setup-workbench/issues/21-release-artifacts.md) | 固定稳定工具链、x64/ARM64、自包含、GitHub Releases | 尚未定义 build provenance、SBOM、证据保留和 runner 责任 |
 | [事项 22](../../.scratch/windows-initial-setup-workbench/issues/22-release-acceptance.md) | 实机验证非首版发布门槛，缺失时开发者证据写“未实机验证” | CI 结果必须继续与真实 Windows/SmartScreen 结果分栏，不能用绿色 workflow 淹没缺口 |
-| [事项 30](../../.scratch/windows-initial-setup-workbench/issues/30-public-repository-baseline.md) | 首次源码公开时 Actions 保持关闭 | 这是源码基线范围，不等于后续 release CI 已获授权；启用时机和权限仍需决定 |
+| [事项 30](../../.scratch/windows-initial-setup-workbench/issues/30-public-repository-baseline.md) | 审计后启用默认只读 Actions；事项 01 才拥有早期 CI 工作流 | 不等于后续 release CI 已获授权；发布权限仍由事项 34 在所有前置完成后单独取得 |
 | [工具链研究](./preimplementation-toolchain-baseline-2026-08-10.md) | VS/MSVC/SDK/WinUI 候选、cross-build 与原生执行分离 | 本文补充 GitHub runner、证据保留和发布 provenance，不覆盖工具链结论 |
 | [特权下载安全研究](./elevated-download-execution-security.md) | 摘要、签名、TLS、SmartScreen 的保证不同 | 本文只处理工作台自身发行物和 CI，不替代第三方下载执行合同 |
 | [第三方再分发研究](./third-party-binary-redistribution-baseline.md) | 第三方资源逐项许可与 NOTICE 门禁 | SBOM 只能提供清单输入，不能把“无法证明再分发”自动升级为允许 |

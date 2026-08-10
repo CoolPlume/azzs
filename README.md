@@ -23,6 +23,8 @@ Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化
 - [研究与证据索引](docs/research/README.md)（含工具链、安装器、发布、安全、状态、目录内容与动效）
 - [软件目录维护文件](catalog/software-catalog.toml)与[填写指南](docs/maintainers/software-catalog-input.md)
 - [实现事项](.scratch/windows-initial-setup-workbench/issues/)
+- [安全政策](SECURITY.md)
+- [支持政策](SUPPORT.md)
 
 ## 参与贡献
 
@@ -31,6 +33,10 @@ Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化
 ## English summary
 
 Windows Initial Setup Workbench is a planned Windows desktop workbench that helps users prepare a freshly installed PC; `azzs` is the repository identifier. The project is currently in the specification and design phase; this repository does not yet provide a runnable application, installer, or GitHub Release. Chinese is the primary project language, while Issues and Pull Requests in English are welcome.
+
+## 支持范围
+
+当前没有公开 Release，因此暂无可支持的应用版本。首个公开 Release 后，项目只支持最新应用正式稳定发行；应用测试发行和更早正式稳定发行不在公开支持范围。
 
 ## 许可证
 

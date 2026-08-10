@@ -97,8 +97,9 @@ G1: completed
 
 ## 当前执行入口
 
-会话编排共同理解已经确认，事项 33 已完成并通过 G1。由于维护者选择使用早期 GitHub Actions，依赖已改为 `33 -> 30 -> 01`：当前唯一机械前沿是事项 30，先审计并规范已经存在的公开仓库、集成候选和默认只读 Actions；事项 30 完成后才创建事项 01 的独立 Codex worktree 任务。当前尚未开始产品代码、工作流、tag、Release 或应用制品；后续事项只按 `Blocked by` 的 `Resolution: completed` 机械解除，并按本地图自动派发。
+会话编排共同理解已经确认，事项 33 已完成并通过 G1；事项 30 已完成公开仓库审计、可逆设置、默认只读 Actions 和集成分支基线。依赖 `33 -> 30 -> 01` 已解除到事项 01，当前唯一机械前沿是事项 01 的工具链、早期 CI 与可运行骨架。当前尚未创建工作流、tag、Release 或应用制品；后续事项只按 `Blocked by` 的 `Resolution: completed` 机械解除，并按本地图自动派发。
 
 ## 已完成门禁
 
 - **G1 文档合同闭合**：由[事项 33](issues/33-close-implementation-contracts-and-ownership.md)完成，并已在 ADR-0045 取代 ADR-0044 后重验。验证覆盖需求编号、事项归属与依赖、owner/consumer、ADR 状态、领域词汇、历史证据声明、个人路径、Markdown 本地链接和 Git 空白检查；当前可重复结果记录在事项的 `## Answer`。
+- **G8.1 公开仓库基线**：由[事项 30](issues/30-public-repository-baseline.md)完成。公开历史、仓库文档、默认只读 Actions、私密漏洞报告、`main` 历史保护和 `codex/v1-integration` 已建立；未合并 `main`，也未创建工作流、tag、Release 或应用制品。
