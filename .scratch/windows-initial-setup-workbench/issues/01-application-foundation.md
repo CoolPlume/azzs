@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 30
 Owner: issue-01
+Claimed by: Codex issue-01 task
 Consumers: 02, 03, 04, 13, 17, 21, 23, 24, 25, 31
 Verification: 对精确提交运行只读 GitHub Actions，完成 x64 可运行构建、ARM64 编译链接、无界面核心 smoke 与架构边界检查。
 Evidence freshness: 绑定当前源码提交、工作流修订、锁定工具链与依赖；骨架、SDK、依赖或工作流变化后重跑。
