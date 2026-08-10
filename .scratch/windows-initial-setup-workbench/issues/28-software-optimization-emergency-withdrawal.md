@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 02, 25
+Owner: issue-28
+Consumers: 15, 21, 26, 27
+Verification: 通知解析、修订防回滚、离线与首次失败、跨类别阻止、解除和持久化合同测试。
+Evidence freshness: 每条结果记录 observed_at 与通知或策略修订；按票内启动和执行事件重新检查，失败时不得把旧或未知证据升级为最新通过。
 
 ## Goal
 

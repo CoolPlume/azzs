@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 19, 25
+Owner: issue-29
+Consumers: 21, 22
+Verification: 搜狗全部已确认选项逐项具备目录、执行器、检测器和自动化正负测试。
+Evidence freshness: 绑定当前提交、软件优化目录修订和受支持搜狗安装器与已安装版本基线；任一变化后重跑。
 
 ## Goal
 

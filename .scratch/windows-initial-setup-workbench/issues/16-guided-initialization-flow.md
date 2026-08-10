@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 08, 10, 12, 14, 15, 24, 26
+Owner: issue-16
+Consumers: 21
+Verification: 四阶段流程的无界面聚合真值表与 UI 合同测试，覆盖跳过、交接、重启、撤回、失败和总结。
+Evidence freshness: 绑定当前提交及三类目录与批次合同修订；任一上游状态合同变化后重跑。
 
 ## Goal
 

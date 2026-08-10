@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 01, 02
+Owner: issue-25
+Consumers: 18, 21, 26, 27, 28, 29
+Verification: 软件优化目录的模式、生命周期、错误隔离、导入、回退及搜狗版本基线交集测试。
+Evidence freshness: 绑定当前提交、模式与目录修订及支持的软件版本基线。
 
 ## Goal
 

@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 08, 24, 25, 28
+Owner: issue-26
+Consumers: 16, 21, 27
+Verification: 已安装识别、适用性、选择、冲突、强制入口和双视图一致性的核心与 UI 合同测试。
+Evidence freshness: 绑定当前提交、目录修订和目标软件版本；页面打开、安装完成或主动刷新时重检。
 
 ## Goal
 

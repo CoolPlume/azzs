@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 02, 03
+Owner: issue-05
+Consumers: 06, 07, 12, 18, 21
+Verification: x64、ARM64、检测失败、偏好回退和重启变化的架构决策表无界面测试。
+Evidence freshness: 绑定当前提交；每次启动或恢复使用当次架构观察，旧观察不得复用。
 
 ## Goal
 

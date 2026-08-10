@@ -2,6 +2,12 @@
 
 Type: task  
 Status: ready-for-agent
+Resolution: open
+Blocked by: 30
+Owner: issue-01
+Consumers: 02, 03, 04, 13, 17, 21, 23, 24, 25, 31
+Verification: 对精确提交运行只读 GitHub Actions，完成 x64 可运行构建、ARM64 编译链接、无界面核心 smoke 与架构边界检查。
+Evidence freshness: 绑定当前源码提交、工作流修订、锁定工具链与依赖；骨架、SDK、依赖或工作流变化后重跑。
 
 ## Goal
 
@@ -28,6 +34,9 @@ Status: ready-for-agent
 - [ ] 界面宿主也使用 C++26 编译模式，C++/WinRT 和 XAML 工具链不稳定支持的特性不进入界面代码。
 - [ ] WinUI 3、Windows App SDK、编译器、SDK 和依赖选择实施时最新且满足产品约束的稳定版本。
 - [ ] 发布工具与依赖版本已固定，试验性能力没有进入稳定接口或持久化格式。
+- [ ] 建立由本事项唯一拥有的早期 Windows CI 工作流：同仓库拉取请求指向 `codex/v1-integration` 时运行，合并进入该集成分支或 `main` 后重跑，并允许人工触发；事项 31 只提供被调用的架构与测试命令，不复制工作流。
+- [ ] 早期 CI 使用 GitHub 托管 Windows runner 和默认只读权限，不使用 `pull_request_target`、secrets、写权限或 self-hosted runner；第三方 Action 固定到精确提交，不可信 pull request 或 fork 不能取得发布能力。
+- [ ] CI 对 x64 执行构建与无界面 smoke，对 ARM64 完成编译链接；只保留日志、测试报告和构建清单，事项 21 前不上传可下载应用二进制，也不创建 tag 或 GitHub Release。
 - [ ] 应用启动时申请 UAC 管理员权限，并在会话内保持管理员身份。
 - [ ] 软件安装、系统优化和软件优化都只能执行当前有效精选目录中的受控操作，不能借管理员会话接受任意命令、脚本或目标路径。
 - [ ] 默认进入概览页，七个一级页面均可导航且可独立进入，其中软件优化与系统优化、软件安装相互区分。
@@ -40,6 +49,6 @@ Status: ready-for-agent
 
 ## References
 
-`GOAL-05`、`SCOPE-01` 至 `SCOPE-03`、`SCOPE-05` 至 `SCOPE-08`、`REL-01` 至 `REL-09`、`SEC-01` 至 `SEC-07`、`RUN-01` 至 `RUN-05`、`TECH-01` 至 `TECH-34`、`UI-56` 至 `UI-58`、`NAV-01` 至 `NAV-05`、`LANG-01` 至 `LANG-03`、`OPT-01`、ADR-0019、ADR-0020、ADR-0021、ADR-0027、[架构与代码质量](../../../docs/engineering/architecture-and-code-quality.md)
+`GOAL-05`、`SCOPE-01` 至 `SCOPE-03`、`SCOPE-05` 至 `SCOPE-08`、`REL-01` 至 `REL-09`、`REL-13`、`SEC-01` 至 `SEC-07`、`RUN-01` 至 `RUN-05`、`TECH-01` 至 `TECH-34`、`UI-56` 至 `UI-58`、`NAV-01` 至 `NAV-05`、`LANG-01` 至 `LANG-03`、`OPT-01`、ADR-0019、ADR-0020、ADR-0021、ADR-0027、ADR-0045、[架构与代码质量](../../../docs/engineering/architecture-and-code-quality.md)
 
 ## Comments

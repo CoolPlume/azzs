@@ -1,8 +1,13 @@
 # 实现离线资源与缓存管理
 
 Type: task  
-Status: needs-info  
+Status: ready-for-agent  
+Resolution: open
 Blocked by: 02, 03, 05
+Owner: issue-07
+Consumers: 08, 14, 18, 21
+Verification: 下载与缓存适配器合同测试，覆盖断网、续传、并发、半成品、清理、介质失效和重试。
+Evidence freshness: 绑定当前提交、缓存模式和资产身份；执行或候选构建使用的来源可用性重新观察。
 
 ## Goal
 
@@ -33,4 +38,4 @@ Blocked by: 02, 03, 05
 
 ## Comments
 
-- 2026-08-10：Q4 不设项目级信任门槛，Q5 已冻结同机并发与 `ProgramData` 权威状态，Q9 已允许候选资源随包与公开发布；这些决定不替代缓存提交、同机锁、外置介质、安装档案及第三方 EULA/推广行为的实现合同。本事项继续为 `needs-info`。
+- 2026-08-10：Q4 不设项目级信任门槛，Q5 已冻结同机并发与 `ProgramData` 权威状态，Q9 已允许候选资源随包与公开发布；缓存提交、同机锁、外置介质和安装档案属于本事项应实现并验证的工程工作，不再等待维护者补充产品决定。本事项改为 `ready-for-agent`，其依赖仍只按 `Blocked by` 的完成结果机械解除。

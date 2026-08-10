@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 10
+Owner: issue-11
+Consumers: 12, 15, 18, 21
+Verification: 撤销状态机测试覆盖原值恢复、下架、目录变化、失败重试、删除保护和重启验证。
+Evidence freshness: 绑定当前提交、原执行快照和恢复记录模式；不得用新目录证据替代旧快照。
 
 ## Goal
 

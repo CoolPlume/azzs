@@ -1,17 +1,22 @@
 # 补充产品标识与发布文案
 
 Type: task  
-Status: needs-info  
+Status: ready-for-agent  
+Resolution: open
 Blocked by: 01
+Owner: issue-23
+Consumers: 21, 34, 35
+Verification: 对当前规格、八制品名称和候选发布说明进行文案、风险披露与本地化人工审查。
+Evidence freshness: 每个发行候选及产品标识、风险政策或最低目标版本变化后重审。
 
 ## Goal
 
-根据维护者后续提供的选择，补齐公开发布所需的正式产品标识与中文文案。
+根据已经确认的产品标识与发行边界，补齐公开发布所需的正式产品标识和简体中文文案。
 
-## Information Needed
+## Engineering Work Required
 
-- 未签名、无校验值和 SmartScreen 风险说明文案。
-- 最低目标版本及旧版本继续运行风险说明文案。
+- 起草并审核未签名、无校验值和 SmartScreen 风险说明，保持与 `SEC-04` 至 `SEC-06` 一致。
+- 起草并审核最低目标版本及旧版本继续运行风险说明，不暗示跨版本兼容性或实机验证已经完成。
 
 ## Acceptance Criteria
 
@@ -24,8 +29,8 @@ Blocked by: 01
 
 ## References
 
-`REL-01` 至 `REL-10`、`SEC-04` 至 `SEC-06`、`LANG-01` 至 `LANG-03`、规格第 20 和 21 节
+`REL-01` 至 `REL-12`、`SEC-04` 至 `SEC-06`、`LANG-01` 至 `LANG-03`、规格第 20 和 21 节
 
 ## Comments
 
-- 2026-08-10：Q7 已冻结三档八制品矩阵，Q8/Q10 已分别冻结为“未实机验证如实记录”和“不提供摘要、源码关联或 provenance”。Q21 已确定正式名称为“Windows 初装工作台”，图标方向为简洁设备准备图形，`azzs` 保持仓库标识；Q27 已确定 GitHub 仓库与 Release 使用功能导向的一句话简介。风险和最低目标版本文案仍待补齐，不把未完成安装器或实际构建输入写成已可发布。
+- 2026-08-10：Q7 已冻结三档八制品矩阵，Q8/Q10 已分别冻结为“未实机验证如实记录”和“不提供摘要、源码关联或 provenance”。Q21 已确定正式名称为“Windows 初装工作台”，图标方向为简洁设备准备图形，`azzs` 保持仓库标识；Q27 已确定 GitHub 仓库与 Release 使用功能导向的一句话简介。产品决定已经闭合，本事项改为 `ready-for-agent`；风险与最低目标版本文案仍须实际起草和审核，不能把待交付文案误记为待回答问题。

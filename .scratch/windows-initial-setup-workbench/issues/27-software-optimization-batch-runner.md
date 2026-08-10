@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 02, 09, 25, 26, 28
+Owner: issue-27
+Consumers: 12, 15, 21
+Verification: 假软件适配器批次测试覆盖冻结、串行、验证、停止、重试、异常退出、重启交接和撤回。
+Evidence freshness: 绑定当前提交、批次快照、软件版本、目录和通知修订；每次新修改或重试前重验当前状态。
 
 ## Goal
 

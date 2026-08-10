@@ -6,6 +6,7 @@
 - 适用范围：公开 GitHub 源码仓库、C++/WinRT + XAML + Windows App SDK 构建、x64/ARM64 制品、未签名 ZIP/Win32/传统安装器、GitHub Actions、GitHub Releases、SBOM、许可与 NOTICE、Windows 实机证据
 - 来源边界：只采用 GitHub Docs、GitHub 官方 `actions/*` 仓库、Microsoft Learn、Microsoft 官方仓库、SPDX 与 CycloneDX 一手资料。通过 `agent-reach` 的 GitHub CLI 和 Jina Reader 读取；Exa 在本次环境中不可用，未用博客、论坛或二手教程补空白
 - 操作边界：没有创建 workflow、运行 Windows 构建、上传制品、启用 Actions、修改 Release、规格、ADR、事项或领域文档
+- 后续决定：本研究完成后，维护者已按 [ADR-0044](../adr/0044-github-actions-for-automatic-beta-release.md) 选择 GitHub Actions 作为自动 beta 发布载体；下文“尚未决定”的表述保留为研究时点记录，不再代表当前决定前沿。
 
 本文把四类容易混淆的事实分开：**构建发生在哪里**、**下载字节是否与参照一致**、**字节是否能追溯到某个源码与工作流**、**字节是否在目标 Windows 上真实可用**。任一类证据都不能自动替代另外三类。
 

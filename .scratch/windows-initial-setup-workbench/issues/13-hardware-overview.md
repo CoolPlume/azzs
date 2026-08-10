@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 01, 02, 24
+Owner: issue-13
+Consumers: 14, 21
+Verification: 硬件观测适配器测试及代表性 Windows 设备人工检查，覆盖失败、取消和刷新。
+Evidence freshness: 绑定当前构建和设备环境；票内缓存失效事件发生后旧观察失效。
 
 ## Goal
 

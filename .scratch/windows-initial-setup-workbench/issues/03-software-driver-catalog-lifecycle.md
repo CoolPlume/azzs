@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 01, 02
+Owner: issue-03
+Consumers: 05, 06, 07, 14, 18, 19, 21, 32
+Verification: 目录模式、往返、加载、更新、导入、降级、回退、原子应用及整包与局部错误负例测试。
+Evidence freshness: 绑定当前提交、模式版本和目录修订；任一变化后重跑。
 
 ## Goal
 

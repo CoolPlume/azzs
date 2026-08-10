@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 04, 10
+Owner: issue-20
+Consumers: 21, 22
+Verification: 两项设置及总体方案的目录校验、测试适配器执行、检测、原值恢复与自动化检查。
+Evidence freshness: 绑定当前提交、设置目录修订和声明的 Windows 范围；网页变化不替代已审核冻结规则。
 
 ## Goal
 

@@ -1,8 +1,13 @@
 # 实现驱动获取页面
 
 Type: task  
-Status: needs-info  
+Status: ready-for-agent  
+Resolution: open
 Blocked by: 03, 07, 08, 12, 13, 24
+Owner: issue-14
+Consumers: 16, 21
+Verification: 驱动外部交接核心和 UI 测试，覆盖未识别、返回选择、重启、网络、显示、硬件变化及不伪报完成。
+Evidence freshness: 绑定当前提交、目录修订和硬件快照；外部返回后以当次重新检测为准。
 
 ## Goal
 
@@ -24,4 +29,4 @@ Blocked by: 03, 07, 08, 12, 13, 24
 
 ## Comments
 
-- 2026-08-10：维护者确认 Q3，首版只做说明、定位、记录和返回检测，不由工作台选择或安装 INF/EXE；ADR-0009 保持有效。本事项其余前置仍未解除，因此继续为 `needs-info`。
+- 2026-08-10：维护者确认 Q3，首版只做说明、定位、记录和返回检测，不由工作台选择或安装 INF/EXE；ADR-0009 保持有效。产品边界已经完整，本事项改为 `ready-for-agent`；尚未完成的前置只通过 `Blocked by` 表达，不使用 `needs-info` 重复表示。

@@ -11,3 +11,5 @@
 | `wontfix` | `wontfix` | 不处理 |
 
 当技能提到某个角色时，使用对应的本项目标签字符串。若项目改用其他词汇，只需修改表格右侧列。
+
+`Status:` 只表达当前应由谁处理或是否不处理，不表达事项是否已经完成。事项生命周期结果使用 `docs/agents/issue-tracker.md` 定义的独立 `Resolution:` 字段；除 `wontfix` 外，不得把完成结果写入 `Status:`。

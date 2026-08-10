@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 03, 05, 24
+Owner: issue-06
+Consumers: 08
+Verification: 来源解析、依赖闭包、手动交接与双视图一致性的核心和 UI 合同测试及失败负例。
+Evidence freshness: 绑定当前提交、目录修订、解析能力版本；外部来源事实带 observed_at，并在新规划时重验。
 
 ## Goal
 

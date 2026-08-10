@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: open
 Blocked by: 02, 04, 24
+Owner: issue-10
+Consumers: 11, 12, 16, 20, 21
+Verification: 以测试注册表和资源管理器适配器覆盖计划、原值、串行执行、验证、失败和重启语义。
+Evidence freshness: 绑定当前提交、设置目录修订和声明的 Windows 适用范围。
 
 ## Goal
 
