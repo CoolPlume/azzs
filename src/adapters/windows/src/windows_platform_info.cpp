@@ -1,29 +1,42 @@
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 
 #include <cstdint>
-#include <string>
 
-#include <winrt/Windows.System.Profile.h>
-#include <winrt/base.h>
+#include <windows.h>
+#include <winternl.h>
 
 namespace azzs::adapters::windows {
 
+namespace {
+
+using RtlGetVersionFunction = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+
+}  // namespace
+
 std::optional<domain::SystemVersion> WindowsPlatformInfo::windows_version()
     const {
-  try {
-    auto const encoded_text = winrt::to_string(
-        winrt::Windows::System::Profile::AnalyticsInfo::VersionInfo()
-            .DeviceFamilyVersion());
-    auto const encoded = std::stoull(encoded_text);
-
-    return domain::SystemVersion{
-        .major = static_cast<std::uint32_t>((encoded >> 48) & 0xffff),
-        .minor = static_cast<std::uint32_t>((encoded >> 32) & 0xffff),
-        .build = static_cast<std::uint32_t>((encoded >> 16) & 0xffff),
-    };
-  } catch (...) {
+  auto const ntdll = ::GetModuleHandleW(L"ntdll.dll");
+  if (ntdll == nullptr) {
     return std::nullopt;
   }
+
+  auto const rtl_get_version = reinterpret_cast<RtlGetVersionFunction>(
+      ::GetProcAddress(ntdll, "RtlGetVersion"));
+  if (rtl_get_version == nullptr) {
+    return std::nullopt;
+  }
+
+  RTL_OSVERSIONINFOW version{};
+  version.dwOSVersionInfoSize = static_cast<ULONG>(sizeof(version));
+  if (rtl_get_version(&version) < 0) {
+    return std::nullopt;
+  }
+
+  return domain::SystemVersion{
+      .major = static_cast<std::uint32_t>(version.dwMajorVersion),
+      .minor = static_cast<std::uint32_t>(version.dwMinorVersion),
+      .build = static_cast<std::uint32_t>(version.dwBuildNumber),
+  };
 }
 
 }  // namespace azzs::adapters::windows

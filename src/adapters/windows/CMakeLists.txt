@@ -12,6 +12,4 @@ target_include_directories(azzs_windows_adapter
 target_link_libraries(azzs_windows_adapter
   PUBLIC
     azzs::application
-  PRIVATE
-    windowsapp
 )
