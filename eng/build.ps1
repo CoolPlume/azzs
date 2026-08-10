@@ -80,8 +80,8 @@ if (-not (Test-Path -LiteralPath $toolsetVersionPath)) {
     throw "The default MSVC toolset version file was not found."
 }
 $toolsetVersion = (Get-Content -LiteralPath $toolsetVersionPath -Raw).Trim()
-if (-not $toolsetVersion.StartsWith("14.50.")) {
-    throw "MSVC 14.50 is required; the selected Visual Studio instance defaults to '$toolsetVersion'."
+if ($toolsetVersion -ne "14.51.36231") {
+    throw "MSVC 14.51.36231 is required; the selected Visual Studio instance defaults to '$toolsetVersion'."
 }
 
 $windowsSdkRelease = "10.0.28000.2526"
