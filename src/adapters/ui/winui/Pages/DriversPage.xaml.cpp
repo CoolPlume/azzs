@@ -2,8 +2,8 @@
 
 #include "DriversPage.xaml.h"
 
-#if __has_include("DriversPage.g.cpp")
-#include "DriversPage.g.cpp"
+#if __has_include("Pages/DriversPage.g.cpp")
+#include "Pages/DriversPage.g.cpp"
 #endif
 
 namespace winrt::Azzs::Ui::Pages::implementation {

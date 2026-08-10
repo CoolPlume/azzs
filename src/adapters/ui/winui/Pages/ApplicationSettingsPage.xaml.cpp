@@ -2,8 +2,8 @@
 
 #include "ApplicationSettingsPage.xaml.h"
 
-#if __has_include("ApplicationSettingsPage.g.cpp")
-#include "ApplicationSettingsPage.g.cpp"
+#if __has_include("Pages/ApplicationSettingsPage.g.cpp")
+#include "Pages/ApplicationSettingsPage.g.cpp"
 #endif
 
 namespace winrt::Azzs::Ui::Pages::implementation {

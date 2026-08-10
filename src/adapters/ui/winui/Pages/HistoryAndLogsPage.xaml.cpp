@@ -2,8 +2,8 @@
 
 #include "HistoryAndLogsPage.xaml.h"
 
-#if __has_include("HistoryAndLogsPage.g.cpp")
-#include "HistoryAndLogsPage.g.cpp"
+#if __has_include("Pages/HistoryAndLogsPage.g.cpp")
+#include "Pages/HistoryAndLogsPage.g.cpp"
 #endif
 
 namespace winrt::Azzs::Ui::Pages::implementation {

@@ -2,8 +2,8 @@
 
 #include "SoftwareOptimizationPage.xaml.h"
 
-#if __has_include("SoftwareOptimizationPage.g.cpp")
-#include "SoftwareOptimizationPage.g.cpp"
+#if __has_include("Pages/SoftwareOptimizationPage.g.cpp")
+#include "Pages/SoftwareOptimizationPage.g.cpp"
 #endif
 
 namespace winrt::Azzs::Ui::Pages::implementation {
