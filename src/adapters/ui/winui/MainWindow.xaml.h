@@ -20,7 +20,7 @@ struct MainWindow : MainWindowT<MainWindow> {
 
  private:
   [[nodiscard]] std::optional<azzs::application::PageId> page_for_item(
-      Microsoft::UI::Xaml::Controls::NavigationViewItem const& item) const;
+      Microsoft::UI::Xaml::Controls::NavigationViewItem const& item);
   void navigate_to(azzs::application::PageId page);
   void project(azzs::application::WorkbenchSnapshot const& snapshot);
 

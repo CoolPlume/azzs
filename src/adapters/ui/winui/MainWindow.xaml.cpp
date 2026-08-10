@@ -4,6 +4,7 @@
 
 #include <string>
 #include <string_view>
+#include <winrt/Windows.UI.Xaml.Interop.h>
 
 #include "Pages/ApplicationSettingsPage.xaml.h"
 #include "Pages/DriversPage.xaml.h"
@@ -81,7 +82,7 @@ void MainWindow::OnNavigationSelectionChanged(
 }
 
 std::optional<PageId> MainWindow::page_for_item(
-    NavigationViewItem const& item) const {
+    NavigationViewItem const& item) {
   if (item == OverviewItem()) {
     return PageId::overview;
   }
