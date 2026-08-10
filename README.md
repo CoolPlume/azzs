@@ -2,7 +2,7 @@
 
 Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化、常用软件安装和软件优化。`azzs` 是仓库标识。
 
-> 当前处于规格与设计阶段。仓库尚无可运行应用、安装包或 GitHub Release；文档同时记录已确认目标、未决问题、候选内容和研究证据，具体状态以各文件标注为准，均不代表功能已经实现。
+> 当前处于初始实现阶段。仓库已经包含应用与页面骨架，但尚未完成 Windows 编译、实机兼容和发行验证，也没有可供下载的安装包或 GitHub Release；具体状态以事项和验证证据为准。
 
 ## 目标范围
 
@@ -26,13 +26,34 @@ Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化
 - [安全政策](SECURITY.md)
 - [支持政策](SUPPORT.md)
 
+## 开发入口
+
+可移植核心可在非 Windows 主机上配置、编译并运行无界面 smoke：
+
+```sh
+cmake --preset host-debug
+cmake --build --preset host-debug
+ctest --preset host-debug
+```
+
+Windows 11 构建机使用统一 PowerShell 入口生成 x64 可运行候选或 ARM64 编译链接候选：
+
+```powershell
+pwsh ./eng/build.ps1 -Architecture x64
+pwsh ./eng/build.ps1 -Architecture ARM64
+pwsh ./eng/package-portable.ps1 -Architecture x64 -SkipBuild
+pwsh ./eng/package-installer.ps1 -Architecture x64 -SkipBuild -AcceptWixEula
+```
+
+安装入口固定使用 WiX Toolset SDK 7.0.0，只有显式传入 `-AcceptWixEula` 才会还原并构建；该参数表示执行者已经按实际用途完成 WiX 7 条款确认。生成入口不代表安装生命周期、干净机启动或目标 Windows 版本已经验证。
+
 ## 参与贡献
 
 项目接受中文或英文的 GitHub Issue 与 Pull Request，中文优先。GitHub Issue 是公开反馈入口；确认处理的事项会在 `.scratch/` 中建立正式票据并相互链接。具体要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## English summary
 
-Windows Initial Setup Workbench is a planned Windows desktop workbench that helps users prepare a freshly installed PC; `azzs` is the repository identifier. The project is currently in the specification and design phase; this repository does not yet provide a runnable application, installer, or GitHub Release. Chinese is the primary project language, while Issues and Pull Requests in English are welcome.
+Windows Initial Setup Workbench is a Windows desktop workbench that helps users prepare a freshly installed PC; `azzs` is the repository identifier. The repository now contains the initial application skeleton, but Windows builds, installers, compatibility, and releases remain unverified. Chinese is the primary project language, while Issues and Pull Requests in English are welcome.
 
 ## 支持范围
 
