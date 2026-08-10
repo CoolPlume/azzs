@@ -14,7 +14,7 @@
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem x:Name="DriversItem" x:Uid="NavigationDrivers">
-                <NavigationViewItem.Icon><SymbolIcon Symbol="Devices" /></NavigationViewItem.Icon>
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Manage" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem x:Name="SystemOptimizationItem" x:Uid="NavigationSystemOptimization">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Repair" /></NavigationViewItem.Icon>
