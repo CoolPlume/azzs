@@ -1,6 +1,6 @@
 #pragma once
 
-#include "HistoryAndLogsPage.g.h"
+#include "Pages/HistoryAndLogsPage.xaml.g.h"
 
 namespace winrt::Azzs::Ui::Pages::implementation {
 

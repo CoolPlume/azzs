@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ApplicationSettingsPage.g.h"
+#include "Pages/ApplicationSettingsPage.xaml.g.h"
 
 namespace winrt::Azzs::Ui::Pages::implementation {
 

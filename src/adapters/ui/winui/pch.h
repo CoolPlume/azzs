@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <unknwn.h>
 
 // Avoid the Win32 macro colliding with IStoryboard::GetCurrentTime.
 #ifdef GetCurrentTime

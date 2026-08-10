@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SoftwareInstallationPage.g.h"
+#include "Pages/SoftwareInstallationPage.xaml.g.h"
 
 namespace winrt::Azzs::Ui::Pages::implementation {
 

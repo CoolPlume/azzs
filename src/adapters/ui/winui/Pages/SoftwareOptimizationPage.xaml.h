@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SoftwareOptimizationPage.g.h"
+#include "Pages/SoftwareOptimizationPage.xaml.g.h"
 
 namespace winrt::Azzs::Ui::Pages::implementation {
 

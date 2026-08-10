@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DriversPage.g.h"
+#include "Pages/DriversPage.xaml.g.h"
 
 namespace winrt::Azzs::Ui::Pages::implementation {
 
