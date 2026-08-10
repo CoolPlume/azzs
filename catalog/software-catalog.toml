@@ -1,0 +1,215 @@
+schema_version = 1
+catalog_id = "software"
+revision = 1
+release_state = "draft"
+default_locale = "zh-CN"
+
+# 这是软件目录的权威维护文件，工作台直接读取并校验它。
+# 维护者只填写产品信息、来源用途和地址，不填写网址的技术类型。
+# enabled = false 的条目是待补充的未启用软件条目；工作台不向用户展示，也不能执行。
+# release_state = "draft" 的目录不能进入正式发行包。
+
+[[categories]]
+id = "communication"
+name = "沟通"
+
+[[categories]]
+id = "input-method"
+name = "输入法"
+
+[[categories]]
+id = "game-tools"
+name = "游戏工具"
+
+[[categories]]
+id = "office-tools"
+name = "办公工具"
+
+[[categories]]
+id = "download-tools"
+name = "下载工具"
+
+[[categories]]
+id = "education-tools"
+name = "教育工具"
+
+[[categories]]
+id = "runtime"
+name = "运行环境"
+
+# 新增分类时复制下面的注释模板；软件只引用分类 id，不重复分类名称。
+# [[categories]]
+# id = "stable-category-id"
+# name = "简体中文分类名称"
+#
+# [categories.localizations."en-US"]
+# name = "English category name"
+
+[[software]]
+id = "qq"
+enabled = true
+name = "QQ"
+tier = "normal"
+category_id = "communication"
+branch = "Windows 个人版"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = ["large_offline"]
+notice = ""
+
+[[software.sources]]
+purpose = "primary"
+address = "https://im.qq.com/index/#/windows"
+
+[[software]]
+id = "sogou-input"
+enabled = true
+name = "搜狗输入法"
+tier = "normal"
+category_id = "input-method"
+branch = "Windows 个人版"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "安装阶段选项与安装后的软件优化分别提供。"
+install_profile = "sogou-input-defaults-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://shurufa.sogou.com/windows"
+
+[[software]]
+id = "game-cheats-manager"
+enabled = false
+name = "Game Cheats Manager"
+tier = "normal"
+category_id = "game-tools"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "使用前请了解安全软件、反作弊、联网游戏和账号方面的影响。"
+
+[[software]]
+id = "cheat-engine"
+enabled = false
+name = "Cheat Engine"
+tier = "normal"
+category_id = "game-tools"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "使用前请了解安全软件、反作弊、联网游戏和账号方面的影响。"
+
+[[software]]
+id = "office-tool-plus"
+enabled = false
+name = "Office Tool Plus"
+tier = "normal"
+category_id = "office-tools"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "请自行确认 Office 版本、账户和许可条件。"
+
+[[software]]
+id = "internet-download-manager"
+enabled = false
+name = "Internet Download Manager"
+tier = "normal"
+category_id = "download-tools"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "请自行确认商业许可条件；现有候选安装包未经项目验证。"
+
+[[software]]
+id = "the-geometers-sketchpad"
+enabled = false
+name = "几何画板"
+tier = "normal"
+category_id = "education-tools"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "请自行确认商业许可条件；现有候选安装包未经项目验证。"
+
+[[software]]
+id = "java-runtime"
+enabled = false
+name = "Java"
+tier = "normal"
+category_id = "runtime"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "精确发行版、来源和安装档案待补充。"
+
+[[software]]
+id = "dotnet-runtime"
+enabled = false
+name = ".NET"
+tier = "normal"
+category_id = "runtime"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "精确发行版、来源和安装档案待补充。"
+
+[[software]]
+id = "directx-runtime"
+enabled = false
+name = "DirectX"
+tier = "normal"
+category_id = "runtime"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "精确发行版、来源和安装档案待补充。"
+
+[[software]]
+id = "powershell-7"
+enabled = false
+name = "PowerShell 7"
+tier = "normal"
+category_id = "runtime"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "精确发行版、来源和安装档案待补充。"
+
+# 新增软件时复制下面的注释模板。一个启用的软件必须恰好有一个 primary 来源。
+# [[software]]
+# id = "stable-id"
+# enabled = true
+# name = "软件名称"
+# tier = "basic"                    # basic 或 normal
+# category_id = "stable-category-id"
+# branch = "Windows 个人版"
+# version_policy = "latest_stable"  # latest_stable、latest_stable_with_history、fixed 或 maintainer_provided
+# fixed_version = "1.2.3"           # 仅 fixed 时填写
+# dependencies = ["dependency-id"]  # 没有依赖时填写 []
+# bundled_editions = ["large_offline"]
+# notice = "需要向用户显示的简短提示"
+# optimization_note = "安装完成后可提供的软件优化说明"
+# install_profile = "profile-id"    # 只有存在安装阶段偏好或特殊安装能力时填写
+#
+# [[software.sources]]
+# purpose = "primary"               # primary、alternative 或 project_backup
+# address = "https://example.com/download"
+# version = "1.2.3"                 # project_backup 或 maintainer_provided 无法自动得出版本时必填
+#
+# [[software.sources.history]]
+# version = "1.2.2"
+# address = "https://example.com/releases/1.2.2"
+# reason = "保留原因"
+# visible = true
+#
+# [software.education]
+# address = "https://example.com/education"
+# description = "帮助用户取得官方教育版的说明"
+#
+# [software.localizations."en-US"]
+# name = "Software name"
+# notice = "Optional notice"
+# optimization_note = "Optional optimization note"
+# education_description = "Optional education instructions"

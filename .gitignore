@@ -8,3 +8,6 @@
 /.agents/skills/gitnexus/
 /.agents/skills/gitnexus-*/
 /CLAUDE.md
+
+# Local Graphify interpreter, scan state, semantic cache, and generated reports
+/graphify-out/

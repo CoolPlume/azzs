@@ -2,11 +2,11 @@
 
 Type: task  
 Status: ready-for-agent  
-Blocked by: 04
+Blocked by: 04, 10
 
 ## Goal
 
-把推荐总体优化与两项已确认的 Windows 优化整理为首版正式精选设置目录内容；维护者以后补充的其他设置作为后续目录扩展，不阻塞这两项首版必达能力。
+把推荐总体优化与两项已确认的 Windows 优化整理为首版正式精选设置目录内容；维护者以后补充的其他设置作为后续目录内容扩展，不阻塞这两项首版必达能力。
 
 ## Engineering Work Required
 
