@@ -137,16 +137,34 @@
     <Page Include="Pages\SystemOptimizationPage.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="App.xaml.h" />
-    <ClInclude Include="MainWindow.xaml.h" />
+    <ClInclude Include="App.xaml.h">
+      <DependentUpon>App.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="MainWindow.xaml.h">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </ClInclude>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="Pages\ApplicationSettingsPage.xaml.h" />
-    <ClInclude Include="Pages\DriversPage.xaml.h" />
-    <ClInclude Include="Pages\HistoryAndLogsPage.xaml.h" />
-    <ClInclude Include="Pages\OverviewPage.xaml.h" />
-    <ClInclude Include="Pages\SoftwareInstallationPage.xaml.h" />
-    <ClInclude Include="Pages\SoftwareOptimizationPage.xaml.h" />
-    <ClInclude Include="Pages\SystemOptimizationPage.xaml.h" />
+    <ClInclude Include="Pages\ApplicationSettingsPage.xaml.h">
+      <DependentUpon>ApplicationSettingsPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="Pages\DriversPage.xaml.h">
+      <DependentUpon>DriversPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="Pages\HistoryAndLogsPage.xaml.h">
+      <DependentUpon>HistoryAndLogsPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="Pages\OverviewPage.xaml.h">
+      <DependentUpon>OverviewPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="Pages\SoftwareInstallationPage.xaml.h">
+      <DependentUpon>SoftwareInstallationPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="Pages\SoftwareOptimizationPage.xaml.h">
+      <DependentUpon>SoftwareOptimizationPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="Pages\SystemOptimizationPage.xaml.h">
+      <DependentUpon>SystemOptimizationPage.xaml</DependentUpon>
+    </ClInclude>
     <ClInclude Include="..\..\..\composition\windows\composition_root.hpp" />
   </ItemGroup>
   <ItemGroup>
