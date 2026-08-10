@@ -26,6 +26,7 @@
     <ProjectName>Azzs.WinUI</ProjectName>
     <WindowsTargetPlatformVersion>10.0.28000.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformMinVersion>10.0.17763.0</WindowsTargetPlatformMinVersion>
+    <AppContainerApplication>false</AppContainerApplication>
     <ApplicationType>Windows Store</ApplicationType>
     <ApplicationTypeRevision>10.0</ApplicationTypeRevision>
     <DefaultLanguage>zh-CN</DefaultLanguage>
@@ -34,13 +35,24 @@
     <AppxPackage>false</AppxPackage>
     <EnableMsixTooling>false</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <RuntimeIdentifiers>win10-x64;win10-arm64</RuntimeIdentifiers>
     <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
     <CppWinRTOptimized>true</CppWinRTOptimized>
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\..\..\out\obj\winui\</BaseIntermediateOutputPath>
     <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\</MSBuildProjectExtensionsPath>
   </PropertyGroup>
+  <PropertyGroup Label="NuGet">
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <NuGetTargetMoniker>native,Version=v0.0</NuGetTargetMoniker>
+    <NuGetTargetPlatformIdentifier>Windows</NuGetTargetPlatformIdentifier>
+    <NuGetTargetPlatformVersion>$(WindowsTargetPlatformVersion)</NuGetTargetPlatformVersion>
+  </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <DesktopCompatible>true</DesktopCompatible>
+  </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
