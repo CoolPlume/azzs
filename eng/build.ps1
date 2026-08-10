@@ -71,8 +71,8 @@ if (-not (Test-Path -LiteralPath $ctestPath)) {
     throw "ctest.exe was not found beside cmake.exe."
 }
 $cmakeVersion = (& $cmakePath --version | Select-Object -First 1).Trim()
-if ($cmakeVersion -ne "cmake version 4.1.2") {
-    throw "CMake 4.1.2 is required by the Windows build baseline; found '$cmakeVersion'."
+if ($cmakeVersion -ne "cmake version 4.3.1-msvc1") {
+    throw "CMake 4.3.1-msvc1 is required by the Windows build baseline; found '$cmakeVersion'."
 }
 
 $toolsetVersionPath = Join-Path $visualStudioPath "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
