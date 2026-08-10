@@ -9,8 +9,6 @@ project(
   LANGUAGES CXX
 )
 
-set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
@@ -22,8 +20,12 @@ foreach(configuration IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
 endforeach()
 
 if(MSVC)
-  add_compile_options(/W4 /permissive- /Zc:__cplusplus /utf-8)
+  # CMake 4.3 does not yet map CXX26 for MSVC 19.51; /std:c++latest is the
+  # stable compiler switch for the project's C++26 target mode.
+  add_compile_options(/std:c++latest /W4 /permissive- /Zc:__cplusplus /utf-8)
 else()
+  set(CMAKE_CXX_STANDARD 26)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
