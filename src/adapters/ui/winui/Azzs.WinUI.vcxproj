@@ -38,6 +38,8 @@
     <RuntimeIdentifiers>win10-x64;win10-arm64</RuntimeIdentifiers>
     <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
     <CppWinRTOptimized>true</CppWinRTOptimized>
+    <!-- Match component projection paths to XAML's Pages\... output paths. -->
+    <CppWinRTUsePrefixes>false</CppWinRTUsePrefixes>
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\..\..\out\obj\winui\</BaseIntermediateOutputPath>
     <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\</MSBuildProjectExtensionsPath>
   </PropertyGroup>

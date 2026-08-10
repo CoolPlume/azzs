@@ -3,7 +3,7 @@
 #include <memory>
 #include <optional>
 
-#include "MainWindow.xaml.g.h"
+#include "MainWindow.g.h"
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/workbench.hpp"
 
