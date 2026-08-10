@@ -2,6 +2,11 @@
 
 #include <windows.h>
 
+// Avoid the Win32 macro colliding with IStoryboard::GetCurrentTime.
+#ifdef GetCurrentTime
+#undef GetCurrentTime
+#endif
+
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
