@@ -14,6 +14,8 @@ azzs_project_target(
   ROLE domain
 )
 
+add_subdirectory(software-catalog)
+
 add_library(azzs_software_optimization_catalog_domain STATIC
   src/software_optimization_catalog.cpp
 )
