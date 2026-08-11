@@ -1,1 +1,8 @@
 add_subdirectory(core-smoke)
+add_subdirectory(device-state-contract)
+add_subdirectory(execution-log-contract)
+add_subdirectory(operation-occupancy-contract)
+
+if(WIN32)
+  add_subdirectory(windows-device-data-contract)
+endif()

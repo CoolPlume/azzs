@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 01
 Owner: issue-02
+Claimed by: Codex task 019fef2a-7779-73d2-938a-76703e42f7bd
 Consumers: 03, 04, 05, 07, 08, 10, 12, 13, 15, 17, 25, 27, 28, 32
 Verification: 无界面持久化、事件与恢复合同测试，覆盖 N/N-1、原子提交、并发、ACL、故障注入及双代损坏只读恢复。
 Evidence freshness: 绑定当前提交、存储模式与适配器版本；平台证据绑定具体 Windows build 和状态主体。
