@@ -32,3 +32,7 @@ Evidence freshness: 绑定当前提交、模式版本和设置目录修订。
 `CAT-01` 至 `CAT-12`、`CAT-21` 至 `CAT-28`、`CAT-37` 至 `CAT-40`、`SET-15` 至 `SET-20`、`SET-21` 至 `SET-35`
 
 ## Comments
+
+- 2026-08-11：基于 `origin/codex/v1-integration` 的精确提交 `fb4ee87a5dbbcca7b9f9b454dd7f91cf34640ba1`，实现提交为 `a4e302825f16aefde7a7fbcc6c7621c0950a647a`。新增独立的 `azzs_settings_catalog_domain`、`azzs_settings_catalog_lifecycle` 与 `azzs_settings_catalog_file_adapter` target，并通过统一 `azzs_project_target` / `azzs_register_test` 接缝注册 `settings-catalog.contract`；未修改事项 02 的状态、日志或占用模型，也未接入 WinUI、系统优化编排或系统设置执行器。
+- 2026-08-11：合同覆盖独立模式与修订、稳定标识解析、更新新增/变更/下架预览及精确确认、调试导入与降级、回退、未知执行语义整包拒绝、未知展示内容忽略、方案缺失引用与循环的局部禁用、持久化失败保留旧目录、N-1 只读恢复、共享占用、恢复记录和另外两类目录聚合隔离。定向 `settings-catalog.contract` 为 1/1 Pass，`cmake --workflow --preset host-guardrails` 为 11/11 Pass，`git diff --check` 与提交前 GitNexus staged/PDG 检查通过。
+- 2026-08-11：未执行真实 Windows 注册表写入、系统恢复记录创建或系统设置修改；Windows 10/11 实机、资源管理器/Windows 重启行为、事项 10 编排、事项 18 设置页宿主与事项 20 首版目录内容仍由各 owner 后续验收。本事项保持 `Resolution: open`，Draft PR 不据此结票、转 Ready 或合并。
