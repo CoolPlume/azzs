@@ -10,6 +10,8 @@
 
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
+#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DesignSystem/Controls/ReadOnlyPresentationSurface.g.h"
 #include "DesignSystem/Fixtures/DesignSystemFixturePage.g.h"
 
 #include <memory>

@@ -23,8 +23,8 @@ using ProjectedSurface =
     winrt::Azzs::Ui::DesignSystem::Controls::ReadOnlyPresentationSurface;
 using SurfaceImplementation = winrt::Azzs::Ui::DesignSystem::Controls::
     implementation::ReadOnlyPresentationSurface;
-using winrt::Microsoft::UI::Xaml::Automation::AutomationLiveSetting;
 using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
+using winrt::Microsoft::UI::Xaml::Automation::Peers::AutomationLiveSetting;
 using winrt::Microsoft::UI::Xaml::Controls::Border;
 using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
 
