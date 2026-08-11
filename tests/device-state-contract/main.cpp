@@ -130,19 +130,31 @@ void write_u64(StateBytes& target, std::size_t position,
   return encoded;
 }
 
-[[nodiscard]] StateBytes with_generation(StateBytes encoded,
-                                         std::uint64_t generation) {
+[[nodiscard]] std::size_t revision_offset(StateBytes const& encoded) {
   std::size_t position = 8 + 4 + 1;
   auto const aggregate_size = read_u32(encoded, position);
   position += 4 + aggregate_size;
   auto const subject_size = read_u32(encoded, position);
-  position += 4 + subject_size;
-  position += 4 + 4 + 4 + 16;
-  write_u64(encoded, position, generation);
+  return position + 4 + subject_size + 4 + 4 + 4;
+}
+
+void refresh_fixture_digest(StateBytes& encoded) {
   auto const content_size = encoded.size() - sizeof(std::uint64_t);
   write_u64(encoded, content_size,
             fixture_digest(std::span<std::byte const>{encoded}.first(
                 content_size)));
+}
+
+[[nodiscard]] StateBytes with_generation(StateBytes encoded,
+                                         std::uint64_t generation) {
+  write_u64(encoded, revision_offset(encoded) + 16, generation);
+  refresh_fixture_digest(encoded);
+  return encoded;
+}
+
+[[nodiscard]] StateBytes with_different_epoch(StateBytes encoded) {
+  encoded[revision_offset(encoded)] ^= std::byte{0x5a};
+  refresh_fixture_digest(encoded);
   return encoded;
 }
 
@@ -203,6 +215,33 @@ struct Fixture final {
   }
 
   return passed;
+}
+
+[[nodiscard]] bool truncated_current_recovers_last_trusted_generation() {
+  Fixture fixture;
+  auto const key = StateKey::machine(AggregateId{"truncated-current"});
+  auto first = fixture.store.initialize(key, state("trusted-previous"));
+  if (!first.snapshot.has_value()) {
+    return expect(false, "truncated current fixture must initialize");
+  }
+  auto second = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = first.snapshot->revision,
+      .state = state("damaged-current"),
+  });
+  auto current = fixture.files.raw_file(key, StateFileSlot::current);
+  if (!second.snapshot.has_value() || !current.has_value()) {
+    return expect(false, "truncated current fixture must create N/N-1");
+  }
+
+  current->resize(8);
+  fixture.files.seed(key, StateFileSlot::current, std::move(*current));
+  auto const recovered = fixture.store.inspect(key);
+  return expect(
+      recovered.mode == StateReadMode::recovered_previous &&
+          recovered.snapshot.has_value() &&
+          recovered.snapshot->state.value.payload == bytes("trusted-previous"),
+      "a truncated current generation must recover the fully validated last trusted generation");
 }
 
 [[nodiscard]] bool schema_window_and_future_bytes_are_safe() {
@@ -540,6 +579,154 @@ struct Fixture final {
   return passed;
 }
 
+[[nodiscard]] bool strict_n_minus_one_layout_is_required() {
+  Fixture fixture;
+  auto const key = StateKey::machine(AggregateId{"strict-n-minus-one"});
+  auto first = fixture.store.initialize(key, state("strict-first"));
+  auto first_bytes = fixture.files.raw_file(key, StateFileSlot::current);
+  if (!first.snapshot.has_value() || !first_bytes.has_value()) {
+    return expect(false, "strict N/N-1 fixture must initialize");
+  }
+  auto second = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = first.snapshot->revision,
+      .state = state("strict-second"),
+  });
+  if (!second.snapshot.has_value()) {
+    return expect(false, "strict N/N-1 fixture must create generation two");
+  }
+  auto third = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = second.snapshot->revision,
+      .state = state("strict-third"),
+  });
+  auto current = fixture.files.raw_file(key, StateFileSlot::current);
+  auto previous = fixture.files.raw_file(key, StateFileSlot::previous);
+  if (!third.snapshot.has_value() || !current.has_value() ||
+      !previous.has_value()) {
+    return expect(false, "strict N/N-1 fixture must create generations three and two");
+  }
+
+  bool passed = true;
+  static_cast<void>(fixture.files.remove(key, StateFileSlot::previous));
+  passed &= expect(
+      fixture.store.inspect(key).mode == StateReadMode::read_only_corrupt,
+      "a current generation above one must not be writable without N-1");
+  fixture.files.seed(key, StateFileSlot::previous, *first_bytes);
+  passed &= expect(
+      fixture.store.inspect(key).mode == StateReadMode::read_only_corrupt,
+      "a previous generation more than one behind must be rejected");
+  fixture.files.seed(key, StateFileSlot::previous,
+                     with_generation(*previous,
+                                     third.snapshot->revision.generation));
+  passed &= expect(
+      fixture.store.inspect(key).mode == StateReadMode::read_only_corrupt,
+      "a same-generation previous slot must be rejected");
+  fixture.files.seed(key, StateFileSlot::previous, with_different_epoch(*previous));
+  passed &= expect(
+      fixture.store.inspect(key).mode == StateReadMode::read_only_corrupt,
+      "a previous generation from another epoch must be rejected");
+
+  auto damaged_current = *current;
+  damaged_current.back() ^= std::byte{0x5a};
+  fixture.files.seed(key, StateFileSlot::current, std::move(damaged_current));
+  passed &= expect(
+      fixture.store.inspect(key).mode == StateReadMode::recovered_previous,
+      "a damaged current cannot use its unverified epoch to reject the fully validated last trusted generation");
+  fixture.files.seed(key, StateFileSlot::current, *current);
+  fixture.files.seed(key, StateFileSlot::previous, *previous);
+  passed &= expect(fixture.store.inspect(key).mode == StateReadMode::writable,
+                   "the exact N/N-1 layout must remain writable");
+  return passed;
+}
+
+[[nodiscard]] bool unrecoverable_residuals_are_preserved_before_reinitialize() {
+  Fixture fixture;
+  auto const key = StateKey::machine(AggregateId{"unrecoverable-residual"});
+  auto first = fixture.store.initialize(key, state("residual-first"));
+  if (!first.snapshot.has_value()) {
+    return expect(false, "residual preservation fixture must initialize");
+  }
+  auto second = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = first.snapshot->revision,
+      .state = state("residual-second"),
+  });
+  if (!second.snapshot.has_value()) {
+    return expect(false, "residual preservation fixture must create N-1");
+  }
+
+  auto const residual = bytes("unrecoverable-transaction-evidence-marker");
+  fixture.files.seed(key, StateFileSlot::candidate, residual);
+  auto inspected = fixture.store.inspect(key);
+  auto blocked = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = second.snapshot->revision,
+      .state = state("must-not-overwrite-residual"),
+  });
+  auto reset = fixture.store.reinitialize(StateReinitializeRequest{
+      .key = key,
+      .replacement = state("residual-reset").value,
+      .affected_categories = {DataImpactCategory::history},
+      .confirmation_reference = "confirmation/unrecoverable-residual",
+  });
+  auto archive = fixture.files.raw_file(key, StateFileSlot::corrupt_archive);
+  return expect(
+      inspected.mode == StateReadMode::read_only_corrupt &&
+          blocked.status == StateCommitStatus::read_only &&
+          reset.status == StateCommitStatus::committed && archive.has_value() &&
+          contains_text(*archive, "unrecoverable-transaction-evidence-marker"),
+      "an unrecoverable transaction residual must remain read-only until its raw evidence is archived");
+}
+
+[[nodiscard]] bool recovered_generations_append_corruption_evidence() {
+  Fixture fixture;
+  auto const key = StateKey::machine(AggregateId{"recovery-evidence-append"});
+  auto first = fixture.store.initialize(key, state("recovery-first"));
+  if (!first.snapshot.has_value()) {
+    return expect(false, "recovery evidence fixture must initialize");
+  }
+  auto second = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = first.snapshot->revision,
+      .state = state("recovery-corrupt-one-marker"),
+  });
+  if (!second.snapshot.has_value()) {
+    return expect(false, "recovery evidence fixture must create N-1");
+  }
+
+  fixture.files.corrupt(key, StateFileSlot::current);
+  auto first_recovery = fixture.store.inspect(key);
+  if (!first_recovery.snapshot.has_value()) {
+    return expect(false, "first damaged current must recover N-1");
+  }
+  auto third = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = first_recovery.snapshot->revision,
+      .state = state("recovery-corrupt-two-marker"),
+  });
+  if (!third.snapshot.has_value()) {
+    return expect(false, "first recovery commit must succeed");
+  }
+
+  fixture.files.corrupt(key, StateFileSlot::current);
+  auto second_recovery = fixture.store.inspect(key);
+  if (!second_recovery.snapshot.has_value()) {
+    return expect(false, "second damaged current must recover N-1");
+  }
+  auto fourth = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = second_recovery.snapshot->revision,
+      .state = state("recovery-final"),
+  });
+  auto archive = fixture.files.raw_file(key, StateFileSlot::corrupt_archive);
+  return expect(
+      fourth.status == StateCommitStatus::committed && archive.has_value() &&
+          contains_text(*archive, "recovery-corrupt-one-marker") &&
+          contains_text(*archive, "recovery-corrupt-two-marker"),
+      "each recovered current must append its raw corruption evidence");
+}
+
 struct FaultScenario final {
   StateFileOperation operation;
   std::optional<StateFileSlot> slot;
@@ -565,13 +752,13 @@ struct FaultScenario final {
       {StateFileOperation::flush, StateFileSlot::previous_staging, 1,
        "previous-staging-flush", false},
       {StateFileOperation::replace, StateFileSlot::previous, 1,
-       "previous-replace", false},
+       "previous-replace", true},
       {StateFileOperation::read, StateFileSlot::previous, 2,
-       "previous-reread", false},
+       "previous-reread", true},
       {StateFileOperation::flush_volume, std::nullopt, 1,
-       "previous-volume-flush", false},
+       "previous-volume-flush", true},
       {StateFileOperation::replace, StateFileSlot::current, 1,
-       "current-replace", false},
+       "current-replace", true},
       {StateFileOperation::flush_volume, std::nullopt, 2, "volume-flush",
        true},
       {StateFileOperation::read, StateFileSlot::current, 2,
@@ -705,10 +892,14 @@ struct FaultScenario final {
                                       previous_validation.clock};
   auto validation_recovered = validation_restart.inspect(validation_key);
   passed &= expect(
-      validation_recovered.mode == StateReadMode::writable &&
-          validation_recovered.snapshot.has_value() &&
-          validation_recovered.snapshot->state.value.payload == bytes("first"),
-      "transaction recovery must not publish current until the newly written previous generation rereads and validates");
+      validation_recovered.mode == StateReadMode::read_only_corrupt &&
+          previous_validation.files
+              .raw_file(validation_key, StateFileSlot::intent)
+              .has_value() &&
+          previous_validation.files
+              .raw_file(validation_key, StateFileSlot::candidate)
+              .has_value(),
+      "a transaction that cannot validate its new previous generation must remain read-only with residual evidence");
 
   Fixture null_intent_source;
   auto const null_intent_key =
@@ -976,9 +1167,13 @@ struct FaultScenario final {
 int main() {
   bool passed = true;
   passed &= first_and_continuous_commit_keep_n_minus_one();
+  passed &= truncated_current_recovers_last_trusted_generation();
   passed &= schema_window_and_future_bytes_are_safe();
   passed &= dual_corruption_requires_audited_reinitialization();
   passed &= invalid_generation_order_preserves_both_generations();
+  passed &= strict_n_minus_one_layout_is_required();
+  passed &= unrecoverable_residuals_are_preserved_before_reinitialize();
+  passed &= recovered_generations_append_corruption_evidence();
   passed &= write_stage_failures_preserve_a_valid_authority();
   passed &= transaction_residuals_recover_without_guessing();
   passed &= recoverable_initialization_cannot_be_reinitialized();

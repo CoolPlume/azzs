@@ -429,12 +429,23 @@ struct SecurityInfo final {
         root / L"locks" /
         std::filesystem::path{L"execution-log-" +
                               std::wstring{current_sid_wide} + L".lock"};
+    if (!logged.persisted) {
+      std::cerr << "first execution log write failed: " << logged.error << '\n';
+    }
+    if (!exported.produced) {
+      std::cerr << "diagnostic export failed: " << exported.error << '\n';
+    }
+    passed &= expect(logged.persisted,
+                     "the Windows execution log must be persisted and verified");
+    passed &= expect(exported.produced,
+                     "the Windows diagnostic export must be persisted and verified");
     passed &= expect(
-        logged.persisted && exported.produced &&
-            secure_file_matches(execution_log_path, current_sid,
-                                subject_sids) &&
+        secure_file_matches(execution_log_path, current_sid, subject_sids),
+        "execution logs must retain protected subject file ACLs");
+    passed &= expect(
+        exported.produced &&
             secure_file_matches(diagnostic_path, current_sid, subject_sids),
-        "execution logs and diagnostics must retain protected subject file ACLs");
+        "diagnostic exports must retain protected subject file ACLs");
     passed &= expect(
         secure_file_matches(log_lock_path, administrators_buffer,
                             machine_sids),
@@ -487,15 +498,16 @@ struct SecurityInfo final {
     std::filesystem::remove(outside_target, link_error);
   }
 
-  if (initialized.snapshot.has_value()) {
+  if (subject_initialized.snapshot.has_value()) {
     azzs::application::StateCheckpoint checkpoint{
-        .base_revision = initialized.snapshot->revision,
+        .base_revision = subject_initialized.snapshot->revision,
         .payload = {std::byte{'c'}, std::byte{'p'}},
     };
-    auto written = first_store.write_checkpoint(key, checkpoint);
-    auto read = second_store.read_checkpoint(key, initialized.snapshot->revision);
+    auto written = first_store.write_checkpoint(subject_key, checkpoint);
+    auto read = second_store.read_checkpoint(
+        subject_key, subject_initialized.snapshot->revision);
     auto consumed = second_store.consume_checkpoint(
-        key, initialized.snapshot->revision);
+        subject_key, subject_initialized.snapshot->revision);
     passed &= expect(
         written.status == azzs::application::CheckpointStatus::available &&
             read.status == azzs::application::CheckpointStatus::available &&

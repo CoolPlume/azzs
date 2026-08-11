@@ -12,6 +12,13 @@ target_link_libraries(azzs_execution_log_contract
     azzs::infrastructure_adapter
 )
 
+if(WIN32)
+  target_link_libraries(azzs_execution_log_contract
+    PRIVATE
+      azzs::windows_adapter
+  )
+endif()
+
 add_test(
   NAME execution-log.contract
   COMMAND azzs_execution_log_contract

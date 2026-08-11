@@ -391,6 +391,13 @@ struct DecodedState final {
           .snapshot = std::move(snapshot)};
 }
 
+[[nodiscard]] bool is_immediately_previous(
+    domain::RevisionToken const& current,
+    domain::RevisionToken const& previous) noexcept {
+  return current.generation > 1 && current.epoch == previous.epoch &&
+         previous.generation == current.generation - 1;
+}
+
 struct Intent final {
   std::optional<domain::RevisionToken> expected;
   domain::RevisionToken candidate;
@@ -510,7 +517,13 @@ struct LoadedState final {
                                       domain::StateKey const& key,
                                       bool recover_transaction);
 
-[[nodiscard]] bool complete_transaction(
+enum class TransactionCompletion {
+  completed,
+  published_needs_cleanup,
+  failed,
+};
+
+[[nodiscard]] TransactionCompletion complete_transaction(
     StateFileSystem& files, domain::StateKey const& key, Intent const& intent,
     domain::StateBytes const& candidate_bytes,
     std::optional<domain::StateBytes> const& expected_bytes) {
@@ -518,57 +531,57 @@ struct LoadedState final {
     auto result = files.write(key, StateFileSlot::previous_staging,
                               *expected_bytes);
     if (!result.succeeded()) {
-      return false;
+      return TransactionCompletion::failed;
     }
     result = files.flush(key, StateFileSlot::previous_staging);
     if (!result.succeeded()) {
-      return false;
+      return TransactionCompletion::failed;
     }
     result = files.replace(key, StateFileSlot::previous_staging,
                            StateFileSlot::previous);
     if (!result.succeeded()) {
-      return false;
+      return TransactionCompletion::failed;
     }
     result = files.flush_volume(key);
     if (!result.succeeded()) {
-      return false;
+      return TransactionCompletion::failed;
     }
     auto previous_reread = files.read(key, StateFileSlot::previous);
     if (!intent.expected.has_value() ||
         previous_reread.status != StateIoStatus::succeeded ||
         previous_reread.bytes != *expected_bytes) {
-      return false;
+      return TransactionCompletion::failed;
     }
     auto previous_decoded = decode_state(previous_reread.bytes, key);
     if (previous_decoded.state != DecodeState::supported ||
         !previous_decoded.snapshot.has_value() ||
         previous_decoded.snapshot->revision != *intent.expected) {
-      return false;
+      return TransactionCompletion::failed;
     }
   }
 
   auto result = files.replace(key, StateFileSlot::candidate,
                               StateFileSlot::current);
   if (!result.succeeded()) {
-    return false;
+    return TransactionCompletion::failed;
   }
   result = files.flush_volume(key);
   if (!result.succeeded()) {
-    return false;
+    return TransactionCompletion::failed;
   }
   auto reread = files.read(key, StateFileSlot::current);
   if (reread.status != StateIoStatus::succeeded ||
       reread.bytes != candidate_bytes) {
-    return false;
+    return TransactionCompletion::failed;
   }
   auto decoded = decode_state(reread.bytes, key);
   if (decoded.state != DecodeState::supported ||
       !decoded.snapshot.has_value() ||
       decoded.snapshot->revision != intent.candidate) {
-    return false;
+    return TransactionCompletion::failed;
   }
-  static_cast<void>(cleanup_transaction(files, key));
-  return true;
+  return cleanup_transaction(files, key) ? TransactionCompletion::completed
+                                         : TransactionCompletion::published_needs_cleanup;
 }
 
 [[nodiscard]] LoadedState load_locked(StateFileSystem& files,
@@ -648,7 +661,10 @@ struct LoadedState final {
         previous.snapshot->revision == *intent->expected));
   if (recover_transaction && current_is_intended_candidate &&
       intended_rollback_matches) {
-    static_cast<void>(cleanup_transaction(files, key));
+    if (!cleanup_transaction(files, key)) {
+      return {.result = {.mode = StateReadMode::failed,
+                         .error = "completed state transaction cleanup failed; retry"}};
+    }
     return load_locked(files, key, false);
   }
   if (recover_transaction && intent.has_value() &&
@@ -670,9 +686,13 @@ struct LoadedState final {
         if (intent->expected.has_value()) {
           expected_bytes = current_file.bytes;
         }
-        if (complete_transaction(files, key, *intent, candidate_file.bytes,
-                                 expected_bytes)) {
+        auto const completion = complete_transaction(
+            files, key, *intent, candidate_file.bytes, expected_bytes);
+        if (completion == TransactionCompletion::completed) {
           return load_locked(files, key, false);
+        }
+        if (completion == TransactionCompletion::published_needs_cleanup) {
+          return load_locked(files, key, true);
         }
       }
     }
@@ -724,26 +744,16 @@ struct LoadedState final {
     return {.result = std::move(result)};
   }
 
-  if (current.state == DecodeState::supported &&
-      current.snapshot.has_value()) {
-    if (previous.state == DecodeState::supported &&
-        previous.snapshot.has_value() &&
-        previous.snapshot->revision.epoch == current.snapshot->revision.epoch &&
-        previous.snapshot->revision.generation >
-            current.snapshot->revision.generation) {
-      result.mode = StateReadMode::read_only_corrupt;
-      result.error = "state generations violate N/N-1 ordering";
+  if (has_residual) {
+    result.mode = StateReadMode::read_only_corrupt;
+    result.error = "state transaction residual cannot be recovered exactly";
+    if (current_file.status == StateIoStatus::succeeded &&
+        current.state == DecodeState::invalid) {
       result.evidence.push_back(
           {.kind = StateEvidenceKind::invalid_current,
            .slot = StateFileSlot::current,
            .raw_bytes = current_file.bytes,
-           .detail = result.error});
-      result.evidence.push_back(
-          {.kind = StateEvidenceKind::invalid_previous,
-           .slot = StateFileSlot::previous,
-           .raw_bytes = previous_file.bytes,
-           .detail = result.error});
-      return {.result = std::move(result)};
+           .detail = current.error});
     }
     if (previous_file.status == StateIoStatus::succeeded &&
         previous.state == DecodeState::invalid) {
@@ -752,6 +762,35 @@ struct LoadedState final {
            .slot = StateFileSlot::previous,
            .raw_bytes = previous_file.bytes,
            .detail = previous.error});
+    }
+    return {.result = std::move(result)};
+  }
+
+  if (current.state == DecodeState::supported &&
+      current.snapshot.has_value()) {
+    bool const previous_layout_matches =
+        current.snapshot->revision.generation == 1
+            ? previous_file.status == StateIoStatus::not_found
+            : previous.state == DecodeState::supported &&
+                  previous.snapshot.has_value() &&
+                  is_immediately_previous(current.snapshot->revision,
+                                          previous.snapshot->revision);
+    if (!previous_layout_matches) {
+      result.mode = StateReadMode::read_only_corrupt;
+      result.error = "state generations violate N/N-1 ordering";
+      result.evidence.push_back(
+          {.kind = StateEvidenceKind::invalid_current,
+           .slot = StateFileSlot::current,
+           .raw_bytes = current_file.bytes,
+           .detail = result.error});
+      if (previous_file.status == StateIoStatus::succeeded) {
+        result.evidence.push_back(
+            {.kind = StateEvidenceKind::invalid_previous,
+             .slot = StateFileSlot::previous,
+             .raw_bytes = previous_file.bytes,
+             .detail = result.error});
+      }
+      return {.result = std::move(result)};
     }
     result.mode = StateReadMode::writable;
     result.snapshot = std::move(current.snapshot);
@@ -931,11 +970,11 @@ struct LoadedState final {
     io = files.replace(key, StateFileSlot::previous_staging,
                        StateFileSlot::previous);
     if (!io.succeeded()) {
-      return fail("previous-replace", io.error);
+      return fail("previous-replace", io.error, true);
     }
     io = files.flush_volume(key);
     if (!io.succeeded()) {
-      return fail("previous-volume-flush", io.error);
+      return fail("previous-volume-flush", io.error, true);
     }
     auto previous_reread = files.read(key, StateFileSlot::previous);
     auto previous_decoded =
@@ -950,14 +989,15 @@ struct LoadedState final {
       return fail("previous-reread",
                   previous_reread.error.empty()
                       ? "last trusted generation did not validate"
-                      : previous_reread.error);
+                      : previous_reread.error,
+                  true);
     }
   }
 
   io = files.replace(key, StateFileSlot::candidate,
                      StateFileSlot::current);
   if (!io.succeeded()) {
-    return fail("current-replace", io.error);
+    return fail("current-replace", io.error, true);
   }
   io = files.flush_volume(key);
   if (!io.succeeded()) {
@@ -1285,21 +1325,11 @@ StateCommitResult DeviceStateStore::commit(StateCommitRequest request) {
   }
 
   if (loaded.result.mode == StateReadMode::recovered_previous) {
-    for (auto const& evidence : loaded.result.evidence) {
-      if (evidence.kind != StateEvidenceKind::invalid_current) {
-        continue;
-      }
-      auto io = files_.write(request.key, StateFileSlot::corrupt_current,
-                             evidence.raw_bytes);
-      if (!io.succeeded() ||
-          !files_.flush(request.key, StateFileSlot::corrupt_current)
-               .succeeded()) {
-        return {.status = StateCommitStatus::failed,
-                .failed_stage = "corrupt-current-archive",
-                .error = io.error.empty()
-                             ? "failed to preserve corrupt current bytes"
-                             : io.error};
-      }
+    auto archive = append_archive(files_, request.key, loaded.result.evidence);
+    if (!archive.succeeded) {
+      return {.status = StateCommitStatus::failed,
+              .failed_stage = std::move(archive.stage),
+              .error = std::move(archive.error)};
     }
   }
 
@@ -1356,30 +1386,30 @@ StateCommitResult DeviceStateStore::reinitialize(
   }
 
   for (auto const& evidence : loaded.result.evidence) {
-    StateFileSlot archive;
+    StateFileSlot archive_slot;
     if (evidence.kind == StateEvidenceKind::invalid_current) {
-      archive = StateFileSlot::corrupt_current;
+      archive_slot = StateFileSlot::corrupt_current;
     } else if (evidence.kind == StateEvidenceKind::invalid_previous) {
-      archive = StateFileSlot::corrupt_previous;
+      archive_slot = StateFileSlot::corrupt_previous;
     } else if (evidence.kind == StateEvidenceKind::transaction_residual &&
                evidence.slot == StateFileSlot::candidate) {
-      archive = StateFileSlot::corrupt_candidate;
+      archive_slot = StateFileSlot::corrupt_candidate;
     } else if (evidence.kind == StateEvidenceKind::transaction_residual &&
                evidence.slot == StateFileSlot::intent) {
-      archive = StateFileSlot::corrupt_intent;
+      archive_slot = StateFileSlot::corrupt_intent;
     } else if (evidence.kind == StateEvidenceKind::transaction_residual &&
                evidence.slot == StateFileSlot::previous_staging) {
-      archive = StateFileSlot::corrupt_previous_staging;
+      archive_slot = StateFileSlot::corrupt_previous_staging;
     } else {
       continue;
     }
-    auto io = files_.write(request.key, archive, evidence.raw_bytes);
+    auto io = files_.write(request.key, archive_slot, evidence.raw_bytes);
     if (!io.succeeded()) {
       return {.status = StateCommitStatus::failed,
               .failed_stage = "corrupt-evidence-archive",
               .error = io.error};
     }
-    io = files_.flush(request.key, archive);
+    io = files_.flush(request.key, archive_slot);
     if (!io.succeeded()) {
       return {.status = StateCommitStatus::failed,
               .failed_stage = "corrupt-evidence-flush",

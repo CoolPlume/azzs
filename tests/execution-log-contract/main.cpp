@@ -18,6 +18,10 @@
 #include "azzs/testing/fixed_clock.hpp"
 #include "azzs/testing/in_memory_log_storage.hpp"
 
+#ifdef _WIN32
+#include "azzs/adapters/windows/windows_device_data_environment.hpp"
+#endif
+
 namespace {
 
 using azzs::adapters::infrastructure::StructuredExecutionLog;
@@ -650,6 +654,58 @@ void replace_once(std::string& bytes, std::string_view original,
                 "an allowed normalized path must remain usable");
 }
 
+[[nodiscard]] bool verify_user_paths_with_spaces_are_redacted() {
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'404'250}}};
+  InMemoryLogStorage storage;
+  StructuredExecutionLog log{storage, clock};
+  auto const correlation = log.begin_correlation();
+
+  auto const windows = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "filesystem",
+          .stage = "write",
+          .result = ExecutionResult::failed,
+          .error = ExecutionError{
+              .source = "filesystem",
+              .code = 5,
+              .message =
+                  R"(write failed at C:\Users\Alice Smith\Private Files\trace.txt; retry-kept)",
+          },
+      });
+  auto const posix = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "filesystem",
+          .stage = "export",
+          .result = ExecutionResult::failed,
+          .error = ExecutionError{
+              .source = "filesystem",
+              .code = 13,
+              .message =
+                  "export failed at /Users/Bob Jones/Private Data/report.txt; "
+                  "export-kept",
+          },
+      });
+
+  auto const bytes = storage.bytes();
+  return expect(windows.persisted && posix.persisted,
+                "events with user paths containing spaces must persist") &&
+         expect(bytes.find("Alice Smith") == std::string_view::npos &&
+                    bytes.find("Smith") == std::string_view::npos &&
+                    bytes.find("Bob Jones") == std::string_view::npos &&
+                    bytes.find("Jones") == std::string_view::npos,
+                "central redaction must normalize user directory names containing spaces") &&
+         expect(bytes.find("USERPROFILE") != std::string_view::npos &&
+                    bytes.find("Private Files") != std::string_view::npos &&
+                    bytes.find("Private Data") != std::string_view::npos &&
+                    bytes.find("retry-kept") != std::string_view::npos &&
+                    bytes.find("export-kept") != std::string_view::npos,
+                "redaction must retain normalized relative paths and following diagnostics");
+}
+
 [[nodiscard]] bool verify_central_redaction_and_correlation_validation() {
   FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'404'500}}};
   InMemoryLogStorage storage;
@@ -921,9 +977,28 @@ void replace_once(std::string& bytes, std::string_view original,
     }
   } cleanup{root};
 
+  auto root_utf8 = [&] {
+    auto const value = root.u8string();
+    return std::string{reinterpret_cast<char const*>(value.data()),
+                       value.size()};
+  }();
+  std::string subject_id{"S-1-5-21-4242"};
+#ifdef _WIN32
+  auto environment =
+      azzs::adapters::windows::WindowsDeviceDataEnvironment::prepare(
+          azzs::adapters::windows::DeviceDataEnvironmentOptions{
+              .root_override_utf8 = root_utf8});
+  if (!environment) {
+    return expect(false,
+                  "the Windows local log contract requires a prepared ACL root");
+  }
+  root_utf8 = environment.environment->root_utf8;
+  subject_id = environment.environment->subject_id;
+#endif
+
   FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'405'750}}};
-  LocalFileLogStorage first_storage{root.string(), "S-1-5-21-4242"};
-  LocalFileLogStorage second_storage{root.string(), "S-1-5-21-4242"};
+  LocalFileLogStorage first_storage{root_utf8, subject_id};
+  LocalFileLogStorage second_storage{root_utf8, subject_id};
   StructuredExecutionLog first{first_storage, clock};
   StructuredExecutionLog second{second_storage, clock};
   auto const correlation = first.begin_correlation();
@@ -947,13 +1022,12 @@ void replace_once(std::string& bytes, std::string_view original,
 
   std::ifstream stream{exported.file_name, std::ios::binary};
   std::string persisted{std::istreambuf_iterator<char>{stream}, {}};
-  auto const log_path = root / "subjects" / "S-1-5-21-4242" / "logs" /
-                        "execution.log";
+  auto const log_path =
+      root / "subjects" / subject_id / "logs" / "execution.log";
   std::ifstream log_stream{log_path, std::ios::binary};
   std::string log_bytes{std::istreambuf_iterator<char>{log_stream}, {}};
   std::error_code directory_error;
-  auto const export_directory = root / "subjects" / "S-1-5-21-4242" /
-                                "exports";
+  auto const export_directory = root / "subjects" / subject_id / "exports";
   auto const export_count = static_cast<std::size_t>(std::distance(
       std::filesystem::directory_iterator{export_directory, directory_error},
       std::filesystem::directory_iterator{}));
@@ -1121,6 +1195,7 @@ int main() {
       !verify_clear_commits_cutoff_before_new_segment() ||
       !verify_interrupted_clear_recovers_before_next_event() ||
       !verify_sensitive_values_never_reach_persistent_bytes() ||
+      !verify_user_paths_with_spaces_are_redacted() ||
       !verify_central_redaction_and_correlation_validation() ||
       !verify_redaction_defaults_and_stable_event_tokens() ||
       !verify_single_file_export_is_self_contained() ||

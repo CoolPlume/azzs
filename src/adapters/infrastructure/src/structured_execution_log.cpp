@@ -372,10 +372,11 @@ void replace_all(std::string& text, std::string_view needle,
   }
 
   static std::regex const windows_user_path{
-      R"([A-Za-z]:[\\/]Users[\\/][^\s]+)",
+      R"([A-Za-z]:[\\/]Users[\\/][^\\/;\r\n]+[\\/])",
       std::regex_constants::optimize};
   static std::regex const slash_user_path{
-      R"((/Users/|/home/)[^\s]+)", std::regex_constants::optimize};
+      R"((?:/Users/|/home/)[^/;\r\n]+/)",
+      std::regex_constants::optimize};
   static std::regex const url{
       R"([A-Za-z][A-Za-z0-9+.-]*://[^\s]+)",
       std::regex_constants::optimize};
@@ -399,9 +400,9 @@ void replace_all(std::string& text, std::string_view needle,
       std::regex_constants::icase | std::regex_constants::optimize};
 
   sanitized = std::regex_replace(sanitized, windows_user_path,
-                                 "%USERPROFILE%/[redacted-path]");
+                                 "%USERPROFILE%/");
   sanitized = std::regex_replace(sanitized, slash_user_path,
-                                 "%USERPROFILE%/[redacted-path]");
+                                 "%USERPROFILE%/");
   sanitized = std::regex_replace(sanitized, url, "[redacted-url]");
   sanitized = std::regex_replace(sanitized, mac, "[redacted-mac]");
   sanitized = std::regex_replace(sanitized, ipv4, "[redacted-ip]");
