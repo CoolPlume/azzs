@@ -32,3 +32,5 @@ azzs_project_target(
   TARGET azzs_software_optimization_catalog_domain
   ROLE domain
 )
+
+add_subdirectory(settings_catalog)

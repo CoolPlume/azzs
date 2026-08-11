@@ -45,3 +45,5 @@ azzs_project_target(
   PUBLIC_LINKS
     azzs::software_optimization_catalog_application
 )
+
+add_subdirectory(settings_catalog)

@@ -43,3 +43,5 @@ azzs_project_target(
     azzs::application
     azzs::software_optimization_catalog_domain
 )
+
+add_subdirectory(settings_catalog)
