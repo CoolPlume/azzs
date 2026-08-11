@@ -25,4 +25,25 @@ azzs_project_target(
     ${azzs_infrastructure_private_links}
 )
 
+add_library(azzs_software_optimization_catalog_file_adapter STATIC
+  src/local_software_optimization_catalog_file.cpp
+)
+
+add_library(
+  azzs::software_optimization_catalog_file_adapter
+  ALIAS azzs_software_optimization_catalog_file_adapter
+)
+
+target_include_directories(azzs_software_optimization_catalog_file_adapter
+  PUBLIC
+    include
+)
+
+azzs_project_target(
+  TARGET azzs_software_optimization_catalog_file_adapter
+  ROLE infrastructure_adapter
+  PUBLIC_LINKS
+    azzs::software_optimization_catalog_application
+)
+
 add_subdirectory(settings_catalog)
