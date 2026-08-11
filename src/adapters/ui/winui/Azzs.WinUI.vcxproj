@@ -128,6 +128,8 @@
 
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml" />
+    <Page Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml" />
+    <Page Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml" />
     <Page Include="MainWindow.xaml" />
     <Page Include="Pages\ApplicationSettingsPage.xaml" />
     <Page Include="Pages\DriversPage.xaml" />
@@ -136,6 +138,7 @@
     <Page Include="Pages\SoftwareInstallationPage.xaml" />
     <Page Include="Pages\SoftwareOptimizationPage.xaml" />
     <Page Include="Pages\SystemOptimizationPage.xaml" />
+    <Page Include="Themes\DesignSystem.xaml" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App.xaml.h">
@@ -144,6 +147,15 @@
     <ClInclude Include="MainWindow.xaml.h">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml.h">
+      <DependentUpon>ReadOnlyPresentationSurface.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml.h">
+      <DependentUpon>DesignSystemFixturePage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="DesignSystem\motion_contract.hpp" />
+    <ClInclude Include="DesignSystem\motion_preferences.hpp" />
+    <ClInclude Include="DesignSystem\presentation_contract.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Pages\ApplicationSettingsPage.xaml.h">
       <DependentUpon>ApplicationSettingsPage.xaml</DependentUpon>
@@ -171,6 +183,12 @@
   <ItemGroup>
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="App.xaml.cpp" />
+    <ClCompile Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml.cpp" />
+    <ClCompile Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml.cpp" />
+    <ClCompile Include="DesignSystem\motion_preferences.cpp" />
+    <ClCompile Include="DesignSystem\presentation_contract.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="MainWindow.xaml.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -185,6 +203,8 @@
     <ClCompile Include="..\..\..\composition\windows\composition_root.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Midl Include="DesignSystem\Controls\ReadOnlyPresentationSurface.idl" />
+    <Midl Include="DesignSystem\Fixtures\DesignSystemFixturePage.idl" />
     <Midl Include="MainWindow.idl" />
     <Midl Include="Pages\ApplicationSettingsPage.idl" />
     <Midl Include="Pages\DriversPage.idl" />

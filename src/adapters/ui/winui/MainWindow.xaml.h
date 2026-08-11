@@ -7,12 +7,18 @@
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/workbench.hpp"
 
+namespace azzs::ui::winui {
+class MotionPreferences;
+}
+
 namespace winrt::Azzs::Ui::implementation {
 
 struct MainWindow : MainWindowT<MainWindow> {
   MainWindow();
 
-  void bind(std::shared_ptr<azzs::application::Workbench> workbench);
+  void bind(
+      std::shared_ptr<azzs::application::Workbench> workbench,
+      std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences);
   void OnNavigationSelectionChanged(
       Microsoft::UI::Xaml::Controls::NavigationView const&,
       Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&
@@ -25,6 +31,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void project(azzs::application::WorkbenchSnapshot const& snapshot);
 
   std::shared_ptr<azzs::application::Workbench> workbench_;
+  std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences_;
 };
 
 }  // namespace winrt::Azzs::Ui::implementation
