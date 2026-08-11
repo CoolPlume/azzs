@@ -12,8 +12,10 @@ target_include_directories(azzs_application
     include
 )
 
-target_link_libraries(azzs_application
-  PUBLIC
+azzs_project_target(
+  TARGET azzs_application
+  ROLE application
+  PUBLIC_LINKS
     azzs::domain
     Threads::Threads
 )
