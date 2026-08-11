@@ -85,6 +85,7 @@
   <PropertyGroup>
     <OutDir>$(MSBuildThisFileDirectory)..\..\..\..\out\windows\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildProjectExtensionsPath)</IntDir>
+    <GeneratedFilesDir>$(IntDir)Generated Files\</GeneratedFilesDir>
     <TargetName>Azzs.WinUI</TargetName>
     <GenerateManifest>true</GenerateManifest>
   </PropertyGroup>
