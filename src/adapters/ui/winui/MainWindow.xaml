@@ -4,48 +4,80 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <NavigationView
         x:Name="PrimaryNavigation"
-        IsBackButtonVisible="Collapsed"
-        IsSettingsVisible="False"
-        PaneDisplayMode="Auto"
-        SelectionChanged="OnNavigationSelectionChanged">
+        AutomationProperties.AutomationId="AzzsPrimaryNavigation"
+        SelectionChanged="OnNavigationSelectionChanged"
+        Style="{StaticResource AzzsPrimaryNavigationStyle}">
         <NavigationView.MenuItems>
-            <NavigationViewItem x:Name="OverviewItem" x:Uid="NavigationOverview" IsSelected="True">
+            <NavigationViewItem
+                x:Name="OverviewItem"
+                x:Uid="NavigationOverview"
+                AutomationProperties.AutomationId="AzzsNavigationOverview"
+                IsSelected="True"
+                TabIndex="0">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
             </NavigationViewItem>
-            <NavigationViewItem x:Name="DriversItem" x:Uid="NavigationDrivers">
+            <NavigationViewItem
+                x:Name="DriversItem"
+                x:Uid="NavigationDrivers"
+                AutomationProperties.AutomationId="AzzsNavigationDrivers"
+                TabIndex="1">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Manage" /></NavigationViewItem.Icon>
             </NavigationViewItem>
-            <NavigationViewItem x:Name="SystemOptimizationItem" x:Uid="NavigationSystemOptimization">
+            <NavigationViewItem
+                x:Name="SystemOptimizationItem"
+                x:Uid="NavigationSystemOptimization"
+                AutomationProperties.AutomationId="AzzsNavigationSystemOptimization"
+                TabIndex="2">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Repair" /></NavigationViewItem.Icon>
             </NavigationViewItem>
-            <NavigationViewItem x:Name="SoftwareInstallationItem" x:Uid="NavigationSoftwareInstallation">
+            <NavigationViewItem
+                x:Name="SoftwareInstallationItem"
+                x:Uid="NavigationSoftwareInstallation"
+                AutomationProperties.AutomationId="AzzsNavigationSoftwareInstallation"
+                TabIndex="3">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Download" /></NavigationViewItem.Icon>
             </NavigationViewItem>
-            <NavigationViewItem x:Name="SoftwareOptimizationItem" x:Uid="NavigationSoftwareOptimization">
+            <NavigationViewItem
+                x:Name="SoftwareOptimizationItem"
+                x:Uid="NavigationSoftwareOptimization"
+                AutomationProperties.AutomationId="AzzsNavigationSoftwareOptimization"
+                TabIndex="4">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
             </NavigationViewItem>
-            <NavigationViewItem x:Name="HistoryAndLogsItem" x:Uid="NavigationHistoryAndLogs">
+            <NavigationViewItem
+                x:Name="HistoryAndLogsItem"
+                x:Uid="NavigationHistoryAndLogs"
+                AutomationProperties.AutomationId="AzzsNavigationHistoryAndLogs"
+                TabIndex="5">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Clock" /></NavigationViewItem.Icon>
             </NavigationViewItem>
-            <NavigationViewItem x:Name="ApplicationSettingsItem" x:Uid="NavigationApplicationSettings">
+            <NavigationViewItem
+                x:Name="ApplicationSettingsItem"
+                x:Uid="NavigationApplicationSettings"
+                AutomationProperties.AutomationId="AzzsNavigationApplicationSettings"
+                TabIndex="6">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
             </NavigationViewItem>
         </NavigationView.MenuItems>
 
-        <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid Background="{ThemeResource AzzsSurfaceRootBrush}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <InfoBar
                 x:Name="VersionRiskInfoBar"
-                Margin="24,16,24,0"
+                AutomationProperties.AutomationId="AzzsVersionRiskInfoBar"
+                AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
                 IsOpen="False"
-                Severity="Warning" />
+                Margin="{StaticResource AzzsShellStatusMargin}"
+                Severity="Warning"
+                Style="{StaticResource AzzsStatusBandStyle}" />
             <Frame
                 x:Name="ContentFrame"
                 Grid.Row="1"
+                AutomationProperties.AutomationId="AzzsContentFrame"
                 IsNavigationStackEnabled="False" />
         </Grid>
     </NavigationView>

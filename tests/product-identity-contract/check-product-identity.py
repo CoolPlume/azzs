@@ -456,6 +456,8 @@ def check_consumers(root: Path, locale: dict[str, Any], identity: dict[str, Any]
         )
     cjk = re.compile(r"[\u3400-\u9fff]")
     winui_root = root / "src/adapters/ui/winui"
+    # Issue 24's isolated fixtures intentionally carry localized stress content.
+    fixture_page_root = winui_root / "DesignSystem/Fixtures"
     string_literal = re.compile(
         r'(?:u8|u|U|L)?"(?:\\.|[^"\\])*"',
         re.DOTALL,
@@ -465,16 +467,32 @@ def check_consumers(root: Path, locale: dict[str, Any], identity: dict[str, Any]
         r'\((?P<body>.*?)\)(?P=delimiter)"',
         re.DOTALL,
     )
+
+    def source_passes_localization_contract(source_file: Path, source: str) -> bool:
+        if fixture_page_root in source_file.parents:
+            return True
+        literals = [match.group(0) for match in string_literal.finditer(source)]
+        literals.extend(match.group("body") for match in raw_string_literal.finditer(source))
+        return all(cjk.search(literal) is None for literal in literals)
+
+    production_probe = winui_root / "DesignSystem/presentation_contract.cpp"
+    contract.require(
+        not source_passes_localization_contract(
+            production_probe,
+            'auto const localization_probe = L"生产中文探针";',
+        ),
+        "production presentation_contract.cpp must reject Chinese string literals",
+    )
     for pattern in ("*.cpp", "*.h", "*.idl"):
         for source_file in winui_root.rglob(pattern):
             source = source_file.read_text(encoding="utf-8")
-            literals = [match.group(0) for match in string_literal.finditer(source)]
-            literals.extend(match.group("body") for match in raw_string_literal.finditer(source))
             contract.require(
-                all(cjk.search(literal) is None for literal in literals),
+                source_passes_localization_contract(source_file, source),
                 f"WinUI Chinese string literals must be stored in resw: {source_file}",
             )
     for xaml_file in winui_root.rglob("*.xaml"):
+        if fixture_page_root in xaml_file.parents:
+            continue
         xaml_root = ET.parse(xaml_file).getroot()
         visible_values: list[str] = []
         for element in xaml_root.iter():

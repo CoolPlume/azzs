@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 01
 Owner: issue-24
+Claimed by: Codex issue-24 task
 Consumers: 06, 10, 13, 14, 15, 16, 18, 21, 22, 26, 32
 Verification: UI 自动检查、无障碍、键盘、减少动画合同与代表性 WinUI 视觉、DPI、多显示器和快速反向人工检查。
 Evidence freshness: 绑定当前提交、Windows 与 SDK、主题和动画设置；资源、组件或平台版本变化后重验。
@@ -56,3 +57,8 @@ Evidence freshness: 绑定当前提交、Windows 与 SDK、主题和动画设置
 `UI-01` 至 `UI-58`、`GOAL-04` 至 `GOAL-05`、`TECH-20` 至 `TECH-34`、`SW-35` 至 `SW-50`、`FLOW-11` 至 `FLOW-12`、`RUN-07`、`RST-14`、`SRC-17`、`SRC-34`、`CAT-50` 至 `CAT-52`、`DBG-01` 至 `DBG-10`、`LOG-09` 至 `LOG-13`、`OPT-59` 至 `OPT-68`、[WinUI 3 的 Apple 风格适配](../../../docs/design/winui3-apple-inspired.md)、[WinUI 3 动效工程研究](../../../docs/research/winui3-motion-engineering.md)；视图偏好和切换行为由事项 18 依据 `UI-18` 至 `UI-19` 实现，调试工具由事项 32 实现。
 
 ## Comments
+
+- 2026-08-11：基于 `origin/codex/v1-integration` 的精确提交 `edaafae0add79022116967f3340a45ff4c5e9897` 实现事项 24；保持消费者业务状态、命令、持久化和完成条件不变。
+- 2026-08-11：固定 fixture 位于 `src/adapters/ui/winui/DesignSystem/Fixtures/DesignSystemFixturePage.xaml*`，覆盖长中文、标准/高级同源、四阶段、未知进度、就地错误、等待联网/重启、失败、待确认、紧急撤回、本机试用目录、恢复的未保存修改、已保存未应用、来源交接、禁用原因、高风险确认、结果定位、设置与目录编辑器；它只验证呈现/无障碍/命令接缝，不声明消费者业务通过。
+- 2026-08-11：本机 `host-debug` 与 `host-release` 的 `core.smoke`、`ui.presentation.contract`、`ui.design.contract` 均为 3/3 Pass；Python 3.9/3.12 静态合同、全部 WinUI XML 和 `git diff --check` Pass。完整命令、Emil `Before | After | Why` 审查与范围见 [事项 24 设计系统证据](../issue-24-design-system-evidence.md)。
+- 2026-08-11：当前会话不是 Windows；4K/225%、文本缩放、混合 DPI/多显示器、触摸、Narrator/屏幕阅读器、实际高对比度、减少动画/透明度运行时切换、图形回退、快速反向、视觉无重叠和 WPR/WPA 均未实机验证，不由源码检查或 CI 编译外推。
