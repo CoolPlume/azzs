@@ -1,11 +1,12 @@
 # 首版实施地图
 
 Status: executable
-Last updated: 2026-08-10
+Last updated: 2026-08-11
 Confirmed: 2026-08-10
 G1: completed
+G2.1: completed
 
-本文编排现有 01-35 号原子事项，不替代首版规格、`CONTEXT.md`、ADR 或各事项验收条件。维护者已经确认八个部分、五线并行上限、发布节点和最终执行顺序；事项 33 已完成 G1 文档合同闭合，现有公开仓库事实和早期只读 CI 决定已在 ADR-0045 及本地图中同步，尚未开始产品代码或应用发行。
+本文编排现有 01-35 号原子事项，不替代首版规格、`CONTEXT.md`、ADR 或各事项验收条件。维护者已经确认八个部分、五线并行上限、发布节点和最终执行顺序；事项 33 已完成 G1 文档合同闭合，事项 01 已完成 G2.1 应用骨架和早期只读 CI，尚未发布应用。
 
 ## 已确认的实施决定
 
@@ -97,9 +98,10 @@ G1: completed
 
 ## 当前执行入口
 
-会话编排共同理解已经确认，事项 33 已完成并通过 G1；事项 30 已完成公开仓库审计、可逆设置、默认只读 Actions 和集成分支基线。依赖 `33 -> 30 -> 01` 已解除到事项 01，当前唯一机械前沿是事项 01 的工具链、早期 CI 与可运行骨架。当前尚未创建工作流、tag、Release 或应用制品；后续事项只按 `Blocked by` 的 `Resolution: completed` 机械解除，并按本地图自动派发。
+会话编排共同理解已经确认，事项 33 已完成并通过 G1；事项 30 已完成公开仓库审计、可逆设置、默认只读 Actions 和集成分支基线；事项 01 已完成工具链、可运行骨架和早期只读 CI 并通过 G2.1。依赖 `33 -> 30 -> 01` 已解除，当前机械前沿为事项 02、23、24、31，使用四条独立实现线并共同基于最新 `codex/v1-integration`。当前没有 tag、Release 或应用发行制品；后续事项继续只按 `Blocked by` 的 `Resolution: completed` 机械解除，并按本地图自动派发。
 
 ## 已完成门禁
 
 - **G1 文档合同闭合**：由[事项 33](issues/33-close-implementation-contracts-and-ownership.md)完成，并已在 ADR-0045 取代 ADR-0044 后重验。验证覆盖需求编号、事项归属与依赖、owner/consumer、ADR 状态、领域词汇、历史证据声明、个人路径、Markdown 本地链接和 Git 空白检查；当前可重复结果记录在事项的 `## Answer`。
 - **G8.1 公开仓库基线**：由[事项 30](issues/30-public-repository-baseline.md)完成。公开历史、仓库文档、默认只读 Actions、私密漏洞报告、`main` 历史保护和 `codex/v1-integration` 已建立；未合并 `main`，也未创建工作流、tag、Release 或应用制品。
+- **G2.1 应用骨架与早期只读 CI**：由[事项 01](issues/01-application-foundation.md)完成。Windows 11 25H2 x64 实机已验证 UAC、七页导航和退出/重启，x64 Release/core smoke 与 ARM64 Release 编译链接在 GitHub 托管 runner 通过；ARM64 实机、DPI/输入专项和安装生命周期继续由其唯一 owner 保留为未验证，不能由本门禁外推。

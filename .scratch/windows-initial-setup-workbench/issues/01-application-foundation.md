@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent
-Resolution: open
+Resolution: completed
 Blocked by: 30
 Owner: issue-01
 Claimed by: Codex issue-01 task
@@ -55,3 +55,17 @@ Evidence freshness: 绑定当前源码提交、工作流修订、锁定工具链
 ## Comments
 
 - 2026-08-11：以 `92f8e4c0f2794eea7c128944af3a4ca6a8e8aaf3` 为原始目标，Windows 修复后的 `cd512763bb8f7e65879c01b89f97036ddf095991` 完成实机与双架构 portable 验证，后续构建脚本修复 `e1574ac2df0b7dbf031840ad14e5d49a5dec5521` 通过只读双架构 CI；完整结果见[事项 01 Windows 验证记录](../issue-01-windows-validation-92f8e4c.md)，未覆盖项和阻断项以记录为准。
+
+## Answer
+
+事项 01 已完成应用基础、模块化单体骨架、唯一装配入口、WinUI 3/C++/WinRT/XAML 外壳、七个一级页面、简体中文资源、UAC 入口、C++26 无界面核心 smoke、x64/ARM64 构建与便携版/机器级安装版打包入口，以及本事项唯一拥有的只读 Windows CI。实现由 Draft PR [#1](https://github.com/CoolPlume/azzs/pull/1) 汇入 `codex/v1-integration`，原始任务提交链保留在该 PR。
+
+完成证据：
+
+- Windows 11 25H2 实机验证绑定 `cd512763bb8f7e65879c01b89f97036ddf095991`，覆盖 x64 UAC、默认概览、七页简体中文导航、版本提示、关闭和重新启动；双架构 Release 构建及 portable 打包成功。完整记录见[事项 01 Windows 验证记录](../issue-01-windows-validation-92f8e4c.md)。
+- 构建脚本兼容修复 `e1574ac2df0b7dbf031840ad14e5d49a5dec5521` 在 [run 31456835674](https://github.com/CoolPlume/azzs/actions/runs/31456835674) 通过 x64 Release/core smoke 与 ARM64 Release 编译链接。
+- 最终文档头 `23756ec6f1c152e57ec886200877579a61d3e83c` 在 [run 31457223427](https://github.com/CoolPlume/azzs/actions/runs/31457223427) 再次通过 x64 与 ARM64，只读权限、无应用二进制上传、无 tag/Release 的边界保持不变。
+
+未执行的 ARM64 实机、4K/225% 与混合 DPI、多输入/减少动画、干净机和 MSI 安装生命周期继续如实保留为未验证项，分别由事项 24 的设计系统证据、事项 22 的真实环境验收和事项 21 的候选制品生命周期闭合；这些结果不得由本事项的编译或 x64 证据外推。WiX 7 条款未由维护者接受，本事项只验证了安装器入口的明确保护门，没有生成 MSI。
+
+协调会话已获维护者授权结票并 Squash 合并 PR #1；该授权不包括 `main`、tag、Release、应用发布、GitHub 设置变更或 WiX 条款接受。
