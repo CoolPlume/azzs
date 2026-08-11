@@ -11,6 +11,7 @@
 - 最终提交的 x64、ARM64 Release 构建均成功，manifest 均为 `result=succeeded`、`source.dirty=false`，并包含 `Azzs.WinUI.exe`。
 - x64 core smoke 为 1 个测试、0 个失败；x64、ARM64 portable ZIP 均成功生成并绑定最终提交。
 - 最终 x64 portable 在 Windows 11 25H2 x64 实机上完成 UAC、简体中文、七页导航、版本提示、关闭和再次启动验证。
+- 后续构建脚本兼容修复提交 `e1574ac2df0b7dbf031840ad14e5d49a5dec5521` 已通过只读 GitHub Actions 的 x64 与 ARM64 检查。
 - 本会话没有获得适用于本用途的 WiX 7 Binary Release EULA 明确确认。安装器入口保护门通过；实际 MSI 生成、安装和生命周期验证因条款未确认而阻断。
 - 未创建 tag 或 GitHub Release，未上传应用二进制，PR 保持 Draft。
 
@@ -18,8 +19,8 @@
 
 | 项目 | 记录 |
 | --- | --- |
-| 主机 | `OMEN-MAX-GAMING` |
-| 用户 | `OMEN-MAX-GAMING\24109` |
+| 验证主机 | Windows 11 25H2 x64 实机；公开证据不保留本机名称 |
+| 会话身份 | 交互登录用户；公开证据不保留本地账户名 |
 | Windows | 注册表 `DisplayVersion=25H2`，build `26200.8973`，x64 |
 | `Get-ComputerInfo` 兼容字段 | `WindowsProductName=Windows 10 Pro`、`WindowsVersion=2009`、`OsBuildNumber=26200`、`OsArchitecture=64 位`；版本判断采用注册表 `DisplayVersion=25H2` 与 build |
 | PowerShell | 构建使用 portable PowerShell `7.6.4`；启动 UI 的调用会话为非管理员（`IsAdministrator=False`） |
@@ -54,6 +55,12 @@
 6. 提交 `cd512763bb8f7e65879c01b89f97036ddf095991` 合并 WinUI 框架资源，并改用现有 `ResourceLoader` 设置本地化窗口标题。启动探针由稳定复现 `0xC000027B` 转为在约 1 秒内创建标题为“Windows 初装工作台”的窗口。临时 `[DEBUG-7c41]` 日志与探针代码均已清理，调试日志也已从最终 payload、manifest 和 ZIP 中移除。
 
 GitNexus 在修复提交前报告变更为 4 个文件、1 个符号、0 个受影响 process，风险为 low；`MainWindow` 上游影响为 0。提交后重新建立索引，最终索引 commit 与 `cd512763bb8f7e65879c01b89f97036ddf095991` 一致。FTS 扩展不可用不影响结构索引、impact 或 `detect-changes`。
+
+## 后续托管 CI 复核
+
+验证记录提交后，GitHub Actions run [31456176999](https://github.com/CoolPlume/azzs/actions/runs/31456176999) 暴露了 `vswhere` 组件标识差异：Windows 实机使用 `Microsoft.VisualStudio.ComponentGroup.UWP.VC`，托管镜像注册的是 `Microsoft.VisualStudio.ComponentGroup.UWP.VC.v142`；空查询结果 `[]` 又在解析后被直接取 `[0]`，使两个架构都在真正构建前退出。
+
+提交 `e1574ac2df0b7dbf031840ad14e5d49a5dec5521` 接受这两个组件标识并显式检查解析结果数量。随后 run [31456835674](https://github.com/CoolPlume/azzs/actions/runs/31456835674) 的 x64 Release 与 ARM64 Release 均成功；x64 包含 core smoke，ARM64 完成编译链接。该拉取请求 run 检出的候选合并提交为 `3143080cc65a4d903a60d5cc460c46a1e317cd21`，其父提交分别是集成基线 `caa1658b5e8e6fc79fd959564e1790f99c951357` 与功能分支头 `e1574ac2df0b7dbf031840ad14e5d49a5dec5521`。两个 build manifest 均为 `result=succeeded`、`source.dirty=false`。
 
 ## 最终构建与打包
 
@@ -115,10 +122,11 @@ x64 `out/test-results/core-x64-release.xml`：`core.smoke`，tests `1`，failure
 
 - 未执行 ARM64 实机启动；ARM64 仅完成编译、链接和 portable 打包。
 - 未执行 4K、225% 显示缩放或混合 DPI 多显示器专项验证。
+- 未分别执行纯键盘、纯鼠标、触摸、系统关闭动画、应用减少动画及快速重复导航专项验证；现有 UI Automation 结果不替代这些输入与动效场景。
 - 未执行安装生命周期或干净机离线运行验证。
 - 未执行旧 Windows 实机；旧版风险路径只采用 core smoke，不伪造系统版本。
 - WiX 条款未确认，因此 MSI 生成和安装入口之后的生命周期全部阻断。
 
-已有 GitHub Actions run [31413000254](https://github.com/CoolPlume/azzs/actions/runs/31413000254) 的 x64 Release 与 ARM64 Release 均成功；本次没有重新调查历史失败，也没有等待无关 CI。
+历史基线 run [31413000254](https://github.com/CoolPlume/azzs/actions/runs/31413000254) 与修复后 run [31456835674](https://github.com/CoolPlume/azzs/actions/runs/31456835674) 的 x64 Release、ARM64 Release 均成功。
 
 本次未合并 PR、未转 Ready、未修改事项 Resolution、未创建 tag 或 Release、未上传应用二进制。`out/` 继续由 Git 忽略，Git 仅管理本记录和事项评论。

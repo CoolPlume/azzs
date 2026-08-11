@@ -54,4 +54,4 @@ Evidence freshness: 绑定当前源码提交、工作流修订、锁定工具链
 
 ## Comments
 
-- 2026-08-11：提交 `92f8e4c0f2794eea7c128944af3a4ca6a8e8aaf3` 的 Windows 11 25H2 实机、双架构构建与打包结果见[事项 01 Windows 验证记录](../issue-01-windows-validation-92f8e4c.md)；未覆盖项和阻断项以记录为准。
+- 2026-08-11：以 `92f8e4c0f2794eea7c128944af3a4ca6a8e8aaf3` 为原始目标，Windows 修复后的 `cd512763bb8f7e65879c01b89f97036ddf095991` 完成实机与双架构 portable 验证，后续构建脚本修复 `e1574ac2df0b7dbf031840ad14e5d49a5dec5521` 通过只读双架构 CI；完整结果见[事项 01 Windows 验证记录](../issue-01-windows-validation-92f8e4c.md)，未覆盖项和阻断项以记录为准。
