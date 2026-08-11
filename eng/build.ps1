@@ -47,18 +47,36 @@ if (-not (Test-Path -LiteralPath $vswherePath)) {
     throw "vswhere.exe was not found. Install Visual Studio 2026 before building."
 }
 
-$requiredVisualStudioComponents = @(
+$baseVisualStudioComponents = @(
     "Microsoft.Component.MSBuild",
     "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
     "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
-    "Microsoft.VisualStudio.Component.VC.CMake.Project",
-    "Microsoft.VisualStudio.ComponentGroup.UWP.VC"
+    "Microsoft.VisualStudio.Component.VC.CMake.Project"
 )
-$instanceJson = & $vswherePath -latest -products * -version "[18.8,18.9)" -requires $requiredVisualStudioComponents -format json -utf8
-if ($LASTEXITCODE -ne 0 -or -not $instanceJson) {
+$uwpVisualStudioComponents = @(
+    "Microsoft.VisualStudio.ComponentGroup.UWP.VC",
+    "Microsoft.VisualStudio.ComponentGroup.UWP.VC.v142"
+)
+$visualStudioInstances = @()
+foreach ($uwpVisualStudioComponent in $uwpVisualStudioComponents) {
+    $requiredVisualStudioComponents = $baseVisualStudioComponents + $uwpVisualStudioComponent
+    $instanceJson = & $vswherePath -latest -products * -version "[18.8,18.9)" -requires $requiredVisualStudioComponents -format json -utf8
+    if ($LASTEXITCODE -ne 0) {
+        throw "vswhere.exe failed while locating Visual Studio 2026."
+    }
+    $visualStudioInstances = @(
+        if ($instanceJson) {
+            ConvertFrom-Json ($instanceJson -join [Environment]::NewLine)
+        }
+    )
+    if ($visualStudioInstances.Count -gt 0) {
+        break
+    }
+}
+if ($visualStudioInstances.Count -eq 0) {
     throw "Visual Studio 2026 Stable 18.8.2 with x64, ARM64, CMake, and UWP C++ components was not found."
 }
-$visualStudioInstance = @(ConvertFrom-Json ($instanceJson -join [Environment]::NewLine))[0]
+$visualStudioInstance = $visualStudioInstances[0]
 $visualStudioPath = $visualStudioInstance.installationPath
 $visualStudioVersion = $visualStudioInstance.catalog.productDisplayVersion
 if ($visualStudioVersion -ne "18.8.2") {
