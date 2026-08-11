@@ -745,6 +745,30 @@ static_assert(
   return passed;
 }
 
+[[nodiscard]] bool verify_downgrade_disclosure_rejects_field_boundary_collision() {
+  auto loaded =
+      catalog::load_catalog(catalog_source(2), built_in_rule_definitions());
+  bool passed = expect(loaded.catalog.has_value(),
+                       "collision disclosure fixture must load");
+  if (!loaded.catalog.has_value()) {
+    return false;
+  }
+
+  auto current = *loaded.catalog;
+  auto candidate = current;
+  candidate.revision = 1;
+  current.schemes.front().explanation_source = "https://x/a|b";
+  current.schemes.front().manual_emergency_explanation = "c";
+  candidate.schemes.front().explanation_source = "https://x/a";
+  candidate.schemes.front().manual_emergency_explanation = "b|c";
+
+  passed &= expect(
+      has_id(catalog::schemes_lost_or_changed(current, candidate),
+             "sogou.recommended"),
+      "downgrade disclosure must not hide changes behind field-boundary collisions");
+  return passed;
+}
+
 [[nodiscard]] bool verify_identity_history_capacity() {
   constexpr std::size_t kMaximumIdentityHistory = 100'000;
   std::vector<catalog::StableIdentityRecord> history;
@@ -1127,6 +1151,7 @@ int main() {
   bool passed = true;
   passed &= verify_domain_validation_and_compatibility();
   passed &= verify_lifecycle_import_downgrade_and_rollback();
+  passed &= verify_downgrade_disclosure_rejects_field_boundary_collision();
   passed &= verify_identity_history_capacity();
   passed &= verify_manual_import_preview_rejects_concurrent_change();
   passed &= verify_rollback_preview_rejects_concurrent_change();

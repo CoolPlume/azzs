@@ -694,11 +694,6 @@ void add_configuration_issue(SoftwareOptimizationScheme& scheme,
   scheme.availability = SchemeAvailability::configuration_error;
 }
 
-[[nodiscard]] std::string rule_fingerprint(ControlledRule const& rule) {
-  return std::to_string(static_cast<int>(rule.kind)) + ":" +
-         rule.definition.value;
-}
-
 class BehaviorFingerprint final {
  public:
   void number(std::uint64_t value) noexcept {
@@ -826,51 +821,6 @@ void add_option_behavior(BehaviorFingerprint& fingerprint,
   BehaviorFingerprint fingerprint;
   add_option_behavior(fingerprint, option);
   return fingerprint.finish("option-v2");
-}
-
-[[nodiscard]] std::string scheme_fingerprint(
-    SoftwareOptimizationScheme const& scheme) {
-  std::string result = scheme.target_id.value + "|" +
-                       std::to_string(static_cast<int>(scheme.automation)) +
-                       "|" + scheme.supported_versions.minimum + "|" +
-                       scheme.supported_versions.maximum + "|" +
-                       scheme.impact + "|" +
-                       std::to_string(static_cast<int>(scheme.risk)) + "|" +
-                       std::to_string(
-                           static_cast<int>(scheme.exit_requirement)) +
-                       "|" +
-                       std::to_string(
-                           static_cast<int>(scheme.restart_requirement)) +
-                       "|" + scheme.explanation_source + "|" +
-                       scheme.manual_emergency_explanation;
-  for (auto const& required : scheme.required_scheme_ids) {
-    result += "|requires:" + required.value;
-  }
-  for (auto const& conflicting : scheme.conflicting_scheme_ids) {
-    result += "|conflicts:" + conflicting.value;
-  }
-  for (auto const& option : scheme.options) {
-    result += "|" + option.id.value + ":" + option.scheme_id.value + ":" +
-              std::to_string(static_cast<int>(option.automation)) + ":" +
-              rule_fingerprint(option.execution) + ":" +
-              rule_fingerprint(option.state_detection) + ":" +
-              option.supported_versions.minimum + ":" +
-              option.supported_versions.maximum + ":" + option.impact + ":" +
-              std::to_string(option.default_selected) + ":" +
-              std::to_string(option.required) + ":" +
-              option.explanation_source + ":" +
-              option.default_value.value_or("");
-    for (auto const& required : option.required_option_ids) {
-      result += ":requires:" + required.value;
-    }
-    for (auto const& conflicting : option.conflicting_option_ids) {
-      result += ":conflicts:" + conflicting.value;
-    }
-    for (auto const& value : option.allowed_values) {
-      result += ":value:" + value;
-    }
-  }
-  return result;
 }
 
 [[nodiscard]] std::string identity_fingerprint(TargetSoftware const& target) {
@@ -1846,8 +1796,7 @@ std::vector<StableId> schemes_lost_or_changed(
   std::vector<StableId> result;
   for (auto const& scheme : current.schemes) {
     auto const* replacement = candidate.find_scheme(scheme.id.value);
-    if (replacement == nullptr ||
-        scheme_fingerprint(scheme) != scheme_fingerprint(*replacement)) {
+    if (replacement == nullptr || scheme != *replacement) {
       result.push_back(scheme.id);
     }
   }
