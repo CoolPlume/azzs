@@ -21,3 +21,5 @@ azzs_project_target(
     azzs::domain
     Threads::Threads
 )
+
+add_subdirectory(settings_catalog)
