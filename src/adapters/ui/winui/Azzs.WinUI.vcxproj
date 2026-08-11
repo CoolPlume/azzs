@@ -217,6 +217,7 @@
   <ItemGroup>
     <Manifest Include="app.manifest" />
     <PRIResource Include="Strings\zh-CN\Resources.resw" />
+    <ResourceCompile Include="app.rc" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />

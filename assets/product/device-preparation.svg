@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title description">
+  <title id="title">Device preparation</title>
+  <desc id="description">A display and readiness check on a rounded blue tile.</desc>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#2563EB"/>
+  <rect x="42" y="46" width="172" height="120" rx="20" fill="#F8FAFC"/>
+  <rect x="56" y="60" width="144" height="86" rx="10" fill="#163A63"/>
+  <circle cx="80" cy="84" r="7" fill="#60A5FA"/>
+  <circle cx="104" cy="84" r="7" fill="#93C5FD"/>
+  <polygon points="104,166 152,166 166,198 90,198" fill="#F8FAFC"/>
+  <rect x="76" y="194" width="104" height="14" rx="7" fill="#F8FAFC"/>
+  <circle cx="188" cy="174" r="36" fill="#10B981"/>
+  <polyline points="169,174 181,186 205,158" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
