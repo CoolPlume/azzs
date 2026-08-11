@@ -41,3 +41,6 @@ Evidence freshness: 绑定当前提交、模式与目录修订及支持的软件
 `SEC-02`、`CAT-01`、`CAT-02`、`CAT-05` 至 `CAT-12`、`CAT-21` 至 `CAT-24`、`CAT-27` 至 `CAT-36`、`CAT-40` 至 `CAT-41`、`GOAL-04`、`SCOPE-04`、`OPT-37` 至 `OPT-39`、`OPT-59` 至 `OPT-68`、ADR-0023、ADR-0026
 
 ## Comments
+
+- 2026-08-11：实现提交 `c65394a` 新增独立软件优化目录领域模型、版本化加载与当前/上一版生命周期、调试模式手动导入预览与确认、降级、回退、只读本地文件适配器及 `software-optimization-catalog-contract`。目录只引用项目内置受控能力的稳定定义标识，不携带第三方代码、命令或执行参数。
+- 2026-08-11：自动验证通过 `software-optimization-catalog.contract`（1/1）、`cmake --workflow --preset host-guardrails`（11/11）、GitNexus PDG/暂存影响门禁与 `git diff --check`。未安装、配置或实机验证搜狗；搜狗范围仅以声明式安装器基线交集契约验证。事项 26 至 29、Windows 实机、UI、安装器与发布验收仍不在本事项证据范围内，`Resolution` 保持 `open` 等待 Draft PR 复核。
