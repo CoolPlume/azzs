@@ -424,6 +424,8 @@ class FileLock final {
                        std::to_string(target_error)};
     }
   }
+  // MoveFileExW cannot replace a target while its validation handle is open.
+  target_guard.reset();
   if (!::MoveFileExW(source.c_str(), target.c_str(),
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
     return {.error = "log transaction replace failed: win32:" +
