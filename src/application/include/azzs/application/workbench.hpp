@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 
 #include "azzs/application/page_id.hpp"
@@ -8,6 +9,8 @@
 #include "azzs/domain/system_version.hpp"
 
 namespace azzs::application {
+
+class WorkbenchServices;
 
 struct WorkbenchSnapshot final {
   PageId current_page{PageId::overview};
@@ -22,12 +25,15 @@ class Workbench final {
   static constexpr domain::SystemVersion kWindows10Version22H2{10, 0, 19045};
 
   explicit Workbench(PlatformInfo const& platform_info);
+  Workbench(PlatformInfo const& platform_info,
+            std::shared_ptr<WorkbenchServices> services);
 
   void navigate(PageId page) noexcept;
   [[nodiscard]] WorkbenchSnapshot snapshot() const noexcept;
 
  private:
   WorkbenchSnapshot snapshot_;
+  std::shared_ptr<WorkbenchServices> services_;
 };
 
 }  // namespace azzs::application
