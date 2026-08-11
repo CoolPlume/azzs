@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -24,10 +25,13 @@ constexpr std::array<std::byte, 8> kMagic{
     std::byte{'A'}, std::byte{'Z'}, std::byte{'Z'}, std::byte{'S'},
     std::byte{'O'}, std::byte{'C'}, std::byte{'0'}, std::byte{'1'},
 };
-constexpr std::uint32_t kPayloadFormat = 1;
+constexpr std::uint32_t kMinimumPayloadFormat = 1;
+constexpr std::uint32_t kCurrentPayloadFormat = 2;
 constexpr std::size_t kMaximumCatalogBytes = 4U * 1024U * 1024U;
 constexpr std::size_t kMaximumIdentityCount = 100'000;
 constexpr std::size_t kMaximumFingerprintBytes = 2'048;
+constexpr std::size_t kMaximumRedactedSourceBytes = 128;
+constexpr std::size_t kMaximumSourceReferenceBytes = 2'048;
 
 [[nodiscard]] domain::StateKey catalog_key() {
   return domain::StateKey::machine(
@@ -114,19 +118,79 @@ class Decoder final {
 };
 
 struct PersistedCatalogState final {
+  std::uint32_t payload_format{kCurrentPayloadFormat};
   std::string current_source;
+  SoftwareOptimizationCatalogProvenance current_provenance;
   std::optional<std::string> previous_source;
+  std::optional<SoftwareOptimizationCatalogProvenance> previous_provenance;
   std::vector<catalog::StableIdentityRecord> identity_history;
 };
+
+[[nodiscard]] SoftwareOptimizationCatalogProvenance legacy_provenance() {
+  return {
+      .kind = SoftwareOptimizationCatalogSourceKind::legacy_unclassified,
+      .local_trial = true,
+      .redacted_source = "legacy-unclassified",
+  };
+}
+
+[[nodiscard]] bool valid_provenance(
+    SoftwareOptimizationCatalogProvenance const& provenance) {
+  auto const trial_matches_kind = [&] {
+    switch (provenance.kind) {
+      case SoftwareOptimizationCatalogSourceKind::embedded_builtin:
+      case SoftwareOptimizationCatalogSourceKind::trusted_update:
+        return !provenance.local_trial;
+      case SoftwareOptimizationCatalogSourceKind::local_debug_import:
+      case SoftwareOptimizationCatalogSourceKind::legacy_unclassified:
+        return provenance.local_trial;
+    }
+    return false;
+  }();
+  return trial_matches_kind && !provenance.redacted_source.empty() &&
+         provenance.redacted_source.size() <= kMaximumRedactedSourceBytes &&
+         std::ranges::all_of(
+             provenance.redacted_source, [](unsigned char character) {
+               return character >= 0x21U && character <= 0x7eU;
+             });
+}
+
+void encode_provenance(Encoder& encoder,
+                       SoftwareOptimizationCatalogProvenance const& provenance) {
+  encoder.u8(static_cast<std::uint8_t>(provenance.kind));
+  encoder.u8(provenance.local_trial ? 1U : 0U);
+  encoder.text(provenance.redacted_source);
+}
+
+[[nodiscard]] bool decode_provenance(
+    Decoder& decoder, SoftwareOptimizationCatalogProvenance& provenance) {
+  std::uint8_t kind{};
+  std::uint8_t local_trial{};
+  if (!decoder.u8(kind) ||
+      kind < static_cast<std::uint8_t>(
+                 SoftwareOptimizationCatalogSourceKind::embedded_builtin) ||
+      kind > static_cast<std::uint8_t>(
+                 SoftwareOptimizationCatalogSourceKind::legacy_unclassified) ||
+      !decoder.u8(local_trial) || local_trial > 1 ||
+      !decoder.text(provenance.redacted_source,
+                    kMaximumRedactedSourceBytes)) {
+    return false;
+  }
+  provenance.kind = static_cast<SoftwareOptimizationCatalogSourceKind>(kind);
+  provenance.local_trial = local_trial == 1;
+  return valid_provenance(provenance);
+}
 
 [[nodiscard]] domain::StateBytes encode(PersistedCatalogState const& state) {
   Encoder encoder;
   encoder.raw(kMagic);
-  encoder.u32(kPayloadFormat);
+  encoder.u32(kCurrentPayloadFormat);
   encoder.text(state.current_source);
+  encode_provenance(encoder, state.current_provenance);
   encoder.u8(state.previous_source.has_value() ? 1U : 0U);
   if (state.previous_source.has_value()) {
     encoder.text(*state.previous_source);
+    encode_provenance(encoder, *state.previous_provenance);
   }
   encoder.u32(static_cast<std::uint32_t>(state.identity_history.size()));
   for (auto const& identity : state.identity_history) {
@@ -146,9 +210,20 @@ struct PersistedCatalogState final {
   std::uint8_t previous{};
   std::uint32_t identity_count{};
   if (!decoder.raw(magic) || magic != kMagic || !decoder.u32(format) ||
-      format != kPayloadFormat ||
+      format < kMinimumPayloadFormat || format > kCurrentPayloadFormat ||
       !decoder.text(state.current_source, kMaximumCatalogBytes) ||
-      state.current_source.empty() || !decoder.u8(previous) || previous > 1) {
+      state.current_source.empty()) {
+    return std::nullopt;
+  }
+  state.payload_format = format;
+  if (format >= 2) {
+    if (!decode_provenance(decoder, state.current_provenance)) {
+      return std::nullopt;
+    }
+  } else {
+    state.current_provenance = legacy_provenance();
+  }
+  if (!decoder.u8(previous) || previous > 1) {
     return std::nullopt;
   }
   if (previous == 1) {
@@ -157,6 +232,15 @@ struct PersistedCatalogState final {
       return std::nullopt;
     }
     state.previous_source = std::move(source);
+    if (format >= 2) {
+      SoftwareOptimizationCatalogProvenance provenance;
+      if (!decode_provenance(decoder, provenance)) {
+        return std::nullopt;
+      }
+      state.previous_provenance = std::move(provenance);
+    } else {
+      state.previous_provenance = legacy_provenance();
+    }
   }
   if (!decoder.u32(identity_count) || identity_count > kMaximumIdentityCount) {
     return std::nullopt;
@@ -221,6 +305,40 @@ struct LoadedCatalogState final {
   return true;
 }
 
+[[nodiscard]] bool migrate_legacy_identity_fingerprints(
+    PersistedCatalogState& state,
+    catalog::SoftwareOptimizationCatalog const& current,
+    std::optional<catalog::SoftwareOptimizationCatalog> const& previous) {
+  std::unordered_map<std::string, catalog::StableIdentityRecord> observed;
+  auto observe = [&](catalog::SoftwareOptimizationCatalog const& value) {
+    for (auto const& identity : catalog::stable_identities(value)) {
+      auto const [found, inserted] =
+          observed.emplace(identity.id.value, identity);
+      if (!inserted &&
+          (found->second.kind != identity.kind ||
+           found->second.semantic_fingerprint !=
+               identity.semantic_fingerprint)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!observe(current) || (previous.has_value() && !observe(*previous))) {
+    return false;
+  }
+  for (auto& identity : state.identity_history) {
+    auto const found = observed.find(identity.id.value);
+    if (found == observed.end()) {
+      continue;
+    }
+    if (identity.kind != found->second.kind) {
+      return false;
+    }
+    identity.semantic_fingerprint = found->second.semantic_fingerprint;
+  }
+  return true;
+}
+
 [[nodiscard]] LoadedCatalogState load_state(
     DeviceStateStore& states,
     std::span<catalog::BuiltInRuleDefinition const> built_in_rules) {
@@ -263,59 +381,92 @@ struct LoadedCatalogState final {
         "software optimization catalog payload is invalid or from an unknown format";
     return result;
   }
-  auto current = catalog::load_catalog(decoded->current_source, built_in_rules);
-  if (!current.accepted()) {
+  auto current_load =
+      catalog::load_catalog(decoded->current_source, built_in_rules);
+  if (!current_load.accepted()) {
     result.mode = SoftwareOptimizationCatalogStateMode::read_only;
     result.error = "persisted current software optimization catalog is invalid";
     return result;
   }
-  auto history_issues = catalog::validate_stable_identity_history(
-      *current.catalog, decoded->identity_history);
-  if (!history_issues.empty() ||
-      !complete_identity_history(*current.catalog,
-                                 decoded->identity_history)) {
-    result.mode = SoftwareOptimizationCatalogStateMode::read_only;
-    result.error = "persisted stable identity history does not match current catalog";
-    return result;
-  }
-  result.current = std::move(current.catalog);
+  auto current = std::move(*current_load.catalog);
+  std::optional<catalog::SoftwareOptimizationCatalog> previous;
   if (decoded->previous_source.has_value()) {
-    auto previous =
+    auto previous_load =
         catalog::load_catalog(*decoded->previous_source, built_in_rules);
-    if (!previous.accepted()) {
+    if (!previous_load.accepted()) {
       result.mode = SoftwareOptimizationCatalogStateMode::read_only;
       result.error = "persisted previous software optimization catalog is invalid";
       return result;
     }
+    previous = std::move(*previous_load.catalog);
+  }
+  if (decoded->payload_format == 1 &&
+      !migrate_legacy_identity_fingerprints(*decoded, current, previous)) {
+    result.mode = SoftwareOptimizationCatalogStateMode::read_only;
+    result.error =
+        "legacy stable identity history contains ambiguous behavior changes";
+    return result;
+  }
+  auto history_issues = catalog::validate_stable_identity_history(
+      current, decoded->identity_history);
+  if (!history_issues.empty() ||
+      !complete_identity_history(current, decoded->identity_history)) {
+    result.mode = SoftwareOptimizationCatalogStateMode::read_only;
+    result.error = "persisted stable identity history does not match current catalog";
+    return result;
+  }
+  if (previous.has_value()) {
     auto previous_history_issues = catalog::validate_stable_identity_history(
-        *previous.catalog, decoded->identity_history);
+        *previous, decoded->identity_history);
     if (!previous_history_issues.empty()) {
       result.mode = SoftwareOptimizationCatalogStateMode::read_only;
       result.error =
           "persisted stable identity history does not match previous catalog";
       return result;
     }
-    result.previous = std::move(previous.catalog);
   }
+  result.current = std::move(current);
+  result.previous = std::move(previous);
   result.persisted = std::move(decoded);
   return result;
 }
 
-[[nodiscard]] std::string fingerprint(std::string_view source) {
+[[nodiscard]] std::string preview_token(
+    std::string_view source,
+    std::optional<domain::RevisionToken> const& revision) {
   std::uint64_t value = 14695981039346656037ULL;
-  for (auto const character : source) {
-    value ^= static_cast<unsigned char>(character);
+  auto mix = [&](std::uint8_t part) {
+    value ^= part;
     value *= 1099511628211ULL;
+  };
+  for (auto const character : source) {
+    mix(static_cast<unsigned char>(character));
+  }
+  mix(revision.has_value() ? 1U : 0U);
+  if (revision.has_value()) {
+    for (auto const part : revision->epoch) {
+      mix(std::to_integer<std::uint8_t>(part));
+    }
+    for (unsigned shift = 0; shift < 64; shift += 8) {
+      mix(static_cast<std::uint8_t>(revision->generation >> shift));
+      mix(static_cast<std::uint8_t>(revision->content_digest >> shift));
+    }
   }
   std::ostringstream stream;
   stream << std::hex << std::setfill('0') << std::setw(16) << value;
   return stream.str();
 }
 
+[[nodiscard]] std::string redacted_source(std::string_view prefix,
+                                          std::string_view source) {
+  return std::string{prefix} + preview_token(source, std::nullopt);
+}
+
 [[nodiscard]] ExecutionLogReceipt append_event(
     ExecutionLog& log, CorrelationId const& correlation, ExecutionEventKind kind,
     std::string stage, ExecutionResult result, std::string detail = {},
-    std::string source_path = {}, std::optional<std::uint64_t> revision = {}) {
+    std::string source_reference = {},
+    std::optional<std::uint64_t> revision = {}) {
   ExecutionEvent event{
       .kind = kind,
       .component = "software-optimization-catalog",
@@ -328,10 +479,10 @@ struct LoadedCatalogState final {
         .message = std::move(detail),
     };
   }
-  if (!source_path.empty()) {
+  if (!source_reference.empty()) {
     event.fields.push_back(DiagnosticField{
-        .key = "candidate_path",
-        .value = std::move(source_path),
+        .key = "candidate_source",
+        .value = std::move(source_reference),
         .disposition = DiagnosticValueDisposition::sensitive,
     });
   }
@@ -393,13 +544,19 @@ struct LoadedCatalogState final {
 SoftwareOptimizationCatalogLifecycle::SoftwareOptimizationCatalogLifecycle(
     DeviceStateStore& states, ExecutionLog& log,
     SharedOperationOccupancy& occupancy,
-    SoftwareOptimizationCatalogFile& files,
-    std::span<catalog::BuiltInRuleDefinition const> built_in_rules) noexcept
+    SoftwareOptimizationCatalogLocalImportFile& local_import_files,
+    SoftwareOptimizationCatalogDebugAuthorization const& debug_authorization,
+    std::span<catalog::BuiltInRuleDefinition const> built_in_rules,
+    std::span<catalog::SoftwareCatalogInstallerBaseline const>
+        installer_baselines) noexcept
     : states_(states),
       log_(log),
       occupancy_(occupancy),
-      files_(files),
-      built_in_rules_(built_in_rules.begin(), built_in_rules.end()) {}
+      local_import_files_(local_import_files),
+      debug_authorization_(debug_authorization),
+      built_in_rules_(built_in_rules.begin(), built_in_rules.end()),
+      installer_baselines_(installer_baselines.begin(),
+                           installer_baselines.end()) {}
 
 SoftwareOptimizationCatalogSnapshot
 SoftwareOptimizationCatalogLifecycle::snapshot() {
@@ -407,7 +564,16 @@ SoftwareOptimizationCatalogLifecycle::snapshot() {
   return {
       .mode = loaded.mode,
       .current = std::move(loaded.current),
+      .current_provenance =
+          loaded.persisted.has_value()
+              ? std::optional<SoftwareOptimizationCatalogProvenance>{
+                    loaded.persisted->current_provenance}
+              : std::nullopt,
       .previous_available = loaded.previous.has_value(),
+      .previous_provenance =
+          loaded.persisted.has_value()
+              ? loaded.persisted->previous_provenance
+              : std::nullopt,
       .identity_history = loaded.persisted.has_value()
                               ? std::move(loaded.persisted->identity_history)
                               : std::vector<catalog::StableIdentityRecord>{},
@@ -419,34 +585,50 @@ SoftwareOptimizationCatalogLifecycleResult
 SoftwareOptimizationCatalogLifecycle::ensure_builtin(
     std::string_view source, std::string operation_id) {
   return apply_source(std::string{source}, CandidateKind::built_in,
-                      std::move(operation_id), false, "builtin");
+                      std::move(operation_id), false, "builtin",
+                      SoftwareOptimizationCatalogProvenance{
+                          .kind = SoftwareOptimizationCatalogSourceKind::
+                              embedded_builtin,
+                          .local_trial = false,
+                          .redacted_source = "embedded-builtin",
+                      });
 }
 
 SoftwareOptimizationCatalogLifecycleResult
 SoftwareOptimizationCatalogLifecycle::apply_update(
-    std::string_view path, std::string operation_id) {
-  auto const read = files_.read(path);
-  if (!read.succeeded) {
+    TrustedSoftwareOptimizationCatalogUpdate update,
+    std::string operation_id) {
+  if (update.source_reference.empty() ||
+      update.source_reference.size() > kMaximumSourceReferenceBytes) {
+    auto const detail = "trusted update source reference is invalid";
     auto correlation = log_.begin_correlation();
-    auto receipt = append_event(log_, correlation, ExecutionEventKind::adapter_result,
-                                "read-update", ExecutionResult::failed,
-                                read.error, std::string{path});
+    auto receipt = append_event(
+        log_, correlation, ExecutionEventKind::adapter_result,
+        "apply-update-input", ExecutionResult::failed, detail);
     auto result = rejected_result(
-        SoftwareOptimizationCatalogLifecycleCode::file_failed, read.error);
+        SoftwareOptimizationCatalogLifecycleCode::rejected, detail);
     if (!receipt.persisted) {
       result.logging_error = std::move(receipt.error);
     }
     return result;
   }
-  return apply_source(read.source, CandidateKind::update,
-                      std::move(operation_id), false, std::string{path});
+  auto provenance = SoftwareOptimizationCatalogProvenance{
+      .kind = SoftwareOptimizationCatalogSourceKind::trusted_update,
+      .local_trial = false,
+      .redacted_source =
+          redacted_source("trusted-update:", update.source_reference),
+  };
+  return apply_source(std::move(update.source), CandidateKind::update,
+                      std::move(operation_id), false,
+                      std::move(update.source_reference),
+                      std::move(provenance));
 }
 
 SoftwareOptimizationCatalogImportPreview
 SoftwareOptimizationCatalogLifecycle::preview_manual_import(
-    std::string_view path, bool debug_mode) {
+    std::string_view path) {
   auto correlation = log_.begin_correlation();
-  if (!debug_mode) {
+  if (!debug_authorization_.local_import_allowed()) {
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::user_command,
         "preview-manual-import", ExecutionResult::failed,
@@ -461,7 +643,7 @@ SoftwareOptimizationCatalogLifecycle::preview_manual_import(
                      : receipt.error,
     };
   }
-  auto read = files_.read(path);
+  auto read = local_import_files_.read(path);
   if (!read.succeeded) {
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::adapter_result,
@@ -486,12 +668,14 @@ SoftwareOptimizationCatalogLifecycle::preview_manual_import(
                     ? SoftwareOptimizationCatalogLifecycleCode::rejected
                     : SoftwareOptimizationCatalogLifecycleCode::logging_failed,
         .path = std::string{path},
-        .preview_token = fingerprint(read.source),
+        .preview_token = {},
         .issues = std::move(candidate.package_issues),
         .error = receipt.persisted ? "candidate catalog was rejected"
                                    : receipt.error,
     };
   }
+  auto release_assessment = catalog::assess_release_compatibility(
+      *candidate.catalog, installer_baselines_);
   auto loaded = load_state(states_, built_in_rules_);
   if (loaded.mode == SoftwareOptimizationCatalogStateMode::read_only ||
       loaded.mode == SoftwareOptimizationCatalogStateMode::failed) {
@@ -507,9 +691,9 @@ SoftwareOptimizationCatalogLifecycle::preview_manual_import(
                            : SoftwareOptimizationCatalogLifecycleCode::persistence_failed)
                     : SoftwareOptimizationCatalogLifecycleCode::logging_failed,
         .path = std::string{path},
-        .preview_token = fingerprint(read.source),
+        .preview_token = {},
         .candidate = catalog::summarize(*candidate.catalog),
-        .issues = candidate.catalog->release_issues,
+        .issues = release_assessment.issues,
         .error = receipt.persisted ? loaded.error : receipt.error,
     };
   }
@@ -527,7 +711,12 @@ SoftwareOptimizationCatalogLifecycle::preview_manual_import(
                       ? SoftwareOptimizationCatalogLifecycleCode::rejected
                       : SoftwareOptimizationCatalogLifecycleCode::logging_failed,
           .path = std::string{path},
-          .preview_token = fingerprint(read.source),
+          .preview_token = preview_token(
+              read.source,
+              loaded.device_snapshot.has_value()
+                  ? std::optional<domain::RevisionToken>{
+                        loaded.device_snapshot->revision}
+                  : std::nullopt),
           .candidate = catalog::summarize(*candidate.catalog),
           .issues = std::move(identity_issues),
           .error = receipt.persisted ? "candidate reuses a stable identity"
@@ -538,9 +727,14 @@ SoftwareOptimizationCatalogLifecycle::preview_manual_import(
   auto preview = SoftwareOptimizationCatalogImportPreview{
       .code = SoftwareOptimizationCatalogLifecycleCode::preview_ready,
       .path = std::string{path},
-      .preview_token = fingerprint(read.source),
+      .preview_token = preview_token(
+          read.source,
+          loaded.device_snapshot.has_value()
+              ? std::optional<domain::RevisionToken>{
+                    loaded.device_snapshot->revision}
+              : std::nullopt),
       .candidate = catalog::summarize(*candidate.catalog),
-      .issues = candidate.catalog->release_issues,
+      .issues = std::move(release_assessment.issues),
   };
   if (loaded.current.has_value()) {
     preview.downgrade =
@@ -564,10 +758,11 @@ SoftwareOptimizationCatalogLifecycle::preview_manual_import(
 SoftwareOptimizationCatalogLifecycleResult
 SoftwareOptimizationCatalogLifecycle::apply_manual_import(
     std::string_view path, std::string_view expected_preview_token,
-    bool confirmed, bool debug_mode, std::string operation_id) {
-  if (!debug_mode || !confirmed) {
+    bool confirmed, std::string operation_id) {
+  auto const debug_allowed = debug_authorization_.local_import_allowed();
+  if (!debug_allowed || !confirmed) {
     auto correlation = log_.begin_correlation();
-    auto const detail = !debug_mode
+    auto const detail = !debug_allowed
                             ? "manual import is available only in debug mode"
                             : "manual import requires explicit confirmation";
     auto receipt = append_event(
@@ -575,7 +770,7 @@ SoftwareOptimizationCatalogLifecycle::apply_manual_import(
         "apply-manual-import", ExecutionResult::failed, detail,
         std::string{path});
     auto result = rejected_result(
-        !debug_mode
+        !debug_allowed
             ? SoftwareOptimizationCatalogLifecycleCode::debug_mode_required
             : SoftwareOptimizationCatalogLifecycleCode::confirmation_required,
         detail);
@@ -585,7 +780,7 @@ SoftwareOptimizationCatalogLifecycle::apply_manual_import(
     }
     return result;
   }
-  auto read = files_.read(path);
+  auto read = local_import_files_.read(path);
   if (!read.succeeded) {
     auto correlation = log_.begin_correlation();
     auto receipt = append_event(
@@ -599,29 +794,38 @@ SoftwareOptimizationCatalogLifecycle::apply_manual_import(
     }
     return result;
   }
-  if (expected_preview_token.empty() ||
-      fingerprint(read.source) != expected_preview_token) {
+  if (expected_preview_token.empty()) {
     auto correlation = log_.begin_correlation();
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::state_transition,
         "apply-manual-import", ExecutionResult::failed,
-        "candidate changed after preview", std::string{path});
+        "manual import requires a valid preview", std::string{path});
     auto result = rejected_result(
         SoftwareOptimizationCatalogLifecycleCode::preview_stale,
-        "candidate changed after preview");
+        "manual import requires a valid preview");
     if (!receipt.persisted) {
       result.logging_error = std::move(receipt.error);
     }
     return result;
   }
   return apply_source(std::move(read.source), CandidateKind::manual_import,
-                      std::move(operation_id), true, std::string{path});
+                      std::move(operation_id), true, std::string{path},
+                      SoftwareOptimizationCatalogProvenance{
+                          .kind = SoftwareOptimizationCatalogSourceKind::
+                              local_debug_import,
+                          .local_trial = true,
+                          .redacted_source =
+                              redacted_source("local-debug-file:", path),
+                      },
+                      std::string{expected_preview_token});
 }
 
 SoftwareOptimizationCatalogLifecycleResult
 SoftwareOptimizationCatalogLifecycle::apply_source(
     std::string source, CandidateKind kind, std::string operation_id,
-    bool allow_downgrade, std::string source_path) {
+    bool allow_downgrade, std::string source_reference,
+    SoftwareOptimizationCatalogProvenance provenance,
+    std::optional<std::string> expected_preview_token) {
   auto const stage = [kind]() -> char const* {
     switch (kind) {
       case CandidateKind::built_in:
@@ -636,7 +840,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
   auto correlation = log_.begin_correlation();
   auto started = append_event(log_, correlation, ExecutionEventKind::user_command,
                               stage, ExecutionResult::started, {},
-                              source_path);
+                              source_reference);
   if (!started.persisted) {
     auto result = rejected_result(
         SoftwareOptimizationCatalogLifecycleCode::logging_failed,
@@ -645,12 +849,25 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
     return result;
   }
 
+  if (!valid_provenance(provenance)) {
+    auto const detail = "candidate catalog provenance is invalid";
+    auto receipt = append_event(
+        log_, correlation, ExecutionEventKind::state_transition, stage,
+        ExecutionResult::failed, detail, source_reference);
+    auto result = rejected_result(
+        SoftwareOptimizationCatalogLifecycleCode::rejected, detail);
+    if (!receipt.persisted) {
+      result.logging_error = std::move(receipt.error);
+    }
+    return result;
+  }
+
   if (source.empty() || source.size() > kMaximumCatalogBytes) {
     auto const detail = "candidate catalog size is outside the supported range";
     auto receipt = append_event(log_, correlation,
                                 ExecutionEventKind::state_transition,
                                 stage, ExecutionResult::failed,
-                                detail, source_path);
+                                detail, source_reference);
     auto result = rejected_result(
         SoftwareOptimizationCatalogLifecycleCode::rejected, detail);
     if (!receipt.persisted) {
@@ -663,10 +880,27 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::state_transition,
         stage, ExecutionResult::failed,
-        "candidate catalog was rejected", source_path);
+        "candidate catalog was rejected", source_reference);
     auto result = rejected_result(
         SoftwareOptimizationCatalogLifecycleCode::rejected,
         "candidate catalog was rejected", std::move(candidate.package_issues));
+    if (!receipt.persisted) {
+      result.logging_error = std::move(receipt.error);
+    }
+    return result;
+  }
+  auto release_assessment = catalog::assess_release_compatibility(
+      *candidate.catalog, installer_baselines_);
+  if (kind != CandidateKind::manual_import &&
+      !release_assessment.compatible) {
+    auto const detail = "candidate catalog failed the formal release gate";
+    auto receipt = append_event(
+        log_, correlation, ExecutionEventKind::state_transition, stage,
+        ExecutionResult::failed, detail, source_reference,
+        candidate.catalog->revision);
+    auto result = rejected_result(
+        SoftwareOptimizationCatalogLifecycleCode::rejected, detail,
+        std::move(release_assessment.issues));
     if (!receipt.persisted) {
       result.logging_error = std::move(receipt.error);
     }
@@ -678,7 +912,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
       initial.mode == SoftwareOptimizationCatalogStateMode::failed) {
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::state_transition,
-        stage, ExecutionResult::failed, initial.error, source_path,
+        stage, ExecutionResult::failed, initial.error, source_reference,
         candidate.catalog->revision);
     auto result = rejected_result(
         initial.mode == SoftwareOptimizationCatalogStateMode::read_only
@@ -699,20 +933,20 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
         log_, correlation, ExecutionEventKind::state_transition,
         stage, ExecutionResult::succeeded,
         "an active catalog already exists; builtin did not replace it",
-        source_path, initial.current->revision);
+        source_reference, initial.current->revision);
     if (!receipt.persisted) {
       result.logging_error = std::move(receipt.error);
     }
     return result;
   }
-  if (initial.persisted.has_value()) {
+  if (!expected_preview_token.has_value() && initial.persisted.has_value()) {
     auto identity_issues = catalog::validate_stable_identity_history(
         *candidate.catalog, initial.persisted->identity_history);
     if (!identity_issues.empty()) {
       auto receipt = append_event(
           log_, correlation, ExecutionEventKind::state_transition,
           stage, ExecutionResult::failed,
-          "candidate reuses a stable identity", source_path,
+          "candidate reuses a stable identity", source_reference,
           candidate.catalog->revision);
       auto result = rejected_result(
           SoftwareOptimizationCatalogLifecycleCode::rejected,
@@ -723,7 +957,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
       return result;
     }
   }
-  if (initial.current.has_value()) {
+  if (!expected_preview_token.has_value() && initial.current.has_value()) {
     if (candidate.catalog->revision == initial.current->revision) {
       auto result = SoftwareOptimizationCatalogLifecycleResult{
           .code = SoftwareOptimizationCatalogLifecycleCode::unchanged,
@@ -732,7 +966,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
       auto receipt = append_event(
           log_, correlation, ExecutionEventKind::state_transition,
           stage, ExecutionResult::succeeded,
-          "candidate revision is already active", source_path,
+          "candidate revision is already active", source_reference,
           initial.current->revision);
       if (!receipt.persisted) {
         result.logging_error = std::move(receipt.error);
@@ -745,7 +979,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
           "catalog update cannot downgrade; use debug import or rollback";
       auto receipt = append_event(
           log_, correlation, ExecutionEventKind::state_transition,
-          stage, ExecutionResult::failed, detail, source_path,
+          stage, ExecutionResult::failed, detail, source_reference,
           candidate.catalog->revision);
       auto result = rejected_result(
           SoftwareOptimizationCatalogLifecycleCode::rejected, detail);
@@ -768,7 +1002,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
         stage, ExecutionResult::failed,
         occupied.detail.empty() ? "device operation occupancy is unavailable"
                                 : occupied.detail,
-        source_path, candidate.catalog->revision);
+        source_reference, candidate.catalog->revision);
     auto result = rejected_result(
         occupancy_code(occupied.code),
         occupied.detail.empty() ? "device operation occupancy is unavailable"
@@ -788,7 +1022,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
       auto receipt = append_event(
           log_, correlation, ExecutionEventKind::adapter_result,
           "release-occupancy", ExecutionResult::failed,
-          result.occupancy_error, source_path,
+          result.occupancy_error, source_reference,
           result.active.has_value()
               ? std::optional<std::uint64_t>{result.active->revision}
               : std::nullopt);
@@ -804,13 +1038,31 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
       loaded.mode == SoftwareOptimizationCatalogStateMode::failed) {
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::state_transition,
-        stage, ExecutionResult::failed, loaded.error, source_path,
+        stage, ExecutionResult::failed, loaded.error, source_reference,
         candidate.catalog->revision);
     auto result = rejected_result(
         loaded.mode == SoftwareOptimizationCatalogStateMode::read_only
             ? SoftwareOptimizationCatalogLifecycleCode::read_only
             : SoftwareOptimizationCatalogLifecycleCode::persistence_failed,
         loaded.error);
+    if (!receipt.persisted) {
+      result.logging_error = std::move(receipt.error);
+    }
+    return finish(std::move(result));
+  }
+  auto const current_revision =
+      loaded.device_snapshot.has_value()
+          ? std::optional<domain::RevisionToken>{loaded.device_snapshot->revision}
+          : std::nullopt;
+  if (expected_preview_token.has_value() &&
+      preview_token(source, current_revision) != *expected_preview_token) {
+    auto result = rejected_result(
+        SoftwareOptimizationCatalogLifecycleCode::preview_stale,
+        "catalog or active revision changed after preview");
+    auto receipt = append_event(
+        log_, correlation, ExecutionEventKind::state_transition, stage,
+        ExecutionResult::failed, result.error, source_reference,
+        candidate.catalog->revision);
     if (!receipt.persisted) {
       result.logging_error = std::move(receipt.error);
     }
@@ -824,7 +1076,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::state_transition,
         stage, ExecutionResult::succeeded,
-        "another instance established the active catalog", source_path,
+        "another instance established the active catalog", source_reference,
         loaded.current->revision);
     if (!receipt.persisted) {
       result.logging_error = std::move(receipt.error);
@@ -841,7 +1093,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
       auto receipt = append_event(
           log_, correlation, ExecutionEventKind::state_transition,
           stage, ExecutionResult::failed, result.error,
-          source_path, candidate.catalog->revision);
+          source_reference, candidate.catalog->revision);
       if (!receipt.persisted) {
         result.logging_error = std::move(receipt.error);
       }
@@ -858,7 +1110,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
           log_, correlation, ExecutionEventKind::state_transition, stage,
           ExecutionResult::succeeded,
           "candidate revision became active while waiting for occupancy",
-          source_path, loaded.current->revision);
+          source_reference, loaded.current->revision);
       if (!receipt.persisted) {
         result.logging_error = std::move(receipt.error);
       }
@@ -871,7 +1123,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
           "catalog revision changed and update would now downgrade");
       auto receipt = append_event(
           log_, correlation, ExecutionEventKind::state_transition, stage,
-          ExecutionResult::failed, result.error, source_path,
+          ExecutionResult::failed, result.error, source_reference,
           candidate.catalog->revision);
       if (!receipt.persisted) {
         result.logging_error = std::move(receipt.error);
@@ -880,17 +1132,45 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
     }
   }
 
+  auto merged_history = catalog::merge_stable_identity_history(
+      loaded.persisted.has_value()
+          ? std::span<catalog::StableIdentityRecord const>{
+                loaded.persisted->identity_history}
+          : std::span<catalog::StableIdentityRecord const>{},
+      *candidate.catalog, kMaximumIdentityCount);
+  if (!merged_history.has_value()) {
+    auto issues = std::vector<catalog::CatalogIssue>{catalog::CatalogIssue{
+        .code = catalog::CatalogIssueCode::stable_identity_capacity_exceeded,
+        .detail = "stable identity history would exceed 100000 records",
+    }};
+    auto result = rejected_result(
+        SoftwareOptimizationCatalogLifecycleCode::rejected,
+        "stable identity history capacity would be exceeded",
+        std::move(issues));
+    auto receipt = append_event(
+        log_, correlation, ExecutionEventKind::state_transition, stage,
+        ExecutionResult::failed, result.error, source_reference,
+        candidate.catalog->revision);
+    if (!receipt.persisted) {
+      result.logging_error = std::move(receipt.error);
+    }
+    return finish(std::move(result));
+  }
+
   PersistedCatalogState desired{
+      .payload_format = kCurrentPayloadFormat,
       .current_source = std::move(source),
+      .current_provenance = std::move(provenance),
       .previous_source = loaded.persisted.has_value()
                              ? std::optional<std::string>{
                                    loaded.persisted->current_source}
                              : std::nullopt,
-      .identity_history = loaded.persisted.has_value()
-                              ? catalog::merge_stable_identity_history(
-                                    loaded.persisted->identity_history,
-                                    *candidate.catalog)
-                              : catalog::stable_identities(*candidate.catalog),
+      .previous_provenance = loaded.persisted.has_value()
+                                 ? std::optional<
+                                       SoftwareOptimizationCatalogProvenance>{
+                                       loaded.persisted->current_provenance}
+                                 : std::nullopt,
+      .identity_history = std::move(*merged_history),
   };
   domain::DeviceState state{
       .value = {.schema = 2,
@@ -913,7 +1193,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
         "catalog state snapshot disappeared before commit");
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::state_transition, stage,
-        ExecutionResult::failed, result.error, source_path,
+        ExecutionResult::failed, result.error, source_reference,
         candidate.catalog->revision);
     if (!receipt.persisted) {
       result.logging_error = std::move(receipt.error);
@@ -924,7 +1204,7 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
     auto detail = commit_error(committed);
     auto receipt = append_event(
         log_, correlation, ExecutionEventKind::state_transition,
-        stage, ExecutionResult::failed, detail, source_path,
+        stage, ExecutionResult::failed, detail, source_reference,
         candidate.catalog->revision);
     auto result = rejected_result(
         committed.status == StateCommitStatus::read_only
@@ -946,11 +1226,11 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
                   : SoftwareOptimizationCatalogLifecycleCode::applied,
       .state_changed = true,
       .active = catalog::summarize(*candidate.catalog),
-      .issues = candidate.catalog->release_issues,
+      .issues = std::move(release_assessment.issues),
   };
   auto receipt = append_event(
       log_, correlation, ExecutionEventKind::state_transition,
-      stage, ExecutionResult::succeeded, {}, source_path,
+      stage, ExecutionResult::succeeded, {}, source_reference,
       candidate.catalog->revision);
   if (!receipt.persisted) {
     result.logging_error = std::move(receipt.error);
@@ -958,9 +1238,79 @@ SoftwareOptimizationCatalogLifecycle::apply_source(
   return finish(std::move(result));
 }
 
-SoftwareOptimizationCatalogLifecycleResult
-SoftwareOptimizationCatalogLifecycle::rollback(std::string operation_id) {
+SoftwareOptimizationCatalogRollbackPreview
+SoftwareOptimizationCatalogLifecycle::preview_rollback() {
   auto correlation = log_.begin_correlation();
+  auto loaded = load_state(states_, built_in_rules_);
+  auto preview = SoftwareOptimizationCatalogRollbackPreview{};
+  if (loaded.mode == SoftwareOptimizationCatalogStateMode::read_only ||
+      loaded.mode == SoftwareOptimizationCatalogStateMode::failed) {
+    preview.code =
+        loaded.mode == SoftwareOptimizationCatalogStateMode::read_only
+            ? SoftwareOptimizationCatalogLifecycleCode::read_only
+            : SoftwareOptimizationCatalogLifecycleCode::persistence_failed;
+    preview.error = loaded.error;
+  } else if (!loaded.persisted.has_value() ||
+             !loaded.device_snapshot.has_value() ||
+             !loaded.current.has_value() || !loaded.previous.has_value() ||
+             !loaded.persisted->previous_source.has_value() ||
+             !loaded.persisted->previous_provenance.has_value()) {
+    preview.code = SoftwareOptimizationCatalogLifecycleCode::no_previous;
+    preview.error =
+        "no previous valid software optimization catalog is available";
+  } else {
+    preview.code = SoftwareOptimizationCatalogLifecycleCode::preview_ready;
+    preview.preview_token = preview_token(
+        {}, std::optional<domain::RevisionToken>{
+                loaded.device_snapshot->revision});
+    preview.current = catalog::summarize(*loaded.current);
+    preview.candidate = catalog::summarize(*loaded.previous);
+    preview.candidate_provenance = loaded.persisted->previous_provenance;
+    preview.issues = catalog::assess_release_compatibility(
+                         *loaded.previous, installer_baselines_)
+                         .issues;
+  }
+  auto receipt = append_event(
+      log_, correlation, ExecutionEventKind::state_transition,
+      "preview-rollback",
+      preview.code == SoftwareOptimizationCatalogLifecycleCode::preview_ready
+          ? ExecutionResult::succeeded
+          : ExecutionResult::failed,
+      preview.error,
+      {},
+      preview.candidate.has_value()
+          ? std::optional<std::uint64_t>{preview.candidate->revision}
+          : std::nullopt);
+  if (!receipt.persisted) {
+    preview.code = SoftwareOptimizationCatalogLifecycleCode::logging_failed;
+    preview.error = std::move(receipt.error);
+  }
+  return preview;
+}
+
+SoftwareOptimizationCatalogLifecycleResult
+SoftwareOptimizationCatalogLifecycle::rollback(
+    std::string_view expected_preview_token, bool confirmed,
+    std::string operation_id) {
+  auto correlation = log_.begin_correlation();
+  if (!confirmed || expected_preview_token.empty()) {
+    auto const code =
+        !confirmed
+            ? SoftwareOptimizationCatalogLifecycleCode::confirmation_required
+            : SoftwareOptimizationCatalogLifecycleCode::preview_stale;
+    auto const detail =
+        !confirmed ? "catalog rollback requires explicit confirmation"
+                   : "catalog rollback requires a valid preview";
+    auto receipt = append_event(
+        log_, correlation, ExecutionEventKind::user_command, "rollback",
+        ExecutionResult::failed, detail);
+    auto result = rejected_result(code, detail);
+    if (!receipt.persisted) {
+      result.code = SoftwareOptimizationCatalogLifecycleCode::logging_failed;
+      result.logging_error = std::move(receipt.error);
+    }
+    return result;
+  }
   auto started = append_event(log_, correlation, ExecutionEventKind::user_command,
                               "rollback", ExecutionResult::started);
   if (!started.persisted) {
@@ -1025,8 +1375,25 @@ SoftwareOptimizationCatalogLifecycle::rollback(std::string operation_id) {
     }
     return finish(std::move(result));
   }
+  auto const current_revision =
+      loaded.device_snapshot.has_value()
+          ? std::optional<domain::RevisionToken>{loaded.device_snapshot->revision}
+          : std::nullopt;
+  if (preview_token({}, current_revision) != expected_preview_token) {
+    auto result = rejected_result(
+        SoftwareOptimizationCatalogLifecycleCode::preview_stale,
+        "active catalog changed after rollback preview");
+    auto receipt = append_event(
+        log_, correlation, ExecutionEventKind::state_transition, "rollback",
+        ExecutionResult::failed, result.error);
+    if (!receipt.persisted) {
+      result.logging_error = std::move(receipt.error);
+    }
+    return finish(std::move(result));
+  }
   if (!loaded.persisted.has_value() || !loaded.previous.has_value() ||
-      !loaded.persisted->previous_source.has_value()) {
+      !loaded.persisted->previous_source.has_value() ||
+      !loaded.persisted->previous_provenance.has_value()) {
     auto result = rejected_result(
         SoftwareOptimizationCatalogLifecycleCode::no_previous,
         "no previous valid software optimization catalog is available");
@@ -1041,8 +1408,11 @@ SoftwareOptimizationCatalogLifecycle::rollback(std::string operation_id) {
   }
 
   PersistedCatalogState desired{
+      .payload_format = kCurrentPayloadFormat,
       .current_source = *loaded.persisted->previous_source,
+      .current_provenance = *loaded.persisted->previous_provenance,
       .previous_source = loaded.persisted->current_source,
+      .previous_provenance = loaded.persisted->current_provenance,
       .identity_history = loaded.persisted->identity_history,
   };
   if (!loaded.device_snapshot.has_value()) {
@@ -1087,7 +1457,9 @@ SoftwareOptimizationCatalogLifecycle::rollback(std::string operation_id) {
       .code = SoftwareOptimizationCatalogLifecycleCode::rolled_back,
       .state_changed = true,
       .active = catalog::summarize(*loaded.previous),
-      .issues = loaded.previous->release_issues,
+      .issues = catalog::assess_release_compatibility(
+                    *loaded.previous, installer_baselines_)
+                    .issues,
   };
   auto receipt = append_event(
       log_, correlation, ExecutionEventKind::state_transition, "rollback",

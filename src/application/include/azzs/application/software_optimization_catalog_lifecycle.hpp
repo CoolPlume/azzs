@@ -1,5 +1,7 @@
 #pragma once
 
+#include <compare>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -13,21 +15,50 @@
 
 namespace azzs::application {
 
-struct SoftwareOptimizationCatalogFileRead final {
+struct SoftwareOptimizationCatalogLocalImportRead final {
   bool succeeded{false};
   std::string source;
   std::string error;
 };
 
-// Infrastructure adapters read candidate bytes only. Parsing, validation,
-// lifecycle state, and apply decisions remain owned by the application/domain
-// module and never move into the file adapter.
-class SoftwareOptimizationCatalogFile {
+// This adapter is intentionally limited to explicit local debug imports.
+// Trusted updates arrive as typed bytes and cannot route arbitrary paths
+// through this file boundary.
+class SoftwareOptimizationCatalogLocalImportFile {
  public:
-  virtual ~SoftwareOptimizationCatalogFile() = default;
+  virtual ~SoftwareOptimizationCatalogLocalImportFile() = default;
 
-  [[nodiscard]] virtual SoftwareOptimizationCatalogFileRead read(
+  [[nodiscard]] virtual SoftwareOptimizationCatalogLocalImportRead read(
       std::string_view path) = 0;
+};
+
+class SoftwareOptimizationCatalogDebugAuthorization {
+ public:
+  virtual ~SoftwareOptimizationCatalogDebugAuthorization() = default;
+
+  [[nodiscard]] virtual bool local_import_allowed() const noexcept = 0;
+};
+
+struct TrustedSoftwareOptimizationCatalogUpdate final {
+  std::string source;
+  std::string source_reference;
+};
+
+enum class SoftwareOptimizationCatalogSourceKind : std::uint8_t {
+  embedded_builtin = 1,
+  trusted_update = 2,
+  local_debug_import = 3,
+  legacy_unclassified = 4,
+};
+
+struct SoftwareOptimizationCatalogProvenance final {
+  SoftwareOptimizationCatalogSourceKind kind{
+      SoftwareOptimizationCatalogSourceKind::legacy_unclassified};
+  bool local_trial{true};
+  std::string redacted_source;
+
+  auto operator<=>(SoftwareOptimizationCatalogProvenance const&) const =
+      default;
 };
 
 enum class SoftwareOptimizationCatalogStateMode {
@@ -42,7 +73,9 @@ struct SoftwareOptimizationCatalogSnapshot final {
       SoftwareOptimizationCatalogStateMode::failed};
   std::optional<domain::software_optimization_catalog::SoftwareOptimizationCatalog>
       current;
+  std::optional<SoftwareOptimizationCatalogProvenance> current_provenance;
   bool previous_available{false};
+  std::optional<SoftwareOptimizationCatalogProvenance> previous_provenance;
   std::vector<domain::software_optimization_catalog::StableIdentityRecord>
       identity_history;
   std::string error;
@@ -93,6 +126,17 @@ struct SoftwareOptimizationCatalogImportPreview final {
   std::string error;
 };
 
+struct SoftwareOptimizationCatalogRollbackPreview final {
+  SoftwareOptimizationCatalogLifecycleCode code{
+      SoftwareOptimizationCatalogLifecycleCode::rejected};
+  std::string preview_token;
+  std::optional<domain::software_optimization_catalog::CatalogSummary> current;
+  std::optional<domain::software_optimization_catalog::CatalogSummary> candidate;
+  std::optional<SoftwareOptimizationCatalogProvenance> candidate_provenance;
+  std::vector<domain::software_optimization_catalog::CatalogIssue> issues;
+  std::string error;
+};
+
 // Owns the current/previous software optimization catalog lifecycle. The class
 // consumes the existing issue-02 state, structured-log, and occupancy seams;
 // it does not modify their storage model and has no optimization executor.
@@ -101,10 +145,14 @@ class SoftwareOptimizationCatalogLifecycle final {
   SoftwareOptimizationCatalogLifecycle(
       DeviceStateStore& states, ExecutionLog& log,
       SharedOperationOccupancy& occupancy,
-      SoftwareOptimizationCatalogFile& files,
+      SoftwareOptimizationCatalogLocalImportFile& local_import_files,
+      SoftwareOptimizationCatalogDebugAuthorization const& debug_authorization,
       std::span<domain::software_optimization_catalog::BuiltInRuleDefinition
                     const>
-          built_in_rules) noexcept;
+          built_in_rules,
+      std::span<domain::software_optimization_catalog::
+                    SoftwareCatalogInstallerBaseline const>
+          installer_baselines) noexcept;
 
   [[nodiscard]] SoftwareOptimizationCatalogSnapshot snapshot();
 
@@ -112,16 +160,20 @@ class SoftwareOptimizationCatalogLifecycle final {
       std::string_view source, std::string operation_id);
 
   [[nodiscard]] SoftwareOptimizationCatalogLifecycleResult apply_update(
-      std::string_view path, std::string operation_id);
+      TrustedSoftwareOptimizationCatalogUpdate update,
+      std::string operation_id);
 
   [[nodiscard]] SoftwareOptimizationCatalogImportPreview preview_manual_import(
-      std::string_view path, bool debug_mode);
+      std::string_view path);
 
   [[nodiscard]] SoftwareOptimizationCatalogLifecycleResult apply_manual_import(
       std::string_view path, std::string_view expected_preview_token,
-      bool confirmed, bool debug_mode, std::string operation_id);
+      bool confirmed, std::string operation_id);
+
+  [[nodiscard]] SoftwareOptimizationCatalogRollbackPreview preview_rollback();
 
   [[nodiscard]] SoftwareOptimizationCatalogLifecycleResult rollback(
+      std::string_view expected_preview_token, bool confirmed,
       std::string operation_id);
 
  private:
@@ -133,14 +185,20 @@ class SoftwareOptimizationCatalogLifecycle final {
 
   [[nodiscard]] SoftwareOptimizationCatalogLifecycleResult apply_source(
       std::string source, CandidateKind kind, std::string operation_id,
-      bool allow_downgrade, std::string source_path);
+      bool allow_downgrade, std::string source_reference,
+      SoftwareOptimizationCatalogProvenance provenance,
+      std::optional<std::string> expected_preview_token = std::nullopt);
 
   DeviceStateStore& states_;
   ExecutionLog& log_;
   SharedOperationOccupancy& occupancy_;
-  SoftwareOptimizationCatalogFile& files_;
+  SoftwareOptimizationCatalogLocalImportFile& local_import_files_;
+  SoftwareOptimizationCatalogDebugAuthorization const& debug_authorization_;
   std::vector<domain::software_optimization_catalog::BuiltInRuleDefinition>
       built_in_rules_;
+  std::vector<domain::software_optimization_catalog::
+                  SoftwareCatalogInstallerBaseline>
+      installer_baselines_;
 };
 
 }  // namespace azzs::application

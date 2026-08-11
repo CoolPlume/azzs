@@ -46,6 +46,31 @@ enum class TableKind {
   ignored_display,
 };
 
+constexpr std::string_view kFileFields[]{
+    "schema_version", "semantics_version", "catalog_id", "revision",
+    "release_state", "default_locale"};
+constexpr std::string_view kTargetFields[]{
+    "id", "identity_anchor", "required_first_release", "support_mode",
+    "version_min", "version_max", "install_detection_kind",
+    "install_detection_definition", "version_detection_kind",
+    "version_detection_definition", "installation_item_id",
+    "explanation_source"};
+constexpr std::string_view kSchemeFields[]{
+    "id", "target_id", "required_first_release", "automation",
+    "version_min", "version_max", "impact", "risk", "exit_requirement",
+    "restart_requirement", "required_scheme_ids", "conflicting_scheme_ids",
+    "explanation_source", "manual_emergency_explanation"};
+constexpr std::string_view kOptionFields[]{
+    "id", "scheme_id", "version_min", "version_max", "impact",
+    "default_selected", "required", "automation", "execution_kind",
+    "execution_definition", "state_detection_kind",
+    "state_detection_definition", "required_option_ids",
+    "conflicting_option_ids", "allowed_values", "default_value",
+    "explanation_source"};
+constexpr std::string_view kBaselineFields[]{
+    "id", "target_id", "software_item_id", "installer_baseline_id",
+    "installed_version_min", "installed_version_max"};
+
 struct ParseDocumentResult final {
   std::optional<RawDocument> document;
   std::vector<CatalogIssue> issues;
@@ -116,6 +141,27 @@ struct ParseDocumentResult final {
          value.starts_with("description_") ||
          value.starts_with("explanation_") ||
          value.starts_with("localization_");
+}
+
+[[nodiscard]] bool known_field(TableKind table, std::string_view key) {
+  auto contains_key = [key](auto const& fields) {
+    return std::ranges::find(fields, key) != std::ranges::end(fields);
+  };
+  switch (table) {
+    case TableKind::file:
+      return contains_key(kFileFields);
+    case TableKind::target:
+      return contains_key(kTargetFields);
+    case TableKind::scheme:
+      return contains_key(kSchemeFields);
+    case TableKind::option:
+      return contains_key(kOptionFields);
+    case TableKind::baseline:
+      return contains_key(kBaselineFields);
+    case TableKind::ignored_display:
+      return false;
+  }
+  return false;
 }
 
 [[nodiscard]] std::optional<std::string> parse_string(
@@ -334,14 +380,23 @@ void add_issue(std::vector<CatalogIssue>& issues, CatalogIssueCode code,
                     " has an invalid key");
       continue;
     }
+    if (table == TableKind::ignored_display) {
+      continue;
+    }
+    if (!known_field(table, key)) {
+      if (ignorable_display_field(key)) {
+        continue;
+      }
+      add_issue(issues, CatalogIssueCode::unknown_execution_semantics, {},
+                "line " + std::to_string(line_number) +
+                    " uses unknown field '" + std::string{key} + "'");
+      continue;
+    }
     auto value = parse_value(value_source);
     if (!value.has_value()) {
       add_issue(issues, CatalogIssueCode::syntax_error, {},
                 "line " + std::to_string(line_number) +
                     " has an unsupported or invalid value");
-      continue;
-    }
-    if (table == TableKind::ignored_display) {
       continue;
     }
     if (current == nullptr) {
@@ -491,6 +546,18 @@ struct Version final {
          compare(*right_minimum, *left_maximum) <= 0;
 }
 
+[[nodiscard]] bool contains_range(VersionRange const& outer,
+                                  VersionRange const& inner) {
+  auto const outer_minimum = parse_version(outer.minimum);
+  auto const outer_maximum = parse_version(outer.maximum);
+  auto const inner_minimum = parse_version(inner.minimum);
+  auto const inner_maximum = parse_version(inner.maximum);
+  return outer_minimum.has_value() && outer_maximum.has_value() &&
+         inner_minimum.has_value() && inner_maximum.has_value() &&
+         compare(*outer_minimum, *inner_minimum) <= 0 &&
+         compare(*outer_maximum, *inner_maximum) >= 0;
+}
+
 [[nodiscard]] bool valid_explanation_source(std::string_view value) noexcept {
   return value.size() <= 2'048 &&
          (value.starts_with("https://") || value.starts_with("http://")) &&
@@ -632,6 +699,135 @@ void add_configuration_issue(SoftwareOptimizationScheme& scheme,
          rule.definition.value;
 }
 
+class BehaviorFingerprint final {
+ public:
+  void number(std::uint64_t value) noexcept {
+    for (unsigned shift = 0; shift < 64; shift += 8) {
+      mix(static_cast<std::uint8_t>(value >> shift));
+    }
+  }
+
+  void text(std::string_view value) noexcept {
+    number(value.size());
+    for (auto const character : value) {
+      mix(static_cast<unsigned char>(character));
+    }
+  }
+
+  [[nodiscard]] std::string finish(std::string_view version) const {
+    constexpr char kHex[] = "0123456789abcdef";
+    std::string result{version};
+    result.push_back(':');
+    auto append_hex = [&](std::uint64_t value) {
+      for (int shift = 60; shift >= 0; shift -= 4) {
+        result.push_back(kHex[(value >> shift) & 0x0fU]);
+      }
+    };
+    append_hex(primary_);
+    append_hex(secondary_);
+    return result;
+  }
+
+ private:
+  void mix(std::uint8_t value) noexcept {
+    primary_ ^= value;
+    primary_ *= 1099511628211ULL;
+    secondary_ = value + (secondary_ << 6U) + (secondary_ << 16U) - secondary_;
+  }
+
+  std::uint64_t primary_{14695981039346656037ULL};
+  std::uint64_t secondary_{11400714819323198485ULL};
+};
+
+void add_ids(BehaviorFingerprint& fingerprint,
+             std::span<StableId const> values) {
+  std::vector<std::string_view> sorted;
+  sorted.reserve(values.size());
+  for (auto const& value : values) {
+    sorted.push_back(value.value);
+  }
+  std::ranges::sort(sorted);
+  fingerprint.number(sorted.size());
+  for (auto const value : sorted) {
+    fingerprint.text(value);
+  }
+}
+
+void add_strings(BehaviorFingerprint& fingerprint,
+                 std::span<std::string const> values) {
+  std::vector<std::string_view> sorted;
+  sorted.reserve(values.size());
+  for (auto const& value : values) {
+    sorted.push_back(value);
+  }
+  std::ranges::sort(sorted);
+  fingerprint.number(sorted.size());
+  for (auto const value : sorted) {
+    fingerprint.text(value);
+  }
+}
+
+void add_rule(BehaviorFingerprint& fingerprint, ControlledRule const& rule) {
+  fingerprint.number(static_cast<std::uint64_t>(rule.kind));
+  fingerprint.text(rule.definition.value);
+}
+
+void add_option_behavior(BehaviorFingerprint& fingerprint,
+                         SoftwareOptimizationOption const& option) {
+  fingerprint.text(option.id.value);
+  fingerprint.text(option.scheme_id.value);
+  fingerprint.text(option.supported_versions.minimum);
+  fingerprint.text(option.supported_versions.maximum);
+  fingerprint.number(option.default_selected ? 1U : 0U);
+  fingerprint.number(option.required ? 1U : 0U);
+  fingerprint.number(static_cast<std::uint64_t>(option.automation));
+  add_rule(fingerprint, option.execution);
+  add_rule(fingerprint, option.state_detection);
+  add_ids(fingerprint, option.required_option_ids);
+  add_ids(fingerprint, option.conflicting_option_ids);
+  add_strings(fingerprint, option.allowed_values);
+  fingerprint.number(option.default_value.has_value() ? 1U : 0U);
+  if (option.default_value.has_value()) {
+    fingerprint.text(*option.default_value);
+  }
+}
+
+[[nodiscard]] std::string scheme_behavior_fingerprint(
+    SoftwareOptimizationScheme const& scheme) {
+  BehaviorFingerprint fingerprint;
+  fingerprint.text(scheme.target_id.value);
+  fingerprint.number(scheme.required_first_release ? 1U : 0U);
+  fingerprint.number(static_cast<std::uint64_t>(scheme.automation));
+  fingerprint.text(scheme.supported_versions.minimum);
+  fingerprint.text(scheme.supported_versions.maximum);
+  fingerprint.number(static_cast<std::uint64_t>(scheme.risk));
+  fingerprint.number(static_cast<std::uint64_t>(scheme.exit_requirement));
+  fingerprint.number(static_cast<std::uint64_t>(scheme.restart_requirement));
+  add_ids(fingerprint, scheme.required_scheme_ids);
+  add_ids(fingerprint, scheme.conflicting_scheme_ids);
+
+  std::vector<SoftwareOptimizationOption const*> options;
+  options.reserve(scheme.options.size());
+  for (auto const& option : scheme.options) {
+    options.push_back(&option);
+  }
+  std::ranges::sort(options, {}, [](SoftwareOptimizationOption const* option) {
+    return option->id.value;
+  });
+  fingerprint.number(options.size());
+  for (auto const* option : options) {
+    add_option_behavior(fingerprint, *option);
+  }
+  return fingerprint.finish("scheme-v2");
+}
+
+[[nodiscard]] std::string option_behavior_fingerprint(
+    SoftwareOptimizationOption const& option) {
+  BehaviorFingerprint fingerprint;
+  add_option_behavior(fingerprint, option);
+  return fingerprint.finish("option-v2");
+}
+
 [[nodiscard]] std::string scheme_fingerprint(
     SoftwareOptimizationScheme const& scheme) {
   std::string result = scheme.target_id.value + "|" +
@@ -683,16 +879,12 @@ void add_configuration_issue(SoftwareOptimizationScheme& scheme,
 
 [[nodiscard]] std::string identity_fingerprint(
     SoftwareOptimizationScheme const& scheme) {
-  return scheme.target_id.value + "|" +
-         std::to_string(static_cast<int>(scheme.automation));
+  return scheme_behavior_fingerprint(scheme);
 }
 
 [[nodiscard]] std::string identity_fingerprint(
     SoftwareOptimizationOption const& option) {
-  return option.scheme_id.value + "|" +
-         std::to_string(static_cast<int>(option.automation)) + "|" +
-         rule_fingerprint(option.execution) + "|" +
-         rule_fingerprint(option.state_detection);
+  return option_behavior_fingerprint(option);
 }
 
 [[nodiscard]] std::string identity_fingerprint(
@@ -1162,47 +1354,21 @@ CatalogLoadResult load_catalog(
   auto const& raw = *parsed.document;
   std::vector<CatalogIssue> issues;
 
-  constexpr std::string_view file_fields[]{
-      "schema_version", "semantics_version", "catalog_id", "revision",
-      "release_state", "default_locale"};
-  constexpr std::string_view target_fields[]{
-      "id", "identity_anchor", "required_first_release", "support_mode",
-      "version_min", "version_max", "install_detection_kind",
-      "install_detection_definition", "version_detection_kind",
-      "version_detection_definition", "installation_item_id",
-      "explanation_source"};
-  constexpr std::string_view scheme_fields[]{
-      "id", "target_id", "required_first_release", "automation",
-      "version_min", "version_max", "impact", "risk",
-      "exit_requirement", "restart_requirement", "required_scheme_ids",
-      "conflicting_scheme_ids", "explanation_source",
-      "manual_emergency_explanation"};
-  constexpr std::string_view option_fields[]{
-      "id", "scheme_id", "version_min", "version_max", "impact",
-      "default_selected", "required", "automation", "execution_kind",
-      "execution_definition", "state_detection_kind",
-      "state_detection_definition", "required_option_ids",
-      "conflicting_option_ids", "allowed_values", "default_value",
-      "explanation_source"};
-  constexpr std::string_view baseline_fields[]{
-      "id", "target_id", "software_item_id", "installer_baseline_id",
-      "installed_version_min", "installed_version_max"};
-
-  reject_unknown_fields(raw.file, file_fields, "catalog", issues);
+  reject_unknown_fields(raw.file, kFileFields, "catalog", issues);
   for (auto const& record : raw.targets) {
-    reject_unknown_fields(record, target_fields, entity_name(record, "target"),
+    reject_unknown_fields(record, kTargetFields, entity_name(record, "target"),
                           issues);
   }
   for (auto const& record : raw.schemes) {
-    reject_unknown_fields(record, scheme_fields, entity_name(record, "scheme"),
+    reject_unknown_fields(record, kSchemeFields, entity_name(record, "scheme"),
                           issues);
   }
   for (auto const& record : raw.options) {
-    reject_unknown_fields(record, option_fields, entity_name(record, "option"),
+    reject_unknown_fields(record, kOptionFields, entity_name(record, "option"),
                           issues);
   }
   for (auto const& record : raw.baselines) {
-    reject_unknown_fields(record, baseline_fields,
+    reject_unknown_fields(record, kBaselineFields,
                           entity_name(record, "baseline"), issues);
   }
 
@@ -1649,9 +1815,12 @@ std::vector<CatalogIssue> validate_stable_identity_history(
   return issues;
 }
 
-std::vector<StableIdentityRecord> merge_stable_identity_history(
+std::optional<std::vector<StableIdentityRecord>> merge_stable_identity_history(
     std::span<StableIdentityRecord const> history,
-    SoftwareOptimizationCatalog const& catalog) {
+    SoftwareOptimizationCatalog const& catalog, std::size_t maximum_count) {
+  if (history.size() > maximum_count) {
+    return std::nullopt;
+  }
   std::vector<StableIdentityRecord> result{history.begin(), history.end()};
   std::unordered_set<std::string> known;
   for (auto const& record : result) {
@@ -1659,13 +1828,16 @@ std::vector<StableIdentityRecord> merge_stable_identity_history(
   }
   for (auto& record : stable_identities(catalog)) {
     if (known.insert(record.id.value).second) {
+      if (result.size() == maximum_count) {
+        return std::nullopt;
+      }
       result.push_back(std::move(record));
     }
   }
   std::ranges::sort(result, {}, [](StableIdentityRecord const& record) {
     return record.id.value;
   });
-  return result;
+  return std::optional<std::vector<StableIdentityRecord>>{std::move(result)};
 }
 
 std::vector<StableId> schemes_lost_or_changed(
@@ -1692,26 +1864,75 @@ CompatibilityAssessment assess_release_compatibility(
       continue;
     }
     bool matched = false;
+    bool found_matching_identity = false;
+    std::vector<CatalogIssue> range_issues;
     for (auto const& optimization_baseline :
          catalog.compatibility_baselines) {
-      if (optimization_baseline.target_id != target.id ||
-          !valid_range(optimization_baseline.installed_versions) ||
-          !intersects(target.supported_versions,
-                      optimization_baseline.installed_versions)) {
+      if (optimization_baseline.target_id != target.id) {
         continue;
       }
       for (auto const& software_baseline : software_baselines) {
-        if (software_baseline.software_item_id ==
-                optimization_baseline.software_item_id &&
-            software_baseline.installer_baseline_id ==
-                optimization_baseline.installer_baseline_id &&
-            valid_range(software_baseline.installed_versions) &&
-            intersects(target.supported_versions,
-                       software_baseline.installed_versions) &&
-            intersects(optimization_baseline.installed_versions,
-                       software_baseline.installed_versions)) {
+        if (software_baseline.software_item_id !=
+                optimization_baseline.software_item_id ||
+            software_baseline.installer_baseline_id !=
+                optimization_baseline.installer_baseline_id) {
+          continue;
+        }
+        found_matching_identity = true;
+        std::vector<CatalogIssue> candidate_issues;
+        auto add_range_issue = [&](std::string entity,
+                                   std::string detail) {
+          add_issue(candidate_issues,
+                    CatalogIssueCode::compatibility_baseline_mismatch,
+                    std::move(entity), std::move(detail));
+        };
+        if (!valid_range(software_baseline.installed_versions) ||
+            !contains_range(optimization_baseline.installed_versions,
+                            software_baseline.installed_versions)) {
+          add_range_issue(
+              optimization_baseline.id.value,
+              "optimization baseline does not contain the installer output range");
+        }
+        if (!contains_range(target.supported_versions,
+                            software_baseline.installed_versions)) {
+          add_range_issue(
+              target.id.value,
+              "target support does not contain the installer output range");
+        }
+        for (auto const& scheme : catalog.schemes) {
+          if (scheme.target_id != target.id ||
+              !scheme.required_first_release) {
+            continue;
+          }
+          if (!contains_range(scheme.supported_versions,
+                              software_baseline.installed_versions)) {
+            add_range_issue(
+                scheme.id.value,
+                "first-release scheme does not contain the installer output range");
+          }
+          for (auto const& option : scheme.options) {
+            if (!contains_range(option.supported_versions,
+                                software_baseline.installed_versions)) {
+              add_range_issue(
+                  option.id.value,
+                  "first-release option does not contain the installer output range");
+            }
+          }
+        }
+        if (candidate_issues.empty()) {
           matched = true;
           break;
+        }
+        for (auto& issue : candidate_issues) {
+          auto const duplicate = std::ranges::any_of(
+              range_issues, [&](CatalogIssue const& existing) {
+                return existing.code == issue.code &&
+                       existing.entity_id == issue.entity_id &&
+                       existing.detail == issue.detail;
+              });
+          if (!duplicate) {
+            range_issues.push_back(std::move(issue));
+          }
         }
       }
       if (matched) {
@@ -1719,10 +1940,17 @@ CompatibilityAssessment assess_release_compatibility(
       }
     }
     if (!matched) {
-      add_issue(result.issues,
-                CatalogIssueCode::compatibility_baseline_mismatch,
-                target.id.value,
-                "software catalog and optimization catalog installer baselines do not intersect");
+      if (found_matching_identity && !range_issues.empty()) {
+        result.issues.insert(result.issues.end(),
+                             std::make_move_iterator(range_issues.begin()),
+                             std::make_move_iterator(range_issues.end()));
+      } else {
+        add_issue(
+            result.issues,
+            CatalogIssueCode::compatibility_baseline_mismatch,
+            target.id.value,
+            "software catalog and optimization catalog installer identities do not match");
+      }
     }
   }
   result.compatible = result.issues.empty();

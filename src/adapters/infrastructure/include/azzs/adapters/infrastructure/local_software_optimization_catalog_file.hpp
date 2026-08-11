@@ -7,9 +7,9 @@
 namespace azzs::adapters::infrastructure {
 
 class LocalSoftwareOptimizationCatalogFile final
-    : public application::SoftwareOptimizationCatalogFile {
+    : public application::SoftwareOptimizationCatalogLocalImportFile {
  public:
-  [[nodiscard]] application::SoftwareOptimizationCatalogFileRead read(
+  [[nodiscard]] application::SoftwareOptimizationCatalogLocalImportRead read(
       std::string_view path) override;
 };
 

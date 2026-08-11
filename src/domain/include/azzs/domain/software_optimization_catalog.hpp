@@ -100,6 +100,7 @@ enum class CatalogIssueCode {
   invalid_file_field,
   duplicate_stable_id,
   stable_id_reuse,
+  stable_identity_capacity_exceeded,
   invalid_rule,
   invalid_version_range,
   missing_reference,
@@ -270,9 +271,10 @@ struct CompatibilityAssessment final {
     SoftwareOptimizationCatalog const& catalog,
     std::span<StableIdentityRecord const> history);
 
-[[nodiscard]] std::vector<StableIdentityRecord> merge_stable_identity_history(
+[[nodiscard]] std::optional<std::vector<StableIdentityRecord>>
+merge_stable_identity_history(
     std::span<StableIdentityRecord const> history,
-    SoftwareOptimizationCatalog const& catalog);
+    SoftwareOptimizationCatalog const& catalog, std::size_t maximum_count);
 
 [[nodiscard]] std::vector<StableId> schemes_lost_or_changed(
     SoftwareOptimizationCatalog const& current,

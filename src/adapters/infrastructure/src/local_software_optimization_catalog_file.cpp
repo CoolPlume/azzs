@@ -16,7 +16,7 @@ constexpr std::uintmax_t kMaximumCatalogBytes = 4U * 1024U * 1024U;
 
 }  // namespace
 
-application::SoftwareOptimizationCatalogFileRead
+application::SoftwareOptimizationCatalogLocalImportRead
 LocalSoftwareOptimizationCatalogFile::read(std::string_view path) {
   if (path.empty() || path.find('\0') != std::string_view::npos) {
     return {.error = "catalog path is empty or contains an embedded null"};
