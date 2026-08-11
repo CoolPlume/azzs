@@ -2,6 +2,8 @@ find_package(Threads REQUIRED)
 
 add_library(azzs_application STATIC
   src/bounded_cpu_scheduler.cpp
+  src/device_state_store.cpp
+  src/operation_occupancy.cpp
   src/workbench.cpp
 )
 
