@@ -2,17 +2,16 @@ add_executable(azzs_operation_occupancy_contract
   main.cpp
 )
 
-target_include_directories(azzs_operation_occupancy_contract
-  PRIVATE
-    ../support/include
-)
-
-target_link_libraries(azzs_operation_occupancy_contract
-  PRIVATE
+azzs_project_target(
+  TARGET azzs_operation_occupancy_contract
+  ROLE test
+  PRIVATE_LINKS
     azzs::infrastructure_adapter
+    azzs::test_support
 )
 
-add_test(
+azzs_register_test(
   NAME operation-occupancy.contract
-  COMMAND azzs_operation_occupancy_contract
+  TARGET azzs_operation_occupancy_contract
+  LABELS headless contract
 )

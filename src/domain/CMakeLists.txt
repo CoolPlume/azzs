@@ -8,3 +8,8 @@ target_include_directories(azzs_domain
   PUBLIC
     include
 )
+
+azzs_project_target(
+  TARGET azzs_domain
+  ROLE domain
+)

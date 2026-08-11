@@ -2,24 +2,24 @@ add_executable(azzs_execution_log_contract
   main.cpp
 )
 
-target_include_directories(azzs_execution_log_contract
-  PRIVATE
-    ../support/include
+set(azzs_execution_log_contract_private_links
+  azzs::infrastructure_adapter
+  azzs::test_support
 )
-
-target_link_libraries(azzs_execution_log_contract
-  PRIVATE
-    azzs::infrastructure_adapter
-)
-
 if(WIN32)
-  target_link_libraries(azzs_execution_log_contract
-    PRIVATE
-      azzs::windows_adapter
-  )
+  list(APPEND azzs_execution_log_contract_private_links
+    azzs::windows_adapter)
 endif()
 
-add_test(
+azzs_project_target(
+  TARGET azzs_execution_log_contract
+  ROLE test
+  PRIVATE_LINKS
+    ${azzs_execution_log_contract_private_links}
+)
+
+azzs_register_test(
   NAME execution-log.contract
-  COMMAND azzs_execution_log_contract
+  TARGET azzs_execution_log_contract
+  LABELS headless contract
 )

@@ -16,7 +16,7 @@
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
 #include "azzs/application/execution_log.hpp"
 #include "azzs/testing/fixed_clock.hpp"
-#include "azzs/testing/in_memory_log_storage.hpp"
+#include "in_memory_log_storage.hpp"
 
 #ifdef _WIN32
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
