@@ -1,5 +1,6 @@
 add_executable(azzs_ui_presentation_contract
   presentation_contract_tests.cpp
+  ${PROJECT_SOURCE_DIR}/src/adapters/ui/winui/DesignSystem/Fixtures/design_system_fixture.cpp
   ${PROJECT_SOURCE_DIR}/src/adapters/ui/winui/DesignSystem/presentation_contract.cpp
 )
 

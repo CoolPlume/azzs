@@ -178,22 +178,12 @@
                 <controls:ReadOnlyPresentationSurface x:Name="EmergencyWithdrawalStatus" />
             </StackPanel>
 
-            <Border
-                x:Name="UnknownProgressSurface"
+            <StackPanel
                 Grid.Row="6"
-                Style="{StaticResource AzzsSectionSurfaceStyle}">
-                <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
-                    <TextBlock x:Name="UnknownProgressTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
-                    <ProgressBar
-                        x:Name="UnknownProgressBar"
-                        IsIndeterminate="True"
-                        Style="{StaticResource AzzsProgressStyle}" />
-                    <TextBlock
-                        x:Name="UnknownProgressValue"
-                        AutomationProperties.LiveSetting="Polite"
-                        Style="{StaticResource AzzsBodyTextStyle}" />
-                </StackPanel>
-            </Border>
+                Spacing="{StaticResource AzzsSpaceStandard}">
+                <controls:ReadOnlyPresentationSurface x:Name="DeterminateProgressSurface" />
+                <controls:ReadOnlyPresentationSurface x:Name="UnknownProgressSurface" />
+            </StackPanel>
 
             <controls:ReadOnlyPresentationSurface
                 x:Name="DisabledReasonSurface"

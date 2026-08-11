@@ -176,7 +176,4 @@ class ReadOnlyPresentation final {
   ViewMode mode_;
 };
 
-[[nodiscard]] std::shared_ptr<PresentationSnapshot const>
-make_design_system_fixture();
-
 }  // namespace azzs::ui::presentation

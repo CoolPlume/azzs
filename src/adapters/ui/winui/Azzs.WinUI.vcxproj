@@ -153,6 +153,7 @@
     <ClInclude Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml.h">
       <DependentUpon>DesignSystemFixturePage.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="DesignSystem\Fixtures\design_system_fixture.hpp" />
     <ClInclude Include="DesignSystem\motion_contract.hpp" />
     <ClInclude Include="DesignSystem\motion_preferences.hpp" />
     <ClInclude Include="DesignSystem\presentation_contract.hpp" />
@@ -185,6 +186,9 @@
     <ClCompile Include="App.xaml.cpp" />
     <ClCompile Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml.cpp" />
     <ClCompile Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml.cpp" />
+    <ClCompile Include="DesignSystem\Fixtures\design_system_fixture.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="DesignSystem\motion_preferences.cpp" />
     <ClCompile Include="DesignSystem\presentation_contract.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

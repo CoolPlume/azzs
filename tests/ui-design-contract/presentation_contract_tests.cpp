@@ -11,6 +11,7 @@
 
 #include "motion_contract.hpp"
 #include "presentation_contract.hpp"
+#include "Fixtures/design_system_fixture.hpp"
 
 namespace {
 
@@ -21,6 +22,7 @@ using azzs::ui::presentation::ComponentProjection;
 using azzs::ui::presentation::InputModality;
 using azzs::ui::presentation::IntentKind;
 using azzs::ui::presentation::MotionSemantic;
+using azzs::ui::presentation::ProgressKind;
 using azzs::ui::presentation::PresentationState;
 using azzs::ui::presentation::PresentationSnapshot;
 using azzs::ui::presentation::ReadOnlyPresentation;
@@ -145,6 +147,30 @@ using azzs::ui::presentation::WorkflowStage;
   passed &= expect(rejected_duplicate_identity,
                    "the immutable snapshot must reject duplicate identity");
 
+  bool rejected_unknown_numeric_value = false;
+  try {
+    std::vector<ComponentProjection> invalid{
+        ComponentProjection{
+            .id = "invalid-progress",
+            .automation_id = "InvalidProgress",
+            .accessible_name = "Invalid progress",
+            .kind = ComponentKind::progress,
+            .progress = azzs::ui::presentation::ProgressProjection{
+                .kind = ProgressKind::unknown,
+                .completed = 1,
+                .total = std::nullopt,
+                .accessible_value = "Unknown progress",
+            },
+        },
+    };
+    static_cast<void>(PresentationSnapshot{std::move(invalid)});
+  } catch (std::invalid_argument const&) {
+    rejected_unknown_numeric_value = true;
+  }
+  passed &= expect(
+      rejected_unknown_numeric_value,
+      "unknown progress must reject fabricated numeric values");
+
   passed &= expect(std::addressof(standard.source()) ==
                        std::addressof(advanced.source()),
                    "standard and advanced views must share one source snapshot");
@@ -261,10 +287,23 @@ using azzs::ui::presentation::WorkflowStage;
       fixture->find_component("fixture.unknown-progress");
   passed &= expect(
       unknown_progress != nullptr && unknown_progress->progress.has_value() &&
+          unknown_progress->progress->kind == ProgressKind::unknown &&
           !unknown_progress->progress->completed.has_value() &&
           !unknown_progress->progress->total.has_value() &&
+          !unknown_progress->progress->accessible_value.empty() &&
           unknown_progress->body.find("正在计算") != std::string::npos,
       "unknown progress must not invent a total or percentage");
+
+  auto const* determinate_progress =
+      fixture->find_component("fixture.determinate-progress");
+  passed &= expect(
+      determinate_progress != nullptr &&
+          determinate_progress->progress.has_value() &&
+          determinate_progress->progress->kind == ProgressKind::determinate &&
+          determinate_progress->progress->completed == 37 &&
+          determinate_progress->progress->total == 100 &&
+          !determinate_progress->progress->accessible_value.empty(),
+      "determinate progress must retain its real range and accessible text");
 
   constexpr std::array required_fixture_ids{
       "fixture.inline-error",

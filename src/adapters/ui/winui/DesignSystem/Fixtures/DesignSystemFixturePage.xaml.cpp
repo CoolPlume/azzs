@@ -24,7 +24,6 @@ using ProjectedSurface =
 using SurfaceImplementation = winrt::Azzs::Ui::DesignSystem::Controls::
     implementation::ReadOnlyPresentationSurface;
 using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
-using winrt::Microsoft::UI::Xaml::Automation::Peers::AutomationLiveSetting;
 using winrt::Microsoft::UI::Xaml::Controls::Border;
 using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
 
@@ -151,24 +150,12 @@ void DesignSystemFixturePage::project_fixture(
                   required_component(*snapshot, target.component_id), index + 1);
   }
 
-  auto const& progress =
-      required_component(*snapshot, "fixture.unknown-progress");
-  AutomationProperties::SetAutomationId(
-      UnknownProgressSurface(), winrt::to_hstring(progress.automation_id));
-  AutomationProperties::SetName(
-      UnknownProgressSurface(), winrt::to_hstring(progress.accessible_name));
-  AutomationProperties::SetLiveSetting(
-      UnknownProgressSurface(), AutomationLiveSetting::Polite);
-  UnknownProgressTitle().Text(winrt::to_hstring(progress.title));
-  UnknownProgressValue().Text(winrt::to_hstring(progress.body));
-  if (progress.progress.has_value()) {
-    AutomationProperties::SetAutomationId(
-        UnknownProgressBar(),
-        winrt::to_hstring(progress.automation_id + ".ProgressBar"));
-    AutomationProperties::SetName(
-        UnknownProgressBar(),
-        winrt::to_hstring(progress.progress->accessible_value));
-  }
+  project_surface(DeterminateProgressSurface(), snapshot,
+                  "fixture.determinate-progress", ViewMode::standard,
+                  intent_handler, 200, "DeterminateProgress");
+  project_surface(UnknownProgressSurface(), snapshot,
+                  "fixture.unknown-progress", ViewMode::standard,
+                  intent_handler, 210, "UnknownProgress");
 
   auto const& settings =
       required_component(*snapshot, "fixture.settings-form");

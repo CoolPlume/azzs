@@ -396,9 +396,12 @@ def verify_fixture_xaml(root: Path) -> None:
 
     surfaces = [element for element in fixture_root.iter()
                 if local_name(element.tag) == "ReadOnlyPresentationSurface"]
-    require(len(surfaces) >= 17,
+    require(len(surfaces) >= 19,
             "the fixture must compile the reusable projection surface across "
-            "lists, detail, status, risk, disabled, and result states")
+            "lists, detail, status, progress, risk, disabled, and result states")
+    require(not any(local_name(element.tag) == "ProgressBar"
+                    for element in fixture_root.iter()),
+            "the fixture must not duplicate the shared progress projection")
 
     interactive_tags = {"Button", "Expander", "TextBox"}
     for element in fixture_root.iter():
@@ -426,6 +429,22 @@ def verify_fixture_xaml(root: Path) -> None:
             "AutomationProperties::SetAutomationId" in fixture_cpp and
             "project_intent" in fixture_cpp,
             "fixture fields and stages must project the typed source")
+    require(
+        re.search(
+            r"project_surface\(DeterminateProgressSurface\(\).*?"
+            r'"fixture\.determinate-progress"',
+            fixture_cpp,
+            re.DOTALL,
+        ) is not None and
+        re.search(
+            r"project_surface\(UnknownProgressSurface\(\).*?"
+            r'"fixture\.unknown-progress"',
+            fixture_cpp,
+            re.DOTALL,
+        ) is not None and
+        "UnknownProgressBar" not in fixture_cpp,
+        "fixture progress cases must consume the reusable projection surface",
+    )
 
     control_path = root / (
         "src/adapters/ui/winui/DesignSystem/Controls/"
@@ -435,6 +454,9 @@ def verify_fixture_xaml(root: Path) -> None:
     require(len([element for element in control_root.iter()
                  if local_name(element.tag) == "InfoBar"]) == 1,
             "the reusable projection surface must own one native status band")
+    require(len([element for element in control_root.iter()
+                 if local_name(element.tag) == "ProgressBar"]) == 1,
+            "the reusable projection surface must own one native progress bar")
     control_cpp = read(control_path.with_suffix(".xaml.cpp"))
     control_header = read(control_path.with_suffix(".xaml.h"))
     require("shared_ptr<azzs::ui::presentation::PresentationSnapshot const>" in
@@ -445,7 +467,11 @@ def verify_fixture_xaml(root: Path) -> None:
         "button.Click", "presentation_->intent_for", "SetAutomationId",
         "SetName", "SetLiveSetting", "SetHelpText", "default_focus",
         "role != CommandRole::danger", "last_announcement_key_", "get_weak",
-        "focus_default_when_loaded_",
+        "focus_default_when_loaded_", "component->progress",
+        "ProgressKind::determinate", "ProgressKind::indeterminate",
+        "ProgressKind::unknown", "clear_numeric_progress",
+        "AutomationProperties::SetValue", "ProjectedProgressBar().Maximum",
+        "ProjectedProgressBar().Value", "ProgressValueText().Text",
     ):
         require(token in control_cpp,
                 f"the reusable typed-intent surface is missing {token}")
@@ -470,11 +496,22 @@ def verify_fixture_xaml(root: Path) -> None:
                     for token in forbidden_side_effects),
             "the fixture and reusable surface must not perform system work")
 
-    fixture_data = read(root / (
+    production_contract = read(root / (
         "src/adapters/ui/winui/DesignSystem/presentation_contract.cpp"
+    )) + read(root / (
+        "src/adapters/ui/winui/DesignSystem/presentation_contract.hpp"
+    ))
+    require("make_design_system_fixture" not in production_contract and
+            "fixture." not in production_contract,
+            "fixed fixture data must stay out of the production contract")
+
+    fixture_data = read(root / (
+        "src/adapters/ui/winui/DesignSystem/Fixtures/"
+        "design_system_fixture.cpp"
     ))
     for marker in (
         "fixture.long-chinese",
+        "fixture.determinate-progress",
         "fixture.unknown-progress",
         "fixture.inline-error",
         "fixture.waiting-restart",
@@ -635,22 +672,28 @@ def verify_xaml_project_metadata(root: Path) -> None:
         "DesignSystem/motion_contract.hpp",
         "DesignSystem/motion_preferences.hpp",
         "DesignSystem/presentation_contract.hpp",
+        "DesignSystem/Fixtures/design_system_fixture.hpp",
     }
     require(required_native_sources <= set(cl_includes),
             "native design-system contract headers must compile in the host")
     require({
         "DesignSystem/motion_preferences.cpp",
         "DesignSystem/presentation_contract.cpp",
+        "DesignSystem/Fixtures/design_system_fixture.cpp",
     } <= cl_compiles, "design-system implementations must compile in the host")
-    presentation_source = next(
-        element for element in project_root.findall(".//m:ClCompile", ns)
-        if normalized_project_path(element.attrib.get("Include", "")) ==
-        "DesignSystem/presentation_contract.cpp"
-    )
-    precompiled_header = presentation_source.find("m:PrecompiledHeader", ns)
-    require(precompiled_header is not None and
-            precompiled_header.text == "NotUsing",
-            "the portable presentation contract must opt out of the WinUI PCH")
+    for portable_source in (
+        "DesignSystem/presentation_contract.cpp",
+        "DesignSystem/Fixtures/design_system_fixture.cpp",
+    ):
+        source_item = next(
+            element for element in project_root.findall(".//m:ClCompile", ns)
+            if normalized_project_path(element.attrib.get("Include", "")) ==
+            portable_source
+        )
+        precompiled_header = source_item.find("m:PrecompiledHeader", ns)
+        require(precompiled_header is not None and
+                precompiled_header.text == "NotUsing",
+                f"{portable_source} must opt out of the WinUI PCH")
 
 
 def verify_localization_and_workflow_boundary(root: Path) -> None:

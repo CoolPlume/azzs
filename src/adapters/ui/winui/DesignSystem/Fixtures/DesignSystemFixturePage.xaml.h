@@ -5,7 +5,7 @@
 
 #include <memory>
 
-#include "../presentation_contract.hpp"
+#include "design_system_fixture.hpp"
 
 namespace winrt::Azzs::Ui::DesignSystem::Fixtures::implementation {
 

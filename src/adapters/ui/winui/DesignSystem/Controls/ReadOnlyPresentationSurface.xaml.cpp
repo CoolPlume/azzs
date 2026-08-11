@@ -18,12 +18,15 @@ using azzs::ui::presentation::CommandRole;
 using azzs::ui::presentation::ComponentKind;
 using azzs::ui::presentation::ComponentProjection;
 using azzs::ui::presentation::IntentKind;
+using azzs::ui::presentation::ProgressKind;
 using azzs::ui::presentation::PresentationState;
 using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 using winrt::Microsoft::UI::Xaml::Automation::Peers::AutomationLiveSetting;
 using winrt::Microsoft::UI::Xaml::Controls::Button;
 using winrt::Microsoft::UI::Xaml::Controls::FontIcon;
 using winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity;
+using winrt::Microsoft::UI::Xaml::Controls::ProgressBar;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::RangeBase;
 using winrt::Microsoft::UI::Xaml::Controls::StackPanel;
 using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
 using winrt::Microsoft::UI::Xaml::Controls::UserControl;
@@ -170,6 +173,12 @@ using XamlVisibility = winrt::Microsoft::UI::Xaml::Visibility;
   return component.automation_id + "." + automation_suffix;
 }
 
+void clear_numeric_progress(ProgressBar const& progress_bar) {
+  progress_bar.ClearValue(RangeBase::MinimumProperty());
+  progress_bar.ClearValue(RangeBase::MaximumProperty());
+  progress_bar.ClearValue(RangeBase::ValueProperty());
+}
+
 }  // namespace
 
 namespace winrt::Azzs::Ui::DesignSystem::Controls::implementation {
@@ -215,10 +224,23 @@ void ReadOnlyPresentationSurface::project(
           .as<UserControl>();
   AutomationProperties::SetAutomationId(root,
                                         winrt::to_hstring(automation_id));
-  auto const announcement_key =
+  auto const show_progress =
+      component->progress.has_value() &&
+      component->progress->kind != ProgressKind::none;
+  auto announcement_key =
       component->id + ":" +
       std::to_string(static_cast<int>(component->state)) + ":" +
       component->title + ":" + component->body;
+  if (show_progress) {
+    auto const& progress = *component->progress;
+    announcement_key +=
+        ":" + std::to_string(static_cast<int>(progress.kind)) + ":" +
+        progress.accessible_value + ":" +
+        (progress.completed.has_value() ? std::to_string(*progress.completed)
+                                        : std::string{}) +
+        ":" + (progress.total.has_value() ? std::to_string(*progress.total)
+                                           : std::string{});
+  }
   auto const announce = component->announcement !=
                             azzs::ui::presentation::AnnouncementMode::none &&
                         announcement_key != last_announcement_key_;
@@ -232,13 +254,17 @@ void ReadOnlyPresentationSurface::project(
     last_announcement_key_.clear();
   }
   AutomationProperties::SetLiveSetting(root, live_setting);
-  AutomationProperties::SetName(
-      root, winrt::to_hstring(component->accessible_name + ": " +
-                              component->title + ". " + component->body));
   AutomationProperties::SetLiveSetting(StatusBand(),
                                        AutomationLiveSetting::Off);
   AutomationProperties::SetLiveSetting(CardSurface(),
                                        AutomationLiveSetting::Off);
+  auto root_automation_name = component->accessible_name + ": " +
+                              component->title + ". " + component->body;
+  if (show_progress) {
+    root_automation_name += ". " + component->progress->accessible_value;
+  }
+  AutomationProperties::SetName(root,
+                                winrt::to_hstring(root_automation_name));
 
   if (status) {
     StatusBand().Title(winrt::to_hstring(component->title));
@@ -266,6 +292,46 @@ void ReadOnlyPresentationSurface::project(
     AdvancedDetailText().Visibility(show_advanced ? XamlVisibility::Visible
                                                   : XamlVisibility::Collapsed);
   }
+
+  ProgressSurface().Visibility(show_progress ? XamlVisibility::Visible
+                                             : XamlVisibility::Collapsed);
+  if (show_progress) {
+    auto const& progress = *component->progress;
+    auto const progress_value = winrt::to_hstring(progress.accessible_value);
+    auto const progress_automation_id = automation_id + ".ProgressBar";
+    AutomationProperties::SetAutomationId(
+        ProjectedProgressBar(), winrt::to_hstring(progress_automation_id));
+    AutomationProperties::SetName(ProjectedProgressBar(), automation_name);
+    AutomationProperties::SetValue(ProjectedProgressBar(), progress_value);
+    AutomationProperties::SetAutomationId(
+        ProgressValueText(),
+        winrt::to_hstring(automation_id + ".ProgressValue"));
+    ProgressValueText().Text(progress_value);
+
+    switch (progress.kind) {
+      case ProgressKind::determinate:
+        ProjectedProgressBar().IsIndeterminate(false);
+        ProjectedProgressBar().Minimum(0.0);
+        ProjectedProgressBar().Maximum(
+            static_cast<double>(*progress.total));
+        ProjectedProgressBar().Value(
+            static_cast<double>(*progress.completed));
+        break;
+      case ProgressKind::indeterminate:
+      case ProgressKind::unknown:
+        clear_numeric_progress(ProjectedProgressBar());
+        ProjectedProgressBar().IsIndeterminate(true);
+        break;
+      case ProgressKind::none:
+        break;
+    }
+  } else {
+    ProjectedProgressBar().IsIndeterminate(false);
+    clear_numeric_progress(ProjectedProgressBar());
+    AutomationProperties::SetValue(ProjectedProgressBar(), winrt::hstring{});
+    ProgressValueText().Text(winrt::hstring{});
+  }
+
   auto command_host = status ? StatusCommandHost() : CardCommandHost();
   auto const has_default = std::ranges::any_of(
       component->commands, [this](CommandProjection const& command) {

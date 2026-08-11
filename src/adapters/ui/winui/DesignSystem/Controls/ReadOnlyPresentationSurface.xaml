@@ -16,6 +16,17 @@
                 <TextBlock
                     x:Name="BodyText"
                     Style="{StaticResource AzzsBodyTextStyle}" />
+                <StackPanel
+                    x:Name="ProgressSurface"
+                    Spacing="{StaticResource AzzsSpaceSmall}"
+                    Visibility="Collapsed">
+                    <ProgressBar
+                        x:Name="ProjectedProgressBar"
+                        Style="{StaticResource AzzsProgressStyle}" />
+                    <TextBlock
+                        x:Name="ProgressValueText"
+                        Style="{StaticResource AzzsBodyTextStyle}" />
+                </StackPanel>
                 <TextBlock
                     x:Name="AdvancedDetailText"
                     Style="{StaticResource AzzsMetadataTextStyle}"
