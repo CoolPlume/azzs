@@ -1,0 +1,19 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform Condition="'$(InstallerPlatform)' == ''">x64</InstallerPlatform>
+    <OutputName>Azzs-standard-$(InstallerPlatform)-machine</OutputName>
+    <OutputPath>$(AzzsPackageOutputDirectory)</OutputPath>
+    <IntermediateOutputPath>$(AzzsInstallerIntermediateDirectory)</IntermediateOutputPath>
+    <DefineConstants>PayloadDirectory=$(PayloadDirectory)</DefineConstants>
+    <Pedantic>true</Pedantic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <Target Name="ValidateAzzsInstallerInputs" BeforeTargets="Build">
+    <Error Condition="'$(PayloadDirectory)' == ''" Text="PayloadDirectory must point to a staged WinUI self-contained output." />
+    <Error Condition="!Exists('$(PayloadDirectory)\Azzs.WinUI.exe')" Text="PayloadDirectory does not contain Azzs.WinUI.exe." />
+    <Error Condition="'$(AzzsPackageOutputDirectory)' == ''" Text="AzzsPackageOutputDirectory is required." />
+    <Error Condition="'$(AzzsInstallerIntermediateDirectory)' == ''" Text="AzzsInstallerIntermediateDirectory is required." />
+  </Target>
+</Project>

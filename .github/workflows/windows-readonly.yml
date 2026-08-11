@@ -1,0 +1,59 @@
+name: Windows read-only validation
+
+on:
+  pull_request:
+    branches:
+      - codex/v1-integration
+  push:
+    branches:
+      - codex/v1-integration
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    name: ${{ matrix.architecture }} Release
+    runs-on: windows-2025-vs2026
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture:
+          - x64
+          - ARM64
+
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Ensure the locked Windows SDK
+        shell: pwsh
+        run: ./eng/ensure-windows-sdk.ps1
+
+      - name: Build and test
+        shell: pwsh
+        run: ./eng/build.ps1 -Architecture '${{ matrix.architecture }}'
+
+      - name: Print structured evidence
+        if: always()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path out/logs, out/test-results, out/manifests -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object FullName, Length
+          Get-ChildItem -Path out/manifests -Filter '*.json' -File -ErrorAction SilentlyContinue |
+            ForEach-Object { Get-Content -LiteralPath $_.FullName }
+
+      - name: Preserve logs, tests, and manifests
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-${{ matrix.architecture }}-evidence
+          path: |
+            out/logs/**
+            out/test-results/**
+            out/manifests/**
+          if-no-files-found: warn
+          retention-days: 14

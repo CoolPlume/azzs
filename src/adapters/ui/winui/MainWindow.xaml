@@ -1,0 +1,52 @@
+<Window
+    x:Class="Azzs.Ui.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <NavigationView
+        x:Name="PrimaryNavigation"
+        IsBackButtonVisible="Collapsed"
+        IsSettingsVisible="False"
+        PaneDisplayMode="Auto"
+        SelectionChanged="OnNavigationSelectionChanged">
+        <NavigationView.MenuItems>
+            <NavigationViewItem x:Name="OverviewItem" x:Uid="NavigationOverview" IsSelected="True">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem x:Name="DriversItem" x:Uid="NavigationDrivers">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Manage" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem x:Name="SystemOptimizationItem" x:Uid="NavigationSystemOptimization">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Repair" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem x:Name="SoftwareInstallationItem" x:Uid="NavigationSoftwareInstallation">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Download" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem x:Name="SoftwareOptimizationItem" x:Uid="NavigationSoftwareOptimization">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem x:Name="HistoryAndLogsItem" x:Uid="NavigationHistoryAndLogs">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Clock" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem x:Name="ApplicationSettingsItem" x:Uid="NavigationApplicationSettings">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.MenuItems>
+
+        <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <InfoBar
+                x:Name="VersionRiskInfoBar"
+                Margin="24,16,24,0"
+                IsClosable="False"
+                IsOpen="False"
+                Severity="Warning" />
+            <Frame
+                x:Name="ContentFrame"
+                Grid.Row="1"
+                IsNavigationStackEnabled="False" />
+        </Grid>
+    </NavigationView>
+</Window>

@@ -1,0 +1,8 @@
+namespace Azzs.Ui.Pages
+{
+    [default_interface]
+    runtimeclass DriversPage : Microsoft.UI.Xaml.Controls.Page
+    {
+        DriversPage();
+    }
+}

@@ -1,0 +1,182 @@
+#include "pch.h"
+
+#include "MainWindow.xaml.h"
+
+#include <string>
+#include <string_view>
+#include <winrt/Windows.UI.Xaml.Interop.h>
+
+#include "Pages/ApplicationSettingsPage.xaml.h"
+#include "Pages/DriversPage.xaml.h"
+#include "Pages/HistoryAndLogsPage.xaml.h"
+#include "Pages/OverviewPage.xaml.h"
+#include "Pages/SoftwareInstallationPage.xaml.h"
+#include "Pages/SoftwareOptimizationPage.xaml.h"
+#include "Pages/SystemOptimizationPage.xaml.h"
+
+#if __has_include("MainWindow.g.cpp")
+#include "MainWindow.g.cpp"
+#endif
+
+namespace {
+
+using azzs::application::PageId;
+using azzs::domain::SystemVersion;
+using winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem;
+
+[[nodiscard]] std::wstring version_text(SystemVersion const version) {
+  return std::to_wstring(version.major) + L"." +
+         std::to_wstring(version.minor) + L"." +
+         std::to_wstring(version.build);
+}
+
+void replace_token(std::wstring& value,
+                   std::wstring_view token,
+                   std::wstring_view replacement) {
+  auto position = value.find(token);
+  while (position != std::wstring::npos) {
+    value.replace(position, token.size(), replacement);
+    position = value.find(token, position + replacement.size());
+  }
+}
+
+}  // namespace
+
+namespace winrt::Azzs::Ui::implementation {
+
+MainWindow::MainWindow() {
+  InitializeComponent();
+  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+  Title(ResourceLoader{}.GetString(L"MainWindowTitle"));
+}
+
+void MainWindow::bind(
+    std::shared_ptr<azzs::application::Workbench> workbench) {
+  workbench_ = std::move(workbench);
+  auto const snapshot = workbench_->snapshot();
+  project(snapshot);
+  navigate_to(snapshot.current_page);
+}
+
+void MainWindow::OnNavigationSelectionChanged(
+    Microsoft::UI::Xaml::Controls::NavigationView const&,
+    Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&
+        args) {
+  if (!workbench_) {
+    return;
+  }
+
+  auto const item =
+      args.SelectedItemContainer().try_as<NavigationViewItem>();
+  if (!item) {
+    return;
+  }
+
+  auto const page = page_for_item(item);
+  if (!page.has_value()) {
+    return;
+  }
+
+  workbench_->navigate(*page);
+  auto const snapshot = workbench_->snapshot();
+  project(snapshot);
+  navigate_to(snapshot.current_page);
+}
+
+std::optional<PageId> MainWindow::page_for_item(
+    NavigationViewItem const& item) {
+  if (item == OverviewItem()) {
+    return PageId::overview;
+  }
+  if (item == DriversItem()) {
+    return PageId::drivers;
+  }
+  if (item == SystemOptimizationItem()) {
+    return PageId::system_optimization;
+  }
+  if (item == SoftwareInstallationItem()) {
+    return PageId::software_installation;
+  }
+  if (item == SoftwareOptimizationItem()) {
+    return PageId::software_optimization;
+  }
+  if (item == HistoryAndLogsItem()) {
+    return PageId::history_and_logs;
+  }
+  if (item == ApplicationSettingsItem()) {
+    return PageId::application_settings;
+  }
+
+  return std::nullopt;
+}
+
+void MainWindow::navigate_to(PageId page) {
+  using winrt::Microsoft::UI::Xaml::Media::Animation::
+      SuppressNavigationTransitionInfo;
+
+  auto const transition = SuppressNavigationTransitionInfo{};
+  switch (page) {
+    case PageId::overview:
+      ContentFrame().Navigate(xaml_typename<Pages::OverviewPage>(), nullptr,
+                              transition);
+      break;
+    case PageId::drivers:
+      ContentFrame().Navigate(xaml_typename<Pages::DriversPage>(), nullptr,
+                              transition);
+      break;
+    case PageId::system_optimization:
+      ContentFrame().Navigate(xaml_typename<Pages::SystemOptimizationPage>(),
+                              nullptr, transition);
+      break;
+    case PageId::software_installation:
+      ContentFrame().Navigate(xaml_typename<Pages::SoftwareInstallationPage>(),
+                              nullptr, transition);
+      break;
+    case PageId::software_optimization:
+      ContentFrame().Navigate(xaml_typename<Pages::SoftwareOptimizationPage>(),
+                              nullptr, transition);
+      break;
+    case PageId::history_and_logs:
+      ContentFrame().Navigate(xaml_typename<Pages::HistoryAndLogsPage>(), nullptr,
+                              transition);
+      break;
+    case PageId::application_settings:
+      ContentFrame().Navigate(xaml_typename<Pages::ApplicationSettingsPage>(),
+                              nullptr, transition);
+      break;
+  }
+}
+
+void MainWindow::project(
+    azzs::application::WorkbenchSnapshot const& snapshot) {
+  using azzs::domain::MinimumVersionRisk;
+  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+
+  if (snapshot.minimum_version_risk == MinimumVersionRisk::none) {
+    VersionRiskInfoBar().IsOpen(false);
+    return;
+  }
+
+  auto const resources = ResourceLoader{};
+  VersionRiskInfoBar().Title(resources.GetString(L"VersionRiskTitle"));
+
+  if (snapshot.minimum_version_risk ==
+      MinimumVersionRisk::version_unavailable) {
+    VersionRiskInfoBar().Message(
+        resources.GetString(L"VersionRiskUnavailableMessage"));
+    VersionRiskInfoBar().IsOpen(true);
+    return;
+  }
+
+  auto message =
+      std::wstring{resources.GetString(L"VersionRiskEarlierMessage")};
+  auto const observed = snapshot.observed_windows_version.value();
+  auto const observed_text = version_text(observed);
+  auto const target_text = version_text(snapshot.target_windows_version);
+  replace_token(message, L"{observed}", observed_text);
+  replace_token(message, L"{target}", target_text);
+  VersionRiskInfoBar().Message(winrt::hstring{message});
+  VersionRiskInfoBar().IsOpen(true);
+}
+
+}  // namespace winrt::Azzs::Ui::implementation
