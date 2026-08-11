@@ -731,7 +731,8 @@ function(_azzs_finalize_project_guardrails_impl)
   endforeach()
   string(APPEND graph_content
     ")\nset(AZZS_GRAPH_SOURCE_ROOT [==[${CMAKE_SOURCE_DIR}]==])\n"
-    "set(AZZS_GRAPH_SCAN_PROJECT TRUE)\n")
+    "set(AZZS_GRAPH_SCAN_PROJECT TRUE)\n"
+    "set(AZZS_GRAPH_SCAN_TEST_SOURCES [==[${BUILD_TESTING}]==])\n")
   file(WRITE "${graph_file}" "${graph_content}")
 
   execute_process(

@@ -1142,7 +1142,7 @@ if(AZZS_GRAPH_SCAN_PROJECT)
     _azzs_graph_add_edge("${target_name}" "${source_relative}")
   endforeach()
 
-  file(GLOB_RECURSE project_sources LIST_DIRECTORIES FALSE
+  set(project_source_patterns
     "${AZZS_GRAPH_SOURCE_ROOT}/src/*.c"
     "${AZZS_GRAPH_SOURCE_ROOT}/src/*.cc"
     "${AZZS_GRAPH_SOURCE_ROOT}/src/*.cpp"
@@ -1152,18 +1152,23 @@ if(AZZS_GRAPH_SCAN_PROJECT)
     "${AZZS_GRAPH_SOURCE_ROOT}/src/*.hpp"
     "${AZZS_GRAPH_SOURCE_ROOT}/src/*.inl"
     "${AZZS_GRAPH_SOURCE_ROOT}/src/*.ipp"
-    "${AZZS_GRAPH_SOURCE_ROOT}/src/*.ixx"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.c"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cc"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cpp"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cppm"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cxx"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.h"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.hpp"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.inl"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.ipp"
-    "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.ixx"
-  )
+    "${AZZS_GRAPH_SOURCE_ROOT}/src/*.ixx")
+  if(NOT DEFINED AZZS_GRAPH_SCAN_TEST_SOURCES OR
+     AZZS_GRAPH_SCAN_TEST_SOURCES)
+    list(APPEND project_source_patterns
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.c"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cc"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cpp"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cppm"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.cxx"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.h"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.hpp"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.inl"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.ipp"
+      "${AZZS_GRAPH_SOURCE_ROOT}/tests/*.ixx")
+  endif()
+  file(GLOB_RECURSE project_sources LIST_DIRECTORIES FALSE
+    ${project_source_patterns})
 
   foreach(source_path IN LISTS project_sources)
     file(RELATIVE_PATH relative_source

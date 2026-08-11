@@ -41,12 +41,8 @@ function(expect_architecture_rejection fixture)
   message(STATUS "Architecture negative '${fixture}' rejected as expected")
 endfunction()
 
-function(expect_cmake_project_rejection scenario)
-  cmake_parse_arguments(ARG "CONFIGURE_ONLY" "BUILD_TESTING" "" ${ARGN})
-  set(expected_fragments ${ARG_UNPARSED_ARGUMENTS})
-  if(NOT DEFINED ARG_BUILD_TESTING)
-    set(ARG_BUILD_TESTING ON)
-  endif()
+function(configure_cmake_project scenario build_testing
+    output_result output_text output_build_directory)
   set(build_directory
     "${AZZS_ARCHITECTURE_BINARY_DIR}/negative-projects/${scenario}")
   file(REMOVE_RECURSE "${build_directory}")
@@ -58,7 +54,7 @@ function(expect_cmake_project_rejection scenario)
     -G "${AZZS_CMAKE_GENERATOR}"
     "-DAZZS_GUARDRAILS_MODULE_DIR=${AZZS_GUARDRAILS_MODULE_DIR}"
     "-DAZZS_NEGATIVE_SCENARIO=${scenario}"
-    "-DBUILD_TESTING=${ARG_BUILD_TESTING}"
+    "-DBUILD_TESTING=${build_testing}"
   )
   if(DEFINED AZZS_CMAKE_GENERATOR_PLATFORM AND
      NOT AZZS_CMAKE_GENERATOR_PLATFORM STREQUAL "")
@@ -80,7 +76,21 @@ function(expect_cmake_project_rejection scenario)
     OUTPUT_VARIABLE configure_output
     ERROR_VARIABLE configure_error
   )
-  set(output "${configure_output}\n${configure_error}")
+  set("${output_result}" "${configure_result}" PARENT_SCOPE)
+  set("${output_text}"
+    "${configure_output}\n${configure_error}" PARENT_SCOPE)
+  set("${output_build_directory}" "${build_directory}" PARENT_SCOPE)
+endfunction()
+
+function(expect_cmake_project_rejection scenario)
+  cmake_parse_arguments(ARG "CONFIGURE_ONLY" "BUILD_TESTING" "" ${ARGN})
+  set(expected_fragments ${ARG_UNPARSED_ARGUMENTS})
+  if(NOT DEFINED ARG_BUILD_TESTING)
+    set(ARG_BUILD_TESTING ON)
+  endif()
+  configure_cmake_project(
+    "${scenario}" "${ARG_BUILD_TESTING}"
+    configure_result output build_directory)
   set(result "${configure_result}")
 
   if(configure_result EQUAL 0 AND NOT ARG_CONFIGURE_ONLY)
@@ -112,6 +122,22 @@ function(expect_cmake_project_rejection scenario)
     "CMake architecture negative '${scenario}' rejected as expected")
 endfunction()
 
+function(expect_cmake_project_acceptance scenario)
+  cmake_parse_arguments(ARG "" "BUILD_TESTING" "" ${ARGN})
+  if(NOT DEFINED ARG_BUILD_TESTING)
+    set(ARG_BUILD_TESTING ON)
+  endif()
+  configure_cmake_project(
+    "${scenario}" "${ARG_BUILD_TESTING}"
+    configure_result output build_directory)
+  if(NOT configure_result EQUAL 0)
+    message(FATAL_ERROR
+      "CMake architecture positive '${scenario}' was rejected unexpectedly:\n${output}")
+  endif()
+  message(STATUS
+    "CMake architecture positive '${scenario}' accepted as expected")
+endfunction()
+
 if(AZZS_NEGATIVE_GROUP STREQUAL "reverse-or-cycle")
   expect_architecture_rejection(
     reverse-dependency
@@ -138,6 +164,10 @@ if(AZZS_NEGATIVE_GROUP STREQUAL "reverse-or-cycle")
     "target: azzs_domain"
     "actual edge: azzs_domain (domain) -> tests/support/rogue.cpp (test_support)"
     "allowed edges: domain target sources -> domain"
+  )
+  expect_cmake_project_acceptance(
+    valid
+    BUILD_TESTING OFF
   )
   expect_cmake_project_rejection(
     include-bypass

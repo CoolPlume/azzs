@@ -24,7 +24,9 @@ endif()
 add_subdirectory(src/domain)
 add_subdirectory(src/application)
 add_subdirectory(src/adapters/windows)
-add_subdirectory(tests/support)
+if(BUILD_TESTING)
+  add_subdirectory(tests/support)
+endif()
 
 azzs_finalize_project_guardrails()
 
