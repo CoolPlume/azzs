@@ -1,5 +1,6 @@
 #include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -127,11 +128,52 @@ namespace {
   return ConfirmStatus::failed;
 }
 
+[[nodiscard]] std::string normalized_import_path(std::string_view path) {
+  std::string normalized;
+  normalized.reserve(path.size());
+  bool previous_separator = false;
+  for (unsigned char const byte : path) {
+    if (byte < 0x20 || byte == 0x7f) {
+      return {};
+    }
+    auto const character = static_cast<char>(byte);
+    if (character == '/' || character == '\\') {
+      if (!previous_separator) {
+        normalized.push_back('/');
+      }
+      previous_separator = true;
+      continue;
+    }
+    normalized.push_back(character);
+    previous_separator = false;
+  }
+  while (normalized.size() > 1 && normalized.back() == '/') {
+    normalized.pop_back();
+  }
+  return normalized;
+}
+
+[[nodiscard]] std::string path_fingerprint(std::string_view path) {
+  std::uint64_t fingerprint = 14'695'981'039'346'656'037ULL;
+  for (unsigned char const byte : path) {
+    fingerprint ^= byte;
+    fingerprint *= 1'099'511'628'211ULL;
+  }
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string result(16, '0');
+  for (std::size_t index = 0; index < result.size(); ++index) {
+    auto const shift = static_cast<unsigned>((result.size() - index - 1) * 4);
+    result[index] = kHex[(fingerprint >> shift) & 0x0fU];
+  }
+  return result;
+}
+
 [[nodiscard]] std::string redacted_import_path(std::string_view path) {
-  auto const separator = path.find_last_of("/\\");
-  auto filename = separator == std::string_view::npos
-                      ? path
-                      : path.substr(separator + 1);
+  auto const normalized = normalized_import_path(path);
+  auto const separator = normalized.find_last_of('/');
+  auto filename = separator == std::string::npos
+                      ? std::string_view{normalized}
+                      : std::string_view{normalized}.substr(separator + 1);
   if (filename.empty() || filename == "." || filename == "..") {
     return "local-catalog-file";
   }
@@ -139,7 +181,7 @@ namespace {
   if (filename.size() > maximum_retained_filename) {
     filename = filename.substr(filename.size() - maximum_retained_filename);
   }
-  return std::string{filename};
+  return std::string{filename} + "#" + path_fingerprint(normalized);
 }
 
 [[nodiscard]] std::string_view import_source_type_name(
@@ -488,16 +530,23 @@ PrepareResult SettingsCatalogLifecycle::prepare_candidate(
 
   auto const current_revision = loaded.current->catalog.revision;
   auto const candidate_revision = validation.validated->catalog.revision;
-  if (import_source.has_value() && correlation.has_value()) {
-    log_import_event(*correlation, "debug-import-validation",
-                     ExecutionResult::succeeded, *import_source, "accepted");
-  }
   if (validation.validated->catalog == loaded.current->catalog) {
+    if (import_source.has_value() && correlation.has_value()) {
+      log_import_event(*correlation, "debug-import-validation",
+                       ExecutionResult::succeeded, *import_source,
+                       "no-change");
+    }
     return {.status = PrepareStatus::no_change,
             .import_source = import_source,
             .detail = "candidate settings catalog is already active"};
   }
   if (candidate_revision == current_revision) {
+    if (import_source.has_value() && correlation.has_value()) {
+      log_import_event(
+          *correlation, "debug-import-validation", ExecutionResult::failed,
+          *import_source, "rejected",
+          "one settings catalog revision cannot identify different content");
+    }
     return {.status = PrepareStatus::rejected,
             .import_source = import_source,
             .detail =
@@ -509,6 +558,11 @@ PrepareResult SettingsCatalogLifecycle::prepare_candidate(
             .import_source = import_source,
             .detail =
                 "a lower settings catalog revision requires debug import or rollback"};
+  }
+
+  if (import_source.has_value() && correlation.has_value()) {
+    log_import_event(*correlation, "debug-import-validation",
+                     ExecutionResult::succeeded, *import_source, "accepted");
   }
 
   auto change_correlation = correlation.has_value()

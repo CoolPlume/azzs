@@ -106,6 +106,31 @@ class RecordingExecutionLog final : public ExecutionLog {
     });
   }
 
+  [[nodiscard]] bool contains_import_event_for_filename(
+      std::string_view stage, azzs::application::ExecutionResult result,
+      std::string_view filename, std::string_view import_result) const {
+    return std::ranges::any_of(events_, [&](ExecutionEvent const& event) {
+      if (event.component != "settings-catalog" || event.stage != stage ||
+          event.result != result) {
+        return false;
+      }
+      auto has_field = [&](std::string_view key, std::string_view value) {
+        return std::ranges::any_of(event.fields, [&](auto const& field) {
+          return field.key == key && field.value == value;
+        });
+      };
+      auto has_redacted_path = std::ranges::any_of(
+          event.fields, [&](auto const& field) {
+            return field.key == "source_path" &&
+                   field.value.starts_with(filename) &&
+                   field.value.size() > filename.size() &&
+                   field.value[filename.size()] == '#';
+          });
+      return has_field("source_type", "local-file") && has_redacted_path &&
+             has_field("import_result", import_result);
+    });
+  }
+
   [[nodiscard]] bool contains_text(std::string_view text) const {
     return std::ranges::any_of(events_, [&](ExecutionEvent const& event) {
       if (event.error.has_value() &&
@@ -337,6 +362,95 @@ class MutableCatalogImportAuthorization final
   return std::move(output).str();
 }
 
+[[nodiscard]] std::string legacy_v1_package_with_plan_dependencies() {
+  auto alpha = setting("setting.alpha", "Alpha setting",
+                       "windows.target.alpha", true);
+  auto beta = setting("setting.beta", "Beta setting", "windows.target.beta",
+                      false);
+  auto gamma = setting("setting.gamma", "Gamma setting",
+                       "windows.target.gamma", false);
+  std::ostringstream output;
+  output << "AZZS_SETTINGS_CATALOG\t1\t1\t4\n";
+  auto append_setting = [&](catalog_domain::SettingDefinition const& item) {
+    auto const recovery =
+        item.recovery_requirement ==
+                catalog_domain::RecoveryRequirement::restore_record_required
+            ? "restore"
+            : "none";
+    auto restart = "none";
+    if (item.restart_requirement ==
+        catalog_domain::RestartRequirement::explorer) {
+      restart = "explorer";
+    } else if (item.restart_requirement ==
+               catalog_domain::RestartRequirement::windows) {
+      restart = "windows";
+    }
+    output << "SETTING\t" << item.id.value << '\t' << item.display_name
+           << '\t' << item.description << '\t' << dash(item.source_url)
+           << '\t' << version_text(item.known_windows_range.minimum) << '\t'
+           << version_text(item.known_windows_range.maximum) << '\t'
+           << (item.default_selected ? 1 : 0) << '\t' << recovery << '\t'
+           << restart << '\t' << item.semantics.identity << '\t'
+           << item.semantics.apply_capability << '\t'
+           << item.semantics.detect_capability << '\t'
+           << dash(item.semantics.recover_capability) << '\n';
+  };
+  append_setting(alpha);
+  append_setting(beta);
+  append_setting(gamma);
+  output << "PLAN\tplan.first\tFirst plan\tFirst legacy plan\n"
+         << "MEMBER\tplan.first\tsetting.beta\t10\t1\tsetting.alpha\n"
+         << "PLAN\tplan.second\tSecond plan\tSecond legacy plan\n"
+         << "MEMBER\tplan.second\tsetting.beta\t10\t1\tsetting.gamma\n";
+  return std::move(output).str();
+}
+
+void append_u8(StateBytes& payload, std::uint8_t value) {
+  payload.push_back(static_cast<std::byte>(value));
+}
+
+void append_u32(StateBytes& payload, std::uint32_t value) {
+  for (unsigned shift = 0; shift < 32; shift += 8) {
+    append_u8(payload, static_cast<std::uint8_t>(value >> shift));
+  }
+}
+
+void append_u64(StateBytes& payload, std::uint64_t value) {
+  for (unsigned shift = 0; shift < 64; shift += 8) {
+    append_u8(payload, static_cast<std::uint8_t>(value >> shift));
+  }
+}
+
+void append_text(StateBytes& payload, std::string_view text) {
+  append_u64(payload, text.size());
+  for (auto const character : text) {
+    append_u8(payload, static_cast<std::uint8_t>(character));
+  }
+}
+
+[[nodiscard]] StateBytes legacy_v1_state_payload(
+    std::string_view current, std::optional<std::string_view> previous) {
+  StateBytes payload;
+  for (auto const character : std::string_view{"AZZSSC01"}) {
+    append_u8(payload, static_cast<std::uint8_t>(character));
+  }
+  append_u32(payload, 1);
+  append_text(payload, current);
+  append_u8(payload, previous.has_value() ? 1 : 0);
+  if (previous.has_value()) {
+    append_text(payload, *previous);
+  }
+  return payload;
+}
+
+[[nodiscard]] bool has_redacted_source_filename(
+    catalog_app::CatalogImportSourceDescriptor const& source,
+    std::string_view filename) {
+  return source.redacted_path.starts_with(filename) &&
+         source.redacted_path.size() > filename.size() &&
+         source.redacted_path[filename.size()] == '#';
+}
+
 class TemporaryCatalogFile final {
  public:
   TemporaryCatalogFile(std::string name, std::string contents)
@@ -509,6 +623,60 @@ struct Fixture final {
         "a stable setting id must freeze execution, dependency, risk, and recovery semantics");
   }
   return passed;
+}
+
+[[nodiscard]] bool legacy_state_identity_history_contract() {
+  Fixture fixture;
+  auto retired = base_catalog();
+  retired.revision = 2;
+  retired.settings.erase(retired.settings.begin() + 1);
+  retired.plans.clear();
+  auto current = retired;
+  current.revision = 3;
+  current.settings[0].display_name = "Alpha after beta retirement";
+  auto const current_bytes = package_text(current);
+  auto const previous_bytes = package_text(retired);
+  auto const payload = legacy_v1_state_payload(current_bytes, previous_bytes);
+  auto const key = StateKey::machine(AggregateId{"settings-catalog"});
+  auto seeded = fixture.states.initialize(
+      key,
+      DeviceState{.value = {.schema = 2,
+                             .minimum_reader = 1,
+                             .minimum_writer = 2,
+                             .payload = payload}});
+  if (seeded.status != azzs::application::StateCommitStatus::committed) {
+    return expect(false, "legacy state fixture must initialize");
+  }
+
+  auto snapshot = fixture.lifecycle.snapshot();
+  auto next = current;
+  next.revision = 4;
+  next.settings.push_back(setting("setting.beta", "Reused beta setting",
+                                  "windows.target.reused", false));
+  auto persisted = fixture.states.inspect(key);
+  return expect(
+      snapshot.status == catalog_app::CatalogSnapshotStatus::read_only &&
+          !snapshot.current.has_value() &&
+          snapshot.detail.find("complete identity history") !=
+              std::string::npos &&
+          fixture.lifecycle.prepare_update(next).status ==
+              catalog_app::PrepareStatus::read_only &&
+          persisted.snapshot.has_value() &&
+          persisted.snapshot->state.value.payload == payload,
+      "a V1 state lacking N-2 tombstones must stay read-only for controlled recovery");
+}
+
+[[nodiscard]] bool legacy_package_fact_contract() {
+  Fixture fixture;
+  TemporaryCatalogFile legacy_file{
+      "settings-catalog-legacy-lossy.azcat",
+      legacy_v1_package_with_plan_dependencies()};
+  auto imported = fixture.adapter.read_import(legacy_file.path());
+  return expect(
+      imported.status == catalog_app::CatalogImportStatus::invalid &&
+          !imported.catalog.has_value() &&
+          imported.detail.find("format 2") != std::string::npos,
+      "a V1 package with per-plan dependencies must reject lossy execution-fact migration");
 }
 
 [[nodiscard]] bool domain_model_contract() {
@@ -728,11 +896,12 @@ struct Fixture final {
           missing.import_source.has_value() &&
           missing.import_source->type ==
               catalog_app::CatalogImportSourceType::local_file &&
-          missing.import_source->redacted_path == "does-not-exist.azcat" &&
+          has_redacted_source_filename(*missing.import_source,
+                                       "does-not-exist.azcat") &&
           missing.detail.find("/Users/private-account") == std::string::npos,
       "a failed import must retain only a diagnosable redacted source");
   passed &= expect(
-      fixture.log.contains_import_event(
+      fixture.log.contains_import_event_for_filename(
           "debug-import-load", azzs::application::ExecutionResult::failed,
           "does-not-exist.azcat", "not-found"),
       "an import load failure must write a structured audit event");
@@ -749,9 +918,9 @@ struct Fixture final {
                    "unknown imported execution semantics must preserve the current catalog");
   passed &= expect(
       unknown.import_source.has_value() &&
-          unknown.import_source->redacted_path ==
-              "settings-catalog-unknown.azcat" &&
-          fixture.log.contains_import_event(
+          has_redacted_source_filename(*unknown.import_source,
+                                       "settings-catalog-unknown.azcat") &&
+          fixture.log.contains_import_event_for_filename(
               "debug-import-validation",
               azzs::application::ExecutionResult::failed,
               "settings-catalog-unknown.azcat", "rejected"),
@@ -766,28 +935,30 @@ struct Fixture final {
                        imported.prepared.has_value() &&
                        imported.prepared->changes.downgrade &&
                        imported.prepared->import_source.has_value() &&
-                       imported.prepared->import_source->redacted_path ==
-                           "settings-catalog-valid.azcat" &&
+                       has_redacted_source_filename(
+                           *imported.prepared->import_source,
+                           "settings-catalog-valid.azcat") &&
                        imported.prepared->setting_count == 2 &&
                        imported.prepared->plan_count == 1,
                    "debug downgrade preview must show path, version, and item counts");
   passed &= expect(fixture.lifecycle.snapshot().current->catalog.revision == 2,
                    "debug import must wait for exact confirmation");
   if (imported.prepared.has_value()) {
-    auto confirmed_import = fixture.lifecycle.confirm(
-        imported.prepared->confirmation_token);
-    passed &= expect(confirmed_import.status ==
+      auto confirmed_import = fixture.lifecycle.confirm(
+          imported.prepared->confirmation_token);
+      passed &= expect(confirmed_import.status ==
                              catalog_app::ConfirmStatus::committed &&
                          confirmed_import.import_source.has_value() &&
-                         confirmed_import.import_source->redacted_path ==
-                             "settings-catalog-valid.azcat",
+                         has_redacted_source_filename(
+                             *confirmed_import.import_source,
+                             "settings-catalog-valid.azcat"),
                      "a confirmed, validated debug downgrade must load");
   }
   passed &= expect(
-      fixture.log.contains_import_event(
+      fixture.log.contains_import_event_for_filename(
           "debug-import-confirm", azzs::application::ExecutionResult::started,
           "settings-catalog-valid.azcat", "confirmation-started") &&
-          fixture.log.contains_import_event(
+          fixture.log.contains_import_event_for_filename(
               "debug-import-confirm",
               azzs::application::ExecutionResult::succeeded,
               "settings-catalog-valid.azcat", "committed"),
@@ -813,6 +984,64 @@ struct Fixture final {
                   .feature_update_year = 24,
                   .feature_update_half = 2}),
       "the file adapter must parse and persist downstream settings facts");
+  return passed;
+}
+
+[[nodiscard]] bool debug_import_audit_terminal_contract() {
+  Fixture fixture;
+  if (fixture.lifecycle.initialize_builtin(updated_catalog()).status !=
+      catalog_app::InitializeStatus::initialized) {
+    return expect(false, "same-revision audit fixture must initialize");
+  }
+  fixture.import_authorization.set_enabled(true);
+  auto same_revision = base_catalog();
+  same_revision.revision = 2;
+  TemporaryCatalogFile conflict_file{
+      "settings-catalog-same-revision.azcat", package_text(same_revision)};
+  auto conflicted =
+      fixture.lifecycle.prepare_debug_import(conflict_file.path());
+  if (!conflicted.import_source.has_value()) {
+    return expect(false, "same-revision import must retain its source");
+  }
+  auto const& source = conflicted.import_source->redacted_path;
+  bool passed = expect(
+      conflicted.status == catalog_app::PrepareStatus::rejected &&
+          fixture.log.contains_import_event(
+              "debug-import-validation",
+              azzs::application::ExecutionResult::failed, source, "rejected") &&
+          !fixture.log.contains_import_event(
+              "debug-import-validation",
+              azzs::application::ExecutionResult::succeeded, source,
+              "accepted"),
+      "a same-revision import conflict must have one rejected audit terminal, not accepted");
+
+  auto first = fixture.lifecycle.prepare_debug_import(
+      "/Users/private-account/catalog-a/same-name.azcat");
+  auto second = fixture.lifecycle.prepare_debug_import(
+      "/Users/private-account/catalog-b/same-name.azcat");
+  auto repeated = fixture.lifecycle.prepare_debug_import(
+      "/Users/private-account/catalog-a/same-name.azcat");
+  passed &= expect(
+      first.status == catalog_app::PrepareStatus::rejected &&
+          second.status == catalog_app::PrepareStatus::rejected &&
+          repeated.status == catalog_app::PrepareStatus::rejected &&
+          first.import_source.has_value() && second.import_source.has_value() &&
+          repeated.import_source.has_value() &&
+          has_redacted_source_filename(*first.import_source, "same-name.azcat") &&
+          has_redacted_source_filename(*second.import_source,
+                                       "same-name.azcat") &&
+          first.import_source->redacted_path ==
+              repeated.import_source->redacted_path &&
+          first.import_source->redacted_path !=
+              second.import_source->redacted_path &&
+          fixture.log.contains_import_event(
+              "debug-import-load", azzs::application::ExecutionResult::failed,
+              first.import_source->redacted_path, "not-found") &&
+          fixture.log.contains_import_event(
+              "debug-import-load", azzs::application::ExecutionResult::failed,
+              second.import_source->redacted_path, "not-found") &&
+          !fixture.log.contains_text("/Users/private-account"),
+      "same-name imports from different directories must audit distinct redacted sources");
   return passed;
 }
 
@@ -887,9 +1116,12 @@ struct Fixture final {
 int main() {
   bool passed = true;
   passed &= stable_identity_lifecycle_contract();
+  passed &= legacy_state_identity_history_contract();
+  passed &= legacy_package_fact_contract();
   passed &= domain_model_contract();
   passed &= update_rollback_and_isolation_contract();
   passed &= debug_import_contract();
+  passed &= debug_import_audit_terminal_contract();
   passed &= occupancy_failure_and_recovery_contract();
   if (!passed) {
     return EXIT_FAILURE;

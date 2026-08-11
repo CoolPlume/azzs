@@ -133,7 +133,6 @@ struct ParsedPackage final {
   struct ParsedMember final {
     std::string plan_id;
     catalog_domain::PlanMember member;
-    std::vector<catalog_domain::StableId> legacy_dependencies;
   };
 
   catalog_domain::SettingsCatalog catalog;
@@ -155,10 +154,16 @@ struct ParsedPackage final {
     if (!header_seen) {
       if (fields.size() != 4 || fields[0] != "AZZS_SETTINGS_CATALOG" ||
           !parse_unsigned(fields[1], package_format) ||
-          (package_format != 1 &&
-           package_format != kPackageFormatVersion) ||
           !parse_unsigned(fields[2], catalog.schema_version) ||
           !parse_unsigned(fields[3], catalog.revision)) {
+        return {.error = "settings catalog package header is invalid"};
+      }
+      if (package_format == 1) {
+        return {.error =
+                    "settings catalog package format 1 lacks required "
+                    "execution facts; export a format 2 package"};
+      }
+      if (package_format != kPackageFormatVersion) {
         return {.error = "settings catalog package header is invalid"};
       }
       header_seen = true;
@@ -167,10 +172,9 @@ struct ParsedPackage final {
 
     if (fields[0] == "SETTING") {
       bool default_selected{};
-      auto const expected_fields = package_format == 1 ? 14U : 17U;
       std::optional<catalog_domain::WindowsVersion> minimum_windows;
       std::optional<catalog_domain::WindowsVersion> maximum_windows;
-      if (fields.size() != expected_fields ||
+      if (fields.size() != 17 ||
           !parse_windows_version(fields[5], minimum_windows) ||
           !parse_windows_version(fields[6], maximum_windows) ||
           !parse_boolean(fields[7], default_selected)) {
@@ -201,30 +205,28 @@ struct ParsedPackage final {
       std::vector<catalog_domain::StableId> dependencies;
       auto risk = catalog_domain::SettingRiskLevel::low;
       auto force_attempt = catalog_domain::ForceAttemptRule::prohibited;
-      if (package_format == 2) {
-        if (fields[14] != "-") {
-          for (auto dependency : split(fields[14], ',')) {
-            dependencies.push_back(
-                catalog_domain::StableId{std::string{dependency}});
-          }
+      if (fields[14] != "-") {
+        for (auto dependency : split(fields[14], ',')) {
+          dependencies.push_back(
+              catalog_domain::StableId{std::string{dependency}});
         }
-        if (fields[15] == "low") {
-          risk = catalog_domain::SettingRiskLevel::low;
-        } else if (fields[15] == "elevated") {
-          risk = catalog_domain::SettingRiskLevel::elevated;
-        } else {
-          catalog.unknown_semantic_fields.push_back(
-              "setting.risk=" + std::string{fields[15]});
-        }
-        if (fields[16] == "prohibited") {
-          force_attempt = catalog_domain::ForceAttemptRule::prohibited;
-        } else if (fields[16] == "confirm-if-recoverable") {
-          force_attempt = catalog_domain::ForceAttemptRule::
-              allowed_with_explicit_confirmation;
-        } else {
-          catalog.unknown_semantic_fields.push_back(
-              "setting.force_attempt_rule=" + std::string{fields[16]});
-        }
+      }
+      if (fields[15] == "low") {
+        risk = catalog_domain::SettingRiskLevel::low;
+      } else if (fields[15] == "elevated") {
+        risk = catalog_domain::SettingRiskLevel::elevated;
+      } else {
+        catalog.unknown_semantic_fields.push_back(
+            "setting.risk=" + std::string{fields[15]});
+      }
+      if (fields[16] == "prohibited") {
+        force_attempt = catalog_domain::ForceAttemptRule::prohibited;
+      } else if (fields[16] == "confirm-if-recoverable") {
+        force_attempt = catalog_domain::ForceAttemptRule::
+            allowed_with_explicit_confirmation;
+      } else {
+        catalog.unknown_semantic_fields.push_back(
+            "setting.force_attempt_rule=" + std::string{fields[16]});
       }
       catalog.settings.push_back(catalog_domain::SettingDefinition{
           .id = catalog_domain::StableId{std::string{fields[1]}},
@@ -267,8 +269,7 @@ struct ParsedPackage final {
     if (fields[0] == "MEMBER") {
       catalog_domain::PlanMember member;
       bool default_selected{};
-      auto const expected_fields = package_format == 1 ? 6U : 5U;
-      if (fields.size() != expected_fields ||
+      if (fields.size() != 5 ||
           !parse_unsigned(fields[3], member.order) ||
           !parse_boolean(fields[4], default_selected)) {
         return {.error = "settings catalog MEMBER record is invalid at line " +
@@ -277,17 +278,8 @@ struct ParsedPackage final {
       member.setting_id =
           catalog_domain::StableId{std::string{fields[2]}};
       member.default_selected = default_selected;
-      std::vector<catalog_domain::StableId> legacy_dependencies;
-      if (package_format == 1 && fields[5] != "-") {
-        for (auto dependency : split(fields[5], ',')) {
-          legacy_dependencies.push_back(
-              catalog_domain::StableId{std::string{dependency}});
-        }
-      }
       members.push_back({.plan_id = std::string{fields[1]},
-                         .member = std::move(member),
-                         .legacy_dependencies =
-                             std::move(legacy_dependencies)});
+                         .member = std::move(member)});
       continue;
     }
 
@@ -310,21 +302,6 @@ struct ParsedPackage final {
     if (plan == catalog.plans.end()) {
       return {.error =
                   "settings catalog MEMBER references an unknown plan"};
-    }
-    if (!parsed_member.legacy_dependencies.empty()) {
-      auto setting = std::ranges::find(
-          catalog.settings, parsed_member.member.setting_id,
-          &catalog_domain::SettingDefinition::id);
-      if (setting == catalog.settings.end()) {
-        return {.error =
-                    "settings catalog MEMBER references an unknown setting"};
-      }
-      for (auto& dependency : parsed_member.legacy_dependencies) {
-        if (std::ranges::find(setting->depends_on, dependency) ==
-            setting->depends_on.end()) {
-          setting->depends_on.push_back(std::move(dependency));
-        }
-      }
     }
     plan->members.push_back(std::move(parsed_member.member));
   }
@@ -515,80 +492,78 @@ class Decoder final {
   return encoder.finish();
 }
 
-[[nodiscard]] std::optional<catalog_app::SettingsCatalogState> decode_state(
-    domain::StateBytes const& bytes) {
+struct DecodedState final {
+  std::optional<catalog_app::SettingsCatalogState> state;
+  std::string error;
+};
+
+[[nodiscard]] DecodedState decode_state(domain::StateBytes const& bytes) {
   Decoder decoder{bytes};
   std::array<std::byte, kStateMagic.size()> magic{};
   std::uint32_t version{};
   std::uint8_t has_previous{};
   std::string current_bytes;
   if (!decoder.raw(magic) || magic != kStateMagic || !decoder.u32(version) ||
-      (version != 1 && version != kStateFormatVersion) ||
       !decoder.text(current_bytes) ||
       !decoder.u8(has_previous) || has_previous > 1) {
-    return std::nullopt;
+    return {.error = "settings catalog state payload is invalid or unsupported"};
+  }
+  if (version == 1) {
+    return {.error =
+                "settings catalog state format 1 lacks complete identity "
+                "history; controlled state recovery is required"};
+  }
+  if (version != kStateFormatVersion) {
+    return {.error = "settings catalog state payload is invalid or unsupported"};
   }
   auto current = parse_package(current_bytes);
   if (!current.catalog.has_value()) {
-    return std::nullopt;
+    return {.error = std::move(current.error)};
   }
   catalog_app::SettingsCatalogState state{
       .current = std::move(*current.catalog)};
   if (has_previous == 1) {
     std::string previous_bytes;
     if (!decoder.text(previous_bytes)) {
-      return std::nullopt;
+      return {.error = "settings catalog state payload is invalid or unsupported"};
     }
     auto previous = parse_package(previous_bytes);
     if (!previous.catalog.has_value()) {
-      return std::nullopt;
+      return {.error = std::move(previous.error)};
     }
     state.previous = std::move(*previous.catalog);
   }
-  if (version == 1) {
-    state.identity_tombstones =
-        catalog_domain::identity_tombstones(state.current);
-    if (state.previous.has_value()) {
-      state.identity_tombstones =
-          catalog_domain::merge_identity_tombstones(
-              std::move(state.identity_tombstones), *state.previous);
+  std::uint64_t tombstone_count{};
+  if (!decoder.u64(tombstone_count) ||
+      tombstone_count > kMaxIdentityTombstones) {
+    return {.error = "settings catalog state payload is invalid or unsupported"};
+  }
+  state.identity_tombstones.reserve(static_cast<std::size_t>(tombstone_count));
+  for (std::uint64_t index = 0; index < tombstone_count; ++index) {
+    std::uint8_t kind{};
+    catalog_domain::CatalogIdentityTombstone tombstone;
+    if (!decoder.u8(kind) ||
+        kind > static_cast<std::uint8_t>(
+                   catalog_domain::CatalogItemKind::optimization_plan) ||
+        !decoder.text(tombstone.id.value) ||
+        !decoder.text(tombstone.semantic_fingerprint) || !tombstone.id.valid() ||
+        tombstone.semantic_fingerprint.empty()) {
+      return {.error = "settings catalog state payload is invalid or unsupported"};
     }
-  } else {
-    std::uint64_t tombstone_count{};
-    if (!decoder.u64(tombstone_count) ||
-        tombstone_count > kMaxIdentityTombstones) {
-      return std::nullopt;
+    tombstone.kind = static_cast<catalog_domain::CatalogItemKind>(kind);
+    if (std::ranges::any_of(
+            state.identity_tombstones,
+            [&](catalog_domain::CatalogIdentityTombstone const& existing) {
+              return existing.kind == tombstone.kind && existing.id == tombstone.id;
+            })) {
+      return {.error = "settings catalog state payload is invalid or unsupported"};
     }
-    state.identity_tombstones.reserve(
-        static_cast<std::size_t>(tombstone_count));
-    for (std::uint64_t index = 0; index < tombstone_count; ++index) {
-      std::uint8_t kind{};
-      catalog_domain::CatalogIdentityTombstone tombstone;
-      if (!decoder.u8(kind) ||
-          kind > static_cast<std::uint8_t>(
-                     catalog_domain::CatalogItemKind::optimization_plan) ||
-          !decoder.text(tombstone.id.value) ||
-          !decoder.text(tombstone.semantic_fingerprint) ||
-          !tombstone.id.valid() || tombstone.semantic_fingerprint.empty()) {
-        return std::nullopt;
-      }
-      tombstone.kind =
-          static_cast<catalog_domain::CatalogItemKind>(kind);
-      if (std::ranges::any_of(
-              state.identity_tombstones,
-              [&](catalog_domain::CatalogIdentityTombstone const& existing) {
-                return existing.kind == tombstone.kind &&
-                       existing.id == tombstone.id;
-              })) {
-        return std::nullopt;
-      }
-      state.identity_tombstones.push_back(std::move(tombstone));
-    }
+    state.identity_tombstones.push_back(std::move(tombstone));
   }
   if (decoder.remaining() != 0) {
-    return std::nullopt;
+    return {.error = "settings catalog state payload is invalid or unsupported"};
   }
-  return state;
+  return {.state = std::move(state)};
 }
 
 [[nodiscard]] catalog_app::CatalogStorageWriteStatus map_write_status(
@@ -644,15 +619,14 @@ catalog_app::CatalogStorageRead SettingsCatalogFileAdapter::read() {
     return {.status = catalog_app::CatalogStorageReadStatus::failed,
             .detail = "state store returned no settings catalog snapshot"};
   }
-  auto state = decode_state(stored.snapshot->state.value.payload);
-  if (!state.has_value()) {
+  auto decoded = decode_state(stored.snapshot->state.value.payload);
+  if (!decoded.state.has_value()) {
     return {.status = catalog_app::CatalogStorageReadStatus::read_only,
             .revision = stored.snapshot->revision,
-            .detail =
-                "settings catalog state payload is invalid or unsupported"};
+            .detail = std::move(decoded.error)};
   }
   return {.status = status,
-          .state = std::move(state),
+          .state = std::move(decoded.state),
           .revision = stored.snapshot->revision};
 }
 
@@ -661,7 +635,7 @@ catalog_app::CatalogStorageWrite SettingsCatalogFileAdapter::write(
     catalog_app::SettingsCatalogState state) {
   auto desired_payload = encode_state(state);
   auto canonical_desired = decode_state(desired_payload);
-  if (!canonical_desired.has_value()) {
+  if (!canonical_desired.state.has_value()) {
     return {.status = catalog_app::CatalogStorageWriteStatus::failed,
             .detail = "settings catalog state could not be encoded"};
   }
@@ -696,7 +670,7 @@ catalog_app::CatalogStorageWrite SettingsCatalogFileAdapter::write(
     auto confirmed = read();
     if (confirmed.status == catalog_app::CatalogStorageReadStatus::writable &&
         confirmed.state.has_value() &&
-        *confirmed.state == *canonical_desired) {
+        *confirmed.state == *canonical_desired.state) {
       return {.status = catalog_app::CatalogStorageWriteStatus::committed,
               .revision = std::move(confirmed.revision),
               .detail =
