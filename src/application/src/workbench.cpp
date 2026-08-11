@@ -1,8 +1,15 @@
 #include "azzs/application/workbench.hpp"
 
+#include <utility>
+
 namespace azzs::application {
 
-Workbench::Workbench(PlatformInfo const& platform_info) {
+Workbench::Workbench(PlatformInfo const& platform_info)
+    : Workbench(platform_info, {}) {}
+
+Workbench::Workbench(PlatformInfo const& platform_info,
+                     std::shared_ptr<WorkbenchServices> services)
+    : services_(std::move(services)) {
   domain::MinimumVersionPolicy const policy{kWindows10Version22H2};
   auto const observed_version = platform_info.windows_version();
 

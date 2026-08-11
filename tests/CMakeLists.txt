@@ -1,4 +1,12 @@
 add_subdirectory(support)
 add_subdirectory(core-smoke)
 add_subdirectory(architecture)
+add_subdirectory(device-state-contract)
+add_subdirectory(execution-log-contract)
+add_subdirectory(operation-occupancy-contract)
+add_subdirectory(ui-design-contract)
 add_subdirectory(product-identity-contract)
+
+if(WIN32)
+  add_subdirectory(windows-device-data-contract)
+endif()

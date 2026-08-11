@@ -6,7 +6,7 @@
       <ForcedIncludeFiles>$(MSBuildThisFileDirectory)..\..\windows\include\windows_fixture.hpp;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_application.lib;azzs_domain.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_application.lib;azzs_domain.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

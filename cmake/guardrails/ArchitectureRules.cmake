@@ -115,6 +115,7 @@ set(AZZS_ARCHITECTURE_ALLOWED_test
   domain
   platform_adapter
   infrastructure_adapter
+  ui
   runtime
   platform_runtime
 )
@@ -124,6 +125,11 @@ set(AZZS_ARCHITECTURE_ALLOWED_platform_runtime platform_runtime)
 # target-or-library | graph-node | role
 set(AZZS_ARCHITECTURE_EXTERNAL_CMAKE_TARGETS
   "Threads::Threads|external:threads|runtime"
+  "advapi32|external:windows-platform|platform_runtime"
+  "ole32|external:windows-platform|platform_runtime"
+  "rpcrt4|external:windows-platform|platform_runtime"
+  "shell32|external:windows-platform|platform_runtime"
+  "wtsapi32|external:windows-platform|platform_runtime"
 )
 set(AZZS_ARCHITECTURE_EXTERNAL_LINK_ITEM_PATTERNS
   "^-pthread$"
@@ -136,11 +142,17 @@ set(AZZS_ARCHITECTURE_CMAKE_DEPENDENCY_OPTION_PATTERNS
   "(^|[ ;])(-l[^ ]+|/DEFAULTLIB:|/WHOLEARCHIVE:)"
 )
 set(AZZS_ARCHITECTURE_EXTERNAL_MSBUILD_LIBRARIES
+  "advapi32.lib|external:windows-platform|platform_runtime"
+  "ole32.lib|external:windows-platform|platform_runtime"
+  "rpcrt4.lib|external:windows-platform|platform_runtime"
+  "shell32.lib|external:windows-platform|platform_runtime"
+  "wtsapi32.lib|external:windows-platform|platform_runtime"
   "windowsapp.lib|external:windows-platform|platform_runtime"
 )
 
 set(AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES
   "Azzs.WinUI|azzs_windows_adapter"
+  "Azzs.WinUI|azzs_infrastructure_adapter"
   "Azzs.WinUI|azzs_application"
   "Azzs.WinUI|azzs_domain"
   "Azzs.WinUI|external:windows-platform"
@@ -183,6 +195,11 @@ set(AZZS_ARCHITECTURE_WINUI_GENERATED_HEADER_PATTERNS
 
 set(AZZS_ARCHITECTURE_PLATFORM_HEADER_PATTERNS
   "^win[^/]*\\.h$"
+  "^aclapi\\.h$"
+  "^knownfolders\\.h$"
+  "^rpc\\.h$"
+  "^sddl\\.h$"
+  "^wtsapi32\\.h$"
   "^unknwn\\.h$"
   "^combaseapi\\.h$"
   "^objbase\\.h$"
@@ -194,6 +211,9 @@ set(AZZS_ARCHITECTURE_PLATFORM_HEADER_PATTERNS
   "^cfgmgr32\\.h$"
   "^dwmapi\\.h$"
   "^uxtheme\\.h$"
+  "^fcntl\\.h$"
+  "^sys/file\\.h$"
+  "^unistd\\.h$"
   "^wrl/"
   "^winrt/"
 )
@@ -210,7 +230,9 @@ set(AZZS_ARCHITECTURE_NO_DIRECT_SYSTEM_EFFECT_ROLES
 set(AZZS_ARCHITECTURE_SYSTEM_EFFECT_PATTERNS
   [==[(^|[^A-Za-z0-9_])(CreateFile|WriteFile|DeleteFile|MoveFile|CopyFile|ReplaceFile|CreateDirectory|RemoveDirectory|SetFileAttributes)(A|W)?([^A-Za-z0-9_]|$)]==]
   [==[(^|[^A-Za-z0-9_])(RegCreateKey|RegOpenKey|RegSetValue|RegDeleteKey|RegDeleteTree|RegDeleteValue)(Ex)?(A|W)?([^A-Za-z0-9_]|$)]==]
-  [==[(^|[^A-Za-z0-9_])(CreateProcess|ShellExecute|ShellExecuteEx|WinExec|system|_wsystem)(A|W)?([^A-Za-z0-9_]|$)]==]
+  [==[(^|[^A-Za-z0-9_])(CreateProcess|ShellExecute|ShellExecuteEx|WinExec)(A|W)?([^A-Za-z0-9_]|$)]==]
+  [==[(^|[^A-Za-z0-9_])(system|_wsystem)[ \t]*\(]==]
+  [==[&[ \t]*(system|_wsystem)([^A-Za-z0-9_]|$)]==]
   [==[(^|[^A-Za-z0-9_])(OpenSCManager|CreateService|StartService|ControlService|DeleteService)(A|W)?([^A-Za-z0-9_]|$)]==]
   [==[(^|[^A-Za-z0-9_])(WinHttp|InternetOpen|InternetConnect|HttpOpenRequest|URLDownloadToFile)[A-Za-z0-9_]*([^A-Za-z0-9_]|$)]==]
   [==[(^|[^A-Za-z0-9_])(LoadLibrary|GetProcAddress)(Ex)?(A|W)?([^A-Za-z0-9_]|$)]==]

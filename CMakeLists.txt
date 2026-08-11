@@ -34,9 +34,11 @@ include(cmake/AzzsProjectGuardrails.cmake)
 
 add_subdirectory(src/domain)
 add_subdirectory(src/application)
+add_subdirectory(src/adapters/infrastructure)
 add_subdirectory(src/adapters/windows)
 
 if(BUILD_TESTING)
+  add_subdirectory(src/adapters/ui/winui/DesignSystem)
   add_subdirectory(tests)
 endif()
 

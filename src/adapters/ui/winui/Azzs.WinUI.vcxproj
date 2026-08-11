@@ -91,14 +91,14 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\..\..\application\include;$(MSBuildThisFileDirectory)..\..\..\domain\include;$(MSBuildThisFileDirectory)..\..\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\..\..\application\include;$(MSBuildThisFileDirectory)..\..\..\domain\include;$(MSBuildThisFileDirectory)..\..\infrastructure\include;$(MSBuildThisFileDirectory)..\..\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/Zc:__cplusplus /utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(AzzsCoreLibraryDirectory);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_application.lib;azzs_domain.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_application.lib;azzs_domain.lib;advapi32.lib;ole32.lib;rpcrt4.lib;shell32.lib;wtsapi32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -121,6 +121,8 @@
 
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml" />
+    <Page Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml" />
+    <Page Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml" />
     <Page Include="MainWindow.xaml" />
     <Page Include="Pages\ApplicationSettingsPage.xaml" />
     <Page Include="Pages\DriversPage.xaml" />
@@ -129,6 +131,7 @@
     <Page Include="Pages\SoftwareInstallationPage.xaml" />
     <Page Include="Pages\SoftwareOptimizationPage.xaml" />
     <Page Include="Pages\SystemOptimizationPage.xaml" />
+    <Page Include="Themes\DesignSystem.xaml" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App.xaml.h">
@@ -137,6 +140,16 @@
     <ClInclude Include="MainWindow.xaml.h">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml.h">
+      <DependentUpon>ReadOnlyPresentationSurface.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml.h">
+      <DependentUpon>DesignSystemFixturePage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="DesignSystem\Fixtures\design_system_fixture.hpp" />
+    <ClInclude Include="DesignSystem\motion_contract.hpp" />
+    <ClInclude Include="DesignSystem\motion_preferences.hpp" />
+    <ClInclude Include="DesignSystem\presentation_contract.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Pages\ApplicationSettingsPage.xaml.h">
       <DependentUpon>ApplicationSettingsPage.xaml</DependentUpon>
@@ -164,6 +177,15 @@
   <ItemGroup>
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="App.xaml.cpp" />
+    <ClCompile Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml.cpp" />
+    <ClCompile Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml.cpp" />
+    <ClCompile Include="DesignSystem\Fixtures\design_system_fixture.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="DesignSystem\motion_preferences.cpp" />
+    <ClCompile Include="DesignSystem\presentation_contract.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="MainWindow.xaml.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -178,6 +200,8 @@
     <ClCompile Include="..\..\..\composition\windows\composition_root.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Midl Include="DesignSystem\Controls\ReadOnlyPresentationSurface.idl" />
+    <Midl Include="DesignSystem\Fixtures\DesignSystemFixturePage.idl" />
     <Midl Include="MainWindow.idl" />
     <Midl Include="Pages\ApplicationSettingsPage.idl" />
     <Midl Include="Pages\DriversPage.idl" />
@@ -203,6 +227,7 @@
   <Target Name="ValidateAzzsCoreLibraries" BeforeTargets="Link">
     <Error Condition="'$(AzzsCoreLibraryDirectory)'==''" Text="AzzsCoreLibraryDirectory must point to the CMake library output." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_application.lib')" Text="The CMake application core has not been built for $(Platform)|$(Configuration)." />
+    <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_infrastructure_adapter.lib')" Text="The CMake infrastructure adapter has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_windows_adapter.lib')" Text="The CMake Windows adapter has not been built for $(Platform)|$(Configuration)." />
   </Target>
 </Project>
