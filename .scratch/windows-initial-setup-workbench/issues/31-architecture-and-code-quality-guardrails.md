@@ -2,7 +2,7 @@
 
 Type: task
 Status: ready-for-agent
-Resolution: open
+Resolution: completed
 Blocked by: 01
 Claimed by: Codex issue-31 task
 Owner: issue-31
@@ -66,3 +66,5 @@ Evidence freshness: 绑定当前提交、项目配置、工具链和模式；代
 - 2026-08-10：Q4/Q5、制品矩阵、机器级安装版与跨类别控制已分别由 ADR-0035、ADR-0029、ADR-0037、ADR-0043 与 ADR-0041 冻结；ADR-0042 的双代损坏故障注入已进入本事项。工程合同已经闭合，本事项改为 `ready-for-agent`；发布门禁仍须由实际实现和可重复检查结果证明，状态变更不表示门禁已经通过。
 
 - 2026-08-09：维护者通过 `grill-with-docs` 确认低耦合、高内聚、前后端分离、局部扩展、无界面核心测试和架构自动检查均为发布硬门槛；最新技术不得以牺牲维护性为代价。
+
+- 2026-08-11：事项 31 在普通 merge 吸收事项 02/24 后完成统一目标/CTest 注册、UI 合同测试库、Windows/基础设施外部依赖登记和 fixture 同步；由 Windows 静态库 `$<LINK_ONLY:...>` 暴露的空依赖解析失败已收敛为独立 `if/elseif` 捕获修复。最终 head `da506374d78e66d42a3e1fed80bc51a33270c789` 通过 host `cmake --workflow --preset host-guardrails` 10/10、`BUILD_TESTING=OFF` 配置与构建、forced-include 定向负例组、`git diff --check` 和 GitNexus 门禁；Windows read-only validation run `31482733757` 的 x64 Release 与 ARM64 Release 均为 SUCCESS。PR #5 已 Squash 合入为 `829282e5c9981a7673fa36cc96e8ceaa04517e56`，据此标记 `Resolution: completed`。该结论是架构、合同与双架构构建证据，不替代各 consumer owner 的业务场景或真实设备验收。

@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 01
 Owner: issue-24
 Claimed by: Codex issue-24 task
@@ -62,3 +62,4 @@ Evidence freshness: 绑定当前提交、Windows 与 SDK、主题和动画设置
 - 2026-08-11：固定 fixture 位于 `src/adapters/ui/winui/DesignSystem/Fixtures/DesignSystemFixturePage.xaml*`，覆盖长中文、标准/高级同源、四阶段、未知进度、就地错误、等待联网/重启、失败、待确认、紧急撤回、本机试用目录、恢复的未保存修改、已保存未应用、来源交接、禁用原因、高风险确认、结果定位、设置与目录编辑器；它只验证呈现/无障碍/命令接缝，不声明消费者业务通过。
 - 2026-08-11：本机 `host-debug` 与 `host-release` 的 `core.smoke`、`ui.presentation.contract`、`ui.design.contract` 均为 3/3 Pass；Python 3.9/3.12 静态合同、全部 WinUI XML 和 `git diff --check` Pass。完整命令、Emil `Before | After | Why` 审查与范围见 [事项 24 设计系统证据](../issue-24-design-system-evidence.md)。
 - 2026-08-11：当前会话不是 Windows；4K/225%、文本缩放、混合 DPI/多显示器、触摸、Narrator/屏幕阅读器、实际高对比度、减少动画/透明度运行时切换、图形回退、快速反向、视觉无重叠和 WPR/WPA 均未实机验证，不由源码检查或 CI 编译外推。
+- 2026-08-11：事项 24 已通过 PR #3 Squash 合入 `codex/v1-integration`，最终提交为 `07b3420f17dd664a3bd9f203f96a123e2a9b6957`；Windows read-only validation run `31477646886` 的 x64 Release 与 ARM64 Release 均为 SUCCESS。随后最终 integration `829282e5c9981a7673fa36cc96e8ceaa04517e56` 的 host 门禁通过 `ui.presentation.contract` 与 `ui.design.contract`。据此把设计系统实现事项标记为 `Resolution: completed`；4K/225%、混合 DPI/多显示器、触摸、Narrator、实际高对比度、运行时减少动画/透明度、图形回退、快速反向、视觉无重叠和 WPR/WPA 仍明确为未实机验证，自动合同与 CI 编译不外推为这些人工验收通过。

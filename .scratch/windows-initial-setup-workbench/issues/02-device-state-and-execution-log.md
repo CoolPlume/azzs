@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 01
 Owner: issue-02
 Claimed by: Codex task 019fef2a-7779-73d2-938a-76703e42f7bd
@@ -46,3 +46,4 @@ Evidence freshness: 绑定当前提交、存储模式与适配器版本；平台
 - 2026-08-11：实现基于 `edaafae0add79022116967f3340a45ff4c5e9897`，实现提交为 `69d3a6b460a523122a495621b28bd7d031474b7f`。应用层新增设备状态双代提交/损坏恢复、结构化执行日志与跨实例占用合同；基础设施层提供本机文件日志和系统时钟，Windows 适配器拥有 `ProgramData` 路径、卷级持久化、租约令牌与安全文件系统，唯一装配仍位于 `composition_root.cpp`。
 - 2026-08-11：macOS host Debug/Release 构建及 `core.smoke`、`device-state.contract`、`execution-log.contract`、`operation-occupancy.contract` 均为 4/4 Pass；最终 diff、未跟踪文件与 GitNexus staged 门禁已核对，GitNexus `critical` 来自 45 个文件、977 个符号和 121 条状态/日志流程的预期事项范围。Windows x64 的 `windows-device-data.contract`、真实 `ProgramData` ACL/重解析点防护、跨进程与重启行为留给本 PR CI 和 Windows 实机验证；ARM64 仅要求编译链接，不把本机 host 结果外推为平台通过。
 - 2026-08-11：基于 `edaafae0add79022116967f3340a45ff4c5e9897` 完成事项 02 范围实现：设备级版本化状态与 N/N-1 原子提交/恢复、检查点与占用原语、`ProgramData`/SID/ACL 平台适配、集中写前脱敏的结构化日志、清空与单文件诊断导出，以及无界面测试接缝和唯一装配入口；下游事项仅提供类型化接缝，未实现其业务规则、页面或状态机。已通过 `cmake --preset host-debug`、`cmake --build --preset host-debug`、`ctest --preset host-debug --output-on-failure` （4/4）和 `git diff --check`。未实机验证：真实 `ProgramData` ACL/reparse、断电恢复、独立 OS 多进程并发、便携版/安装版发行形态切换；Windows x64 运行和 ARM64 编译待 Draft PR CI 验证。
+- 2026-08-11：事项 02 已通过 PR #4 Squash 合入 `codex/v1-integration`，最终提交为 `730010a05e43c54474191c6084c07e570011c707`；Windows read-only validation run `31480472987` 的 x64 Release 与 ARM64 Release 均为 SUCCESS。随后事项 31 集成在 `829282e5c9981a7673fa36cc96e8ceaa04517e56` 上通过 host `host-guardrails` 10/10（含 `device-state.contract`、`execution-log.contract`、`operation-occupancy.contract`）、`BUILD_TESTING=OFF` 配置/构建和双架构 run `31482733757`。据此把实现事项标记为 `Resolution: completed`。这些自动证据不替代真实断电、独立 Windows 多进程/重启、便携版与安装版切换及具体设备上的 `ProgramData` ACL/reparse 实机验收，后者仍保持“未实机验证”。
