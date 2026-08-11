@@ -46,6 +46,8 @@ namespace winrt::Azzs::Ui::implementation {
 
 MainWindow::MainWindow() {
   InitializeComponent();
+  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+  Title(ResourceLoader{}.GetString(L"MainWindowTitle"));
 }
 
 void MainWindow::bind(
