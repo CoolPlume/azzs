@@ -53,3 +53,5 @@ Evidence freshness: 绑定当前源码提交、工作流修订、锁定工具链
 `GOAL-05`、`SCOPE-01` 至 `SCOPE-03`、`SCOPE-05` 至 `SCOPE-08`、`REL-01` 至 `REL-09`、`REL-13`、`SEC-01` 至 `SEC-07`、`RUN-01` 至 `RUN-05`、`TECH-01` 至 `TECH-34`、`UI-56` 至 `UI-58`、`NAV-01` 至 `NAV-05`、`LANG-01` 至 `LANG-03`、`OPT-01`、ADR-0019、ADR-0020、ADR-0021、ADR-0027、ADR-0045、[架构与代码质量](../../../docs/engineering/architecture-and-code-quality.md)
 
 ## Comments
+
+- 2026-08-11：提交 `92f8e4c0f2794eea7c128944af3a4ca6a8e8aaf3` 的 Windows 11 25H2 实机、双架构构建与打包结果见[事项 01 Windows 验证记录](../issue-01-windows-validation-92f8e4c.md)；未覆盖项和阻断项以记录为准。
