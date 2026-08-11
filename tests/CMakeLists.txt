@@ -4,6 +4,7 @@ add_subdirectory(architecture)
 add_subdirectory(device-state-contract)
 add_subdirectory(execution-log-contract)
 add_subdirectory(operation-occupancy-contract)
+add_subdirectory(software-catalog-contract)
 add_subdirectory(ui-design-contract)
 add_subdirectory(product-identity-contract)
 

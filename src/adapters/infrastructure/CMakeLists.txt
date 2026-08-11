@@ -24,3 +24,5 @@ azzs_project_target(
   PRIVATE_LINKS
     ${azzs_infrastructure_private_links}
 )
+
+add_subdirectory(software-catalog)

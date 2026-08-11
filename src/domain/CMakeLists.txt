@@ -13,3 +13,5 @@ azzs_project_target(
   TARGET azzs_domain
   ROLE domain
 )
+
+add_subdirectory(software-catalog)
