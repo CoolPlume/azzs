@@ -1,4 +1,6 @@
+add_subdirectory(support)
 add_subdirectory(core-smoke)
+add_subdirectory(architecture)
 add_subdirectory(device-state-contract)
 add_subdirectory(execution-log-contract)
 add_subdirectory(operation-occupancy-contract)

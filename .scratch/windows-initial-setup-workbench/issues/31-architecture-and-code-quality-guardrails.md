@@ -4,6 +4,7 @@ Type: task
 Status: ready-for-agent
 Resolution: open
 Blocked by: 01
+Claimed by: Codex issue-31 task
 Owner: issue-31
 Consumers: 21, 22, 32
 Verification: 可重复架构命令、依赖与越层负例、无界面和适配器合同测试、状态所有权与受控扩展审查。
@@ -59,6 +60,8 @@ Evidence freshness: 绑定当前提交、项目配置、工具链和模式；代
 - `docs/adr/0045-separate-read-only-ci-from-release-permissions.md`
 
 ## Comments
+
+- 2026-08-11：实现基于 `codex/v1-integration` 的精确提交 `edaafae0add79022116967f3340a45ff4c5e9897`。范围仅含统一 CMake/CTest 注册接缝、单一依赖规则、CMake/WinUI/source 依赖提取、测试支持目标、门禁负例、`host-guardrails` preset 与工程说明；没有修改 `.github/workflows`，也没有实现事项 02、03、15、18、32 各自拥有的状态机、真值表、目录编辑、恢复、日志或诊断场景。唯一命令 `cmake --workflow --preset host-guardrails` 已完成配置、构建和当前 4/4 CTest：合法项目图、`core.smoke`、反向/精确循环组，以及测试支持/装配绕过组均通过；组内真实负例还确认目标源码与 include 越权、外部目标传递闭环、原始 CTest、WinUI 短名 include、动态编译源和 UI 直接系统副作用按预期拒绝。后续 consumer owner 只需通过普通 CTest 接缝注册其自有套件，本事项不预造占位测试。
 
 - 2026-08-10：Q4/Q5、制品矩阵、机器级安装版与跨类别控制已分别由 ADR-0035、ADR-0029、ADR-0037、ADR-0043 与 ADR-0041 冻结；ADR-0042 的双代损坏故障注入已进入本事项。工程合同已经闭合，本事项改为 `ready-for-agent`；发布门禁仍须由实际实现和可重复检查结果证明，状态变更不表示门禁已经通过。
 

@@ -11,14 +11,16 @@ target_include_directories(azzs_infrastructure_adapter
     include
 )
 
-target_link_libraries(azzs_infrastructure_adapter
-  PUBLIC
-    azzs::application
-)
-
+set(azzs_infrastructure_private_links)
 if(WIN32)
-  target_link_libraries(azzs_infrastructure_adapter
-    PRIVATE
-      advapi32
-  )
+  list(APPEND azzs_infrastructure_private_links advapi32)
 endif()
+
+azzs_project_target(
+  TARGET azzs_infrastructure_adapter
+  ROLE infrastructure_adapter
+  PUBLIC_LINKS
+    azzs::application
+  PRIVATE_LINKS
+    ${azzs_infrastructure_private_links}
+)

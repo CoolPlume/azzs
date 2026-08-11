@@ -1,7 +1,8 @@
 find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
 
-add_test(
+azzs_register_test(
   NAME product.identity.contract
+  LABELS contract
   COMMAND
     "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/check-product-identity.py"
@@ -12,6 +13,5 @@ add_test(
 set_tests_properties(
   product.identity.contract
   PROPERTIES
-    LABELS "contract;product-identity"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )

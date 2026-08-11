@@ -2,17 +2,16 @@ add_executable(azzs_device_state_contract
   main.cpp
 )
 
-target_include_directories(azzs_device_state_contract
-  PRIVATE
-    ../support/include
-)
-
-target_link_libraries(azzs_device_state_contract
-  PRIVATE
+azzs_project_target(
+  TARGET azzs_device_state_contract
+  ROLE test
+  PRIVATE_LINKS
     azzs::application
+    azzs::test_support
 )
 
-add_test(
+azzs_register_test(
   NAME device-state.contract
-  COMMAND azzs_device_state_contract
+  TARGET azzs_device_state_contract
+  LABELS headless contract
 )

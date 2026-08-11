@@ -1,23 +1,25 @@
-add_executable(azzs_ui_presentation_contract
+add_executable(azzs_ui_presentation_contract_tests
   presentation_contract_tests.cpp
-  ${PROJECT_SOURCE_DIR}/src/adapters/ui/winui/DesignSystem/Fixtures/design_system_fixture.cpp
-  ${PROJECT_SOURCE_DIR}/src/adapters/ui/winui/DesignSystem/presentation_contract.cpp
 )
 
-target_include_directories(azzs_ui_presentation_contract
-  PRIVATE
-    ${PROJECT_SOURCE_DIR}/src/adapters/ui/winui/DesignSystem
+azzs_project_target(
+  TARGET azzs_ui_presentation_contract_tests
+  ROLE test
+  PRIVATE_LINKS
+    azzs::ui_presentation_contract
 )
 
-add_test(
+azzs_register_test(
   NAME ui.presentation.contract
-  COMMAND azzs_ui_presentation_contract
+  TARGET azzs_ui_presentation_contract_tests
+  LABELS headless contract
 )
 
 find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
 
-add_test(
+azzs_register_test(
   NAME ui.design.contract
+  LABELS headless contract
   COMMAND
     ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/check_design_system.py
