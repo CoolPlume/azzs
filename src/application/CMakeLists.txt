@@ -22,6 +22,8 @@ azzs_project_target(
     Threads::Threads
 )
 
+add_subdirectory(software-catalog)
+
 add_library(azzs_software_optimization_catalog_application STATIC
   src/software_optimization_catalog_lifecycle.cpp
 )

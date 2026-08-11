@@ -25,6 +25,8 @@ azzs_project_target(
     ${azzs_infrastructure_private_links}
 )
 
+add_subdirectory(software-catalog)
+
 add_library(azzs_software_optimization_catalog_file_adapter STATIC
   src/local_software_optimization_catalog_file.cpp
 )
