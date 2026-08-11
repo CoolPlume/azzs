@@ -2,7 +2,7 @@
 
 Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化、常用软件安装和软件优化。`azzs` 是仓库标识。
 
-> 当前处于初始实现阶段。仓库已经包含应用与页面骨架，但尚未完成 Windows 编译、实机兼容和发行验证，也没有可供下载的安装包或 GitHub Release；具体状态以事项和验证证据为准。
+> 当前处于初始实现阶段。仓库已经包含应用与页面骨架，并已建立 x64/ARM64 构建检查；首版功能、完整实机兼容和发行验证尚未完成，也没有可供下载的安装包或 GitHub Release；具体状态以事项和验证证据为准。
 
 ## 目标范围
 
@@ -23,6 +23,8 @@ Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化
 - [研究与证据索引](docs/research/README.md)（含工具链、安装器、发布、安全、状态、目录内容与动效）
 - [软件目录维护文件](catalog/software-catalog.toml)与[填写指南](docs/maintainers/software-catalog-input.md)
 - [实现事项](.scratch/windows-initial-setup-workbench/issues/)
+- [产品标识与发布文案权威源](release/product-identity.json)
+- [简体中文 Release 模板](release/release-notes-template.zh-CN.md)
 - [安全政策](SECURITY.md)
 - [支持政策](SUPPORT.md)
 
@@ -34,6 +36,7 @@ Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化
 cmake --preset host-debug
 cmake --build --preset host-debug
 ctest --preset host-debug
+python3 eng/generate-product-assets.py --check
 ```
 
 Windows 11 构建机使用统一 PowerShell 入口生成 x64 可运行候选或 ARM64 编译链接候选：
@@ -53,7 +56,7 @@ pwsh ./eng/package-installer.ps1 -Architecture x64 -SkipBuild -AcceptWixEula
 
 ## English summary
 
-Windows Initial Setup Workbench is a Windows desktop workbench that helps users prepare a freshly installed PC; `azzs` is the repository identifier. The repository now contains the initial application skeleton, but Windows builds, installers, compatibility, and releases remain unverified. Chinese is the primary project language, while Issues and Pull Requests in English are welcome.
+Windows Initial Setup Workbench is a Windows desktop workbench that helps users prepare a freshly installed PC; `azzs` is the repository identifier. The repository now contains the initial application skeleton and x64/ARM64 build checks, while first-release functionality, broad compatibility, installers, and releases remain incomplete. Chinese is the primary project language, while Issues and Pull Requests in English are welcome.
 
 ## 支持范围
 
