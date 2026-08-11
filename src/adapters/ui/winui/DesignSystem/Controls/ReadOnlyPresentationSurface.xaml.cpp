@@ -210,7 +210,9 @@ void ReadOnlyPresentationSurface::project(
 
   auto const automation_id = automation_id_for(*component, automation_suffix);
   auto const automation_name = winrt::to_hstring(component->accessible_name);
-  auto const root = this->as<UserControl>();
+  auto const root =
+      static_cast<winrt::Windows::Foundation::IInspectable>(*this)
+          .as<UserControl>();
   AutomationProperties::SetAutomationId(root,
                                         winrt::to_hstring(automation_id));
   auto const announcement_key =
