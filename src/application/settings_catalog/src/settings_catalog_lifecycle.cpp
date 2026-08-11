@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace azzs::application::settings_catalog {
@@ -126,12 +127,94 @@ namespace {
   return ConfirmStatus::failed;
 }
 
+[[nodiscard]] std::string redacted_import_path(std::string_view path) {
+  auto const separator = path.find_last_of("/\\");
+  auto filename = separator == std::string_view::npos
+                      ? path
+                      : path.substr(separator + 1);
+  if (filename.empty() || filename == "." || filename == "..") {
+    return "local-catalog-file";
+  }
+  constexpr std::size_t maximum_retained_filename = 255;
+  if (filename.size() > maximum_retained_filename) {
+    filename = filename.substr(filename.size() - maximum_retained_filename);
+  }
+  return std::string{filename};
+}
+
+[[nodiscard]] std::string_view import_source_type_name(
+    CatalogImportSourceType type) noexcept {
+  switch (type) {
+    case CatalogImportSourceType::local_file:
+      return "local-file";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] std::string_view import_status_name(
+    CatalogImportStatus status) noexcept {
+  switch (status) {
+    case CatalogImportStatus::loaded:
+      return "loaded";
+    case CatalogImportStatus::not_found:
+      return "not-found";
+    case CatalogImportStatus::invalid:
+      return "invalid";
+    case CatalogImportStatus::failed:
+      return "failed";
+  }
+  return "failed";
+}
+
+[[nodiscard]] std::string import_failure_detail(
+    CatalogImportStatus status,
+    CatalogImportSourceDescriptor const& source) {
+  auto detail = "settings catalog import '" + source.redacted_path + "' ";
+  switch (status) {
+    case CatalogImportStatus::not_found:
+      return detail + "was not found";
+    case CatalogImportStatus::invalid:
+      return detail + "is invalid";
+    case CatalogImportStatus::failed:
+      return detail + "could not be read";
+    case CatalogImportStatus::loaded:
+      return detail + "did not provide catalog content";
+  }
+  return detail + "could not be loaded";
+}
+
+[[nodiscard]] std::string_view confirm_status_name(
+    ConfirmStatus status) noexcept {
+  switch (status) {
+    case ConfirmStatus::committed:
+      return "committed";
+    case ConfirmStatus::confirmation_required:
+      return "confirmation-required";
+    case ConfirmStatus::stale_preview:
+      return "stale-preview";
+    case ConfirmStatus::occupied:
+      return "occupied";
+    case ConfirmStatus::conflict:
+      return "conflict";
+    case ConfirmStatus::read_only:
+      return "read-only";
+    case ConfirmStatus::busy:
+      return "busy";
+    case ConfirmStatus::failed:
+      return "failed";
+    case ConfirmStatus::outcome_unknown:
+      return "outcome-unknown";
+  }
+  return "failed";
+}
+
 }  // namespace
 
 struct SettingsCatalogLifecycle::LoadedState final {
   CatalogStorageReadStatus storage_status{CatalogStorageReadStatus::failed};
   std::optional<catalog_domain::ValidatedSettingsCatalog> current;
   std::optional<catalog_domain::ValidatedSettingsCatalog> previous;
+  std::vector<catalog_domain::CatalogIdentityTombstone> identity_tombstones;
   std::optional<domain::RevisionToken> revision;
   std::string detail;
 };
@@ -140,11 +223,13 @@ SettingsCatalogLifecycle::SettingsCatalogLifecycle(
     SettingsCatalogStateStorage& storage,
     SettingsCatalogImportSource& imports, ExecutionLog& log,
     SharedOperationOccupancy& occupancy,
+    SettingsCatalogImportAuthorization const& import_authorization,
     catalog_domain::SupportedCapabilities capabilities) noexcept
     : storage_(storage),
       imports_(imports),
       log_(log),
       occupancy_(occupancy),
+      import_authorization_(import_authorization),
       capabilities_(std::move(capabilities)) {}
 
 SettingsCatalogLifecycle::LoadedState SettingsCatalogLifecycle::load() {
@@ -176,6 +261,23 @@ SettingsCatalogLifecycle::LoadedState SettingsCatalogLifecycle::load() {
       return loaded;
     }
     loaded.previous = std::move(previous.validated);
+  }
+  loaded.identity_tombstones = std::move(stored.state->identity_tombstones);
+  loaded.identity_tombstones = catalog_domain::merge_identity_tombstones(
+      std::move(loaded.identity_tombstones), loaded.current->catalog);
+  if (loaded.previous.has_value()) {
+    loaded.identity_tombstones = catalog_domain::merge_identity_tombstones(
+        std::move(loaded.identity_tombstones), loaded.previous->catalog);
+  }
+  if (!catalog_domain::validate_transition(loaded.identity_tombstones,
+                                           *loaded.current)
+           .empty() ||
+      (loaded.previous.has_value() &&
+       !catalog_domain::validate_transition(loaded.identity_tombstones,
+                                            *loaded.previous)
+            .empty())) {
+    loaded.storage_status = CatalogStorageReadStatus::read_only;
+    loaded.detail = "persisted settings catalog identity history is invalid";
   }
   return loaded;
 }
@@ -237,7 +339,10 @@ InitializeResult SettingsCatalogLifecycle::initialize_validated(
   auto const revision = catalog.catalog.revision;
   auto written = storage_.write(
       std::nullopt,
-      SettingsCatalogState{.current = std::move(catalog.catalog)});
+      SettingsCatalogState{
+          .current = catalog.catalog,
+          .identity_tombstones =
+              catalog_domain::identity_tombstones(catalog.catalog)});
   auto released = occupancy_.release(*lease.lease);
   auto status = map_initialize_write(written.status);
   auto detail = std::move(written.detail);
@@ -259,27 +364,39 @@ InitializeResult SettingsCatalogLifecycle::initialize_validated(
 PrepareResult SettingsCatalogLifecycle::prepare_update(
     catalog_domain::SettingsCatalog candidate) {
   return prepare_candidate(std::move(candidate), CatalogChangeOrigin::update,
-                           std::nullopt);
+                           std::nullopt, std::nullopt);
 }
 
 PrepareResult SettingsCatalogLifecycle::prepare_debug_import(
-    std::string path, bool debug_mode_enabled) {
-  if (!debug_mode_enabled) {
+    std::string path) {
+  if (!import_authorization_.debug_import_allowed()) {
     return {.status = PrepareStatus::debug_mode_required,
             .detail =
                 "manual settings catalog import requires debug mode"};
   }
+  auto correlation = log_.begin_correlation();
   auto imported = imports_.read_import(path);
+  CatalogImportSourceDescriptor source{
+      .type = imported.source_type,
+      .redacted_path = redacted_import_path(
+          imported.source_path.empty() ? path : imported.source_path),
+  };
+  log_import_event(
+      correlation, "debug-import-load",
+      imported.status == CatalogImportStatus::loaded &&
+              imported.catalog.has_value()
+          ? ExecutionResult::succeeded
+          : ExecutionResult::failed,
+      source, std::string{import_status_name(imported.status)});
   if (imported.status != CatalogImportStatus::loaded ||
       !imported.catalog.has_value()) {
     return {.status = PrepareStatus::rejected,
-            .detail = imported.detail.empty()
-                          ? "settings catalog import could not be loaded"
-                          : std::move(imported.detail)};
+            .import_source = source,
+            .detail = import_failure_detail(imported.status, source)};
   }
   return prepare_candidate(std::move(*imported.catalog),
                            CatalogChangeOrigin::debug_import,
-                           std::move(imported.source_path));
+                           std::move(source), std::move(correlation));
 }
 
 PrepareResult SettingsCatalogLifecycle::prepare_rollback() {
@@ -309,7 +426,8 @@ PrepareResult SettingsCatalogLifecycle::prepare_rollback() {
   pending_ = PendingChange{
       .prepared = prepared,
       .next_state = {.current = loaded.previous->catalog,
-                     .previous = loaded.current->catalog},
+                     .previous = loaded.current->catalog,
+                     .identity_tombstones = loaded.identity_tombstones},
       .expected_revision = *loaded.revision,
       .correlation = correlation,
   };
@@ -320,48 +438,82 @@ PrepareResult SettingsCatalogLifecycle::prepare_rollback() {
 
 PrepareResult SettingsCatalogLifecycle::prepare_candidate(
     catalog_domain::SettingsCatalog candidate, CatalogChangeOrigin origin,
-    std::optional<std::string> source_path) {
+    std::optional<CatalogImportSourceDescriptor> import_source,
+    std::optional<CorrelationId> correlation) {
   auto loaded = load();
   auto status = map_prepare_status(loaded.storage_status);
   if (status != PrepareStatus::ready || !loaded.current.has_value() ||
       !loaded.revision.has_value()) {
-    return {.status = status, .detail = std::move(loaded.detail)};
+    if (import_source.has_value() && correlation.has_value()) {
+      log_import_event(
+          *correlation, "debug-import-validation", ExecutionResult::failed,
+          *import_source, "rejected",
+          "current settings catalog state is unavailable for import");
+    }
+    return {.status = status,
+            .import_source = std::move(import_source),
+            .detail =
+                "settings catalog import cannot proceed because current state is unavailable"};
   }
 
   auto validation = catalog_domain::validate(std::move(candidate),
                                              capabilities_);
   if (!validation.validated.has_value()) {
+    if (import_source.has_value() && correlation.has_value()) {
+      log_import_event(
+          *correlation, "debug-import-validation", ExecutionResult::failed,
+          *import_source, "rejected",
+          "candidate settings catalog failed validation");
+    }
     return {.status = PrepareStatus::rejected,
+            .import_source = import_source,
             .problems = std::move(validation.problems),
             .detail = "candidate settings catalog failed validation"};
   }
   auto transition = catalog_domain::validate_transition(
-      *loaded.current, *validation.validated);
+      loaded.identity_tombstones, *validation.validated);
   if (!transition.empty()) {
+    if (import_source.has_value() && correlation.has_value()) {
+      log_import_event(
+          *correlation, "debug-import-validation", ExecutionResult::failed,
+          *import_source, "rejected",
+          "candidate reuses a stable settings catalog identifier");
+    }
     return {.status = PrepareStatus::rejected,
+            .import_source = import_source,
             .problems = std::move(transition),
-            .detail = "candidate reuses a stable identifier for another target"};
+            .detail =
+                "candidate changes or reuses immutable catalog semantics"};
   }
 
   auto const current_revision = loaded.current->catalog.revision;
   auto const candidate_revision = validation.validated->catalog.revision;
+  if (import_source.has_value() && correlation.has_value()) {
+    log_import_event(*correlation, "debug-import-validation",
+                     ExecutionResult::succeeded, *import_source, "accepted");
+  }
   if (validation.validated->catalog == loaded.current->catalog) {
     return {.status = PrepareStatus::no_change,
+            .import_source = import_source,
             .detail = "candidate settings catalog is already active"};
   }
   if (candidate_revision == current_revision) {
     return {.status = PrepareStatus::rejected,
+            .import_source = import_source,
             .detail =
                 "one settings catalog revision cannot identify different content"};
   }
   if (candidate_revision < current_revision &&
       origin == CatalogChangeOrigin::update) {
     return {.status = PrepareStatus::downgrade_requires_debug_import,
+            .import_source = import_source,
             .detail =
                 "a lower settings catalog revision requires debug import or rollback"};
   }
 
-  auto correlation = log_.begin_correlation();
+  auto change_correlation = correlation.has_value()
+                                ? std::move(*correlation)
+                                : log_.begin_correlation();
   auto preview = catalog_domain::preview_changes(*loaded.current,
                                                   *validation.validated);
   PreparedCatalogChange prepared{
@@ -369,23 +521,29 @@ PrepareResult SettingsCatalogLifecycle::prepare_candidate(
                             std::to_string(next_confirmation_++),
       .origin = origin,
       .changes = std::move(preview),
-      .source_path = std::move(source_path),
+      .import_source = import_source,
       .setting_count = validation.validated->catalog.settings.size(),
       .plan_count = validation.validated->catalog.plans.size(),
   };
   pending_ = PendingChange{
       .prepared = prepared,
       .next_state = {.current = validation.validated->catalog,
-                     .previous = loaded.current->catalog},
+                     .previous = loaded.current->catalog,
+                     .identity_tombstones =
+                         catalog_domain::merge_identity_tombstones(
+                             loaded.identity_tombstones,
+                             validation.validated->catalog)},
       .expected_revision = *loaded.revision,
-      .correlation = correlation,
+      .correlation = change_correlation,
   };
-  log_event(correlation,
+  log_event(change_correlation,
             origin == CatalogChangeOrigin::debug_import
                 ? "preview-debug-import"
                 : "preview-update",
             ExecutionResult::succeeded, candidate_revision);
-  return {.status = PrepareStatus::ready, .prepared = std::move(prepared)};
+  return {.status = PrepareStatus::ready,
+          .prepared = std::move(prepared),
+          .import_source = std::move(import_source)};
 }
 
 ConfirmResult SettingsCatalogLifecycle::confirm(
@@ -395,12 +553,26 @@ ConfirmResult SettingsCatalogLifecycle::confirm(
             .detail = "a prepared catalog preview must be confirmed"};
   }
   if (pending_->prepared.confirmation_token != confirmation_token) {
+    if (pending_->prepared.import_source.has_value()) {
+      log_import_event(pending_->correlation, "debug-import-confirm",
+                       ExecutionResult::failed,
+                       *pending_->prepared.import_source, "stale-preview",
+                       "settings catalog confirmation token is stale");
+    }
     return {.status = ConfirmStatus::stale_preview,
+            .import_source = pending_->prepared.import_source,
             .detail = "catalog confirmation token does not match the preview"};
   }
 
+  auto const import_source = pending_->prepared.import_source;
   auto const candidate_revision =
       pending_->prepared.changes.candidate_revision;
+  if (pending_->prepared.import_source.has_value()) {
+    log_import_event(pending_->correlation, "debug-import-confirm",
+                     ExecutionResult::started,
+                     *pending_->prepared.import_source,
+                     "confirmation-started");
+  }
   log_event(pending_->correlation, "commit", ExecutionResult::started,
             candidate_revision);
   auto lease = occupancy_.try_acquire(OperationIdentity{
@@ -409,10 +581,27 @@ ConfirmResult SettingsCatalogLifecycle::confirm(
       .correlation_id = pending_->correlation.value,
   });
   if (!acquired(lease)) {
+    auto const import_confirmation =
+        pending_->prepared.import_source.has_value();
     log_event(pending_->correlation, "commit", ExecutionResult::failed,
-              candidate_revision, lease.detail);
+              candidate_revision,
+              import_confirmation
+                  ? std::optional<std::string>{
+                        "settings catalog import confirmation could not acquire occupancy"}
+                  : std::optional<std::string>{lease.detail});
+    if (pending_->prepared.import_source.has_value()) {
+      auto const status = map_confirm_occupancy(lease.code);
+      log_import_event(pending_->correlation, "debug-import-confirm",
+                       ExecutionResult::failed,
+                       *pending_->prepared.import_source,
+                       std::string{confirm_status_name(status)},
+                       "settings catalog confirmation could not acquire occupancy");
+    }
     return {.status = map_confirm_occupancy(lease.code),
-            .detail = std::move(lease.detail)};
+            .import_source = import_source,
+            .detail = import_confirmation
+                          ? "settings catalog import confirmation could not acquire occupancy"
+                          : std::move(lease.detail)};
   }
 
   auto written = storage_.write(pending_->expected_revision,
@@ -430,17 +619,39 @@ ConfirmResult SettingsCatalogLifecycle::confirm(
             status == ConfirmStatus::committed ? ExecutionResult::succeeded
                                                : ExecutionResult::failed,
             candidate_revision,
-            detail.empty() ? std::nullopt
-                           : std::optional<std::string>{detail});
+            detail.empty()
+                ? std::nullopt
+                : import_source.has_value() &&
+                          status != ConfirmStatus::committed
+                      ? std::optional<std::string>{
+                            "settings catalog import confirmation did not commit"}
+                      : std::optional<std::string>{detail});
+  if (pending_->prepared.import_source.has_value()) {
+    log_import_event(
+        pending_->correlation, "debug-import-confirm",
+        status == ConfirmStatus::committed ? ExecutionResult::succeeded
+                                           : ExecutionResult::failed,
+        *pending_->prepared.import_source,
+        std::string{confirm_status_name(status)},
+        status == ConfirmStatus::committed
+            ? std::nullopt
+            : std::optional<std::string>{
+                  "settings catalog import confirmation did not commit"});
+  }
   if (status == ConfirmStatus::committed ||
       status == ConfirmStatus::conflict) {
     pending_.reset();
+  }
+  auto returned_detail = std::move(detail);
+  if (import_source.has_value() && status != ConfirmStatus::committed) {
+    returned_detail = "settings catalog import confirmation did not commit";
   }
   return {.status = status,
           .active_revision = status == ConfirmStatus::committed
                                  ? candidate_revision
                                  : 0,
-          .detail = std::move(detail)};
+          .import_source = import_source,
+          .detail = std::move(returned_detail)};
 }
 
 void SettingsCatalogLifecycle::log_event(
@@ -457,6 +668,36 @@ void SettingsCatalogLifecycle::log_event(
                   .disposition = DiagnosticValueDisposition::retain}},
   };
   if (error.has_value() && !error->empty()) {
+    event.error = ExecutionError{
+        .source = "settings-catalog",
+        .message = std::move(*error),
+    };
+  }
+  static_cast<void>(log_.append(correlation, event));
+}
+
+void SettingsCatalogLifecycle::log_import_event(
+    CorrelationId const& correlation, std::string stage,
+    ExecutionResult result, CatalogImportSourceDescriptor const& source,
+    std::string import_result, std::optional<std::string> error) {
+  ExecutionEvent event{
+      .kind = ExecutionEventKind::state_transition,
+      .component = "settings-catalog",
+      .stage = std::move(stage),
+      .result = result,
+      .fields = {
+          {.key = "source_type",
+           .value = std::string{import_source_type_name(source.type)},
+           .disposition = DiagnosticValueDisposition::retain},
+          {.key = "source_path",
+           .value = source.redacted_path,
+           .disposition = DiagnosticValueDisposition::retain},
+          {.key = "import_result",
+           .value = std::move(import_result),
+           .disposition = DiagnosticValueDisposition::retain},
+      },
+  };
+  if (error.has_value()) {
     event.error = ExecutionError{
         .source = "settings-catalog",
         .message = std::move(*error),

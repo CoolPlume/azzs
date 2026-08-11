@@ -23,8 +23,9 @@ namespace catalog_app = application::settings_catalog;
 namespace catalog_domain = domain::settings_catalog;
 
 constexpr std::size_t kMaxImportBytes = 16U * 1024U * 1024U;
-constexpr std::uint32_t kPackageFormatVersion = 1;
-constexpr std::uint32_t kStateFormatVersion = 1;
+constexpr std::uint32_t kPackageFormatVersion = 2;
+constexpr std::uint32_t kStateFormatVersion = 2;
+constexpr std::uint64_t kMaxIdentityTombstones = 100'000;
 constexpr std::array<std::byte, 8> kStateMagic{
     std::byte{'A'}, std::byte{'Z'}, std::byte{'Z'}, std::byte{'S'},
     std::byte{'S'}, std::byte{'C'}, std::byte{'0'}, std::byte{'1'},
@@ -77,15 +78,68 @@ template <typename Value>
                       : std::optional<std::string>{value};
 }
 
+[[nodiscard]] bool parse_windows_version(
+    std::string_view text,
+    std::optional<catalog_domain::WindowsVersion>& version) {
+  if (text == "-") {
+    version.reset();
+    return true;
+  }
+  auto const separator = text.find('-');
+  auto const half_marker = text.find_first_of("hH", separator + 1);
+  if (separator == std::string_view::npos ||
+      half_marker == std::string_view::npos || half_marker + 2 != text.size()) {
+    return false;
+  }
+  std::uint16_t generation{};
+  std::uint16_t year{};
+  std::uint8_t half{};
+  if (!parse_unsigned(text.substr(0, separator), generation) ||
+      !parse_unsigned(text.substr(separator + 1,
+                                  half_marker - separator - 1),
+                      year) ||
+      !parse_unsigned(text.substr(half_marker + 1), half) ||
+      (generation != 10 && generation != 11)) {
+    return false;
+  }
+  catalog_domain::WindowsVersion parsed{
+      .generation = static_cast<catalog_domain::WindowsGeneration>(generation),
+      .feature_update_year = year,
+      .feature_update_half = half,
+  };
+  if (!parsed.valid()) {
+    return false;
+  }
+  version = parsed;
+  return true;
+}
+
+[[nodiscard]] std::string windows_version_text(
+    std::optional<catalog_domain::WindowsVersion> const& version) {
+  if (!version.has_value()) {
+    return "-";
+  }
+  return std::to_string(static_cast<std::uint8_t>(version->generation)) +
+         "-" + std::to_string(version->feature_update_year) + "h" +
+         std::to_string(version->feature_update_half);
+}
+
 struct ParsedPackage final {
   std::optional<catalog_domain::SettingsCatalog> catalog;
   std::string error;
 };
 
 [[nodiscard]] ParsedPackage parse_package(std::string_view bytes) {
+  struct ParsedMember final {
+    std::string plan_id;
+    catalog_domain::PlanMember member;
+    std::vector<catalog_domain::StableId> legacy_dependencies;
+  };
+
   catalog_domain::SettingsCatalog catalog;
-  std::vector<std::pair<std::string, catalog_domain::PlanMember>> members;
+  std::vector<ParsedMember> members;
   bool header_seen = false;
+  std::uint32_t package_format{};
   std::istringstream stream{std::string{bytes}};
   std::string line;
   std::size_t line_number = 0;
@@ -99,10 +153,10 @@ struct ParsedPackage final {
     }
     auto fields = split(line, '\t');
     if (!header_seen) {
-      std::uint32_t format{};
       if (fields.size() != 4 || fields[0] != "AZZS_SETTINGS_CATALOG" ||
-          !parse_unsigned(fields[1], format) ||
-          format != kPackageFormatVersion ||
+          !parse_unsigned(fields[1], package_format) ||
+          (package_format != 1 &&
+           package_format != kPackageFormatVersion) ||
           !parse_unsigned(fields[2], catalog.schema_version) ||
           !parse_unsigned(fields[3], catalog.revision)) {
         return {.error = "settings catalog package header is invalid"};
@@ -113,7 +167,12 @@ struct ParsedPackage final {
 
     if (fields[0] == "SETTING") {
       bool default_selected{};
-      if (fields.size() != 14 ||
+      auto const expected_fields = package_format == 1 ? 14U : 17U;
+      std::optional<catalog_domain::WindowsVersion> minimum_windows;
+      std::optional<catalog_domain::WindowsVersion> maximum_windows;
+      if (fields.size() != expected_fields ||
+          !parse_windows_version(fields[5], minimum_windows) ||
+          !parse_windows_version(fields[6], maximum_windows) ||
           !parse_boolean(fields[7], default_selected)) {
         return {.error = "settings catalog SETTING record is invalid at line " +
                          std::to_string(line_number)};
@@ -139,16 +198,47 @@ struct ParsedPackage final {
         catalog.unknown_semantic_fields.push_back(
             "setting.restart_requirement=" + std::string{fields[9]});
       }
+      std::vector<catalog_domain::StableId> dependencies;
+      auto risk = catalog_domain::SettingRiskLevel::low;
+      auto force_attempt = catalog_domain::ForceAttemptRule::prohibited;
+      if (package_format == 2) {
+        if (fields[14] != "-") {
+          for (auto dependency : split(fields[14], ',')) {
+            dependencies.push_back(
+                catalog_domain::StableId{std::string{dependency}});
+          }
+        }
+        if (fields[15] == "low") {
+          risk = catalog_domain::SettingRiskLevel::low;
+        } else if (fields[15] == "elevated") {
+          risk = catalog_domain::SettingRiskLevel::elevated;
+        } else {
+          catalog.unknown_semantic_fields.push_back(
+              "setting.risk=" + std::string{fields[15]});
+        }
+        if (fields[16] == "prohibited") {
+          force_attempt = catalog_domain::ForceAttemptRule::prohibited;
+        } else if (fields[16] == "confirm-if-recoverable") {
+          force_attempt = catalog_domain::ForceAttemptRule::
+              allowed_with_explicit_confirmation;
+        } else {
+          catalog.unknown_semantic_fields.push_back(
+              "setting.force_attempt_rule=" + std::string{fields[16]});
+        }
+      }
       catalog.settings.push_back(catalog_domain::SettingDefinition{
           .id = catalog_domain::StableId{std::string{fields[1]}},
           .display_name = std::string{fields[2]},
           .description = std::string{fields[3]},
           .source_url = optional_text(fields[4]),
           .known_windows_range = {
-              .minimum = optional_text(fields[5]),
-              .maximum = optional_text(fields[6]),
+              .minimum = minimum_windows,
+              .maximum = maximum_windows,
           },
+          .depends_on = std::move(dependencies),
           .default_selected = default_selected,
+          .risk = risk,
+          .force_attempt_rule = force_attempt,
           .recovery_requirement = recovery,
           .restart_requirement = restart,
           .semantics = {
@@ -177,7 +267,8 @@ struct ParsedPackage final {
     if (fields[0] == "MEMBER") {
       catalog_domain::PlanMember member;
       bool default_selected{};
-      if (fields.size() != 6 ||
+      auto const expected_fields = package_format == 1 ? 6U : 5U;
+      if (fields.size() != expected_fields ||
           !parse_unsigned(fields[3], member.order) ||
           !parse_boolean(fields[4], default_selected)) {
         return {.error = "settings catalog MEMBER record is invalid at line " +
@@ -186,13 +277,17 @@ struct ParsedPackage final {
       member.setting_id =
           catalog_domain::StableId{std::string{fields[2]}};
       member.default_selected = default_selected;
-      if (fields[5] != "-") {
+      std::vector<catalog_domain::StableId> legacy_dependencies;
+      if (package_format == 1 && fields[5] != "-") {
         for (auto dependency : split(fields[5], ',')) {
-          member.depends_on.push_back(
+          legacy_dependencies.push_back(
               catalog_domain::StableId{std::string{dependency}});
         }
       }
-      members.emplace_back(std::string{fields[1]}, std::move(member));
+      members.push_back({.plan_id = std::string{fields[1]},
+                         .member = std::move(member),
+                         .legacy_dependencies =
+                             std::move(legacy_dependencies)});
       continue;
     }
 
@@ -207,8 +302,8 @@ struct ParsedPackage final {
   if (!header_seen) {
     return {.error = "settings catalog package is empty"};
   }
-  for (auto& [plan_id, member] : members) {
-    auto plan = std::ranges::find(catalog.plans, plan_id,
+  for (auto& parsed_member : members) {
+    auto plan = std::ranges::find(catalog.plans, parsed_member.plan_id,
                                   [](catalog_domain::OptimizationPlan const& p) {
                                     return p.id.value;
                                   });
@@ -216,7 +311,22 @@ struct ParsedPackage final {
       return {.error =
                   "settings catalog MEMBER references an unknown plan"};
     }
-    plan->members.push_back(std::move(member));
+    if (!parsed_member.legacy_dependencies.empty()) {
+      auto setting = std::ranges::find(
+          catalog.settings, parsed_member.member.setting_id,
+          &catalog_domain::SettingDefinition::id);
+      if (setting == catalog.settings.end()) {
+        return {.error =
+                    "settings catalog MEMBER references an unknown setting"};
+      }
+      for (auto& dependency : parsed_member.legacy_dependencies) {
+        if (std::ranges::find(setting->depends_on, dependency) ==
+            setting->depends_on.end()) {
+          setting->depends_on.push_back(std::move(dependency));
+        }
+      }
+    }
+    plan->members.push_back(std::move(parsed_member.member));
   }
   return {.catalog = std::move(catalog)};
 }
@@ -248,13 +358,33 @@ struct ParsedPackage final {
     output << "SETTING\t" << setting.id.value << '\t'
            << setting.display_name << '\t' << setting.description << '\t'
            << text_or_dash(setting.source_url) << '\t'
-           << text_or_dash(setting.known_windows_range.minimum) << '\t'
-           << text_or_dash(setting.known_windows_range.maximum) << '\t'
+           << windows_version_text(setting.known_windows_range.minimum) << '\t'
+           << windows_version_text(setting.known_windows_range.maximum) << '\t'
            << (setting.default_selected ? 1 : 0) << '\t' << recovery << '\t'
            << restart << '\t' << setting.semantics.identity << '\t'
            << setting.semantics.apply_capability << '\t'
            << setting.semantics.detect_capability << '\t'
-           << text_or_dash(setting.semantics.recover_capability) << '\n';
+           << text_or_dash(setting.semantics.recover_capability) << '\t';
+    if (setting.depends_on.empty()) {
+      output << '-';
+    } else {
+      for (std::size_t index = 0; index < setting.depends_on.size(); ++index) {
+        if (index != 0) {
+          output << ',';
+        }
+        output << setting.depends_on[index].value;
+      }
+    }
+    output << '\t'
+           << (setting.risk == catalog_domain::SettingRiskLevel::low
+                   ? "low"
+                   : "elevated")
+           << '\t'
+           << (setting.force_attempt_rule ==
+                       catalog_domain::ForceAttemptRule::prohibited
+                   ? "prohibited"
+                   : "confirm-if-recoverable")
+           << '\n';
   }
   for (auto const& plan : catalog.plans) {
     output << "PLAN\t" << plan.id.value << '\t' << plan.display_name << '\t'
@@ -262,18 +392,7 @@ struct ParsedPackage final {
     for (auto const& member : plan.members) {
       output << "MEMBER\t" << plan.id.value << '\t'
              << member.setting_id.value << '\t' << member.order << '\t'
-             << (member.default_selected ? 1 : 0) << '\t';
-      if (member.depends_on.empty()) {
-        output << '-';
-      } else {
-        for (std::size_t index = 0; index < member.depends_on.size(); ++index) {
-          if (index != 0) {
-            output << ',';
-          }
-          output << member.depends_on[index].value;
-        }
-      }
-      output << '\n';
+             << (member.default_selected ? 1 : 0) << '\n';
     }
   }
   return std::move(output).str();
@@ -387,6 +506,12 @@ class Decoder final {
   if (state.previous.has_value()) {
     encoder.text(serialize_package(*state.previous));
   }
+  encoder.u64(state.identity_tombstones.size());
+  for (auto const& tombstone : state.identity_tombstones) {
+    encoder.u8(static_cast<std::uint8_t>(tombstone.kind));
+    encoder.text(tombstone.id.value);
+    encoder.text(tombstone.semantic_fingerprint);
+  }
   return encoder.finish();
 }
 
@@ -398,7 +523,8 @@ class Decoder final {
   std::uint8_t has_previous{};
   std::string current_bytes;
   if (!decoder.raw(magic) || magic != kStateMagic || !decoder.u32(version) ||
-      version != kStateFormatVersion || !decoder.text(current_bytes) ||
+      (version != 1 && version != kStateFormatVersion) ||
+      !decoder.text(current_bytes) ||
       !decoder.u8(has_previous) || has_previous > 1) {
     return std::nullopt;
   }
@@ -418,6 +544,46 @@ class Decoder final {
       return std::nullopt;
     }
     state.previous = std::move(*previous.catalog);
+  }
+  if (version == 1) {
+    state.identity_tombstones =
+        catalog_domain::identity_tombstones(state.current);
+    if (state.previous.has_value()) {
+      state.identity_tombstones =
+          catalog_domain::merge_identity_tombstones(
+              std::move(state.identity_tombstones), *state.previous);
+    }
+  } else {
+    std::uint64_t tombstone_count{};
+    if (!decoder.u64(tombstone_count) ||
+        tombstone_count > kMaxIdentityTombstones) {
+      return std::nullopt;
+    }
+    state.identity_tombstones.reserve(
+        static_cast<std::size_t>(tombstone_count));
+    for (std::uint64_t index = 0; index < tombstone_count; ++index) {
+      std::uint8_t kind{};
+      catalog_domain::CatalogIdentityTombstone tombstone;
+      if (!decoder.u8(kind) ||
+          kind > static_cast<std::uint8_t>(
+                     catalog_domain::CatalogItemKind::optimization_plan) ||
+          !decoder.text(tombstone.id.value) ||
+          !decoder.text(tombstone.semantic_fingerprint) ||
+          !tombstone.id.valid() || tombstone.semantic_fingerprint.empty()) {
+        return std::nullopt;
+      }
+      tombstone.kind =
+          static_cast<catalog_domain::CatalogItemKind>(kind);
+      if (std::ranges::any_of(
+              state.identity_tombstones,
+              [&](catalog_domain::CatalogIdentityTombstone const& existing) {
+                return existing.kind == tombstone.kind &&
+                       existing.id == tombstone.id;
+              })) {
+        return std::nullopt;
+      }
+      state.identity_tombstones.push_back(std::move(tombstone));
+    }
   }
   if (decoder.remaining() != 0) {
     return std::nullopt;

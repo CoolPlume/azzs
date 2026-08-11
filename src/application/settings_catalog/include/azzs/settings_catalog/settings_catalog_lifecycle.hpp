@@ -18,6 +18,7 @@ namespace catalog_domain = domain::settings_catalog;
 struct SettingsCatalogState final {
   catalog_domain::SettingsCatalog current;
   std::optional<catalog_domain::SettingsCatalog> previous;
+  std::vector<catalog_domain::CatalogIdentityTombstone> identity_tombstones;
 
   friend bool operator==(SettingsCatalogState const&,
                          SettingsCatalogState const&) = default;
@@ -71,9 +72,22 @@ enum class CatalogImportStatus {
   failed,
 };
 
+enum class CatalogImportSourceType : std::uint8_t {
+  local_file,
+};
+
+struct CatalogImportSourceDescriptor final {
+  CatalogImportSourceType type{CatalogImportSourceType::local_file};
+  std::string redacted_path;
+
+  friend bool operator==(CatalogImportSourceDescriptor const&,
+                         CatalogImportSourceDescriptor const&) = default;
+};
+
 struct CatalogImportRead final {
   CatalogImportStatus status{CatalogImportStatus::failed};
   std::optional<catalog_domain::SettingsCatalog> catalog;
+  CatalogImportSourceType source_type{CatalogImportSourceType::local_file};
   std::string source_path;
   std::string detail;
 };
@@ -83,6 +97,14 @@ class SettingsCatalogImportSource {
   virtual ~SettingsCatalogImportSource() = default;
   [[nodiscard]] virtual CatalogImportRead read_import(
       std::string const& path) = 0;
+};
+
+// Application-owned preference seam. Callers may request an import, but only
+// the injected application lifecycle can authorize the debug-only operation.
+class SettingsCatalogImportAuthorization {
+ public:
+  virtual ~SettingsCatalogImportAuthorization() = default;
+  [[nodiscard]] virtual bool debug_import_allowed() const noexcept = 0;
 };
 
 enum class CatalogSnapshotStatus {
@@ -141,7 +163,7 @@ struct PreparedCatalogChange final {
   std::string confirmation_token;
   CatalogChangeOrigin origin{CatalogChangeOrigin::update};
   catalog_domain::CatalogChangePreview changes;
-  std::optional<std::string> source_path;
+  std::optional<CatalogImportSourceDescriptor> import_source;
   std::size_t setting_count{0};
   std::size_t plan_count{0};
 };
@@ -149,6 +171,7 @@ struct PreparedCatalogChange final {
 struct PrepareResult final {
   PrepareStatus status{PrepareStatus::failed};
   std::optional<PreparedCatalogChange> prepared;
+  std::optional<CatalogImportSourceDescriptor> import_source;
   std::vector<catalog_domain::CatalogProblem> problems;
   std::string detail;
 };
@@ -168,6 +191,7 @@ enum class ConfirmStatus {
 struct ConfirmResult final {
   ConfirmStatus status{ConfirmStatus::failed};
   std::uint64_t active_revision{0};
+  std::optional<CatalogImportSourceDescriptor> import_source;
   std::string detail;
 };
 
@@ -177,6 +201,7 @@ class SettingsCatalogLifecycle final {
       SettingsCatalogStateStorage& storage,
       SettingsCatalogImportSource& imports, ExecutionLog& log,
       SharedOperationOccupancy& occupancy,
+      SettingsCatalogImportAuthorization const& import_authorization,
       catalog_domain::SupportedCapabilities capabilities) noexcept;
 
   [[nodiscard]] CatalogSnapshot snapshot();
@@ -184,8 +209,7 @@ class SettingsCatalogLifecycle final {
       catalog_domain::SettingsCatalog catalog);
   [[nodiscard]] PrepareResult prepare_update(
       catalog_domain::SettingsCatalog candidate);
-  [[nodiscard]] PrepareResult prepare_debug_import(std::string path,
-                                                   bool debug_mode_enabled);
+  [[nodiscard]] PrepareResult prepare_debug_import(std::string path);
   [[nodiscard]] PrepareResult prepare_rollback();
   [[nodiscard]] ConfirmResult confirm(std::string_view confirmation_token);
 
@@ -201,17 +225,24 @@ class SettingsCatalogLifecycle final {
   [[nodiscard]] LoadedState load();
   [[nodiscard]] PrepareResult prepare_candidate(
       catalog_domain::SettingsCatalog candidate, CatalogChangeOrigin origin,
-      std::optional<std::string> source_path);
+      std::optional<CatalogImportSourceDescriptor> import_source,
+      std::optional<CorrelationId> correlation);
   [[nodiscard]] InitializeResult initialize_validated(
       catalog_domain::ValidatedSettingsCatalog catalog);
   void log_event(CorrelationId const& correlation, std::string stage,
                  ExecutionResult result, std::uint64_t revision,
                  std::optional<std::string> error = std::nullopt);
+  void log_import_event(CorrelationId const& correlation, std::string stage,
+                        ExecutionResult result,
+                        CatalogImportSourceDescriptor const& source,
+                        std::string import_result,
+                        std::optional<std::string> error = std::nullopt);
 
   SettingsCatalogStateStorage& storage_;
   SettingsCatalogImportSource& imports_;
   ExecutionLog& log_;
   SharedOperationOccupancy& occupancy_;
+  SettingsCatalogImportAuthorization const& import_authorization_;
   catalog_domain::SupportedCapabilities capabilities_;
   std::uint64_t next_confirmation_{1};
   std::optional<PendingChange> pending_;

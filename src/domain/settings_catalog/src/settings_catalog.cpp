@@ -1,9 +1,11 @@
 #include "azzs/settings_catalog/settings_catalog.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <ranges>
 #include <set>
+#include <string>
 #include <string_view>
 
 namespace azzs::domain::settings_catalog {
@@ -61,12 +63,17 @@ void add_problem(std::vector<CatalogProblem>& problems,
   return result;
 }
 
-[[nodiscard]] bool plan_has_cycle(OptimizationPlan const& plan) {
+[[nodiscard]] bool plan_has_cycle(
+    OptimizationPlan const& plan,
+    std::map<std::string, SettingDefinition const*> const& settings) {
   std::map<std::string, std::vector<std::string>> dependencies;
   for (auto const& member : plan.members) {
     auto& values = dependencies[member.setting_id.value];
-    for (auto const& dependency : member.depends_on) {
-      values.push_back(dependency.value);
+    auto const found = settings.find(member.setting_id.value);
+    if (found != settings.end()) {
+      for (auto const& dependency : found->second->depends_on) {
+        values.push_back(dependency.value);
+      }
     }
   }
 
@@ -141,8 +148,13 @@ void add_problem(std::vector<CatalogProblem>& problems,
 
   for (auto const& member : plan.members) {
     std::set<std::string> dependencies;
-    for (auto const& dependency : member.depends_on) {
+    auto const found = settings.find(member.setting_id.value);
+    if (found == settings.end()) {
+      continue;
+    }
+    for (auto const& dependency : found->second->depends_on) {
       if (!dependency.valid() || dependency == member.setting_id ||
+          !settings.contains(dependency.value) ||
           !member_ids.contains(dependency.value) ||
           !dependencies.insert(dependency.value).second) {
         local_problem(CatalogProblemCode::invalid_plan_dependency,
@@ -152,7 +164,7 @@ void add_problem(std::vector<CatalogProblem>& problems,
     }
   }
 
-  if (plan_has_cycle(plan)) {
+  if (plan_has_cycle(plan, settings)) {
     local_problem(CatalogProblemCode::cyclic_plan_dependencies,
                   "optimization plan member dependencies form a cycle");
   }
@@ -202,10 +214,101 @@ void sort_changes(std::vector<CatalogItemChange>& changes) {
   });
 }
 
+void append_fingerprint_field(std::string& fingerprint,
+                              std::string_view value) {
+  fingerprint += std::to_string(value.size());
+  fingerprint += ':';
+  fingerprint.append(value);
+}
+
+template <typename Value>
+void append_fingerprint_number(std::string& fingerprint, Value value) {
+  append_fingerprint_field(
+      fingerprint,
+      std::to_string(static_cast<std::uint64_t>(value)));
+}
+
+[[nodiscard]] std::string setting_fingerprint(
+    SettingDefinition const& setting) {
+  std::string fingerprint{"settings-setting-v2|"};
+  append_fingerprint_field(fingerprint, setting.semantics.identity);
+  append_fingerprint_field(fingerprint, setting.semantics.apply_capability);
+  append_fingerprint_field(fingerprint, setting.semantics.detect_capability);
+  append_fingerprint_field(
+      fingerprint, setting.semantics.recover_capability.value_or(""));
+  append_fingerprint_number(fingerprint, setting.recovery_requirement);
+  append_fingerprint_number(fingerprint, setting.restart_requirement);
+  append_fingerprint_number(fingerprint, setting.risk);
+  append_fingerprint_number(fingerprint, setting.force_attempt_rule);
+  auto dependencies = setting.depends_on;
+  std::ranges::sort(dependencies, {}, &StableId::value);
+  append_fingerprint_number(fingerprint, dependencies.size());
+  for (auto const& dependency : dependencies) {
+    append_fingerprint_field(fingerprint, dependency.value);
+  }
+  auto append_version = [&](std::optional<WindowsVersion> const& version) {
+    append_fingerprint_number(fingerprint, version.has_value() ? 1 : 0);
+    if (version.has_value()) {
+      append_fingerprint_number(fingerprint, version->generation);
+      append_fingerprint_number(fingerprint, version->feature_update_year);
+      append_fingerprint_number(fingerprint, version->feature_update_half);
+    }
+  };
+  append_version(setting.known_windows_range.minimum);
+  append_version(setting.known_windows_range.maximum);
+  return fingerprint;
+}
+
+[[nodiscard]] std::string plan_fingerprint(OptimizationPlan const& plan) {
+  auto members = plan.members;
+  std::ranges::sort(members, [](PlanMember const& left,
+                               PlanMember const& right) {
+    return std::pair{left.order, left.setting_id.value} <
+           std::pair{right.order, right.setting_id.value};
+  });
+
+  std::string fingerprint{"settings-plan-v2|"};
+  append_fingerprint_number(fingerprint, members.size());
+  for (auto const& member : members) {
+    append_fingerprint_field(fingerprint, member.setting_id.value);
+    append_fingerprint_number(fingerprint, member.order);
+    append_fingerprint_number(fingerprint, member.default_selected ? 1 : 0);
+  }
+  return fingerprint;
+}
+
+[[nodiscard]] bool same_identity(CatalogIdentityTombstone const& left,
+                                 CatalogIdentityTombstone const& right) {
+  return left.kind == right.kind && left.id == right.id;
+}
+
 }  // namespace
 
 bool StableId::valid() const noexcept {
   return safe_identifier(value, 128);
+}
+
+bool WindowsVersion::valid() const noexcept {
+  auto const generation_value = static_cast<std::uint8_t>(generation);
+  return (generation_value == 10 || generation_value == 11) &&
+         feature_update_year >= 15 && feature_update_year <= 99 &&
+         (feature_update_half == 1 || feature_update_half == 2);
+}
+
+bool WindowsVersionRange::valid() const noexcept {
+  if ((minimum.has_value() && !minimum->valid()) ||
+      (maximum.has_value() && !maximum->valid())) {
+    return false;
+  }
+  return !minimum.has_value() || !maximum.has_value() ||
+         *minimum <= *maximum;
+}
+
+bool WindowsVersionRange::contains(WindowsVersion const& version) const
+    noexcept {
+  return valid() && version.valid() &&
+         (!minimum.has_value() || version >= *minimum) &&
+         (!maximum.has_value() || version <= *maximum);
 }
 
 CatalogValidationResult validate(
@@ -257,16 +360,19 @@ CatalogValidationResult validate(
                   setting.id,
                   "system setting source must be an HTTP or HTTPS URL");
     }
-    auto const valid_minimum =
-        !setting.known_windows_range.minimum.has_value() ||
-        present(*setting.known_windows_range.minimum, 64);
-    auto const valid_maximum =
-        !setting.known_windows_range.maximum.has_value() ||
-        present(*setting.known_windows_range.maximum, 64);
-    if (!valid_minimum || !valid_maximum) {
+    if (!setting.known_windows_range.valid()) {
       add_problem(result.problems, CatalogProblemCode::invalid_required_field,
                   setting.id,
-                  "known Windows version range contains invalid text");
+                  "known Windows version range is invalid or reversed");
+    }
+    std::set<std::string> dependencies;
+    for (auto const& dependency : setting.depends_on) {
+      if (!dependency.valid() || dependency == setting.id ||
+          !dependencies.insert(dependency.value).second) {
+        add_problem(result.problems,
+                    CatalogProblemCode::invalid_required_field, setting.id,
+                    "system setting dependency is invalid or duplicated");
+      }
     }
     auto const valid_apply =
         safe_identifier(setting.semantics.apply_capability, 128) &&
@@ -290,6 +396,24 @@ CatalogValidationResult validate(
                   CatalogProblemCode::unknown_execution_semantics,
                   setting.id,
                   "system setting references an unknown controlled capability");
+    }
+    if (setting.force_attempt_rule ==
+            ForceAttemptRule::allowed_with_explicit_confirmation &&
+        setting.recovery_requirement !=
+            RecoveryRequirement::restore_record_required) {
+      add_problem(result.problems, CatalogProblemCode::invalid_required_field,
+                  setting.id,
+                  "force attempt requires explicit restore-record semantics");
+    }
+  }
+
+  for (auto const& setting : catalog.settings) {
+    for (auto const& dependency : setting.depends_on) {
+      if (!setting_ids.contains(dependency.value)) {
+        add_problem(result.problems,
+                    CatalogProblemCode::invalid_required_field, setting.id,
+                    "system setting dependency references an unavailable setting");
+      }
     }
   }
 
@@ -329,15 +453,79 @@ CatalogValidationResult validate(
 std::vector<CatalogProblem> validate_transition(
     ValidatedSettingsCatalog const& current,
     ValidatedSettingsCatalog const& candidate) {
+  return validate_transition(identity_tombstones(current.catalog), candidate);
+}
+
+std::vector<CatalogIdentityTombstone> identity_tombstones(
+    SettingsCatalog const& catalog) {
+  std::vector<CatalogIdentityTombstone> result;
+  result.reserve(catalog.settings.size() + catalog.plans.size());
+  for (auto const& setting : catalog.settings) {
+    result.push_back({.kind = CatalogItemKind::setting,
+                      .id = setting.id,
+                      .semantic_fingerprint = setting_fingerprint(setting)});
+  }
+  for (auto const& plan : catalog.plans) {
+    result.push_back(
+        {.kind = CatalogItemKind::optimization_plan,
+         .id = plan.id,
+         .semantic_fingerprint = plan_fingerprint(plan)});
+  }
+  std::ranges::sort(result, [](CatalogIdentityTombstone const& left,
+                              CatalogIdentityTombstone const& right) {
+    return std::pair{left.kind, left.id.value} <
+           std::pair{right.kind, right.id.value};
+  });
+  return result;
+}
+
+std::vector<CatalogIdentityTombstone> merge_identity_tombstones(
+    std::vector<CatalogIdentityTombstone> history,
+    SettingsCatalog const& catalog) {
+  for (auto& candidate : identity_tombstones(catalog)) {
+    auto const found = std::ranges::find_if(
+        history, [&](CatalogIdentityTombstone const& existing) {
+          return same_identity(existing, candidate);
+        });
+    if (found == history.end()) {
+      history.push_back(std::move(candidate));
+    }
+  }
+  std::ranges::sort(history, [](CatalogIdentityTombstone const& left,
+                               CatalogIdentityTombstone const& right) {
+    return std::pair{left.kind, left.id.value} <
+           std::pair{right.kind, right.id.value};
+  });
+  return history;
+}
+
+std::vector<CatalogProblem> validate_transition(
+    std::vector<CatalogIdentityTombstone> const& history,
+    ValidatedSettingsCatalog const& candidate) {
   std::vector<CatalogProblem> problems;
-  auto const previous = settings_by_id(current.catalog);
-  for (auto const& setting : candidate.catalog.settings) {
-    auto const found = previous.find(setting.id.value);
-    if (found != previous.end() &&
-        found->second->semantics.identity != setting.semantics.identity) {
+  std::map<std::pair<CatalogItemKind, std::string>, std::string>
+      fingerprints;
+  for (auto const& previous : history) {
+    auto const key = std::pair{previous.kind, previous.id.value};
+    auto const [found, inserted] =
+        fingerprints.emplace(key, previous.semantic_fingerprint);
+    if (!previous.id.valid() || previous.semantic_fingerprint.empty() ||
+        (!inserted && found->second != previous.semantic_fingerprint)) {
       add_problem(problems, CatalogProblemCode::stable_identity_reused,
-                  setting.id,
-                  "stable identifier cannot be reassigned to another Windows target");
+                  previous.id,
+                  "persisted settings catalog identity history is inconsistent");
+    }
+  }
+  for (auto const& identity : identity_tombstones(candidate.catalog)) {
+    auto const found =
+        fingerprints.find(std::pair{identity.kind, identity.id.value});
+    if (found != fingerprints.end() &&
+        found->second != identity.semantic_fingerprint) {
+      add_problem(
+          problems, CatalogProblemCode::stable_identity_reused, identity.id,
+          identity.kind == CatalogItemKind::setting
+              ? "stable setting identifier cannot change or reuse operation semantics"
+              : "stable optimization plan identifier cannot change or reuse membership semantics");
     }
   }
   return problems;

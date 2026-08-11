@@ -87,9 +87,53 @@ class RecordingExecutionLog final : public ExecutionLog {
     });
   }
 
+  [[nodiscard]] bool contains_import_event(
+      std::string_view stage, azzs::application::ExecutionResult result,
+      std::string_view source_path, std::string_view import_result) const {
+    return std::ranges::any_of(events_, [&](ExecutionEvent const& event) {
+      if (event.component != "settings-catalog" || event.stage != stage ||
+          event.result != result) {
+        return false;
+      }
+      auto has_field = [&](std::string_view key, std::string_view value) {
+        return std::ranges::any_of(event.fields, [&](auto const& field) {
+          return field.key == key && field.value == value;
+        });
+      };
+      return has_field("source_type", "local-file") &&
+             has_field("source_path", source_path) &&
+             has_field("import_result", import_result);
+    });
+  }
+
+  [[nodiscard]] bool contains_text(std::string_view text) const {
+    return std::ranges::any_of(events_, [&](ExecutionEvent const& event) {
+      if (event.error.has_value() &&
+          event.error->message.find(text) != std::string::npos) {
+        return true;
+      }
+      return std::ranges::any_of(event.fields, [&](auto const& field) {
+        return field.value.find(text) != std::string::npos;
+      });
+    });
+  }
+
  private:
   std::uint64_t next_correlation_{1};
   std::vector<ExecutionEvent> events_;
+};
+
+class MutableCatalogImportAuthorization final
+    : public catalog_app::SettingsCatalogImportAuthorization {
+ public:
+  [[nodiscard]] bool debug_import_allowed() const noexcept override {
+    return enabled_;
+  }
+
+  void set_enabled(bool enabled) noexcept { enabled_ = enabled; }
+
+ private:
+  bool enabled_{false};
 };
 
 [[nodiscard]] catalog_domain::SupportedCapabilities capabilities() {
@@ -108,9 +152,19 @@ class RecordingExecutionLog final : public ExecutionLog {
       .display_name = std::move(name),
       .description = "A controlled settings catalog contract fixture.",
       .source_url = "https://example.invalid/settings-reference",
-      .known_windows_range = {.minimum = "10-22h2",
-                              .maximum = "11-25h2"},
+      .known_windows_range = {
+          .minimum = catalog_domain::WindowsVersion{
+              .generation = catalog_domain::WindowsGeneration::windows_10,
+              .feature_update_year = 22,
+              .feature_update_half = 2},
+          .maximum = catalog_domain::WindowsVersion{
+              .generation = catalog_domain::WindowsGeneration::windows_11,
+              .feature_update_year = 25,
+              .feature_update_half = 2},
+      },
       .default_selected = default_selected,
+      .risk = catalog_domain::SettingRiskLevel::low,
+      .force_attempt_rule = catalog_domain::ForceAttemptRule::prohibited,
       .recovery_requirement =
           catalog_domain::RecoveryRequirement::restore_record_required,
       .restart_requirement =
@@ -125,9 +179,10 @@ class RecordingExecutionLog final : public ExecutionLog {
 }
 
 [[nodiscard]] catalog_domain::OptimizationPlan plan(
-    std::string second_setting) {
+    std::string second_setting,
+    std::string plan_id = "plan.recommended") {
   return {
-      .id = catalog_domain::StableId{"plan.recommended"},
+      .id = catalog_domain::StableId{std::move(plan_id)},
       .display_name = "Recommended optimization",
       .description = "A visible selection of existing settings.",
       .members = {
@@ -136,35 +191,40 @@ class RecordingExecutionLog final : public ExecutionLog {
            .default_selected = true},
           {.setting_id = catalog_domain::StableId{std::move(second_setting)},
            .order = 20,
-           .default_selected = false,
-           .depends_on = {catalog_domain::StableId{"setting.alpha"}}},
+           .default_selected = false},
       },
   };
 }
 
 [[nodiscard]] catalog_domain::SettingsCatalog base_catalog() {
+  auto alpha = setting("setting.alpha", "Alpha setting",
+                       "windows.target.alpha", true);
+  auto beta = setting("setting.beta", "Beta setting", "windows.target.beta",
+                      false);
+  beta.depends_on = {catalog_domain::StableId{"setting.alpha"}};
+  beta.risk = catalog_domain::SettingRiskLevel::elevated;
+  beta.force_attempt_rule =
+      catalog_domain::ForceAttemptRule::allowed_with_explicit_confirmation;
   return {
       .revision = 1,
-      .settings = {
-          setting("setting.alpha", "Alpha setting",
-                  "windows.target.alpha", true),
-          setting("setting.beta", "Beta setting", "windows.target.beta",
-                  false),
-      },
+      .settings = {std::move(alpha), std::move(beta)},
       .plans = {plan("setting.beta")},
   };
 }
 
 [[nodiscard]] catalog_domain::SettingsCatalog updated_catalog() {
+  auto alpha = setting("setting.alpha", "Alpha setting updated",
+                       "windows.target.alpha", true);
+  auto gamma = setting("setting.gamma", "Gamma setting",
+                       "windows.target.gamma", false);
+  gamma.depends_on = {catalog_domain::StableId{"setting.alpha"}};
+  gamma.risk = catalog_domain::SettingRiskLevel::elevated;
+  gamma.force_attempt_rule =
+      catalog_domain::ForceAttemptRule::allowed_with_explicit_confirmation;
   return {
       .revision = 2,
-      .settings = {
-          setting("setting.alpha", "Alpha setting updated",
-                  "windows.target.alpha", true),
-          setting("setting.gamma", "Gamma setting", "windows.target.gamma",
-                  false),
-      },
-      .plans = {plan("setting.gamma")},
+      .settings = {std::move(alpha), std::move(gamma)},
+      .plans = {plan("setting.gamma", "plan.recommended-v2")},
   };
 }
 
@@ -198,11 +258,25 @@ class RecordingExecutionLog final : public ExecutionLog {
   return value.value_or("-");
 }
 
+[[nodiscard]] std::string version_text(
+    std::optional<catalog_domain::WindowsVersion> const& version) {
+  if (!version.has_value()) {
+    return "-";
+  }
+  auto const generation =
+      version->generation == catalog_domain::WindowsGeneration::windows_10
+          ? 10
+          : 11;
+  return std::to_string(generation) + "-" +
+         std::to_string(version->feature_update_year) + "h" +
+         std::to_string(version->feature_update_half);
+}
+
 [[nodiscard]] std::string package_text(
     catalog_domain::SettingsCatalog const& catalog,
     std::string_view extra_record = {}) {
   std::ostringstream output;
-  output << "AZZS_SETTINGS_CATALOG\t1\t" << catalog.schema_version << '\t'
+  output << "AZZS_SETTINGS_CATALOG\t2\t" << catalog.schema_version << '\t'
          << catalog.revision << '\n';
   if (!extra_record.empty()) {
     output << extra_record << '\n';
@@ -223,13 +297,33 @@ class RecordingExecutionLog final : public ExecutionLog {
     }
     output << "SETTING\t" << item.id.value << '\t' << item.display_name
            << '\t' << item.description << '\t' << dash(item.source_url)
-           << '\t' << dash(item.known_windows_range.minimum) << '\t'
-           << dash(item.known_windows_range.maximum) << '\t'
+           << '\t' << version_text(item.known_windows_range.minimum) << '\t'
+           << version_text(item.known_windows_range.maximum) << '\t'
            << (item.default_selected ? 1 : 0) << '\t' << recovery << '\t'
            << restart << '\t' << item.semantics.identity << '\t'
            << item.semantics.apply_capability << '\t'
            << item.semantics.detect_capability << '\t'
-           << dash(item.semantics.recover_capability) << '\n';
+           << dash(item.semantics.recover_capability) << '\t';
+    if (item.depends_on.empty()) {
+      output << '-';
+    } else {
+      for (std::size_t index = 0; index < item.depends_on.size(); ++index) {
+        if (index != 0) {
+          output << ',';
+        }
+        output << item.depends_on[index].value;
+      }
+    }
+    output << '\t'
+           << (item.risk == catalog_domain::SettingRiskLevel::low
+                   ? "low"
+                   : "elevated")
+           << '\t'
+           << (item.force_attempt_rule ==
+                       catalog_domain::ForceAttemptRule::prohibited
+                   ? "prohibited"
+                   : "confirm-if-recoverable")
+           << '\n';
   }
   for (auto const& item : catalog.plans) {
     output << "PLAN\t" << item.id.value << '\t' << item.display_name << '\t'
@@ -237,18 +331,7 @@ class RecordingExecutionLog final : public ExecutionLog {
     for (auto const& member : item.members) {
       output << "MEMBER\t" << item.id.value << '\t'
              << member.setting_id.value << '\t' << member.order << '\t'
-             << (member.default_selected ? 1 : 0) << '\t';
-      if (member.depends_on.empty()) {
-        output << '-';
-      } else {
-        for (std::size_t index = 0; index < member.depends_on.size(); ++index) {
-          if (index != 0) {
-            output << ',';
-          }
-          output << member.depends_on[index].value;
-        }
-      }
-      output << '\n';
+             << (member.default_selected ? 1 : 0) << '\n';
     }
   }
   return std::move(output).str();
@@ -281,12 +364,152 @@ struct Fixture final {
   azzs::application::DeviceStateStore states{files, clock};
   SettingsCatalogFileAdapter adapter{states};
   RecordingExecutionLog log;
+  MutableCatalogImportAuthorization import_authorization;
   InMemoryOperationOccupancyStorage occupancy_storage;
   SequenceLeaseTokenSource lease_tokens{"settings-catalog-lease-"};
   SharedOperationOccupancy occupancy{occupancy_storage, lease_tokens};
   catalog_app::SettingsCatalogLifecycle lifecycle{
-      adapter, adapter, log, occupancy, capabilities()};
+      adapter, adapter, log, occupancy, import_authorization, capabilities()};
 };
+
+[[nodiscard]] bool stable_identity_lifecycle_contract() {
+  bool passed = true;
+
+  Fixture setting_fixture;
+  if (setting_fixture.lifecycle.initialize_builtin(base_catalog()).status !=
+      catalog_app::InitializeStatus::initialized) {
+    return expect(false, "stable identity fixture must initialize");
+  }
+  auto retired = base_catalog();
+  retired.revision = 2;
+  retired.settings.erase(retired.settings.begin() + 1);
+  retired.plans.clear();
+  auto retired_preview = setting_fixture.lifecycle.prepare_update(retired);
+  if (!retired_preview.prepared.has_value() ||
+      setting_fixture.lifecycle.confirm(
+          retired_preview.prepared->confirmation_token)
+              .status != catalog_app::ConfirmStatus::committed) {
+    return expect(false, "stable identity fixture must retire catalog items");
+  }
+
+  auto reused_in_third_revision = retired;
+  reused_in_third_revision.revision = 3;
+  reused_in_third_revision.settings.push_back(setting(
+      "setting.beta", "Reused beta setting", "windows.target.reused", false));
+  passed &= expect(
+      setting_fixture.lifecycle.prepare_update(reused_in_third_revision)
+              .status == catalog_app::PrepareStatus::rejected,
+      "a retired setting id must not be reused by the third revision");
+
+  auto third_without_reuse = retired;
+  third_without_reuse.revision = 3;
+  third_without_reuse.settings[0].display_name = "Alpha third revision";
+  auto third_preview =
+      setting_fixture.lifecycle.prepare_update(third_without_reuse);
+  if (!third_preview.prepared.has_value() ||
+      setting_fixture.lifecycle.confirm(
+          third_preview.prepared->confirmation_token)
+              .status != catalog_app::ConfirmStatus::committed) {
+    return expect(false, "stable identity fixture must advance past N-1");
+  }
+  auto reused_after_previous_expired = third_without_reuse;
+  reused_after_previous_expired.revision = 4;
+  reused_after_previous_expired.settings.push_back(setting(
+      "setting.beta", "Late reused beta setting", "windows.target.late", false));
+  SettingsCatalogFileAdapter identity_restarted_adapter{
+      setting_fixture.states};
+  catalog_app::SettingsCatalogLifecycle identity_restarted{
+      identity_restarted_adapter, identity_restarted_adapter,
+      setting_fixture.log, setting_fixture.occupancy,
+      setting_fixture.import_authorization, capabilities()};
+  passed &= expect(
+      identity_restarted.prepare_update(reused_after_previous_expired)
+              .status == catalog_app::PrepareStatus::rejected,
+      "a retired setting id must remain unavailable after restart and N-1 expiry");
+
+  Fixture plan_fixture;
+  if (plan_fixture.lifecycle.initialize_builtin(base_catalog()).status !=
+      catalog_app::InitializeStatus::initialized) {
+    return expect(false, "plan identity fixture must initialize");
+  }
+  auto plan_retired = base_catalog();
+  plan_retired.revision = 2;
+  plan_retired.plans.clear();
+  auto plan_retired_preview =
+      plan_fixture.lifecycle.prepare_update(plan_retired);
+  if (!plan_retired_preview.prepared.has_value() ||
+      plan_fixture.lifecycle.confirm(
+          plan_retired_preview.prepared->confirmation_token)
+              .status != catalog_app::ConfirmStatus::committed) {
+    return expect(false, "plan identity fixture must retire its plan");
+  }
+  auto plan_reused = plan_retired;
+  plan_reused.revision = 3;
+  auto reassigned_plan = plan("setting.beta");
+  reassigned_plan.members[0].order = 30;
+  reassigned_plan.members[1].order = 10;
+  plan_reused.plans.push_back(std::move(reassigned_plan));
+  passed &= expect(
+      plan_fixture.lifecycle.prepare_update(plan_reused).status ==
+          catalog_app::PrepareStatus::rejected,
+      "a retired plan id must not be reused with different members or order");
+
+  std::vector<catalog_domain::SettingsCatalog> changed_semantics;
+  auto changed_apply = base_catalog();
+  changed_apply.revision = 2;
+  changed_apply.settings[0].semantics.apply_capability =
+      "settings.apply-other";
+  changed_semantics.push_back(std::move(changed_apply));
+  auto changed_detect = base_catalog();
+  changed_detect.revision = 2;
+  changed_detect.settings[0].semantics.detect_capability =
+      "settings.detect-other";
+  changed_semantics.push_back(std::move(changed_detect));
+  auto changed_recover = base_catalog();
+  changed_recover.revision = 2;
+  changed_recover.settings[0].semantics.recover_capability =
+      "settings.recover-other";
+  changed_semantics.push_back(std::move(changed_recover));
+  auto changed_restart = base_catalog();
+  changed_restart.revision = 2;
+  changed_restart.settings[0].restart_requirement =
+      catalog_domain::RestartRequirement::windows;
+  changed_semantics.push_back(std::move(changed_restart));
+  auto changed_dependency = base_catalog();
+  changed_dependency.revision = 2;
+  changed_dependency.settings[1].depends_on.clear();
+  changed_semantics.push_back(std::move(changed_dependency));
+  auto changed_risk = base_catalog();
+  changed_risk.revision = 2;
+  changed_risk.settings[1].risk = catalog_domain::SettingRiskLevel::low;
+  changed_semantics.push_back(std::move(changed_risk));
+  auto changed_force_attempt = base_catalog();
+  changed_force_attempt.revision = 2;
+  changed_force_attempt.settings[1].force_attempt_rule =
+      catalog_domain::ForceAttemptRule::prohibited;
+  changed_semantics.push_back(std::move(changed_force_attempt));
+  auto semantic_capabilities = capabilities();
+  semantic_capabilities.apply.push_back("settings.apply-other");
+  semantic_capabilities.detect.push_back("settings.detect-other");
+  semantic_capabilities.recover.push_back("settings.recover-other");
+  Fixture semantic_capability_fixture;
+  catalog_app::SettingsCatalogLifecycle semantic_lifecycle{
+      semantic_capability_fixture.adapter, semantic_capability_fixture.adapter,
+      semantic_capability_fixture.log, semantic_capability_fixture.occupancy,
+      semantic_capability_fixture.import_authorization,
+      semantic_capabilities};
+  if (semantic_lifecycle.initialize_builtin(base_catalog()).status !=
+      catalog_app::InitializeStatus::initialized) {
+    return expect(false, "expanded semantic fixture must initialize");
+  }
+  for (auto& candidate : changed_semantics) {
+    passed &= expect(
+        semantic_lifecycle.prepare_update(std::move(candidate)).status ==
+            catalog_app::PrepareStatus::rejected,
+        "a stable setting id must freeze execution, dependency, risk, and recovery semantics");
+  }
+  return passed;
+}
 
 [[nodiscard]] bool domain_model_contract() {
   auto valid = catalog_domain::validate(base_catalog(), capabilities());
@@ -299,6 +522,23 @@ struct Fixture final {
                        *valid.validated,
                        catalog_domain::StableId{"setting.alpha"}) != nullptr,
                    "downstream consumers must resolve settings by stable id");
+  auto const* beta = catalog_domain::find_setting(
+      *valid.validated, catalog_domain::StableId{"setting.beta"});
+  auto const windows_11_24h2 = catalog_domain::WindowsVersion{
+      .generation = catalog_domain::WindowsGeneration::windows_11,
+      .feature_update_year = 24,
+      .feature_update_half = 2};
+  passed &= expect(
+      beta != nullptr && beta->depends_on.size() == 1 &&
+          beta->depends_on[0] == catalog_domain::StableId{"setting.alpha"} &&
+          beta->risk == catalog_domain::SettingRiskLevel::elevated &&
+          beta->force_attempt_rule ==
+              catalog_domain::ForceAttemptRule::
+                  allowed_with_explicit_confirmation &&
+          beta->known_windows_range.minimum <
+              beta->known_windows_range.maximum &&
+          beta->known_windows_range.contains(windows_11_24h2),
+      "settings must expose dependencies, risk, force-attempt, and comparable Windows range facts");
   auto const* available = catalog_domain::find_plan_availability(
       *valid.validated, catalog_domain::StableId{"plan.recommended"});
   passed &= expect(available != nullptr && available->enabled,
@@ -321,13 +561,22 @@ struct Fixture final {
   }
 
   auto cyclic_catalog = base_catalog();
-  cyclic_catalog.plans[0].members[0].depends_on = {
+  cyclic_catalog.settings[0].depends_on = {
       catalog_domain::StableId{"setting.beta"}};
   auto cyclic = catalog_domain::validate(std::move(cyclic_catalog),
                                          capabilities());
   passed &= expect(cyclic.validated.has_value() &&
                        !cyclic.validated->plans[0].enabled,
                    "cyclic plan relationships must disable only the plan");
+
+  auto unsafe_force_attempt = base_catalog();
+  unsafe_force_attempt.settings[1].recovery_requirement =
+      catalog_domain::RecoveryRequirement::unavailable;
+  unsafe_force_attempt.settings[1].semantics.recover_capability.reset();
+  passed &= expect(
+      !catalog_domain::validate(std::move(unsafe_force_attempt), capabilities())
+           .validated.has_value(),
+      "force attempt must require explicit recovery semantics");
 
   auto unknown = base_catalog();
   unknown.settings[0].semantics.apply_capability =
@@ -395,9 +644,9 @@ struct Fixture final {
   if (!prepared.prepared.has_value()) {
     return false;
   }
-  passed &= expect(prepared.prepared->changes.added.size() == 1 &&
-                       prepared.prepared->changes.changed.size() == 2 &&
-                       prepared.prepared->changes.retired.size() == 1,
+  passed &= expect(prepared.prepared->changes.added.size() == 2 &&
+                       prepared.prepared->changes.changed.size() == 1 &&
+                       prepared.prepared->changes.retired.size() == 2,
                    "preview must separate added, changed, and retired items");
   passed &= expect(fixture.lifecycle.snapshot().current->catalog.revision == 1,
                    "preparing a preview must not load the candidate");
@@ -421,7 +670,7 @@ struct Fixture final {
   SettingsCatalogFileAdapter restarted_adapter{fixture.states};
   catalog_app::SettingsCatalogLifecycle restarted{
       restarted_adapter, restarted_adapter, fixture.log, fixture.occupancy,
-      capabilities()};
+      fixture.import_authorization, capabilities()};
   passed &= expect(restarted.snapshot().current->catalog.revision == 2,
                    "the active and previous catalogs must survive restart");
 
@@ -466,42 +715,104 @@ struct Fixture final {
           catalog_app::PrepareStatus::downgrade_requires_debug_import,
       "ordinary update must not silently downgrade the catalog");
   passed &= expect(fixture.lifecycle.prepare_debug_import(
-                       "does-not-exist.azcat", false)
+                       "does-not-exist.azcat")
                        .status ==
                        catalog_app::PrepareStatus::debug_mode_required,
                    "manual import must be absent outside debug mode");
+  fixture.import_authorization.set_enabled(true);
+  std::string const missing_path =
+      "/Users/private-account/catalog-input/does-not-exist.azcat";
+  auto missing = fixture.lifecycle.prepare_debug_import(missing_path);
+  passed &= expect(
+      missing.status == catalog_app::PrepareStatus::rejected &&
+          missing.import_source.has_value() &&
+          missing.import_source->type ==
+              catalog_app::CatalogImportSourceType::local_file &&
+          missing.import_source->redacted_path == "does-not-exist.azcat" &&
+          missing.detail.find("/Users/private-account") == std::string::npos,
+      "a failed import must retain only a diagnosable redacted source");
+  passed &= expect(
+      fixture.log.contains_import_event(
+          "debug-import-load", azzs::application::ExecutionResult::failed,
+          "does-not-exist.azcat", "not-found"),
+      "an import load failure must write a structured audit event");
+  passed &= expect(!fixture.log.contains_text("/Users/private-account"),
+                   "import audit must not retain a sensitive absolute path");
 
   TemporaryCatalogFile unknown_file{
       "settings-catalog-unknown.azcat",
       package_text(base_catalog(), "FUTURE_EXECUTION\tunsafe")};
   auto unknown =
-      fixture.lifecycle.prepare_debug_import(unknown_file.path(), true);
+      fixture.lifecycle.prepare_debug_import(unknown_file.path());
   passed &= expect(unknown.status == catalog_app::PrepareStatus::rejected &&
                        fixture.lifecycle.snapshot().current->catalog.revision == 2,
                    "unknown imported execution semantics must preserve the current catalog");
+  passed &= expect(
+      unknown.import_source.has_value() &&
+          unknown.import_source->redacted_path ==
+              "settings-catalog-unknown.azcat" &&
+          fixture.log.contains_import_event(
+              "debug-import-validation",
+              azzs::application::ExecutionResult::failed,
+              "settings-catalog-unknown.azcat", "rejected"),
+      "an import validation rejection must retain and audit a redacted source");
 
   TemporaryCatalogFile import_file{
       "settings-catalog-valid.azcat",
       package_text(base_catalog(), "DISPLAY_FUTURE_NOTE\tignored")};
   auto imported =
-      fixture.lifecycle.prepare_debug_import(import_file.path(), true);
+      fixture.lifecycle.prepare_debug_import(import_file.path());
   passed &= expect(imported.status == catalog_app::PrepareStatus::ready &&
                        imported.prepared.has_value() &&
                        imported.prepared->changes.downgrade &&
-                       imported.prepared->source_path == import_file.path() &&
+                       imported.prepared->import_source.has_value() &&
+                       imported.prepared->import_source->redacted_path ==
+                           "settings-catalog-valid.azcat" &&
                        imported.prepared->setting_count == 2 &&
                        imported.prepared->plan_count == 1,
                    "debug downgrade preview must show path, version, and item counts");
   passed &= expect(fixture.lifecycle.snapshot().current->catalog.revision == 2,
                    "debug import must wait for exact confirmation");
   if (imported.prepared.has_value()) {
-    passed &= expect(fixture.lifecycle.confirm(
-                         imported.prepared->confirmation_token)
-                         .status == catalog_app::ConfirmStatus::committed,
+    auto confirmed_import = fixture.lifecycle.confirm(
+        imported.prepared->confirmation_token);
+    passed &= expect(confirmed_import.status ==
+                             catalog_app::ConfirmStatus::committed &&
+                         confirmed_import.import_source.has_value() &&
+                         confirmed_import.import_source->redacted_path ==
+                             "settings-catalog-valid.azcat",
                      "a confirmed, validated debug downgrade must load");
   }
+  passed &= expect(
+      fixture.log.contains_import_event(
+          "debug-import-confirm", azzs::application::ExecutionResult::started,
+          "settings-catalog-valid.azcat", "confirmation-started") &&
+          fixture.log.contains_import_event(
+              "debug-import-confirm",
+              azzs::application::ExecutionResult::succeeded,
+              "settings-catalog-valid.azcat", "committed"),
+      "import confirmation and success must write structured audit events");
+  passed &= expect(!fixture.log.contains_text(import_file.path()),
+                   "successful import audit must not retain an absolute path");
   passed &= expect(fixture.lifecycle.snapshot().current->catalog.revision == 1,
                    "debug downgrade must become the independent current catalog");
+  auto imported_snapshot = fixture.lifecycle.snapshot();
+  auto const* imported_beta = catalog_domain::find_setting(
+      *imported_snapshot.current,
+      catalog_domain::StableId{"setting.beta"});
+  passed &= expect(
+      imported_beta != nullptr && imported_beta->depends_on.size() == 1 &&
+          imported_beta->risk == catalog_domain::SettingRiskLevel::elevated &&
+          imported_beta->force_attempt_rule ==
+              catalog_domain::ForceAttemptRule::
+                  allowed_with_explicit_confirmation &&
+          imported_beta->known_windows_range.contains(
+              catalog_domain::WindowsVersion{
+                  .generation =
+                      catalog_domain::WindowsGeneration::windows_11,
+                  .feature_update_year = 24,
+                  .feature_update_half = 2}),
+      "the file adapter must parse and persist downstream settings facts");
   return passed;
 }
 
@@ -575,6 +886,7 @@ struct Fixture final {
 
 int main() {
   bool passed = true;
+  passed &= stable_identity_lifecycle_contract();
   passed &= domain_model_contract();
   passed &= update_rollback_and_isolation_contract();
   passed &= debug_import_contract();
