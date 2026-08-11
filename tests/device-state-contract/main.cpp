@@ -126,7 +126,10 @@ void write_u64(StateBytes& target, std::size_t position,
 
 [[nodiscard]] StateBytes as_future_envelope(StateBytes encoded) {
   write_u32(encoded, 8, 2);
-  encoded.back() ^= std::byte{0x5a};
+  auto const content_size = encoded.size() - sizeof(std::uint64_t);
+  write_u64(encoded, content_size,
+            fixture_digest(std::span<std::byte const>{encoded}.first(
+                content_size)));
   return encoded;
 }
 
@@ -234,14 +237,47 @@ struct Fixture final {
     return expect(false, "truncated current fixture must create N/N-1");
   }
 
-  current->resize(8);
+  write_u32(*current, 8, 2);
+  current->resize(12);
   fixture.files.seed(key, StateFileSlot::current, std::move(*current));
   auto const recovered = fixture.store.inspect(key);
   return expect(
       recovered.mode == StateReadMode::recovered_previous &&
           recovered.snapshot.has_value() &&
           recovered.snapshot->state.value.payload == bytes("trusted-previous"),
-      "a truncated current generation must recover the fully validated last trusted generation");
+      "a 12-byte future-version prefix must not outrank the fully validated "
+      "last trusted generation");
+}
+
+[[nodiscard]] bool invalid_future_digest_recovers_last_trusted_generation() {
+  Fixture fixture;
+  auto const key = StateKey::machine(AggregateId{"invalid-future-digest"});
+  auto first = fixture.store.initialize(key, state("trusted-previous"));
+  if (!first.snapshot.has_value()) {
+    return expect(false, "invalid future digest fixture must initialize");
+  }
+  auto second = fixture.store.commit(StateCommitRequest{
+      .key = key,
+      .expected_revision = first.snapshot->revision,
+      .state = state("damaged-current"),
+  });
+  auto current = fixture.files.raw_file(key, StateFileSlot::current);
+  if (!second.snapshot.has_value() || !current.has_value()) {
+    return expect(false,
+                  "invalid future digest fixture must create N/N-1");
+  }
+
+  write_u32(*current, 8, 2);
+  refresh_fixture_digest(*current);
+  current->back() ^= std::byte{0x5a};
+  fixture.files.seed(key, StateFileSlot::current, std::move(*current));
+  auto const recovered = fixture.store.inspect(key);
+  return expect(
+      recovered.mode == StateReadMode::recovered_previous &&
+          recovered.snapshot.has_value() &&
+          recovered.snapshot->state.value.payload == bytes("trusted-previous"),
+      "an unverified future-version digest must not outrank the fully "
+      "validated last trusted generation");
 }
 
 [[nodiscard]] bool schema_window_and_future_bytes_are_safe() {
@@ -1168,6 +1204,7 @@ int main() {
   bool passed = true;
   passed &= first_and_continuous_commit_keep_n_minus_one();
   passed &= truncated_current_recovers_last_trusted_generation();
+  passed &= invalid_future_digest_recovers_last_trusted_generation();
   passed &= schema_window_and_future_bytes_are_safe();
   passed &= dual_corruption_requires_audited_reinitialization();
   passed &= invalid_generation_order_preserves_both_generations();

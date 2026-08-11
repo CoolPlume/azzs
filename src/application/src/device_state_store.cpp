@@ -271,14 +271,6 @@ struct DecodedState final {
 
 [[nodiscard]] DecodedState decode_state(
     std::span<std::byte const> bytes, domain::StateKey const& expected_key) {
-  Decoder prefix{bytes};
-  std::uint32_t declared_envelope_version{};
-  if (read_magic(prefix, k_state_magic) &&
-      prefix.u32(declared_envelope_version) &&
-      declared_envelope_version > k_envelope_version) {
-    return {.state = DecodeState::future,
-            .error = "state envelope version is newer than this workbench"};
-  }
   if (bytes.size() > k_max_state_bytes || !has_valid_digest(bytes)) {
     return {.error = "state envelope integrity check failed"};
   }
