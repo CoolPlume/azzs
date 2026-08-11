@@ -470,11 +470,15 @@ def verify_fixture_xaml(root: Path) -> None:
         "focus_default_when_loaded_", "component->progress",
         "ProgressKind::determinate", "ProgressKind::indeterminate",
         "ProgressKind::unknown", "clear_numeric_progress",
-        "AutomationProperties::SetValue", "ProjectedProgressBar().Maximum",
+        "AutomationProperties::SetItemStatus", "ProjectedProgressBar().Maximum",
         "ProjectedProgressBar().Value", "ProgressValueText().Text",
     ):
         require(token in control_cpp,
                 f"the reusable typed-intent surface is missing {token}")
+    require(control_cpp.count("AutomationProperties::SetItemStatus") == 2,
+            "progress status must be set when visible and cleared when hidden")
+    require("AutomationProperties::SetValue" not in control_cpp,
+            "AutomationProperties has no SetValue API; use ItemStatus")
     require("PointerEntered" not in control_cpp and
             "PointerMoved" not in control_cpp and
             "PointerEntered=" not in read(control_path),

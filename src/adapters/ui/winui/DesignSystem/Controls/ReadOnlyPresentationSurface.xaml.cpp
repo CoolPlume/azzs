@@ -302,7 +302,7 @@ void ReadOnlyPresentationSurface::project(
     AutomationProperties::SetAutomationId(
         ProjectedProgressBar(), winrt::to_hstring(progress_automation_id));
     AutomationProperties::SetName(ProjectedProgressBar(), automation_name);
-    AutomationProperties::SetValue(ProjectedProgressBar(), progress_value);
+    AutomationProperties::SetItemStatus(ProjectedProgressBar(), progress_value);
     AutomationProperties::SetAutomationId(
         ProgressValueText(),
         winrt::to_hstring(automation_id + ".ProgressValue"));
@@ -328,7 +328,8 @@ void ReadOnlyPresentationSurface::project(
   } else {
     ProjectedProgressBar().IsIndeterminate(false);
     clear_numeric_progress(ProjectedProgressBar());
-    AutomationProperties::SetValue(ProjectedProgressBar(), winrt::hstring{});
+    AutomationProperties::SetItemStatus(ProjectedProgressBar(),
+                                        winrt::hstring{});
     ProgressValueText().Text(winrt::hstring{});
   }
 
