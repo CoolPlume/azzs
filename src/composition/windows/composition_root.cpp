@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "../../adapters/ui/winui/DesignSystem/motion_preferences.hpp"
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
@@ -84,8 +85,9 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
       std::move(*environment.environment));
   auto workbench =
       std::make_shared<application::Workbench>(platform_info, services);
+  auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
-  window->bind(std::move(workbench));
+  window->bind(std::move(workbench), std::move(motion_preferences));
   return window.as<winrt::Microsoft::UI::Xaml::Window>();
 }
 

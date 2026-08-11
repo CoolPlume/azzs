@@ -1,0 +1,8 @@
+namespace Azzs.Ui.DesignSystem.Controls
+{
+    [default_interface]
+    runtimeclass ReadOnlyPresentationSurface : Microsoft.UI.Xaml.Controls.UserControl
+    {
+        ReadOnlyPresentationSurface();
+    }
+}

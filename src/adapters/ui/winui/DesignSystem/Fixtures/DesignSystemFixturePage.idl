@@ -1,0 +1,8 @@
+namespace Azzs.Ui.DesignSystem.Fixtures
+{
+    [default_interface]
+    runtimeclass DesignSystemFixturePage : Microsoft.UI.Xaml.Controls.Page
+    {
+        DesignSystemFixturePage();
+    }
+}
