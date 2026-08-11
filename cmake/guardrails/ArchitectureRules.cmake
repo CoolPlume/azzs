@@ -157,6 +157,21 @@ set(AZZS_ARCHITECTURE_ALLOWED_MSBUILD_PACKAGES
   "Microsoft.Windows.CppWinRT|3.0.260715.1"
 )
 
+set(AZZS_ARCHITECTURE_ALLOWED_MSBUILD_COMPILE_DEPENDENCY_ELEMENTS
+  AdditionalIncludeDirectories
+  PrecompiledHeaderFile
+  AdditionalOptions
+)
+set(AZZS_ARCHITECTURE_REJECTED_MSBUILD_COMPILE_DEPENDENCY_ELEMENTS
+  AdditionalUsingDirectories
+  ForcedIncludeFiles
+  ForcedUsingFiles
+)
+set(AZZS_ARCHITECTURE_ALLOWED_MSBUILD_ADDITIONAL_OPTIONS
+  /Zc:__cplusplus
+  /utf-8
+)
+
 set(AZZS_ARCHITECTURE_STANDARD_HEADER_PATTERNS
   "^(algorithm|any|array|atomic|barrier|bit|bitset|cassert|cctype|cerrno|cfenv|cfloat|charconv|chrono|cinttypes|climits|clocale|cmath|codecvt|compare|complex|concepts|condition_variable|coroutine|csetjmp|csignal|cstdarg|cstddef|cstdint|cstdio|cstdlib|cstring|ctime|cuchar|cwchar|cwctype|deque|exception|execution|expected|filesystem|format|forward_list|fstream|functional|future|initializer_list|iomanip|ios|iosfwd|iostream|istream|iterator|latch|limits|list|locale|map|memory|memory_resource|mutex|new|numbers|numeric|optional|ostream|print|queue|random|ranges|ratio|regex|scoped_allocator|semaphore|set|shared_mutex|source_location|span|spanstream|sstream|stack|stacktrace|stdexcept|stdfloat|stop_token|streambuf|string|string_view|strstream|syncstream|system_error|thread|tuple|type_traits|typeindex|typeinfo|unordered_map|unordered_set|utility|valarray|variant|vector|version)$"
   "^(assert|ctype|errno|fenv|float|inttypes|limits|locale|math|setjmp|signal|stdarg|stddef|stdint|stdio|stdlib|string|time|uchar|wchar|wctype)\\.h$"

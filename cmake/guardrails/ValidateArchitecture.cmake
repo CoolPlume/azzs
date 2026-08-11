@@ -391,13 +391,177 @@ if(AZZS_GRAPH_SCAN_PROJECT)
   _azzs_graph_add_node("external:windows-platform" platform_runtime)
   _azzs_graph_add_node("external:winui-generated" ui)
 
-  if(winui_project_content MATCHES
-     "<[A-Za-z_][A-Za-z0-9_.-]*:(Import|ProjectReference|PackageReference|AdditionalDependencies|AdditionalIncludeDirectories|ClCompile)([^A-Za-z0-9_.:-])")
+  string(TOLOWER "${winui_project_content}" winui_project_content_lower)
+  if(winui_project_content_lower MATCHES
+     "<[a-z_][a-z0-9_.-]*:(import|projectreference|packagereference|additionaldependencies|additionalincludedirectories|precompiledheaderfile|additionaloptions|forcedincludefiles|clcompile)([^a-z0-9_.:-])")
     _azzs_architecture_fail(
       "Azzs.WinUI"
       "Azzs.WinUI -> ${CMAKE_MATCH_0} (prefixed MSBuild element)"
       "Azzs.WinUI MSBuild elements -> unprefixed checked declarations")
   endif()
+
+  foreach(rejected_element IN LISTS
+      AZZS_ARCHITECTURE_REJECTED_MSBUILD_COMPILE_DEPENDENCY_ELEMENTS)
+    string(TOLOWER "${rejected_element}" rejected_element_lower)
+    if(winui_project_content_lower MATCHES
+       "<${rejected_element_lower}([^a-z0-9_.:-])")
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI -> ${rejected_element} (unregistered compiler dependency input)"
+        "Azzs.WinUI compiler dependency inputs -> ${AZZS_ARCHITECTURE_ALLOWED_MSBUILD_COMPILE_DEPENDENCY_ELEMENTS}")
+    endif()
+  endforeach()
+
+  string(REGEX MATCHALL "<additionaloptions[^>]*>"
+    additional_option_openings_lower "${winui_project_content_lower}")
+  string(REGEX MATCHALL "<AdditionalOptions[^>]*>"
+    additional_option_openings "${winui_project_content}")
+  string(REGEX MATCHALL
+    "<AdditionalOptions>[^<]*</AdditionalOptions>"
+    additional_option_elements "${winui_project_content}")
+  list(LENGTH additional_option_openings_lower
+    additional_option_opening_lower_count)
+  list(LENGTH additional_option_openings additional_option_opening_count)
+  list(LENGTH additional_option_elements additional_option_element_count)
+  if(NOT additional_option_opening_lower_count EQUAL
+       additional_option_opening_count OR
+     NOT additional_option_opening_count EQUAL
+       additional_option_element_count)
+    _azzs_architecture_fail(
+      "Azzs.WinUI"
+      "Azzs.WinUI -> AdditionalOptions declarations ${additional_option_opening_lower_count}, literal declarations ${additional_option_element_count}"
+      "Azzs.WinUI AdditionalOptions -> literal checked compiler options")
+  endif()
+  foreach(additional_option_element IN LISTS additional_option_elements)
+    _azzs_xml_enclosing_opening(
+      "${winui_project_content}" "${additional_option_element}"
+      ClCompile additional_option_compile_ancestor)
+    if(NOT additional_option_compile_ancestor)
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI -> AdditionalOptions outside ClCompile"
+        "Azzs.WinUI AdditionalOptions -> ClCompile metadata only")
+    endif()
+    foreach(control_tag IN ITEMS Choose When Otherwise Target)
+      _azzs_xml_reject_enclosing_tag(
+        "${winui_project_content}" "${additional_option_element}"
+        "${control_tag}" AdditionalOptions)
+    endforeach()
+    string(REGEX REPLACE
+      "^<AdditionalOptions>([^<]*)</AdditionalOptions>$"
+      "\\1" additional_options "${additional_option_element}")
+    string(REGEX MATCHALL "%\\(AdditionalOptions\\)"
+      inherited_additional_options "${additional_options}")
+    list(LENGTH inherited_additional_options
+      inherited_additional_option_count)
+    if(NOT inherited_additional_option_count EQUAL 1 OR
+       NOT additional_options MATCHES
+         "%\\(AdditionalOptions\\)[ \t\r\n]*$")
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI -> AdditionalOptions inheritance '${additional_options}'"
+        "Azzs.WinUI AdditionalOptions -> one final %(AdditionalOptions) terminator")
+    endif()
+    string(REGEX REPLACE
+      "[ \t\r\n]*%\\(AdditionalOptions\\)[ \t\r\n]*$" ""
+      literal_additional_options "${additional_options}")
+    foreach(dependency_pattern IN LISTS
+        AZZS_ARCHITECTURE_CMAKE_DEPENDENCY_OPTION_PATTERNS)
+      if(literal_additional_options MATCHES "${dependency_pattern}")
+        string(STRIP "${CMAKE_MATCH_0}" dependency_option)
+        _azzs_architecture_fail(
+          "Azzs.WinUI"
+          "Azzs.WinUI -> AdditionalOptions dependency option '${dependency_option}'"
+          "Azzs.WinUI AdditionalOptions -> non-dependency compiler options")
+      endif()
+    endforeach()
+    if(literal_additional_options MATCHES "[$%@]")
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI -> AdditionalOptions '${literal_additional_options}' (dynamic compiler options)"
+        "Azzs.WinUI AdditionalOptions -> literal checked compiler options")
+    endif()
+    string(REGEX REPLACE "[ \t\r\n]+" ";"
+      additional_option_tokens "${literal_additional_options}")
+    foreach(additional_option IN LISTS additional_option_tokens)
+      if(additional_option AND
+         NOT additional_option IN_LIST
+           AZZS_ARCHITECTURE_ALLOWED_MSBUILD_ADDITIONAL_OPTIONS)
+        _azzs_architecture_fail(
+          "Azzs.WinUI"
+          "Azzs.WinUI -> AdditionalOptions '${additional_option}' (unregistered compiler option)"
+          "Azzs.WinUI AdditionalOptions -> ${AZZS_ARCHITECTURE_ALLOWED_MSBUILD_ADDITIONAL_OPTIONS}")
+      endif()
+    endforeach()
+  endforeach()
+
+  string(REGEX MATCHALL "<precompiledheaderfile[^>]*>"
+    precompiled_header_openings_lower "${winui_project_content_lower}")
+  string(REGEX MATCHALL "<PrecompiledHeaderFile[^>]*>"
+    precompiled_header_openings "${winui_project_content}")
+  string(REGEX MATCHALL
+    "<PrecompiledHeaderFile>[^<]*</PrecompiledHeaderFile>"
+    precompiled_header_elements "${winui_project_content}")
+  list(LENGTH precompiled_header_openings_lower
+    precompiled_header_opening_lower_count)
+  list(LENGTH precompiled_header_openings precompiled_header_opening_count)
+  list(LENGTH precompiled_header_elements precompiled_header_element_count)
+  if(NOT precompiled_header_opening_lower_count EQUAL
+       precompiled_header_opening_count OR
+     NOT precompiled_header_opening_count EQUAL
+       precompiled_header_element_count)
+    _azzs_architecture_fail(
+      "Azzs.WinUI"
+      "Azzs.WinUI -> PrecompiledHeaderFile declarations ${precompiled_header_opening_lower_count}, literal declarations ${precompiled_header_element_count}"
+      "Azzs.WinUI PrecompiledHeaderFile -> literal WinUI headers")
+  endif()
+  foreach(precompiled_header_element IN LISTS precompiled_header_elements)
+    _azzs_xml_enclosing_opening(
+      "${winui_project_content}" "${precompiled_header_element}"
+      ClCompile precompiled_header_compile_ancestor)
+    if(NOT precompiled_header_compile_ancestor)
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI -> PrecompiledHeaderFile outside ClCompile"
+        "Azzs.WinUI PrecompiledHeaderFile -> ClCompile metadata only")
+    endif()
+    foreach(control_tag IN ITEMS Choose When Otherwise Target)
+      _azzs_xml_reject_enclosing_tag(
+        "${winui_project_content}" "${precompiled_header_element}"
+        "${control_tag}" PrecompiledHeaderFile)
+    endforeach()
+    string(REGEX REPLACE
+      "^<PrecompiledHeaderFile>([^<]*)</PrecompiledHeaderFile>$"
+      "\\1" precompiled_header "${precompiled_header_element}")
+    if(NOT precompiled_header OR precompiled_header MATCHES "[$%@?*;]")
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI -> PrecompiledHeaderFile '${precompiled_header}' (dynamic compiler dependency)"
+        "Azzs.WinUI PrecompiledHeaderFile -> literal WinUI headers")
+    endif()
+    string(REPLACE "\\" "/" precompiled_header "${precompiled_header}")
+    get_filename_component(precompiled_header
+      "${winui_project_directory}/${precompiled_header}" ABSOLUTE)
+    cmake_path(NORMAL_PATH precompiled_header)
+    if(NOT EXISTS "${precompiled_header}")
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI -> ${precompiled_header} (missing PrecompiledHeaderFile)"
+        "Azzs.WinUI PrecompiledHeaderFile -> existing WinUI headers")
+    endif()
+    _azzs_project_relative_role(
+      "${precompiled_header}" precompiled_header_relative
+      precompiled_header_role)
+    if(NOT precompiled_header_role STREQUAL "ui")
+      _azzs_architecture_fail(
+        "Azzs.WinUI"
+        "Azzs.WinUI (composition) -> ${precompiled_header_relative} (${precompiled_header_role} PrecompiledHeaderFile)"
+        "Azzs.WinUI PrecompiledHeaderFile -> ui")
+    endif()
+    _azzs_graph_add_node(
+      "${precompiled_header_relative}" "${precompiled_header_role}")
+    _azzs_graph_add_edge("Azzs.WinUI" "${precompiled_header_relative}")
+  endforeach()
 
   file(GLOB_RECURSE directory_build_files LIST_DIRECTORIES FALSE
     "${AZZS_GRAPH_SOURCE_ROOT}/Directory.Build.props"

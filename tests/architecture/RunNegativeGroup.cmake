@@ -42,7 +42,11 @@ function(expect_architecture_rejection fixture)
 endfunction()
 
 function(expect_cmake_project_rejection scenario)
-  set(expected_fragments ${ARGN})
+  cmake_parse_arguments(ARG "CONFIGURE_ONLY" "BUILD_TESTING" "" ${ARGN})
+  set(expected_fragments ${ARG_UNPARSED_ARGUMENTS})
+  if(NOT DEFINED ARG_BUILD_TESTING)
+    set(ARG_BUILD_TESTING ON)
+  endif()
   set(build_directory
     "${AZZS_ARCHITECTURE_BINARY_DIR}/negative-projects/${scenario}")
   file(REMOVE_RECURSE "${build_directory}")
@@ -54,7 +58,7 @@ function(expect_cmake_project_rejection scenario)
     -G "${AZZS_CMAKE_GENERATOR}"
     "-DAZZS_GUARDRAILS_MODULE_DIR=${AZZS_GUARDRAILS_MODULE_DIR}"
     "-DAZZS_NEGATIVE_SCENARIO=${scenario}"
-    -DBUILD_TESTING=ON
+    "-DBUILD_TESTING=${ARG_BUILD_TESTING}"
   )
   if(DEFINED AZZS_CMAKE_GENERATOR_PLATFORM AND
      NOT AZZS_CMAKE_GENERATOR_PLATFORM STREQUAL "")
@@ -79,7 +83,7 @@ function(expect_cmake_project_rejection scenario)
   set(output "${configure_output}\n${configure_error}")
   set(result "${configure_result}")
 
-  if(configure_result EQUAL 0)
+  if(configure_result EQUAL 0 AND NOT ARG_CONFIGURE_ONLY)
     execute_process(
       COMMAND
         "${CMAKE_COMMAND}"
@@ -128,6 +132,14 @@ if(AZZS_NEGATIVE_GROUP STREQUAL "reverse-or-cycle")
     "allowed edges: domain target sources -> domain"
   )
   expect_cmake_project_rejection(
+    source-bypass
+    CONFIGURE_ONLY
+    BUILD_TESTING OFF
+    "target: azzs_domain"
+    "actual edge: azzs_domain (domain) -> tests/support/rogue.cpp (test_support)"
+    "allowed edges: domain target sources -> domain"
+  )
+  expect_cmake_project_rejection(
     include-bypass
     "target: azzs_domain"
     "actual edge: azzs_domain (domain) -> directory:src/application/include (application)"
@@ -171,6 +183,18 @@ elseif(AZZS_NEGATIVE_GROUP STREQUAL
     "target: src/adapters/ui/winui/Page.cpp"
     "actual edge: src/adapters/ui/winui/Page.cpp (ui) -> src/adapters/windows/include/windows_platform_info.hpp (platform_adapter)"
     "allowed edges: ui ->"
+  )
+  expect_architecture_rejection(
+    msbuild-forced-include
+    "target: Azzs.WinUI"
+    "actual edge: Azzs.WinUI -> ForcedIncludeFiles"
+    "allowed edges: Azzs.WinUI compiler dependency inputs -> AdditionalIncludeDirectories"
+  )
+  expect_architecture_rejection(
+    msbuild-additional-options-forced-include
+    "target: Azzs.WinUI"
+    "actual edge: Azzs.WinUI -> AdditionalOptions dependency option '/FI"
+    "allowed edges: Azzs.WinUI AdditionalOptions -> non-dependency compiler options"
   )
   expect_architecture_rejection(
     msbuild-dynamic-source

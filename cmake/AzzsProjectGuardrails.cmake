@@ -734,6 +734,22 @@ function(_azzs_finalize_project_guardrails_impl)
     "set(AZZS_GRAPH_SCAN_PROJECT TRUE)\n")
   file(WRITE "${graph_file}" "${graph_content}")
 
+  execute_process(
+    COMMAND
+      "${CMAKE_COMMAND}"
+      "-DAZZS_GRAPH_FILE=${graph_file}"
+      -P
+      "${AZZS_GUARDRAILS_MODULE_DIR}/guardrails/ValidateArchitecture.cmake"
+    RESULT_VARIABLE validation_result
+    OUTPUT_VARIABLE validation_output
+    ERROR_VARIABLE validation_error
+  )
+  if(NOT validation_result STREQUAL "0")
+    message(FATAL_ERROR
+      "Architecture validator rejected the generated project graph:\n"
+      "${validation_output}\n${validation_error}")
+  endif()
+
   if(BUILD_TESTING)
     azzs_register_test(
       NAME architecture.project-graph
