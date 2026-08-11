@@ -11,3 +11,6 @@
 
 # Local Graphify interpreter, scan state, semantic cache, and generated reports
 /graphify-out/
+
+# Local build, test, packaging, and evidence output
+/out/

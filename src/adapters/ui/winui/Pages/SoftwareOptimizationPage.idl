@@ -1,0 +1,8 @@
+namespace Azzs.Ui.Pages
+{
+    [default_interface]
+    runtimeclass SoftwareOptimizationPage : Microsoft.UI.Xaml.Controls.Page
+    {
+        SoftwareOptimizationPage();
+    }
+}

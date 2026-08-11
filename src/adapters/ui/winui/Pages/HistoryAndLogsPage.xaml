@@ -1,0 +1,16 @@
+<Page
+    x:Class="Azzs.Ui.Pages.HistoryAndLogsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer>
+        <Grid Padding="32,24">
+            <TextBlock
+                x:Uid="HistoryAndLogsPageTitle"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                AutomationProperties.HeadingLevel="Level1"
+                Style="{StaticResource TitleTextBlockStyle}"
+                TextWrapping="Wrap" />
+        </Grid>
+    </ScrollViewer>
+</Page>
