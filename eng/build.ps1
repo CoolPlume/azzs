@@ -47,9 +47,16 @@ if (-not (Test-Path -LiteralPath $vswherePath)) {
     throw "vswhere.exe was not found. Install Visual Studio 2026 before building."
 }
 
-$instanceJson = & $vswherePath -latest -products * -version "[18.8,18.9)" -requires Microsoft.Component.MSBuild -format json -utf8
+$requiredVisualStudioComponents = @(
+    "Microsoft.Component.MSBuild",
+    "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+    "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
+    "Microsoft.VisualStudio.Component.VC.CMake.Project",
+    "Microsoft.VisualStudio.ComponentGroup.UWP.VC"
+)
+$instanceJson = & $vswherePath -latest -products * -version "[18.8,18.9)" -requires $requiredVisualStudioComponents -format json -utf8
 if ($LASTEXITCODE -ne 0 -or -not $instanceJson) {
-    throw "Visual Studio 2026 Stable 18.8.2 was not found."
+    throw "Visual Studio 2026 Stable 18.8.2 with x64, ARM64, CMake, and UWP C++ components was not found."
 }
 $visualStudioInstance = @(ConvertFrom-Json ($instanceJson -join [Environment]::NewLine))[0]
 $visualStudioPath = $visualStudioInstance.installationPath
