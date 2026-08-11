@@ -6,6 +6,7 @@
 #include <string_view>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 
+#include "DesignSystem/motion_preferences.hpp"
 #include "Pages/ApplicationSettingsPage.xaml.h"
 #include "Pages/DriversPage.xaml.h"
 #include "Pages/HistoryAndLogsPage.xaml.h"
@@ -51,8 +52,10 @@ MainWindow::MainWindow() {
 }
 
 void MainWindow::bind(
-    std::shared_ptr<azzs::application::Workbench> workbench) {
+    std::shared_ptr<azzs::application::Workbench> workbench,
+    std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences) {
   workbench_ = std::move(workbench);
+  motion_preferences_ = std::move(motion_preferences);
   auto const snapshot = workbench_->snapshot();
   project(snapshot);
   navigate_to(snapshot.current_page);
@@ -150,15 +153,19 @@ void MainWindow::navigate_to(PageId page) {
 void MainWindow::project(
     azzs::application::WorkbenchSnapshot const& snapshot) {
   using azzs::domain::MinimumVersionRisk;
+  using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+
+  auto const resources = ResourceLoader{};
+  auto const risk_title = resources.GetString(L"VersionRiskTitle");
+  AutomationProperties::SetName(VersionRiskInfoBar(), risk_title);
 
   if (snapshot.minimum_version_risk == MinimumVersionRisk::none) {
     VersionRiskInfoBar().IsOpen(false);
     return;
   }
 
-  auto const resources = ResourceLoader{};
-  VersionRiskInfoBar().Title(resources.GetString(L"VersionRiskTitle"));
+  VersionRiskInfoBar().Title(risk_title);
 
   if (snapshot.minimum_version_risk ==
       MinimumVersionRisk::version_unavailable) {
