@@ -598,6 +598,8 @@ void append_anchor_part(std::string& value, std::string_view part) {
       return "install_profile_unavailable";
     case install_profile_not_release_ready:
       return "install_profile_not_release_ready";
+    case prohibited_content:
+      return "prohibited_content";
   }
   return "unknown_catalog_issue";
 }
@@ -609,6 +611,7 @@ class SoftwareCatalogLifecycle::Impl final {
   Impl(DeviceStateStore& states, ExecutionLog& log,
        SharedOperationOccupancy& occupancy, SoftwareCatalogFileReader& files,
        SoftwareCatalogCodec& codec, catalog_domain::SoftwareCatalogPolicy policy,
+       CatalogMaintenanceAccess& maintenance_access,
        domain::StateSubject subject)
       : states_(states),
         log_(log),
@@ -616,6 +619,7 @@ class SoftwareCatalogLifecycle::Impl final {
         files_(files),
         codec_(codec),
         policy_(std::move(policy)),
+        maintenance_access_(maintenance_access),
         machine_key_(domain::StateKey::machine(
             domain::AggregateId{"software-catalog-active"})),
         draft_key_(domain::StateKey::for_subject(
@@ -642,6 +646,9 @@ class SoftwareCatalogLifecycle::Impl final {
     recovered_unsaved_ = false;
     cleanup_pending_ = false;
     checkpoint_cleanup_pending_ = false;
+    checkpoint_conflict_recovered_ = false;
+    recovery_read_only_ = false;
+    retained_unreadable_current_.reset();
     current_.reset();
     previous_.reset();
     machine_state_ = {};
@@ -654,13 +661,18 @@ class SoftwareCatalogLifecycle::Impl final {
     error_.clear();
 
     auto machine = load_machine();
-    auto draft = load_draft();
 
     if (machine_state_.current.has_value()) {
       auto evaluated = evaluate(*machine_state_.current);
       if (evaluated.runtime.accepted()) {
         current_ = std::move(evaluated);
       } else {
+        if (has_unknown_catalog_mode(evaluated)) {
+          recovery_read_only_ = true;
+          machine_writable_ = false;
+          machine_access_ = CatalogAggregateAccess::read_only;
+          retained_unreadable_current_ = evaluated.persisted.bytes;
+        }
         error_ = "stored current catalog cannot be loaded by this workbench";
       }
     }
@@ -671,8 +683,12 @@ class SoftwareCatalogLifecycle::Impl final {
       }
     }
 
-    restore_unsaved_checkpoint();
-    if (draft_state_.saved.has_value() && current_.has_value() &&
+    auto draft = load_draft(!recovery_read_only_);
+
+    if (!recovery_read_only_) {
+      restore_unsaved_checkpoint();
+    }
+    if (!recovery_read_only_ && draft_state_.saved.has_value() && current_.has_value() &&
         current_->persisted.origin == CatalogCandidateOrigin::saved_draft &&
         catalog_domain::content_identity(*draft_state_.saved) ==
             current_->info.content_identity &&
@@ -687,8 +703,9 @@ class SoftwareCatalogLifecycle::Impl final {
                         draft.code == CatalogActionCode::persistence_failed;
     auto const occupied = machine.code == CatalogActionCode::occupied ||
                           draft.code == CatalogActionCode::occupied;
-    auto const read_only = machine.code == CatalogActionCode::read_only ||
-                           draft.code == CatalogActionCode::read_only;
+    auto const read_only = recovery_read_only_ ||
+                          machine.code == CatalogActionCode::read_only ||
+                          draft.code == CatalogActionCode::read_only;
     if (!machine.succeeded()) {
       append_restore_error(machine.message);
     }
@@ -730,6 +747,8 @@ class SoftwareCatalogLifecycle::Impl final {
       value.current_document = current_->document;
       value.current_catalog = current_->runtime.catalog;
     }
+    value.retained_unreadable_current_toml_bytes =
+        retained_unreadable_current_;
     if (previous_.has_value()) {
       value.previous = previous_->info;
       value.previous_catalog = previous_->runtime.catalog;
@@ -751,12 +770,37 @@ class SoftwareCatalogLifecycle::Impl final {
     return value;
   }
 
-  [[nodiscard]] CatalogCandidatePreview preview_file(
-      CatalogCandidateOrigin origin, std::string path, bool debug_mode) {
+  [[nodiscard]] CatalogCandidatePreview preview_built_in() {
+    return preview_candidate(CatalogCandidateOrigin::built_in,
+                             files_.read_built_in());
+  }
+
+  [[nodiscard]] CatalogCandidatePreview preview_update() {
+    return preview_candidate(CatalogCandidateOrigin::update,
+                             files_.read_update());
+  }
+
+  [[nodiscard]] CatalogCandidatePreview preview_manual_import(
+      std::string path) {
+    if (!debug_mode_enabled()) {
+      CatalogCandidatePreview preview{
+          .origin = CatalogCandidateOrigin::manual_import,
+          .path = std::move(path),
+          .error = "manual catalog import requires debug mode",
+      };
+      static_cast<void>(log_preview(preview, ExecutionResult::failed));
+      return preview;
+    }
+    return preview_candidate(CatalogCandidateOrigin::manual_import,
+                             files_.read_manual_import(path));
+  }
+
+  [[nodiscard]] CatalogCandidatePreview preview_candidate(
+      CatalogCandidateOrigin origin, CatalogFileRead read) {
     prepared_.reset();
     CatalogCandidatePreview preview{
         .origin = origin,
-        .path = std::move(path),
+        .path = std::move(read.path),
     };
     if (mode_ == CatalogLifecycleMode::not_restored) {
       preview.error = "catalog lifecycle must be restored before preview";
@@ -770,13 +814,6 @@ class SoftwareCatalogLifecycle::Impl final {
       static_cast<void>(log_preview(preview, ExecutionResult::failed));
       return preview;
     }
-    if (origin == CatalogCandidateOrigin::manual_import && !debug_mode) {
-      preview.error = "manual catalog import requires debug mode";
-      static_cast<void>(log_preview(preview, ExecutionResult::failed));
-      return preview;
-    }
-
-    auto const read = files_.read(preview.path);
     if (!read.succeeded) {
       preview.error = read.error.empty() ? "catalog file read failed" : read.error;
       static_cast<void>(log_preview(preview, ExecutionResult::failed));
@@ -869,11 +906,17 @@ class SoftwareCatalogLifecycle::Impl final {
     return preview;
   }
 
-  [[nodiscard]] CatalogActionResult apply_preview(std::string_view token,
-                                                  bool debug_mode) {
+  [[nodiscard]] CatalogActionResult apply_preview(std::string_view token) {
     if (mode_ == CatalogLifecycleMode::not_restored) {
       return action(CatalogActionCode::not_restored,
                     "catalog lifecycle is not restored");
+    }
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
+    if (temporary_recovery_access()) {
+      return action(CatalogActionCode::rejected,
+                    "temporary recovery access cannot apply a catalog");
     }
     if (!machine_writable_ || !machine_revision_.has_value()) {
       return aggregate_unavailable(machine_access_,
@@ -916,7 +959,7 @@ class SoftwareCatalogLifecycle::Impl final {
       return result;
     }
     if (prepared_->persisted.origin == CatalogCandidateOrigin::manual_import &&
-        !debug_mode) {
+        !debug_mode_enabled()) {
       auto receipt = append_log(
           prepared_->correlation, "apply", ExecutionResult::failed,
           {{"catalog_apply_rejection", "debug-mode-required",
@@ -1168,11 +1211,17 @@ class SoftwareCatalogLifecycle::Impl final {
     return result;
   }
 
-  [[nodiscard]] CatalogActionResult edit(std::string bytes,
-                                         CatalogEditorAccess) {
+  [[nodiscard]] CatalogActionResult edit(std::string bytes) {
     if (mode_ == CatalogLifecycleMode::not_restored) {
       return action(CatalogActionCode::not_restored,
                     "catalog lifecycle is not restored");
+    }
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
+    if (!editor_access_enabled()) {
+      return action(CatalogActionCode::debug_mode_required,
+                    "catalog editing requires debug mode or recovery access");
     }
     if (!draft_writable_) {
       return aggregate_unavailable(draft_access_,
@@ -1196,12 +1245,18 @@ class SoftwareCatalogLifecycle::Impl final {
   }
 
   [[nodiscard]] CatalogActionResult edit_document(
-      catalog_domain::SoftwareCatalogDocument document,
-      CatalogEditorAccess access) {
-    return edit(codec_.encode(document), access);
+      catalog_domain::SoftwareCatalogDocument document) {
+    return edit(codec_.encode(document));
   }
 
   [[nodiscard]] CatalogActionResult checkpoint_unsaved() {
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
+    if (temporary_recovery_access()) {
+      return action(CatalogActionCode::rejected,
+                    "temporary recovery access cannot checkpoint catalog edits");
+    }
     if (!unsaved_.has_value()) {
       return action(CatalogActionCode::no_change,
                     "there are no unsaved catalog edits to checkpoint");
@@ -1209,6 +1264,27 @@ class SoftwareCatalogLifecycle::Impl final {
     if (!draft_revision_.has_value()) {
       return aggregate_unavailable(draft_access_,
                                    "catalog draft aggregate is unavailable");
+    }
+    if (checkpoint_conflict_recovered_) {
+      return action(CatalogActionCode::conflict,
+                    "recovered conflicting edits must be saved or discarded "
+                    "before creating another checkpoint");
+    }
+    auto existing = states_.read_checkpoint(draft_key_, *draft_revision_);
+    if (existing.status == CheckpointStatus::available &&
+        existing.checkpoint.has_value()) {
+      auto payload = decode_unsaved(existing.checkpoint->payload);
+      if (!payload.has_value()) {
+        return action(CatalogActionCode::persistence_failed,
+                      "existing catalog checkpoint cannot be decoded");
+      }
+      if (payload->kind == UnsavedCheckpointKind::editor_content &&
+          payload->bytes != *unsaved_) {
+        return reject_foreign_checkpoint(existing);
+      }
+    } else if (existing.status != CheckpointStatus::absent &&
+               existing.status != CheckpointStatus::consumed) {
+      return action(checkpoint_error_code(existing.status), existing.error);
     }
     auto written = states_.write_checkpoint(
         draft_key_, StateCheckpoint{
@@ -1224,7 +1300,14 @@ class SoftwareCatalogLifecycle::Impl final {
     return result;
   }
 
-  [[nodiscard]] CatalogActionResult save_draft(CatalogEditorAccess) {
+  [[nodiscard]] CatalogActionResult save_draft() {
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
+    if (!editor_access_enabled()) {
+      return action(CatalogActionCode::debug_mode_required,
+                    "saving a catalog draft requires debug or recovery access");
+    }
     if (!unsaved_.has_value()) {
       return action(CatalogActionCode::no_change,
                     "there are no unsaved catalog edits");
@@ -1243,6 +1326,7 @@ class SoftwareCatalogLifecycle::Impl final {
           "malformed TOML cannot be saved as a catalog draft", evaluated);
     }
     auto const saved_bytes = *unsaved_;
+    auto const checkpoint_plan = checkpoint_cleanup_plan(saved_bytes);
     SubjectDraftState desired{.saved = saved_bytes};
     auto committed = commit_draft(desired);
     if (!committed.succeeded()) {
@@ -1251,14 +1335,26 @@ class SoftwareCatalogLifecycle::Impl final {
     draft_state_ = std::move(desired);
     unsaved_.reset();
     recovered_unsaved_ = false;
-    checkpoint_cleanup_pending_ = false;
+    checkpoint_conflict_recovered_ = false;
+    checkpoint_cleanup_pending_ =
+        checkpoint_plan == CheckpointCleanupPlan::retry_later;
     std::string cleanup_error;
-    if (!replace_and_consume_checkpoint(saved_bytes, cleanup_error)) {
+    if (checkpoint_plan == CheckpointCleanupPlan::write_cleanup &&
+        !replace_and_consume_checkpoint(saved_bytes, cleanup_error)) {
       checkpoint_cleanup_pending_ = true;
       auto result = action_with_validation(
           CatalogActionCode::saved_cleanup_pending,
           "catalog draft was saved; recovery checkpoint cleanup must be "
           "retried: " + cleanup_error,
+          evaluated);
+      result.draft_changed = true;
+      return result;
+    }
+    if (checkpoint_plan == CheckpointCleanupPlan::retry_later) {
+      auto result = action_with_validation(
+          CatalogActionCode::saved_cleanup_pending,
+          "catalog draft was saved; checkpoint ownership could not be "
+          "determined and must be retried",
           evaluated);
       result.draft_changed = true;
       return result;
@@ -1270,7 +1366,18 @@ class SoftwareCatalogLifecycle::Impl final {
     return result;
   }
 
-  [[nodiscard]] CatalogActionResult delete_saved_draft(CatalogEditorAccess) {
+  [[nodiscard]] CatalogActionResult delete_saved_draft() {
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
+    if (temporary_recovery_access()) {
+      return action(CatalogActionCode::rejected,
+                    "temporary recovery access cannot delete a saved draft");
+    }
+    if (!debug_mode_enabled()) {
+      return action(CatalogActionCode::debug_mode_required,
+                    "deleting a catalog draft requires an active debug session");
+    }
     if (unsaved_.has_value()) {
       return action(CatalogActionCode::rejected,
                     "discard unsaved edits before deleting the saved draft");
@@ -1280,6 +1387,7 @@ class SoftwareCatalogLifecycle::Impl final {
                     "no saved catalog draft exists");
     }
     auto const deleted_bytes = *draft_state_.saved;
+    auto const checkpoint_plan = checkpoint_cleanup_plan(deleted_bytes);
     SubjectDraftState desired;
     auto committed = commit_draft(desired);
     if (!committed.succeeded()) {
@@ -1287,14 +1395,24 @@ class SoftwareCatalogLifecycle::Impl final {
     }
     draft_state_ = {};
     cleanup_pending_ = false;
-    checkpoint_cleanup_pending_ = false;
+    checkpoint_cleanup_pending_ =
+        checkpoint_plan == CheckpointCleanupPlan::retry_later;
     std::string cleanup_error;
-    if (!replace_and_consume_checkpoint(deleted_bytes, cleanup_error)) {
+    if (checkpoint_plan == CheckpointCleanupPlan::write_cleanup &&
+        !replace_and_consume_checkpoint(deleted_bytes, cleanup_error)) {
       checkpoint_cleanup_pending_ = true;
       auto result = action(
           CatalogActionCode::saved_cleanup_pending,
           "saved catalog draft was deleted; recovery checkpoint cleanup "
           "must be retried: " + cleanup_error);
+      result.draft_changed = true;
+      return result;
+    }
+    if (checkpoint_plan == CheckpointCleanupPlan::retry_later) {
+      auto result = action(
+          CatalogActionCode::saved_cleanup_pending,
+          "saved catalog draft was deleted; checkpoint ownership could not "
+          "be determined and must be retried");
       result.draft_changed = true;
       return result;
     }
@@ -1304,7 +1422,14 @@ class SoftwareCatalogLifecycle::Impl final {
     return result;
   }
 
-  [[nodiscard]] CatalogActionResult discard_unsaved(CatalogEditorAccess) {
+  [[nodiscard]] CatalogActionResult discard_unsaved() {
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
+    if (!editor_access_enabled()) {
+      return action(CatalogActionCode::debug_mode_required,
+                    "discarding catalog edits requires debug or recovery access");
+    }
     if (!unsaved_.has_value()) {
       return action(CatalogActionCode::no_change,
                     "there are no unsaved catalog edits");
@@ -1313,13 +1438,21 @@ class SoftwareCatalogLifecycle::Impl final {
       return aggregate_unavailable(draft_access_,
                                    "catalog draft aggregate is unavailable");
     }
-    auto consumed = states_.consume_checkpoint(draft_key_, *draft_revision_);
-    if (consumed.status != CheckpointStatus::consumed &&
-        consumed.status != CheckpointStatus::absent) {
-      return action(checkpoint_error_code(consumed.status), consumed.error);
+    if (checkpoint_conflict_recovered_) {
+      std::string cleanup_error;
+      if (!replace_and_consume_checkpoint(*unsaved_, cleanup_error)) {
+        return action(CatalogActionCode::persistence_failed, cleanup_error);
+      }
+    } else {
+      auto consumed = states_.consume_checkpoint(draft_key_, *draft_revision_);
+      if (consumed.status != CheckpointStatus::consumed &&
+          consumed.status != CheckpointStatus::absent) {
+        return action(checkpoint_error_code(consumed.status), consumed.error);
+      }
     }
     unsaved_.reset();
     recovered_unsaved_ = false;
+    checkpoint_conflict_recovered_ = false;
     checkpoint_cleanup_pending_ = false;
     auto result = action(CatalogActionCode::succeeded,
                          "only unsaved catalog edits were discarded");
@@ -1327,10 +1460,17 @@ class SoftwareCatalogLifecycle::Impl final {
     return result;
   }
 
-  [[nodiscard]] CatalogActionResult apply_saved_draft(bool debug_mode) {
-    if (!debug_mode) {
+  [[nodiscard]] CatalogActionResult apply_saved_draft() {
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
+    if (temporary_recovery_access()) {
+      return action(CatalogActionCode::rejected,
+                    "temporary recovery access cannot apply a saved draft");
+    }
+    if (!debug_mode_enabled()) {
       return action(CatalogActionCode::debug_mode_required,
-                    "applying a catalog draft requires debug mode");
+                    "applying a catalog draft requires an active debug session");
     }
     if (unsaved_.has_value()) {
       return action(CatalogActionCode::rejected,
@@ -1365,20 +1505,22 @@ class SoftwareCatalogLifecycle::Impl final {
     prepared_ = PreparedCandidate{.preview = preview,
                                   .persisted = std::move(persisted),
                                   .correlation = std::move(correlation)};
-    return apply_preview(preview.confirmation_token, true);
+    return apply_preview(preview.confirmation_token);
   }
 
-  [[nodiscard]] CatalogActionResult handle_close(CatalogCloseChoice choice,
-                                                 CatalogEditorAccess access) {
+  [[nodiscard]] CatalogActionResult handle_close(CatalogCloseChoice choice) {
+    if (recovery_read_only_) {
+      return recovery_read_only_action();
+    }
     if (!unsaved_.has_value()) {
       return action(CatalogActionCode::succeeded,
                     "workbench may close; no unsaved catalog edits exist");
     }
     switch (choice) {
       case CatalogCloseChoice::save_draft_and_close:
-        return save_draft(access);
+        return save_draft();
       case CatalogCloseChoice::discard_unsaved_and_close:
-        return discard_unsaved(access);
+        return discard_unsaved();
       case CatalogCloseChoice::return_to_editor:
         return action(CatalogActionCode::returned_to_editor,
                       "workbench close cancelled; edits retained");
@@ -1392,6 +1534,79 @@ class SoftwareCatalogLifecycle::Impl final {
     std::optional<OperationLease> lease;
     std::string message;
   };
+
+  enum class CheckpointCleanupPlan {
+    write_cleanup,
+    preserve_foreign,
+    retry_later,
+  };
+
+  [[nodiscard]] static bool has_unknown_catalog_mode(
+      EvaluatedCatalog const& evaluated) {
+    return std::ranges::any_of(
+        evaluated.runtime.issues, [](catalog_domain::CatalogIssue const& issue) {
+          return issue.code == catalog_domain::CatalogIssueCode::unsupported_schema ||
+                 issue.code ==
+                     catalog_domain::CatalogIssueCode::unknown_execution_semantics;
+        });
+  }
+
+  [[nodiscard]] bool debug_mode_enabled() const noexcept {
+    return maintenance_access_.editor_access() ==
+           CatalogEditorAccess::debug_mode;
+  }
+
+  [[nodiscard]] bool editor_access_enabled() const noexcept {
+    return maintenance_access_.editor_access() !=
+           CatalogEditorAccess::unavailable;
+  }
+
+  [[nodiscard]] bool temporary_recovery_access() const noexcept {
+    return maintenance_access_.editor_access() ==
+           CatalogEditorAccess::temporary_close_recovery;
+  }
+
+  [[nodiscard]] static CatalogActionResult recovery_read_only_action() {
+    return action(CatalogActionCode::read_only,
+                  "stored catalog uses unknown execution semantics and is "
+                  "retained read-only until this workbench is updated");
+  }
+
+  [[nodiscard]] CheckpointCleanupPlan checkpoint_cleanup_plan(
+      std::string_view bytes) {
+    if (checkpoint_conflict_recovered_) {
+      return CheckpointCleanupPlan::write_cleanup;
+    }
+    if (!draft_revision_.has_value()) {
+      return CheckpointCleanupPlan::retry_later;
+    }
+    auto checkpoint = states_.read_checkpoint(draft_key_, *draft_revision_);
+    if (checkpoint.status == CheckpointStatus::absent ||
+        checkpoint.status == CheckpointStatus::consumed) {
+      return CheckpointCleanupPlan::write_cleanup;
+    }
+    if (checkpoint.status != CheckpointStatus::available ||
+        !checkpoint.checkpoint.has_value()) {
+      return CheckpointCleanupPlan::retry_later;
+    }
+    auto payload = decode_unsaved(checkpoint.checkpoint->payload);
+    if (!payload.has_value()) {
+      return CheckpointCleanupPlan::retry_later;
+    }
+    if (payload->kind == UnsavedCheckpointKind::cleanup_only ||
+        payload->bytes == bytes) {
+      return CheckpointCleanupPlan::write_cleanup;
+    }
+    return CheckpointCleanupPlan::preserve_foreign;
+  }
+
+  [[nodiscard]] CatalogActionResult reject_foreign_checkpoint(
+      CheckpointResult const& checkpoint) const {
+    return action(CatalogActionCode::conflict,
+                  checkpoint.error.empty()
+                      ? "another catalog instance owns unsaved checkpoint data"
+                      : checkpoint.error);
+  }
 
   [[nodiscard]] CatalogActionResult load_machine() {
     auto read = states_.inspect(machine_key_);
@@ -1447,9 +1662,16 @@ class SoftwareCatalogLifecycle::Impl final {
                   "machine catalog state restored");
   }
 
-  [[nodiscard]] CatalogActionResult load_draft() {
+  [[nodiscard]] CatalogActionResult load_draft(bool initialize_if_absent) {
     auto read = states_.inspect(draft_key_);
     if (read.mode == StateReadMode::uninitialized) {
+      if (!initialize_if_absent) {
+        draft_writable_ = false;
+        draft_access_ = CatalogAggregateAccess::read_only;
+        return action(CatalogActionCode::succeeded,
+                      "catalog draft state remains absent during read-only "
+                      "catalog recovery");
+      }
       auto initialized = states_.initialize(
           draft_key_, state_with_payload(encode_draft_state({})));
       if (!resolve_initialization(initialized, draft_key_,
@@ -1485,8 +1707,9 @@ class SoftwareCatalogLifecycle::Impl final {
       return action(CatalogActionCode::persistence_failed, read.error);
     }
     draft_revision_ = read.snapshot->revision;
-    draft_writable_ = true;
-    draft_access_ = CatalogAggregateAccess::writable;
+    draft_writable_ = initialize_if_absent;
+    draft_access_ = initialize_if_absent ? CatalogAggregateAccess::writable
+                                         : CatalogAggregateAccess::read_only;
     if (!decode_draft_state(read.snapshot->state.value.payload, draft_state_)) {
       mode_ = CatalogLifecycleMode::read_only;
       draft_writable_ = false;
@@ -1523,6 +1746,20 @@ class SoftwareCatalogLifecycle::Impl final {
       append_restore_error("unsaved catalog checkpoint could not be recovered");
       return;
     }
+    auto const matches_saved_draft =
+        draft_state_.saved.has_value() &&
+        *draft_state_.saved == recovered->bytes;
+    if (checkpoint.status == CheckpointStatus::conflict &&
+        recovered->kind == UnsavedCheckpointKind::editor_content &&
+        !matches_saved_draft) {
+      unsaved_ = std::move(recovered->bytes);
+      recovered_unsaved_ = true;
+      checkpoint_conflict_recovered_ = true;
+      append_restore_error(
+          "unsaved catalog checkpoint conflicts with a newer saved draft; "
+          "explicit save or discard is required");
+      return;
+    }
     if (checkpoint.status == CheckpointStatus::conflict) {
       std::string cleanup_error;
       if (!replace_and_consume_checkpoint(recovered->bytes, cleanup_error)) {
@@ -1534,15 +1771,14 @@ class SoftwareCatalogLifecycle::Impl final {
       return;
     }
     if (recovered->kind == UnsavedCheckpointKind::cleanup_only ||
-        (draft_state_.saved.has_value() &&
-         *draft_state_.saved == recovered->bytes)) {
+        matches_saved_draft) {
       auto consumed = states_.consume_checkpoint(draft_key_, *draft_revision_);
       if (consumed.status != CheckpointStatus::consumed &&
           consumed.status != CheckpointStatus::absent) {
         checkpoint_cleanup_pending_ = true;
         append_restore_error(
             "saved catalog checkpoint cleanup must be retried: " +
-            consumed.error);
+                consumed.error);
       }
       return;
     }
@@ -2220,6 +2456,7 @@ class SoftwareCatalogLifecycle::Impl final {
   SoftwareCatalogFileReader& files_;
   SoftwareCatalogCodec& codec_;
   catalog_domain::SoftwareCatalogPolicy policy_;
+  CatalogMaintenanceAccess& maintenance_access_;
   domain::StateKey machine_key_;
   domain::StateKey draft_key_;
   CatalogLifecycleMode mode_{CatalogLifecycleMode::not_restored};
@@ -2235,8 +2472,11 @@ class SoftwareCatalogLifecycle::Impl final {
   std::optional<EvaluatedCatalog> previous_;
   std::optional<std::string> unsaved_;
   bool recovered_unsaved_{false};
+  bool checkpoint_conflict_recovered_{false};
   bool cleanup_pending_{false};
   bool checkpoint_cleanup_pending_{false};
+  bool recovery_read_only_{false};
+  std::optional<std::string> retained_unreadable_current_;
   std::optional<PreparedCandidate> prepared_;
   std::uint64_t preview_sequence_{0};
   std::uint64_t operation_sequence_{0};
@@ -2248,9 +2488,11 @@ SoftwareCatalogLifecycle::SoftwareCatalogLifecycle(
     SharedOperationOccupancy& occupancy, SoftwareCatalogFileReader& files,
     SoftwareCatalogCodec& codec,
     catalog_domain::SoftwareCatalogPolicy policy,
+    CatalogMaintenanceAccess& maintenance_access,
     domain::StateSubject state_subject)
     : impl_(std::make_unique<Impl>(states, log, occupancy, files, codec,
                                    std::move(policy),
+                                   maintenance_access,
                                    std::move(state_subject))) {}
 
 SoftwareCatalogLifecycle::~SoftwareCatalogLifecycle() = default;
@@ -2263,10 +2505,17 @@ SoftwareCatalogLifecycleSnapshot SoftwareCatalogLifecycle::snapshot() const {
   return impl_->snapshot();
 }
 
-CatalogCandidatePreview SoftwareCatalogLifecycle::preview_file(
-    CatalogCandidateOrigin origin, std::string path,
-    bool debug_mode_enabled) {
-  return impl_->preview_file(origin, std::move(path), debug_mode_enabled);
+CatalogCandidatePreview SoftwareCatalogLifecycle::preview_built_in() {
+  return impl_->preview_built_in();
+}
+
+CatalogCandidatePreview SoftwareCatalogLifecycle::preview_update() {
+  return impl_->preview_update();
+}
+
+CatalogCandidatePreview SoftwareCatalogLifecycle::preview_manual_import(
+    std::string path) {
+  return impl_->preview_manual_import(std::move(path));
 }
 
 CatalogCandidatePreview SoftwareCatalogLifecycle::preview_rollback() {
@@ -2274,48 +2523,42 @@ CatalogCandidatePreview SoftwareCatalogLifecycle::preview_rollback() {
 }
 
 CatalogActionResult SoftwareCatalogLifecycle::apply_preview(
-    std::string_view confirmation_token, bool debug_mode_enabled) {
-  return impl_->apply_preview(confirmation_token, debug_mode_enabled);
+    std::string_view confirmation_token) {
+  return impl_->apply_preview(confirmation_token);
 }
 
-CatalogActionResult SoftwareCatalogLifecycle::edit(
-    std::string toml_bytes, CatalogEditorAccess access) {
-  return impl_->edit(std::move(toml_bytes), access);
+CatalogActionResult SoftwareCatalogLifecycle::edit(std::string toml_bytes) {
+  return impl_->edit(std::move(toml_bytes));
 }
 
 CatalogActionResult SoftwareCatalogLifecycle::edit_document(
-    domain::software_catalog::SoftwareCatalogDocument document,
-    CatalogEditorAccess access) {
-  return impl_->edit_document(std::move(document), access);
+    domain::software_catalog::SoftwareCatalogDocument document) {
+  return impl_->edit_document(std::move(document));
 }
 
 CatalogActionResult SoftwareCatalogLifecycle::checkpoint_unsaved() {
   return impl_->checkpoint_unsaved();
 }
 
-CatalogActionResult SoftwareCatalogLifecycle::save_draft(
-    CatalogEditorAccess access) {
-  return impl_->save_draft(access);
+CatalogActionResult SoftwareCatalogLifecycle::save_draft() {
+  return impl_->save_draft();
 }
 
-CatalogActionResult SoftwareCatalogLifecycle::delete_saved_draft(
-    CatalogEditorAccess access) {
-  return impl_->delete_saved_draft(access);
+CatalogActionResult SoftwareCatalogLifecycle::delete_saved_draft() {
+  return impl_->delete_saved_draft();
 }
 
-CatalogActionResult SoftwareCatalogLifecycle::discard_unsaved(
-    CatalogEditorAccess access) {
-  return impl_->discard_unsaved(access);
+CatalogActionResult SoftwareCatalogLifecycle::discard_unsaved() {
+  return impl_->discard_unsaved();
 }
 
-CatalogActionResult SoftwareCatalogLifecycle::apply_saved_draft(
-    bool debug_mode_enabled) {
-  return impl_->apply_saved_draft(debug_mode_enabled);
+CatalogActionResult SoftwareCatalogLifecycle::apply_saved_draft() {
+  return impl_->apply_saved_draft();
 }
 
 CatalogActionResult SoftwareCatalogLifecycle::handle_close(
-    CatalogCloseChoice choice, CatalogEditorAccess access) {
-  return impl_->handle_close(choice, access);
+    CatalogCloseChoice choice) {
+  return impl_->handle_close(choice);
 }
 
 }  // namespace azzs::application::software_catalog

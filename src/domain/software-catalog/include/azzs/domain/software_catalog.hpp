@@ -181,6 +181,7 @@ enum class CatalogIssueCode {
   release_dependency_error,
   install_profile_unavailable,
   install_profile_not_release_ready,
+  prohibited_content,
 };
 
 struct CatalogIssue final {

@@ -1096,14 +1096,18 @@ void collect_extensions(ParsedCatalog& parsed, ParsedTable const& table,
   return output;
 }
 
+[[nodiscard]] std::string encoded_key(std::string_view key) {
+  return valid_bare_key(key) ? std::string{key} : quoted(key);
+}
+
 void write_text(std::ostringstream& output, std::string_view key,
                 std::string_view value) {
-  output << key << " = " << quoted(value) << '\n';
+  output << encoded_key(key) << " = " << quoted(value) << '\n';
 }
 
 void write_list(std::ostringstream& output, std::string_view key,
                 std::vector<std::string> const& values) {
-  output << key << " = [";
+  output << encoded_key(key) << " = [";
   for (std::size_t index = 0; index < values.size(); ++index) {
     if (index != 0) {
       output << ", ";

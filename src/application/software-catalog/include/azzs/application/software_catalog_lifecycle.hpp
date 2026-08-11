@@ -42,12 +42,14 @@ struct CatalogFileRead final {
   std::string error;
 };
 
-// Paths stay at the application boundary so the core can preview imports while
-// the adapter owns concrete filesystem APIs and I/O failure details.
+// The source adapter owns which bytes are built in or a trusted update. Only
+// a manual import accepts a user-selected path at the application seam.
 class SoftwareCatalogFileReader {
  public:
   virtual ~SoftwareCatalogFileReader() = default;
-  [[nodiscard]] virtual CatalogFileRead read(
+  [[nodiscard]] virtual CatalogFileRead read_built_in() const = 0;
+  [[nodiscard]] virtual CatalogFileRead read_update() const = 0;
+  [[nodiscard]] virtual CatalogFileRead read_manual_import(
       std::string const& path) const = 0;
 };
 
@@ -57,6 +59,21 @@ enum class CatalogCandidateOrigin {
   manual_import,
   saved_draft,
   rollback,
+};
+
+enum class CatalogEditorAccess {
+  unavailable,
+  debug_mode,
+  temporary_close_recovery,
+};
+
+// The caller cannot manufacture debug authority or a temporary recovery
+// session. The core queries this injected, trusted state owner for each use
+// case so a stale UI snapshot cannot authorize a write.
+class CatalogMaintenanceAccess {
+ public:
+  virtual ~CatalogMaintenanceAccess() = default;
+  [[nodiscard]] virtual CatalogEditorAccess editor_access() const noexcept = 0;
 };
 
 enum class EffectiveCatalogIdentity {
@@ -169,6 +186,7 @@ struct SoftwareCatalogLifecycleSnapshot final {
   std::optional<ActiveCatalogInfo> current;
   std::optional<ActiveCatalogInfo> previous;
   std::optional<std::string> current_toml_bytes;
+  std::optional<std::string> retained_unreadable_current_toml_bytes;
   std::optional<domain::software_catalog::SoftwareCatalogDocument>
       current_document;
   std::optional<domain::software_catalog::RuntimeSoftwareCatalog>
@@ -217,11 +235,6 @@ struct CatalogActionResult final {
   }
 };
 
-enum class CatalogEditorAccess {
-  debug_mode,
-  temporary_close_recovery,
-};
-
 enum class CatalogCloseChoice {
   save_draft_and_close,
   discard_unsaved_and_close,
@@ -238,6 +251,7 @@ class SoftwareCatalogLifecycle final {
       SharedOperationOccupancy& occupancy, SoftwareCatalogFileReader& files,
       SoftwareCatalogCodec& codec,
       domain::software_catalog::SoftwareCatalogPolicy policy,
+      CatalogMaintenanceAccess& maintenance_access,
       domain::StateSubject state_subject);
   ~SoftwareCatalogLifecycle();
 
@@ -249,28 +263,22 @@ class SoftwareCatalogLifecycle final {
   [[nodiscard]] CatalogActionResult restore();
   [[nodiscard]] SoftwareCatalogLifecycleSnapshot snapshot() const;
 
-  [[nodiscard]] CatalogCandidatePreview preview_file(
-      CatalogCandidateOrigin origin, std::string path,
-      bool debug_mode_enabled);
+  [[nodiscard]] CatalogCandidatePreview preview_built_in();
+  [[nodiscard]] CatalogCandidatePreview preview_update();
+  [[nodiscard]] CatalogCandidatePreview preview_manual_import(std::string path);
   [[nodiscard]] CatalogCandidatePreview preview_rollback();
   [[nodiscard]] CatalogActionResult apply_preview(
-      std::string_view confirmation_token, bool debug_mode_enabled);
+      std::string_view confirmation_token);
 
-  [[nodiscard]] CatalogActionResult edit(
-      std::string toml_bytes, CatalogEditorAccess access);
+  [[nodiscard]] CatalogActionResult edit(std::string toml_bytes);
   [[nodiscard]] CatalogActionResult edit_document(
-      domain::software_catalog::SoftwareCatalogDocument document,
-      CatalogEditorAccess access);
+      domain::software_catalog::SoftwareCatalogDocument document);
   [[nodiscard]] CatalogActionResult checkpoint_unsaved();
-  [[nodiscard]] CatalogActionResult save_draft(CatalogEditorAccess access);
-  [[nodiscard]] CatalogActionResult delete_saved_draft(
-      CatalogEditorAccess access);
-  [[nodiscard]] CatalogActionResult discard_unsaved(
-      CatalogEditorAccess access);
-  [[nodiscard]] CatalogActionResult apply_saved_draft(
-      bool debug_mode_enabled);
-  [[nodiscard]] CatalogActionResult handle_close(
-      CatalogCloseChoice choice, CatalogEditorAccess access);
+  [[nodiscard]] CatalogActionResult save_draft();
+  [[nodiscard]] CatalogActionResult delete_saved_draft();
+  [[nodiscard]] CatalogActionResult discard_unsaved();
+  [[nodiscard]] CatalogActionResult apply_saved_draft();
+  [[nodiscard]] CatalogActionResult handle_close(CatalogCloseChoice choice);
 
  private:
   class Impl;

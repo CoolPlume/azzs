@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -213,8 +215,21 @@ class RecordingExecutionLog final : public ExecutionLog {
 
 class MemoryCatalogFiles final : public lifecycle::SoftwareCatalogFileReader {
  public:
-  [[nodiscard]] lifecycle::CatalogFileRead read(
+  [[nodiscard]] lifecycle::CatalogFileRead read_built_in() const override {
+    return read(built_in_path);
+  }
+
+  [[nodiscard]] lifecycle::CatalogFileRead read_update() const override {
+    return read(update_path);
+  }
+
+  [[nodiscard]] lifecycle::CatalogFileRead read_manual_import(
       std::string const& path) const override {
+    return read(path);
+  }
+
+  [[nodiscard]] lifecycle::CatalogFileRead read(
+      std::string const& path) const {
     auto const found = files.find(path);
     if (found == files.end()) {
       return {.path = path, .error = "fixture file is absent"};
@@ -222,8 +237,39 @@ class MemoryCatalogFiles final : public lifecycle::SoftwareCatalogFileReader {
     return {.succeeded = true, .path = path, .bytes = found->second};
   }
 
+  std::string built_in_path;
+  std::string update_path;
   std::map<std::string, std::string> files;
 };
+
+class MutableCatalogMaintenanceAccess final
+    : public lifecycle::CatalogMaintenanceAccess {
+ public:
+  [[nodiscard]] lifecycle::CatalogEditorAccess editor_access() const noexcept
+      override {
+    return access;
+  }
+
+  lifecycle::CatalogEditorAccess access{
+      lifecycle::CatalogEditorAccess::debug_mode};
+};
+
+template <typename Lifecycle>
+concept CallerChoosesCatalogOrigin = requires(Lifecycle& value,
+                                              std::string path) {
+  value.preview_file(lifecycle::CatalogCandidateOrigin::built_in, path, false);
+};
+
+template <typename Lifecycle>
+concept CallerSuppliesCatalogEditorAccess = requires(Lifecycle& value,
+                                                     std::string bytes) {
+  value.edit(bytes, lifecycle::CatalogEditorAccess::debug_mode);
+};
+
+static_assert(
+    !CallerChoosesCatalogOrigin<lifecycle::SoftwareCatalogLifecycle>);
+static_assert(
+    !CallerSuppliesCatalogEditorAccess<lifecycle::SoftwareCatalogLifecycle>);
 
 struct LifecycleFixture final {
   LifecycleFixture()
@@ -232,6 +278,7 @@ struct LifecycleFixture final {
         occupancy(occupancy_storage, tokens),
         policy(default_policy()),
         catalog_lifecycle(states, log, occupancy, files, codec, policy,
+                          maintenance_access,
                           StateSubject{"catalog-test-user"}) {}
 
   InMemoryStateFileSystem state_files;
@@ -244,8 +291,29 @@ struct LifecycleFixture final {
   MemoryCatalogFiles files;
   TomlSoftwareCatalogCodec codec;
   catalog::SoftwareCatalogPolicy policy;
+  MutableCatalogMaintenanceAccess maintenance_access;
   lifecycle::SoftwareCatalogLifecycle catalog_lifecycle;
 };
+
+[[nodiscard]] lifecycle::CatalogCandidatePreview preview_built_in(
+    lifecycle::SoftwareCatalogLifecycle& catalog_lifecycle,
+    MemoryCatalogFiles& files, std::string path) {
+  files.built_in_path = std::move(path);
+  return catalog_lifecycle.preview_built_in();
+}
+
+[[nodiscard]] lifecycle::CatalogCandidatePreview preview_update(
+    lifecycle::SoftwareCatalogLifecycle& catalog_lifecycle,
+    MemoryCatalogFiles& files, std::string path) {
+  files.update_path = std::move(path);
+  return catalog_lifecycle.preview_update();
+}
+
+[[nodiscard]] lifecycle::CatalogCandidatePreview preview_manual_import(
+    lifecycle::SoftwareCatalogLifecycle& catalog_lifecycle,
+    std::string path) {
+  return catalog_lifecycle.preview_manual_import(std::move(path));
+}
 
 [[nodiscard]] bool content_identity_is_sha256() {
   bool passed = true;
@@ -820,19 +888,18 @@ name = "GPU vendor page"
   bool passed = true;
   passed &= expect(fixture.catalog_lifecycle.restore().succeeded(),
                    "lifecycle state must initialize and restore");
-  auto invalid_built_in = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "built-in-draft", false);
+  auto invalid_built_in = preview_built_in(
+      fixture.catalog_lifecycle, fixture.files, "built-in-draft");
   passed &= expect(!invalid_built_in.ready &&
                        invalid_built_in.runtime.accepted() &&
                        !invalid_built_in.release_gate.passed(),
                    "unreleased built-in content must not become a local trial");
-  auto built = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "built-in", false);
+  auto built =
+      preview_built_in(fixture.catalog_lifecycle, fixture.files, "built-in");
   passed &= expect(built.ready && built.runtime.accepted() &&
                        built.release_gate.passed(),
                    "built-in content must pass both runtime and release gates");
-  auto applied = fixture.catalog_lifecycle.apply_preview(
-      built.confirmation_token, false);
+  auto applied = fixture.catalog_lifecycle.apply_preview(built.confirmation_token);
   passed &= expect(applied.succeeded() && applied.current_changed,
                    "offline built-in catalog must atomically become current");
   auto first = fixture.catalog_lifecycle.snapshot();
@@ -848,38 +915,37 @@ name = "GPU vendor page"
                            lifecycle::EffectiveCatalogIdentity::released,
                    "built-in application must persist a released identity");
 
-  auto invalid = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "invalid", false);
+  auto invalid =
+      preview_update(fixture.catalog_lifecycle, fixture.files, "invalid");
   passed &= expect(!invalid.ready &&
                        fixture.catalog_lifecycle.snapshot().current->revision == 1,
                    "whole-package update errors must preserve current state");
-  auto same_revision_conflict = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update,
-      "same-revision-conflict", false);
+  auto same_revision_conflict = preview_update(
+      fixture.catalog_lifecycle, fixture.files, "same-revision-conflict");
   passed &= expect(!same_revision_conflict.ready &&
                        has_issue(
                            same_revision_conflict.release_gate.issues,
                            catalog::CatalogIssueCode::release_revision_conflict),
                    "an update cannot reuse the active formal revision for new content");
-  auto draft_update = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "draft-3", false);
+  auto draft_update =
+      preview_update(fixture.catalog_lifecycle, fixture.files, "draft-3");
   passed &= expect(!draft_update.ready && draft_update.runtime.accepted(),
                    "ordinary updates must require the formal release gate");
 
-  auto display_only = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "display-only", false);
+  auto display_only = preview_update(fixture.catalog_lifecycle, fixture.files,
+                                     "display-only");
   passed &= expect(display_only.ready && display_only.selection_impact.changed.empty(),
                    "display-only changes must not disturb pending selections");
 
-  auto update = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "release-2", false);
+  auto update =
+      preview_update(fixture.catalog_lifecycle, fixture.files, "release-2");
   passed &= expect(update.ready && contains(update.selection_impact.changed, "core"),
                    "update preview must report full-definition changes");
   auto const confirmed_update = fixture.files.files["release-2"];
   fixture.files.files["release-2"] =
       one_item_catalog(2, "release", "Changed After Preview");
   passed &= expect(fixture.catalog_lifecycle
-                       .apply_preview(update.confirmation_token, false)
+                       .apply_preview(update.confirmation_token)
                        .succeeded() &&
                        fixture.catalog_lifecycle.snapshot().current_toml_bytes ==
                            confirmed_update,
@@ -891,22 +957,27 @@ name = "GPU vendor page"
                            lifecycle::EffectiveCatalogIdentity::released,
                    "machine commit must retain current and business previous together");
 
-  auto hidden_import = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::manual_import, "manual-1", false);
+  fixture.maintenance_access.access =
+      lifecycle::CatalogEditorAccess::unavailable;
+  auto hidden_import =
+      preview_manual_import(fixture.catalog_lifecycle, "manual-1");
   passed &= expect(!hidden_import.ready,
                    "manual import must be unavailable outside debug mode");
-  auto import = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::manual_import, "manual-1", true);
+  fixture.maintenance_access.access = lifecycle::CatalogEditorAccess::debug_mode;
+  auto import = preview_manual_import(fixture.catalog_lifecycle, "manual-1");
   passed &= expect(import.ready && import.downgrade &&
                        import.path == "manual-1" && import.revision == 1 &&
                        import.item_count == 1,
                    "debug import must preview path, revision, count and downgrade");
+  fixture.maintenance_access.access =
+      lifecycle::CatalogEditorAccess::unavailable;
   passed &= expect(fixture.catalog_lifecycle
-                       .apply_preview(import.confirmation_token, false)
+                       .apply_preview(import.confirmation_token)
                        .code == lifecycle::CatalogActionCode::debug_mode_required,
                    "confirmation cannot bypass the debug-mode boundary");
+  fixture.maintenance_access.access = lifecycle::CatalogEditorAccess::debug_mode;
   passed &= expect(fixture.catalog_lifecycle
-                       .apply_preview(import.confirmation_token, true)
+                       .apply_preview(import.confirmation_token)
                        .succeeded(),
                    "confirmed debug downgrade must apply");
   auto downgraded = fixture.catalog_lifecycle.snapshot();
@@ -920,13 +991,12 @@ name = "GPU vendor page"
   passed &= expect(rollback.ready && rollback.revision == 2,
                    "previous catalog must be revalidated before rollback");
   passed &= expect(fixture.catalog_lifecycle
-                       .apply_preview(rollback.confirmation_token, false)
+                       .apply_preview(rollback.confirmation_token)
                        .succeeded() &&
                        fixture.catalog_lifecycle.snapshot().current->revision == 2,
                    "rollback must atomically swap current and previous");
-  passed &= expect(!fixture.catalog_lifecycle
-                        .preview_file(lifecycle::CatalogCandidateOrigin::update,
-                                      "absent", false)
+  passed &= expect(!preview_update(fixture.catalog_lifecycle, fixture.files,
+                                   "absent")
                         .ready,
                    "read failures must not prepare an update");
   return passed;
@@ -938,10 +1008,10 @@ name = "GPU vendor page"
   bool passed = true;
   passed &= expect(fixture.catalog_lifecycle.restore().succeeded(),
                    "draft fixture must restore");
-  auto built = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "built-in", false);
+  auto built =
+      preview_built_in(fixture.catalog_lifecycle, fixture.files, "built-in");
   passed &= expect(fixture.catalog_lifecycle
-                       .apply_preview(built.confirmation_token, false)
+                       .apply_preview(built.confirmation_token)
                        .succeeded(),
                    "draft fixture must establish current catalog");
 
@@ -950,7 +1020,7 @@ name = "GPU vendor page"
       "https://example.test/core",
       "https://draft.example.test/core");
   passed &= expect(fixture.catalog_lifecycle
-                       .edit(draft_two, lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(draft_two)
                        .succeeded() &&
                        fixture.catalog_lifecycle.snapshot().draft.state ==
                            lifecycle::DraftWorkState::unsaved_changes,
@@ -960,14 +1030,14 @@ name = "GPU vendor page"
 
   lifecycle::SoftwareCatalogLifecycle recovered(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(recovered.restore().succeeded() &&
                        recovered.snapshot().draft.state ==
                            lifecycle::DraftWorkState::recovered_unsaved &&
                        recovered.snapshot().draft.toml_bytes == draft_two &&
                        recovered.snapshot().current->revision == 1,
                    "restart must recover unsaved content separately from current");
-  passed &= expect(recovered.apply_saved_draft(true).code ==
+  passed &= expect(recovered.apply_saved_draft().code ==
                        lifecycle::CatalogActionCode::rejected,
                    "recovered unsaved content must block draft application");
 
@@ -977,21 +1047,20 @@ name = "GPU vendor page"
       "injected checkpoint recovery read failure");
   lifecycle::SoftwareCatalogLifecycle failed_recovery(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(failed_recovery.restore().succeeded() &&
                        failed_recovery.snapshot().draft.state ==
                            lifecycle::DraftWorkState::none &&
                        !failed_recovery.snapshot().error.empty(),
                    "checkpoint recovery failure must be visible without false recovery");
   passed &= expect(recovered
-                       .handle_close(lifecycle::CatalogCloseChoice::return_to_editor,
-                                     lifecycle::CatalogEditorAccess::debug_mode)
+                       .handle_close(lifecycle::CatalogCloseChoice::return_to_editor)
                        .code == lifecycle::CatalogActionCode::returned_to_editor &&
                        recovered.snapshot().draft.state ==
                            lifecycle::DraftWorkState::recovered_unsaved,
                    "return-to-editor must preserve recovered edits");
   passed &= expect(recovered
-                       .save_draft(lifecycle::CatalogEditorAccess::debug_mode)
+                       .save_draft()
                        .succeeded(),
                    "saving must persist the draft and consume its checkpoint");
   auto saved = recovered.snapshot();
@@ -1003,27 +1072,29 @@ name = "GPU vendor page"
 
   lifecycle::SoftwareCatalogLifecycle reopened(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(reopened.restore().succeeded() &&
                        reopened.snapshot().draft.state ==
                            lifecycle::DraftWorkState::saved_not_applied,
                    "saved drafts must survive restart without auto-application");
   passed &= expect(reopened
-                       .edit(one_item_catalog(3, "draft", "More Edits"),
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(one_item_catalog(3, "draft", "More Edits"))
                        .succeeded() &&
-                       reopened.apply_saved_draft(true).code ==
+                       reopened.apply_saved_draft().code ==
                            lifecycle::CatalogActionCode::rejected,
                    "new unsaved edits must block applying an older saved draft");
   passed &= expect(reopened
-                       .discard_unsaved(lifecycle::CatalogEditorAccess::debug_mode)
+                       .discard_unsaved()
                        .succeeded() &&
                        reopened.snapshot().draft.saved_present,
                    "discarding unsaved content must preserve the saved draft");
-  passed &= expect(reopened.apply_saved_draft(false).code ==
+  fixture.maintenance_access.access =
+      lifecycle::CatalogEditorAccess::unavailable;
+  passed &= expect(reopened.apply_saved_draft().code ==
                        lifecycle::CatalogActionCode::debug_mode_required,
                    "draft application must require debug mode");
-  auto applied_draft = reopened.apply_saved_draft(true);
+  fixture.maintenance_access.access = lifecycle::CatalogEditorAccess::debug_mode;
+  auto applied_draft = reopened.apply_saved_draft();
   passed &= expect(applied_draft.succeeded() &&
                        has_impact(
                            applied_draft.selection_impact, "core",
@@ -1042,29 +1113,25 @@ name = "GPU vendor page"
   passed &= expect(typed_edit.document.has_value() &&
                        reopened
                            .edit_document(
-                               *typed_edit.document,
-                               lifecycle::CatalogEditorAccess::debug_mode)
+                               *typed_edit.document)
                            .succeeded() &&
                        reopened.snapshot().draft.document == typed_edit.document,
                    "graphical editing must use the same typed domain model");
   passed &= expect(reopened
-                       .discard_unsaved(lifecycle::CatalogEditorAccess::debug_mode)
+                       .discard_unsaved()
                        .succeeded(),
                    "typed unsaved edits must remain explicitly discardable");
 
   passed &= expect(reopened
-                       .edit("schema_version = [broken",
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit("schema_version = [broken")
                        .succeeded() &&
-                       reopened
-                               .save_draft(
-                                   lifecycle::CatalogEditorAccess::debug_mode)
+                       reopened.save_draft()
                                .code == lifecycle::CatalogActionCode::rejected &&
                        reopened.snapshot().draft.state ==
                            lifecycle::DraftWorkState::unsaved_changes,
                    "malformed TOML must remain unsaved and must not overwrite a draft");
   passed &= expect(reopened
-                       .discard_unsaved(lifecycle::CatalogEditorAccess::debug_mode)
+                       .discard_unsaved()
                        .succeeded(),
                    "malformed unsaved content must be explicitly discardable");
 
@@ -1072,23 +1139,19 @@ name = "GPU vendor page"
       one_item_catalog(4, "draft"), "notice = \"\"",
       "executor_command = \"blocked\"\nnotice = \"\"");
   passed &= expect(reopened
-                       .edit(invalid_semantics,
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(invalid_semantics)
                        .succeeded() &&
-                       reopened
-                           .handle_close(
-                               lifecycle::CatalogCloseChoice::save_draft_and_close,
-                               lifecycle::CatalogEditorAccess::debug_mode)
+                       reopened.handle_close(
+                           lifecycle::CatalogCloseChoice::save_draft_and_close)
                            .succeeded() &&
                        reopened.snapshot().draft.validation_failed &&
                        reopened.snapshot().current->revision == 2,
                    "parseable invalid maintenance content may save but never apply");
-  passed &= expect(reopened.apply_saved_draft(true).code ==
+  passed &= expect(reopened.apply_saved_draft().code ==
                        lifecycle::CatalogActionCode::rejected,
                    "saved whole-package errors must fail runtime revalidation");
   passed &= expect(reopened
-                       .delete_saved_draft(
-                           lifecycle::CatalogEditorAccess::debug_mode)
+                       .delete_saved_draft()
                        .succeeded() &&
                        reopened.snapshot().current->revision == 2,
                    "deleting a draft must not change current catalog");
@@ -1101,16 +1164,16 @@ name = "GPU vendor page"
   bool passed = true;
   passed &= expect(uncertain.catalog_lifecycle.restore().succeeded(),
                    "outcome-unknown fixture must restore");
-  auto uncertain_preview = uncertain.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "release-1", false);
+  auto uncertain_preview = preview_update(uncertain.catalog_lifecycle,
+                                          uncertain.files, "release-1");
   uncertain.state_files.fail_on(InMemoryStateFileSystem::Fault{
       .operation = StateFileOperation::flush_volume,
       .slot = std::nullopt,
       .occurrence = 2,
       .error = "injected post-commit durability uncertainty",
   });
-  auto resolved_unknown = uncertain.catalog_lifecycle.apply_preview(
-      uncertain_preview.confirmation_token, false);
+  auto resolved_unknown =
+      uncertain.catalog_lifecycle.apply_preview(uncertain_preview.confirmation_token);
   passed &= expect(resolved_unknown.succeeded() &&
                        resolved_unknown.current_changed &&
                        uncertain.catalog_lifecycle.snapshot().current->revision == 1,
@@ -1121,10 +1184,10 @@ name = "GPU vendor page"
   isolated.files.files["release-2"] = one_item_catalog(2, "release", "Two");
   passed &= expect(isolated.catalog_lifecycle.restore().succeeded(),
                    "aggregate-isolation fixture must restore");
-  auto isolated_first = isolated.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "release-1", false);
+  auto isolated_first =
+      preview_update(isolated.catalog_lifecycle, isolated.files, "release-1");
   passed &= expect(isolated.catalog_lifecycle
-                       .apply_preview(isolated_first.confirmation_token, false)
+                       .apply_preview(isolated_first.confirmation_token)
                        .succeeded(),
                    "aggregate-isolation fixture must establish current state");
   auto const isolated_draft_key = azzs::domain::StateKey::for_subject(
@@ -1134,7 +1197,7 @@ name = "GPU vendor page"
                                azzs::application::StateFileSlot::current);
   lifecycle::SoftwareCatalogLifecycle draft_read_only(
       isolated.states, isolated.log, isolated.occupancy, isolated.files,
-      isolated.codec, isolated.policy, StateSubject{"catalog-test-user"});
+      isolated.codec, isolated.policy, isolated.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(draft_read_only.restore().code ==
                            lifecycle::CatalogActionCode::read_only &&
                        draft_read_only.snapshot().current.has_value() &&
@@ -1144,12 +1207,11 @@ name = "GPU vendor page"
                        draft_read_only.snapshot().draft_access ==
                            lifecycle::CatalogAggregateAccess::read_only,
                    "a damaged draft aggregate must not hide the valid machine catalog");
-  auto isolated_update = draft_read_only.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "release-2", false);
+  auto isolated_update =
+      preview_update(draft_read_only, isolated.files, "release-2");
   passed &= expect(isolated_update.ready &&
                        draft_read_only
-                           .apply_preview(isolated_update.confirmation_token,
-                                          false)
+                           .apply_preview(isolated_update.confirmation_token)
                            .succeeded() &&
                        draft_read_only.snapshot().current->revision == 2,
                    "draft read-only state must not block an independent machine update");
@@ -1159,19 +1221,17 @@ name = "GPU vendor page"
       one_item_catalog(1, "release", "One");
   passed &= expect(busy_fixture.catalog_lifecycle.restore().succeeded(),
                    "busy aggregate fixture must restore");
-  auto busy_first = busy_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "release-1", false);
+  auto busy_first = preview_update(busy_fixture.catalog_lifecycle,
+                                   busy_fixture.files, "release-1");
   passed &= expect(busy_fixture.catalog_lifecycle
-                       .apply_preview(busy_first.confirmation_token, false)
+                       .apply_preview(busy_first.confirmation_token)
                        .succeeded(),
                    "busy aggregate fixture must establish current state");
   auto busy_draft = one_item_catalog(2, "draft", "Saved While Machine Busy");
   passed &= expect(busy_fixture.catalog_lifecycle
-                       .edit(busy_draft,
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(busy_draft)
                        .succeeded() &&
-                       busy_fixture.catalog_lifecycle
-                           .save_draft(lifecycle::CatalogEditorAccess::debug_mode)
+                       busy_fixture.catalog_lifecycle.save_draft()
                            .succeeded(),
                    "busy aggregate fixture must establish a saved draft");
   auto const busy_machine_key = azzs::domain::StateKey::machine(
@@ -1184,7 +1244,7 @@ name = "GPU vendor page"
     lifecycle::SoftwareCatalogLifecycle machine_busy(
         busy_fixture.states, busy_fixture.log, busy_fixture.occupancy,
         busy_fixture.files, busy_fixture.codec, busy_fixture.policy,
-        StateSubject{"catalog-test-user"});
+        busy_fixture.maintenance_access, StateSubject{"catalog-test-user"});
     passed &= expect(machine_busy.restore().code ==
                              lifecycle::CatalogActionCode::occupied &&
                          machine_busy.snapshot().draft.saved_present &&
@@ -1200,7 +1260,7 @@ name = "GPU vendor page"
     lifecycle::SoftwareCatalogLifecycle draft_busy(
         busy_fixture.states, busy_fixture.log, busy_fixture.occupancy,
         busy_fixture.files, busy_fixture.codec, busy_fixture.policy,
-        StateSubject{"catalog-test-user"});
+        busy_fixture.maintenance_access, StateSubject{"catalog-test-user"});
     passed &= expect(draft_busy.restore().code ==
                              lifecycle::CatalogActionCode::occupied &&
                          draft_busy.snapshot().current.has_value() &&
@@ -1220,24 +1280,23 @@ name = "GPU vendor page"
 
   lifecycle::SoftwareCatalogLifecycle stale(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(stale.restore().succeeded(),
                    "a concurrent stale lifecycle must restore its own revision");
-  auto first = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "release-1", false);
-  auto second = stale.preview_file(lifecycle::CatalogCandidateOrigin::update,
-                                   "release-2", false);
+  auto first =
+      preview_update(fixture.catalog_lifecycle, fixture.files, "release-1");
+  auto second = preview_update(stale, fixture.files, "release-2");
   passed &= expect(fixture.catalog_lifecycle
-                       .apply_preview(first.confirmation_token, false)
+                       .apply_preview(first.confirmation_token)
                        .succeeded(),
                    "the first CAS application must commit");
-  passed &= expect(stale.apply_preview(second.confirmation_token, false).code ==
+  passed &= expect(stale.apply_preview(second.confirmation_token).code ==
                        lifecycle::CatalogActionCode::conflict,
                    "a stale CAS must fail without partial current/previous state");
 
   lifecycle::SoftwareCatalogLifecycle observer(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(observer.restore().succeeded() &&
                        observer.snapshot().current->revision == 1 &&
                        !observer.snapshot().previous.has_value(),
@@ -1248,14 +1307,13 @@ name = "GPU vendor page"
   local_text += software_entry("dependent", "Dependent", "[\"broken\"]");
   local_text += software_entry("independent", "Independent");
   fixture.files.files["local-errors"] = local_text;
-  auto local = fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::manual_import, "local-errors", true);
+  auto local =
+      preview_manual_import(fixture.catalog_lifecycle, "local-errors");
   passed &= expect(local.ready && contains(local.selection_impact.disabled, "broken") &&
                        contains(local.selection_impact.disabled, "dependent") &&
                        contains(local.selection_impact.removed, "core"),
                    "local dependency errors must preview a whole-catalog switch");
-  auto local_apply = fixture.catalog_lifecycle.apply_preview(
-      local.confirmation_token, true);
+  auto local_apply = fixture.catalog_lifecycle.apply_preview(local.confirmation_token);
   passed &= expect(local_apply.succeeded() && local_apply.runtime.accepted() &&
                        local_apply.runtime.catalog.has_value() &&
                        has_impact(
@@ -1316,11 +1374,9 @@ name = "GPU vendor page"
   draft_three += software_entry("dependent", "Dependent", "[\"broken\"]");
   draft_three += software_entry("independent", "Independent");
   passed &= expect(fixture.catalog_lifecycle
-                       .edit(draft_three,
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(draft_three)
                        .succeeded() &&
-                       fixture.catalog_lifecycle
-                           .save_draft(lifecycle::CatalogEditorAccess::debug_mode)
+                       fixture.catalog_lifecycle.save_draft()
                            .succeeded(),
                    "cleanup fixture must persist a saved draft first");
   fixture.state_files.fail_on(InMemoryStateFileSystem::Fault{
@@ -1329,7 +1385,7 @@ name = "GPU vendor page"
       .occurrence = 2,
       .error = "injected draft cleanup failure",
   });
-  auto cleanup_pending = fixture.catalog_lifecycle.apply_saved_draft(true);
+  auto cleanup_pending = fixture.catalog_lifecycle.apply_saved_draft();
   passed &= expect(cleanup_pending.code ==
                            lifecycle::CatalogActionCode::applied_cleanup_pending &&
                        cleanup_pending.current_changed &&
@@ -1339,7 +1395,7 @@ name = "GPU vendor page"
 
   lifecycle::SoftwareCatalogLifecycle cleanup_recovery(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(cleanup_recovery.restore().succeeded() &&
                        cleanup_recovery.snapshot().current->revision == 3 &&
                        !cleanup_recovery.snapshot().draft.saved_present &&
@@ -1369,57 +1425,58 @@ name = "GPU vendor page"
   bool passed = true;
   passed &= expect(ledger_fixture.catalog_lifecycle.restore().succeeded(),
                    "stable-id fixture must restore");
-  auto first = ledger_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "release-1", false);
+  auto first = preview_built_in(ledger_fixture.catalog_lifecycle,
+                                ledger_fixture.files, "release-1");
   passed &= expect(first.ready &&
                        ledger_fixture.catalog_lifecycle
-                           .apply_preview(first.confirmation_token, false)
+                           .apply_preview(first.confirmation_token)
                            .succeeded(),
                    "stable-id fixture must establish the first formal catalog");
-  auto allowed = ledger_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "source-update", false);
+  auto allowed = preview_update(ledger_fixture.catalog_lifecycle,
+                                ledger_fixture.files, "source-update");
   passed &= expect(allowed.ready &&
                        ledger_fixture.catalog_lifecycle
-                           .apply_preview(allowed.confirmation_token, false)
+                           .apply_preview(allowed.confirmation_token)
                            .succeeded(),
                    "display and source maintenance must preserve a stable id");
-  auto branch_reuse = ledger_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "branch-reuse", false);
+  auto branch_reuse = preview_update(ledger_fixture.catalog_lifecycle,
+                                     ledger_fixture.files, "branch-reuse");
   passed &= expect(
       !branch_reuse.ready &&
           has_issue(branch_reuse.runtime.issues,
                     catalog::CatalogIssueCode::stable_id_reused,
                     catalog::CatalogIssueScope::package),
       "changing the product branch anchor must reject stable-id reuse");
-  auto kind_reuse = ledger_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "kind-reuse", false);
+  auto kind_reuse = preview_update(ledger_fixture.catalog_lifecycle,
+                                   ledger_fixture.files, "kind-reuse");
   passed &= expect(
       !kind_reuse.ready &&
           has_issue(kind_reuse.runtime.issues,
                     catalog::CatalogIssueCode::stable_id_reused,
                     catalog::CatalogIssueScope::package),
       "software and driver entries cannot exchange one stable id");
-  auto remove_core = ledger_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "remove-core", false);
+  auto remove_core = preview_update(ledger_fixture.catalog_lifecycle,
+                                    ledger_fixture.files, "remove-core");
   passed &= expect(remove_core.ready &&
                        ledger_fixture.catalog_lifecycle
-                           .apply_preview(remove_core.confirmation_token, false)
+                           .apply_preview(remove_core.confirmation_token)
                            .succeeded(),
                    "removing an entry must remain a valid catalog update");
-  auto removed_target_reuse = ledger_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "removed-target-reuse", false);
+  auto removed_target_reuse = preview_update(
+      ledger_fixture.catalog_lifecycle, ledger_fixture.files,
+      "removed-target-reuse");
   passed &= expect(
       !removed_target_reuse.ready &&
           has_issue(removed_target_reuse.runtime.issues,
                     catalog::CatalogIssueCode::stable_id_reused,
                     catalog::CatalogIssueScope::package),
       "a removed id cannot return with a different product identity");
-  auto old_catalog_import = ledger_fixture.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::manual_import, "source-update", true);
+  auto old_catalog_import =
+      preview_manual_import(ledger_fixture.catalog_lifecycle, "source-update");
   passed &= expect(
       old_catalog_import.ready && old_catalog_import.downgrade &&
           ledger_fixture.catalog_lifecycle
-              .apply_preview(old_catalog_import.confirmation_token, true)
+              .apply_preview(old_catalog_import.confirmation_token)
               .succeeded() &&
           ledger_fixture.catalog_lifecycle.snapshot().current->revision == 2,
       "debug downgrade may restore the same stable product identity");
@@ -1427,7 +1484,7 @@ name = "GPU vendor page"
   passed &= expect(
       explicit_rollback.ready &&
           ledger_fixture.catalog_lifecycle
-              .apply_preview(explicit_rollback.confirmation_token, false)
+              .apply_preview(explicit_rollback.confirmation_token)
               .succeeded() &&
           ledger_fixture.catalog_lifecycle.snapshot().current->revision == 3,
       "the dedicated rollback path may restore the replaced catalog");
@@ -1451,14 +1508,14 @@ name = "GPU vendor page"
       identity_fixture.states, identity_fixture.log,
       identity_fixture.occupancy, identity_fixture.files,
       identity_fixture.codec, formal_policy,
-      StateSubject{"catalog-test-user"});
+      identity_fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(formal_lifecycle.restore().succeeded(),
                    "formal identity fixture must restore");
-  auto formal = formal_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "formal", false);
+  auto formal = preview_built_in(formal_lifecycle, identity_fixture.files,
+                                 "formal");
   passed &= expect(formal.ready &&
                        formal_lifecycle
-                           .apply_preview(formal.confirmation_token, false)
+                           .apply_preview(formal.confirmation_token)
                            .succeeded(),
                    "formal identity fixture must persist its release baseline");
 
@@ -1468,15 +1525,15 @@ name = "GPU vendor page"
       identity_fixture.states, identity_fixture.log,
       identity_fixture.occupancy, identity_fixture.files,
       identity_fixture.codec, local_policy,
-      StateSubject{"catalog-test-user"});
+      identity_fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(local_lifecycle.restore().succeeded(),
                    "local-trial lifecycle must restore the formal baseline");
-  auto local_release = local_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::manual_import, "local-release", true);
+  auto local_release =
+      preview_manual_import(local_lifecycle, "local-release");
   passed &= expect(local_release.ready &&
                        !local_release.release_gate.passed() &&
                        local_lifecycle
-                           .apply_preview(local_release.confirmation_token, true)
+                           .apply_preview(local_release.confirmation_token)
                            .succeeded() &&
                        local_lifecycle.snapshot().current->identity ==
                            lifecycle::EffectiveCatalogIdentity::local_trial,
@@ -1486,15 +1543,15 @@ name = "GPU vendor page"
       identity_fixture.states, identity_fixture.log,
       identity_fixture.occupancy, identity_fixture.files,
       identity_fixture.codec, formal_policy,
-      StateSubject{"catalog-test-user"});
+      identity_fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(reopened.restore().succeeded() &&
                        reopened.snapshot().current->revision == 6 &&
                        reopened.snapshot().current->identity ==
                            lifecycle::EffectiveCatalogIdentity::local_trial &&
                        reopened.snapshot().current->release_issues.empty(),
                    "policy improvement after restart must not promote a persisted local trial");
-  auto formal_conflict = reopened.preview_file(
-      lifecycle::CatalogCandidateOrigin::update, "formal-conflict", false);
+  auto formal_conflict =
+      preview_update(reopened, identity_fixture.files, "formal-conflict");
   passed &= expect(
       !formal_conflict.ready &&
           has_issue(formal_conflict.release_gate.issues,
@@ -1511,19 +1568,15 @@ name = "GPU vendor page"
                    "checkpoint cleanup fixture must restore");
   auto old_draft = one_item_catalog(1, "draft", "Old Draft");
   passed &= expect(fixture.catalog_lifecycle
-                       .edit(old_draft,
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(old_draft)
                        .succeeded() &&
-                       fixture.catalog_lifecycle
-                           .save_draft(
-                               lifecycle::CatalogEditorAccess::debug_mode)
+                       fixture.catalog_lifecycle.save_draft()
                            .succeeded(),
                    "checkpoint cleanup fixture must establish an older saved draft");
 
   auto new_draft = one_item_catalog(2, "draft", "New Draft");
   passed &= expect(fixture.catalog_lifecycle
-                       .edit(new_draft,
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(new_draft)
                        .succeeded() &&
                        fixture.catalog_lifecycle.checkpoint_unsaved().succeeded(),
                    "new draft edits must have a pre-save recovery checkpoint");
@@ -1531,8 +1584,7 @@ name = "GPU vendor page"
       StateFileOperation::write,
       azzs::application::StateFileSlot::checkpoint_staging,
       "injected checkpoint replacement failure");
-  auto saved_with_write_failure = fixture.catalog_lifecycle.save_draft(
-      lifecycle::CatalogEditorAccess::debug_mode);
+  auto saved_with_write_failure = fixture.catalog_lifecycle.save_draft();
   auto after_write_failure = fixture.catalog_lifecycle.snapshot();
   passed &= expect(
       saved_with_write_failure.code ==
@@ -1551,7 +1603,7 @@ name = "GPU vendor page"
       "injected stale-checkpoint consumption failure");
   lifecycle::SoftwareCatalogLifecycle recovered_write_failure(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(
       recovered_write_failure.restore().succeeded() &&
           recovered_write_failure.snapshot().draft.toml_bytes == new_draft &&
@@ -1563,7 +1615,7 @@ name = "GPU vendor page"
 
   lifecycle::SoftwareCatalogLifecycle settled_write_failure(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(
       settled_write_failure.restore().succeeded() &&
           settled_write_failure.snapshot().draft.toml_bytes == new_draft &&
@@ -1575,8 +1627,7 @@ name = "GPU vendor page"
 
   auto third_draft = one_item_catalog(3, "draft", "Third Draft");
   passed &= expect(settled_write_failure
-                       .edit(third_draft,
-                             lifecycle::CatalogEditorAccess::debug_mode)
+                       .edit(third_draft)
                        .succeeded() &&
                        settled_write_failure.checkpoint_unsaved().succeeded(),
                    "consume-failure fixture must establish another checkpoint");
@@ -1584,8 +1635,7 @@ name = "GPU vendor page"
       StateFileOperation::write,
       azzs::application::StateFileSlot::checkpoint_consumed_staging,
       "injected checkpoint consumption failure");
-  auto saved_with_consume_failure = settled_write_failure.save_draft(
-      lifecycle::CatalogEditorAccess::debug_mode);
+  auto saved_with_consume_failure = settled_write_failure.save_draft();
   passed &= expect(
           saved_with_consume_failure.code ==
               lifecycle::CatalogActionCode::saved_cleanup_pending &&
@@ -1595,7 +1645,7 @@ name = "GPU vendor page"
 
   lifecycle::SoftwareCatalogLifecycle recovered_consume_failure(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(
       recovered_consume_failure.restore().succeeded() &&
           recovered_consume_failure.snapshot().draft.toml_bytes == third_draft &&
@@ -1609,9 +1659,7 @@ name = "GPU vendor page"
       StateFileOperation::write,
       azzs::application::StateFileSlot::checkpoint_consumed_staging,
       "injected deleted-draft checkpoint consumption failure");
-  auto deleted_with_cleanup_failure =
-      recovered_consume_failure.delete_saved_draft(
-          lifecycle::CatalogEditorAccess::debug_mode);
+  auto deleted_with_cleanup_failure = recovered_consume_failure.delete_saved_draft();
   passed &= expect(
       deleted_with_cleanup_failure.code ==
               lifecycle::CatalogActionCode::saved_cleanup_pending &&
@@ -1623,7 +1671,7 @@ name = "GPU vendor page"
 
   lifecycle::SoftwareCatalogLifecycle recovered_delete_failure(
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
-      fixture.codec, fixture.policy, StateSubject{"catalog-test-user"});
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
   passed &= expect(
       recovered_delete_failure.restore().succeeded() &&
           recovered_delete_failure.snapshot().draft.state ==
@@ -1636,6 +1684,265 @@ name = "GPU vendor page"
   return passed;
 }
 
+[[nodiscard]] bool quoted_display_extension_keys_round_trip() {
+  TomlSoftwareCatalogCodec codec;
+  auto decoded = codec.decode(
+      one_item_catalog(1, "release") +
+      "\n\"extra label_label\" = \"quoted key must survive\"\n");
+  bool passed = true;
+  passed &= expect(decoded.issues.empty() && decoded.document.has_value(),
+                   "quoted display extension keys must decode");
+  if (!decoded.document.has_value()) {
+    return false;
+  }
+  auto const encoded = codec.encode(*decoded.document);
+  auto again = codec.decode(encoded);
+  passed &= expect(again.issues.empty() && again.document == decoded.document,
+                   "quoted display extension keys must round-trip");
+  return passed;
+}
+
+[[nodiscard]] bool file_adapter_enforces_bound_during_streaming_reads() {
+  constexpr std::size_t k_catalog_limit = 16U * 1024U * 1024U;
+  auto const path = std::filesystem::temp_directory_path() /
+                    ("azzs-software-catalog-limit-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()) +
+                     ".toml");
+  {
+    std::ofstream output(path, std::ios::binary);
+    std::string block(64U * 1024U, 'x');
+    for (std::size_t written{}; written < k_catalog_limit;
+         written += block.size()) {
+      output.write(block.data(), static_cast<std::streamsize>(block.size()));
+    }
+    output.put('y');
+  }
+  LocalSoftwareCatalogFileReader reader;
+  auto const read = reader.read(path.string());
+  std::error_code removal_error;
+  std::filesystem::remove(path, removal_error);
+  return expect(!read.succeeded &&
+                    read.error == "catalog file exceeds the supported size",
+                "streaming file reads must reject growth beyond 16 MiB");
+}
+
+[[nodiscard]] bool prohibited_content_is_rejected_by_every_catalog_entry() {
+  TomlSoftwareCatalogCodec codec;
+  auto prohibited = codec.decode(replace_once(
+      one_item_catalog(1, "release"), "name = \"Core\"",
+      "name = \"Keygen\""));
+  bool passed = true;
+  passed &= expect(prohibited.document.has_value(),
+                   "prohibited-content fixture must remain structurally valid");
+  if (!prohibited.document.has_value()) {
+    return false;
+  }
+  auto runtime = catalog::validate_for_runtime(*prohibited.document,
+                                                default_policy());
+  passed &= expect(!runtime.accepted(),
+                   "SEC-08 content must reject a runtime catalog");
+
+  LifecycleFixture fixture;
+  auto const prohibited_bytes = codec.encode(*prohibited.document);
+  fixture.files.files["built-in-prohibited"] = prohibited_bytes;
+  fixture.files.files["update-prohibited"] = prohibited_bytes;
+  fixture.files.files["manual-prohibited"] = prohibited_bytes;
+  passed &= expect(fixture.catalog_lifecycle.restore().succeeded(),
+                   "prohibited manual-import fixture must restore");
+  auto built_in = preview_built_in(fixture.catalog_lifecycle, fixture.files,
+                                   "built-in-prohibited");
+  auto update =
+      preview_update(fixture.catalog_lifecycle, fixture.files, "update-prohibited");
+  auto manual =
+      preview_manual_import(fixture.catalog_lifecycle, "manual-prohibited");
+  passed &= expect(!built_in.ready && !update.ready && !manual.ready,
+                   "SEC-08 must reject built-in, update, and manual imports");
+  return passed;
+}
+
+[[nodiscard]] bool untrusted_callers_cannot_promote_manual_bytes_to_built_in() {
+  LifecycleFixture fixture;
+  fixture.files.files["trusted-built-in"] = one_item_catalog(
+      1, "release", "Trusted");
+  fixture.files.files["local-release"] =
+      one_item_catalog(2, "release", "Local bytes");
+  bool passed = true;
+  passed &= expect(fixture.catalog_lifecycle.restore().succeeded(),
+                   "trusted-source fixture must restore");
+  auto trusted = preview_built_in(fixture.catalog_lifecycle, fixture.files,
+                                  "trusted-built-in");
+  auto local =
+      preview_manual_import(fixture.catalog_lifecycle, "local-release");
+  passed &= expect(trusted.ready && trusted.path == "trusted-built-in" &&
+                       local.ready &&
+                       local.origin == lifecycle::CatalogCandidateOrigin::manual_import,
+                   "callers can only choose a local path through manual import");
+  passed &= expect(fixture.catalog_lifecycle
+                       .apply_preview(local.confirmation_token)
+                       .succeeded() &&
+                       fixture.catalog_lifecycle.snapshot().current->identity ==
+                           lifecycle::EffectiveCatalogIdentity::local_trial,
+                   "local TOML cannot be promoted to a built-in release by origin arguments");
+  return passed;
+}
+
+[[nodiscard]] bool restored_unknown_catalog_mode_fails_closed_for_writes() {
+  LifecycleFixture fixture;
+  auto future_policy = default_policy();
+  future_policy.supported_schema_version = 2;
+  fixture.files.files["future-built-in"] = replace_once(
+      one_item_catalog(1, "release", "Future"), "schema_version = 1",
+      "schema_version = 2");
+
+  lifecycle::SoftwareCatalogLifecycle future(
+      fixture.states, fixture.log, fixture.occupancy, fixture.files,
+      fixture.codec, future_policy, fixture.maintenance_access,
+      StateSubject{"catalog-test-user"});
+  bool passed = true;
+  passed &= expect(future.restore().succeeded(),
+                   "future-workbench fixture must restore");
+  auto future_preview =
+      preview_built_in(future, fixture.files, "future-built-in");
+  passed &= expect(future_preview.ready &&
+                       future.apply_preview(future_preview.confirmation_token)
+                           .succeeded(),
+                   "future-workbench fixture must persist its catalog");
+  auto const future_checkpoint = replace_once(
+      one_item_catalog(2, "draft", "Future Checkpoint"),
+      "schema_version = 1", "schema_version = 2");
+  passed &= expect(future.edit(future_checkpoint).succeeded() &&
+                       future.checkpoint_unsaved().succeeded(),
+                   "future-workbench fixture must retain an unsaved checkpoint");
+
+  lifecycle::SoftwareCatalogLifecycle old(
+      fixture.states, fixture.log, fixture.occupancy, fixture.files,
+      fixture.codec, default_policy(), fixture.maintenance_access,
+      StateSubject{"catalog-test-user"});
+  auto restored = old.restore();
+  passed &= expect(restored.code == lifecycle::CatalogActionCode::read_only &&
+                       old.snapshot().mode ==
+                           lifecycle::CatalogLifecycleMode::read_only &&
+                       old.snapshot().retained_unreadable_current_toml_bytes ==
+                           fixture.files.files["future-built-in"],
+                   "an unknown stored catalog mode must enter read-only recovery");
+  auto const writes_are_closed =
+      old.apply_preview("stale").code == lifecycle::CatalogActionCode::read_only &&
+      old.edit(one_item_catalog(2, "draft")).code ==
+          lifecycle::CatalogActionCode::read_only &&
+      old.checkpoint_unsaved().code == lifecycle::CatalogActionCode::read_only &&
+      old.save_draft().code == lifecycle::CatalogActionCode::read_only &&
+      old.delete_saved_draft().code == lifecycle::CatalogActionCode::read_only &&
+      old.discard_unsaved().code == lifecycle::CatalogActionCode::read_only &&
+      old.apply_saved_draft().code == lifecycle::CatalogActionCode::read_only &&
+      old.handle_close(lifecycle::CatalogCloseChoice::return_to_editor).code ==
+          lifecycle::CatalogActionCode::read_only;
+  passed &= expect(writes_are_closed,
+                   "unknown stored catalog modes must fail closed at every write use case");
+  lifecycle::SoftwareCatalogLifecycle upgraded_again(
+      fixture.states, fixture.log, fixture.occupancy, fixture.files,
+      fixture.codec, future_policy, fixture.maintenance_access,
+      StateSubject{"catalog-test-user"});
+  passed &= expect(upgraded_again.restore().succeeded() &&
+                       upgraded_again.snapshot().current_toml_bytes ==
+                           fixture.files.files["future-built-in"] &&
+                       upgraded_again.snapshot().draft.state ==
+                           lifecycle::DraftWorkState::recovered_unsaved &&
+                       upgraded_again.snapshot().draft.toml_bytes ==
+                           future_checkpoint,
+                   "read-only recovery must preserve unknown catalog and checkpoint bytes for a newer workbench");
+  return passed;
+}
+
+[[nodiscard]] bool checkpoint_conflicts_preserve_other_instance_edits() {
+  LifecycleFixture fixture;
+  bool passed = true;
+  passed &= expect(fixture.catalog_lifecycle.restore().succeeded(),
+                   "checkpoint-conflict fixture must initialize state");
+
+  lifecycle::SoftwareCatalogLifecycle first(
+      fixture.states, fixture.log, fixture.occupancy, fixture.files,
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
+  lifecycle::SoftwareCatalogLifecycle second(
+      fixture.states, fixture.log, fixture.occupancy, fixture.files,
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
+  passed &= expect(first.restore().succeeded() && second.restore().succeeded(),
+                   "both catalog instances must restore the same subject state");
+
+  auto const first_bytes = one_item_catalog(1, "draft", "First edits");
+  auto const second_bytes = one_item_catalog(2, "draft", "Second save");
+  passed &= expect(first
+                       .edit(first_bytes)
+                       .succeeded() &&
+                       first.checkpoint_unsaved().succeeded(),
+                   "first instance must publish an unsaved checkpoint");
+  passed &= expect(second
+                       .edit(second_bytes)
+                       .succeeded() &&
+                       second.save_draft()
+                           .succeeded(),
+                   "second instance must save its own draft");
+
+  lifecycle::SoftwareCatalogLifecycle recovered(
+      fixture.states, fixture.log, fixture.occupancy, fixture.files,
+      fixture.codec, fixture.policy, fixture.maintenance_access, StateSubject{"catalog-test-user"});
+  passed &= expect(
+      recovered.restore().succeeded() &&
+          recovered.snapshot().draft.saved_present &&
+          recovered.snapshot().draft.state ==
+              lifecycle::DraftWorkState::recovered_unsaved &&
+          recovered.snapshot().draft.toml_bytes == first_bytes,
+      "a conflicting checkpoint must remain recoverable until explicitly handled");
+  passed &= expect(recovered.discard_unsaved().succeeded(),
+                   "only an explicit discard may tombstone conflicting edits");
+  lifecycle::SoftwareCatalogLifecycle settled(
+      fixture.states, fixture.log, fixture.occupancy, fixture.files,
+      fixture.codec, fixture.policy, fixture.maintenance_access,
+      StateSubject{"catalog-test-user"});
+  passed &= expect(settled.restore().succeeded() &&
+                       settled.snapshot().draft.state ==
+                           lifecycle::DraftWorkState::saved_not_applied &&
+                       settled.snapshot().draft.toml_bytes == second_bytes,
+                   "tombstoning conflicting edits must preserve the other instance's saved draft");
+  return passed;
+}
+
+[[nodiscard]] bool temporary_recovery_session_cannot_delete_or_apply() {
+  LifecycleFixture fixture;
+  bool passed = true;
+  passed &= expect(fixture.catalog_lifecycle.restore().succeeded(),
+                   "temporary-session fixture must restore");
+  passed &= expect(fixture.catalog_lifecycle
+                       .edit(one_item_catalog(1, "draft"))
+                       .succeeded() &&
+                       fixture.catalog_lifecycle.save_draft()
+                           .succeeded(),
+                   "temporary-session fixture must establish a saved draft");
+  fixture.maintenance_access.access =
+      lifecycle::CatalogEditorAccess::temporary_close_recovery;
+  passed &= expect(fixture.catalog_lifecycle
+                       .edit(one_item_catalog(2, "draft", "Temporary Edit"))
+                       .succeeded() &&
+                       fixture.catalog_lifecycle.checkpoint_unsaved().code ==
+                           lifecycle::CatalogActionCode::rejected &&
+                       fixture.catalog_lifecycle.discard_unsaved().succeeded(),
+                   "temporary close recovery may edit and discard but cannot checkpoint");
+  passed &= expect(fixture.catalog_lifecycle
+                       .edit(one_item_catalog(3, "draft", "Temporary Save"))
+                       .succeeded() &&
+                       fixture.catalog_lifecycle.save_draft().succeeded(),
+                   "temporary close recovery may save an edited draft");
+  passed &= expect(fixture.catalog_lifecycle.delete_saved_draft().code ==
+                       lifecycle::CatalogActionCode::rejected,
+      "temporary close recovery must not delete a saved draft");
+  passed &= expect(
+      fixture.catalog_lifecycle.apply_saved_draft().code ==
+          lifecycle::CatalogActionCode::rejected,
+      "temporary close recovery must not apply a saved draft");
+  return passed;
+}
+
 [[nodiscard]] bool execution_log_receipts_gate_and_qualify_application() {
   LifecycleFixture preview_failure;
   preview_failure.files.files["release-1"] =
@@ -1644,10 +1951,10 @@ name = "GPU vendor page"
   passed &= expect(preview_failure.catalog_lifecycle.restore().succeeded(),
                    "preview log failure fixture must restore");
   preview_failure.log.fail_next_append("injected preview log failure");
-  auto preview = preview_failure.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "release-1", false);
-  auto blocked = preview_failure.catalog_lifecycle.apply_preview(
-      preview.confirmation_token, false);
+  auto preview = preview_built_in(preview_failure.catalog_lifecycle,
+                                  preview_failure.files, "release-1");
+  auto blocked =
+      preview_failure.catalog_lifecycle.apply_preview(preview.confirmation_token);
   passed &= expect(preview.ready && !preview.log_persisted &&
                        blocked.code ==
                            lifecycle::CatalogActionCode::persistence_failed &&
@@ -1661,13 +1968,13 @@ name = "GPU vendor page"
       one_item_catalog(1, "release", "One");
   passed &= expect(apply_log_failure.catalog_lifecycle.restore().succeeded(),
                    "apply log failure fixture must restore");
-  auto prepared = apply_log_failure.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "release-1", false);
+  auto prepared = preview_built_in(apply_log_failure.catalog_lifecycle,
+                                   apply_log_failure.files, "release-1");
   passed &= expect(prepared.ready && prepared.log_persisted,
                    "a persisted preview must remain applicable");
   apply_log_failure.log.fail_next_append("injected final apply log failure");
-  auto applied = apply_log_failure.catalog_lifecycle.apply_preview(
-      prepared.confirmation_token, false);
+  auto applied =
+      apply_log_failure.catalog_lifecycle.apply_preview(prepared.confirmation_token);
   passed &= expect(
       applied.code == lifecycle::CatalogActionCode::applied_log_incomplete &&
           applied.succeeded() && applied.current_changed &&
@@ -1680,24 +1987,23 @@ name = "GPU vendor page"
   no_change_log_failure.files.files["release-1"] = same_catalog;
   passed &= expect(no_change_log_failure.catalog_lifecycle.restore().succeeded(),
                    "no-change log failure fixture must restore");
-  auto active = no_change_log_failure.catalog_lifecycle.preview_file(
-      lifecycle::CatalogCandidateOrigin::built_in, "release-1", false);
+  auto active = preview_built_in(no_change_log_failure.catalog_lifecycle,
+                                 no_change_log_failure.files, "release-1");
   passed &= expect(
       active.ready &&
           no_change_log_failure.catalog_lifecycle
-              .apply_preview(active.confirmation_token, false)
+              .apply_preview(active.confirmation_token)
               .succeeded() &&
           no_change_log_failure.catalog_lifecycle
-              .edit(same_catalog, lifecycle::CatalogEditorAccess::debug_mode)
+              .edit(same_catalog)
               .succeeded() &&
-          no_change_log_failure.catalog_lifecycle
-              .save_draft(lifecycle::CatalogEditorAccess::debug_mode)
+          no_change_log_failure.catalog_lifecycle.save_draft()
               .succeeded(),
       "no-change fixture must establish an identical saved draft");
   no_change_log_failure.log.fail_after_appends(
       1, "injected no-change final log failure");
   auto no_change =
-      no_change_log_failure.catalog_lifecycle.apply_saved_draft(true);
+      no_change_log_failure.catalog_lifecycle.apply_saved_draft();
   passed &= expect(
       no_change.code == lifecycle::CatalogActionCode::applied_log_incomplete &&
           no_change.succeeded() && !no_change.current_changed &&
@@ -1726,6 +2032,13 @@ int main() {
   passed &= atomic_apply_conflicts_local_errors_and_cleanup_recovery();
   passed &= persisted_identity_and_stable_id_ledger_are_monotonic();
   passed &= draft_checkpoint_cleanup_is_post_commit_and_recoverable();
+  passed &= quoted_display_extension_keys_round_trip();
+  passed &= file_adapter_enforces_bound_during_streaming_reads();
+  passed &= prohibited_content_is_rejected_by_every_catalog_entry();
+  passed &= untrusted_callers_cannot_promote_manual_bytes_to_built_in();
+  passed &= restored_unknown_catalog_mode_fails_closed_for_writes();
+  passed &= checkpoint_conflicts_preserve_other_instance_edits();
+  passed &= temporary_recovery_session_cannot_delete_or_apply();
   passed &= execution_log_receipts_gate_and_qualify_application();
   if (!passed) {
     return EXIT_FAILURE;
