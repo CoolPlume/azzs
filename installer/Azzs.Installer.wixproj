@@ -5,7 +5,8 @@
     <OutputName>Azzs-standard-$(InstallerPlatform)-machine</OutputName>
     <OutputPath>$(AzzsPackageOutputDirectory)</OutputPath>
     <IntermediateOutputPath>$(AzzsInstallerIntermediateDirectory)</IntermediateOutputPath>
-    <DefineConstants>PayloadDirectory=$(PayloadDirectory)</DefineConstants>
+    <ProductIconPath Condition="'$(ProductIconPath)' == ''">$(MSBuildThisFileDirectory)..\assets\product\generated\windows\windows-initial-setup-workbench.ico</ProductIconPath>
+    <DefineConstants>PayloadDirectory=$(PayloadDirectory);ProductIconPath=$(ProductIconPath)</DefineConstants>
     <Pedantic>true</Pedantic>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
@@ -15,5 +16,6 @@
     <Error Condition="!Exists('$(PayloadDirectory)\Azzs.WinUI.exe')" Text="PayloadDirectory does not contain Azzs.WinUI.exe." />
     <Error Condition="'$(AzzsPackageOutputDirectory)' == ''" Text="AzzsPackageOutputDirectory is required." />
     <Error Condition="'$(AzzsInstallerIntermediateDirectory)' == ''" Text="AzzsInstallerIntermediateDirectory is required." />
+    <Error Condition="!Exists('$(ProductIconPath)')" Text="ProductIconPath does not contain the generated product icon." />
   </Target>
 </Project>
