@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 01, 02
 Owner: issue-04
+Claimed by: codex/issue-04-settings-catalog
 Consumers: 10, 18, 20, 21
 Verification: 系统设置目录加载、预览、导入、回退、独立性与错误关闭合同测试。
 Evidence freshness: 绑定当前提交、模式版本和设置目录修订。
