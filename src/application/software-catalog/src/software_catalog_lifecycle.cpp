@@ -662,25 +662,37 @@ class SoftwareCatalogLifecycle::Impl final {
 
     auto machine = load_machine();
 
+    std::optional<EvaluatedCatalog> restored_current;
+    std::optional<EvaluatedCatalog> restored_previous;
     if (machine_state_.current.has_value()) {
-      auto evaluated = evaluate(*machine_state_.current);
-      if (evaluated.runtime.accepted()) {
-        current_ = std::move(evaluated);
-      } else {
-        if (has_unknown_catalog_mode(evaluated)) {
-          recovery_read_only_ = true;
-          machine_writable_ = false;
-          machine_access_ = CatalogAggregateAccess::read_only;
-          retained_unreadable_current_ = evaluated.persisted.bytes;
-        }
-        error_ = "stored current catalog cannot be loaded by this workbench";
-      }
+      restored_current = evaluate(*machine_state_.current);
     }
     if (machine_state_.previous.has_value()) {
-      auto evaluated = evaluate(*machine_state_.previous);
-      if (evaluated.runtime.accepted()) {
-        previous_ = std::move(evaluated);
+      restored_previous = evaluate(*machine_state_.previous);
+    }
+
+    // A future catalog in either N/N-1 generation makes the whole aggregate
+    // opaque to this workbench before the independent draft aggregate can write.
+    if (restored_current.has_value() &&
+        has_unknown_catalog_mode(*restored_current)) {
+      enter_recovery_read_only(*restored_current, true);
+    }
+    if (restored_previous.has_value() &&
+        has_unknown_catalog_mode(*restored_previous)) {
+      enter_recovery_read_only(*restored_previous, false);
+    }
+
+    if (restored_current.has_value()) {
+      if (restored_current->runtime.accepted()) {
+        current_ = std::move(*restored_current);
+      } else {
+        append_restore_error(
+            "stored current catalog cannot be loaded by this workbench");
       }
+    }
+    if (restored_previous.has_value() &&
+        restored_previous->runtime.accepted()) {
+      previous_ = std::move(*restored_previous);
     }
 
     auto draft = load_draft(!recovery_read_only_);
@@ -771,17 +783,27 @@ class SoftwareCatalogLifecycle::Impl final {
   }
 
   [[nodiscard]] CatalogCandidatePreview preview_built_in() {
+    if (recovery_read_only_) {
+      return recovery_read_only_preview(CatalogCandidateOrigin::built_in);
+    }
     return preview_candidate(CatalogCandidateOrigin::built_in,
                              files_.read_built_in());
   }
 
   [[nodiscard]] CatalogCandidatePreview preview_update() {
+    if (recovery_read_only_) {
+      return recovery_read_only_preview(CatalogCandidateOrigin::update);
+    }
     return preview_candidate(CatalogCandidateOrigin::update,
                              files_.read_update());
   }
 
   [[nodiscard]] CatalogCandidatePreview preview_manual_import(
       std::string path) {
+    if (recovery_read_only_) {
+      return recovery_read_only_preview(CatalogCandidateOrigin::manual_import,
+                                        std::move(path));
+    }
     if (!debug_mode_enabled()) {
       CatalogCandidatePreview preview{
           .origin = CatalogCandidateOrigin::manual_import,
@@ -802,6 +824,9 @@ class SoftwareCatalogLifecycle::Impl final {
         .origin = origin,
         .path = std::move(read.path),
     };
+    if (recovery_read_only_) {
+      return recovery_read_only_preview(origin, std::move(preview.path));
+    }
     if (mode_ == CatalogLifecycleMode::not_restored) {
       preview.error = "catalog lifecycle must be restored before preview";
       static_cast<void>(log_preview(preview, ExecutionResult::failed));
@@ -868,6 +893,9 @@ class SoftwareCatalogLifecycle::Impl final {
     CatalogCandidatePreview preview{
         .origin = CatalogCandidateOrigin::rollback,
     };
+    if (recovery_read_only_) {
+      return recovery_read_only_preview(CatalogCandidateOrigin::rollback);
+    }
     if (mode_ == CatalogLifecycleMode::not_restored) {
       preview.error = "catalog lifecycle must be restored before rollback";
       static_cast<void>(log_preview(preview, ExecutionResult::failed));
@@ -1551,6 +1579,21 @@ class SoftwareCatalogLifecycle::Impl final {
         });
   }
 
+  void enter_recovery_read_only(EvaluatedCatalog const& evaluated,
+                                bool is_current_generation) {
+    recovery_read_only_ = true;
+    machine_writable_ = false;
+    machine_access_ = CatalogAggregateAccess::read_only;
+    if (is_current_generation) {
+      retained_unreadable_current_ = evaluated.persisted.bytes;
+      append_restore_error(
+          "stored current catalog uses unknown execution semantics");
+      return;
+    }
+    append_restore_error(
+        "stored previous catalog uses unknown execution semantics");
+  }
+
   [[nodiscard]] bool debug_mode_enabled() const noexcept {
     return maintenance_access_.editor_access() ==
            CatalogEditorAccess::debug_mode;
@@ -1570,6 +1613,16 @@ class SoftwareCatalogLifecycle::Impl final {
     return action(CatalogActionCode::read_only,
                   "stored catalog uses unknown execution semantics and is "
                   "retained read-only until this workbench is updated");
+  }
+
+  [[nodiscard]] static CatalogCandidatePreview recovery_read_only_preview(
+      CatalogCandidateOrigin origin, std::string path = {}) {
+    return CatalogCandidatePreview{
+        .origin = origin,
+        .path = std::move(path),
+        .error = "stored catalog uses unknown execution semantics and is "
+                 "retained read-only until this workbench is updated",
+    };
   }
 
   [[nodiscard]] CheckpointCleanupPlan checkpoint_cleanup_plan(
@@ -2318,6 +2371,11 @@ class SoftwareCatalogLifecycle::Impl final {
 
   [[nodiscard]] CorrelationId log_preview(
       CatalogCandidatePreview& preview, ExecutionResult result) {
+    if (recovery_read_only_) {
+      preview.log_error =
+          "catalog recovery is read-only; preview was not logged";
+      return {};
+    }
     auto correlation = begin_correlation();
     std::vector<DiagnosticField> fields{
         {"candidate_path", preview.path,
@@ -2367,6 +2425,10 @@ class SoftwareCatalogLifecycle::Impl final {
                                  std::string stage,
                                  ExecutionResult result,
                                  std::vector<DiagnosticField> fields) {
+    if (recovery_read_only_) {
+      return {.persisted = false,
+              .error = "catalog recovery is read-only; log append was blocked"};
+    }
     return log_.append(
         correlation,
         ExecutionEvent{

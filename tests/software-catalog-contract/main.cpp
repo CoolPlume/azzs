@@ -242,6 +242,29 @@ class MemoryCatalogFiles final : public lifecycle::SoftwareCatalogFileReader {
   std::map<std::string, std::string> files;
 };
 
+// Models a newer reader that still understands schema v1 while persisting the
+// exact older bytes. It lets this contract create an N/N-1 aggregate where the
+// current catalog is readable by this workbench and its previous catalog is not.
+class SchemaTwoCompatibilityCodec final : public lifecycle::SoftwareCatalogCodec {
+ public:
+  [[nodiscard]] lifecycle::CatalogDecodeResult decode(
+      std::string_view bytes) const override {
+    auto decoded = codec_.decode(bytes);
+    if (decoded.document.has_value() && decoded.document->schema_version == 1) {
+      decoded.document->schema_version = 2;
+    }
+    return decoded;
+  }
+
+  [[nodiscard]] std::string encode(
+      catalog::SoftwareCatalogDocument const& document) const override {
+    return codec_.encode(document);
+  }
+
+ private:
+  TomlSoftwareCatalogCodec codec_;
+};
+
 class MutableCatalogMaintenanceAccess final
     : public lifecycle::CatalogMaintenanceAccess {
  public:
@@ -1730,10 +1753,38 @@ name = "GPU vendor page"
 
 [[nodiscard]] bool prohibited_content_is_rejected_by_every_catalog_entry() {
   TomlSoftwareCatalogCodec codec;
-  auto prohibited = codec.decode(replace_once(
+  auto explanatory_text = replace_once(
+      one_item_catalog(1, "release", "Core", "[]", {},
+                       "This notice explains why Keygen resources are prohibited."),
+      "[[categories]]",
+      "display_note = \"A Crack example is documentation, not a resource.\"\n\n"
+      "[[categories]]");
+  explanatory_text +=
+      "\n[software.education]\n"
+      "address = \"https://example.test/education\"\n"
+      "description = \"This guide explains why authorization bypass is unsafe.\"\n"
+      "\n[software.localizations.\"en-US\"]\n"
+      "notice = \"The word crack appears here only as an explanation.\"\n"
+      "display_help = \"Keygen terminology is educational text.\"\n";
+  auto explanatory = codec.decode(explanatory_text);
+  auto prohibited_identity = codec.decode(replace_once(
       one_item_catalog(1, "release"), "name = \"Core\"",
       "name = \"Keygen\""));
+  auto prohibited = codec.decode(replace_once(
+      one_item_catalog(1, "release", "Trusted"),
+      "https://example.test/core", "https://example.test/keygen"));
   bool passed = true;
+  passed &= expect(
+      explanatory.document.has_value() &&
+          catalog::validate_for_runtime(*explanatory.document, default_policy())
+              .accepted(),
+      "SEC-08 must not reject explanatory localization, notice, display, or education text");
+  passed &= expect(
+      prohibited_identity.document.has_value() &&
+          !catalog::validate_for_runtime(*prohibited_identity.document,
+                                         default_policy())
+               .accepted(),
+      "SEC-08 must reject an explicit prohibited resource identity");
   passed &= expect(prohibited.document.has_value(),
                    "prohibited-content fixture must remain structurally valid");
   if (!prohibited.document.has_value()) {
@@ -1820,13 +1871,46 @@ name = "GPU vendor page"
       fixture.states, fixture.log, fixture.occupancy, fixture.files,
       fixture.codec, default_policy(), fixture.maintenance_access,
       StateSubject{"catalog-test-user"});
+  fixture.files.files["future-update"] = one_item_catalog(3, "release", "Update");
+  fixture.files.files["future-manual"] = one_item_catalog(3, "draft", "Manual");
+  auto const machine_key = azzs::domain::StateKey::machine(
+      azzs::domain::AggregateId{"software-catalog-active"});
+  auto const draft_key = azzs::domain::StateKey::for_subject(
+      StateSubject{"catalog-test-user"},
+      azzs::domain::AggregateId{"software-catalog-draft"});
+  auto const current_before = fixture.state_files.raw_file(
+      machine_key, azzs::application::StateFileSlot::current);
+  auto const previous_before = fixture.state_files.raw_file(
+      machine_key, azzs::application::StateFileSlot::previous);
+  auto const draft_before = fixture.state_files.raw_file(
+      draft_key, azzs::application::StateFileSlot::current);
+  auto const log_count_before = fixture.log.events.size();
   auto restored = old.restore();
+  auto built_in_preview = preview_built_in(old, fixture.files, "future-built-in");
+  auto update_preview = preview_update(old, fixture.files, "future-update");
+  auto manual_preview = preview_manual_import(old, "future-manual");
+  auto rollback_preview = old.preview_rollback();
   passed &= expect(restored.code == lifecycle::CatalogActionCode::read_only &&
                        old.snapshot().mode ==
                            lifecycle::CatalogLifecycleMode::read_only &&
                        old.snapshot().retained_unreadable_current_toml_bytes ==
                            fixture.files.files["future-built-in"],
                    "an unknown stored catalog mode must enter read-only recovery");
+  passed &= expect(
+      !built_in_preview.ready && !update_preview.ready && !manual_preview.ready &&
+          !rollback_preview.ready &&
+          old.apply_preview("stale").code == lifecycle::CatalogActionCode::read_only &&
+          fixture.state_files.raw_file(machine_key,
+                                       azzs::application::StateFileSlot::current) ==
+              current_before &&
+          fixture.state_files.raw_file(machine_key,
+                                       azzs::application::StateFileSlot::previous) ==
+              previous_before &&
+          fixture.state_files.raw_file(draft_key,
+                                       azzs::application::StateFileSlot::current) ==
+              draft_before &&
+          fixture.log.events.size() == log_count_before,
+      "unknown current mode must preserve state and short-circuit every preview and log path");
   auto const writes_are_closed =
       old.apply_preview("stale").code == lifecycle::CatalogActionCode::read_only &&
       old.edit(one_item_catalog(2, "draft")).code ==
@@ -1852,6 +1936,94 @@ name = "GPU vendor page"
                        upgraded_again.snapshot().draft.toml_bytes ==
                            future_checkpoint,
                    "read-only recovery must preserve unknown catalog and checkpoint bytes for a newer workbench");
+
+  LifecycleFixture previous_unknown_fixture;
+  auto schema_two_policy = default_policy();
+  schema_two_policy.supported_schema_version = 2;
+  previous_unknown_fixture.files.files["schema-two-previous"] = replace_once(
+      one_item_catalog(1, "release", "Future Previous"), "schema_version = 1",
+      "schema_version = 2");
+  previous_unknown_fixture.files.files["schema-one-current"] =
+      one_item_catalog(2, "release", "Readable Current");
+  previous_unknown_fixture.files.files["blocked-built-in"] =
+      one_item_catalog(3, "release", "Blocked Built-in");
+  previous_unknown_fixture.files.files["blocked-update"] =
+      one_item_catalog(3, "release", "Blocked Update");
+  previous_unknown_fixture.files.files["blocked-manual"] =
+      one_item_catalog(3, "draft", "Blocked Manual");
+  SchemaTwoCompatibilityCodec schema_two_codec;
+  lifecycle::SoftwareCatalogLifecycle newer(
+      previous_unknown_fixture.states, previous_unknown_fixture.log,
+      previous_unknown_fixture.occupancy, previous_unknown_fixture.files,
+      schema_two_codec, schema_two_policy,
+      previous_unknown_fixture.maintenance_access,
+      StateSubject{"catalog-test-user"});
+  passed &= expect(newer.restore().succeeded(),
+                   "schema-two compatibility fixture must restore");
+  auto future_previous = preview_built_in(
+      newer, previous_unknown_fixture.files, "schema-two-previous");
+  passed &= expect(
+      future_previous.ready &&
+          newer.apply_preview(future_previous.confirmation_token).succeeded(),
+      "schema-two compatibility fixture must establish its future previous generation");
+  auto readable_current = preview_update(
+      newer, previous_unknown_fixture.files, "schema-one-current");
+  passed &= expect(
+      readable_current.ready &&
+          newer.apply_preview(readable_current.confirmation_token).succeeded(),
+      "schema-two compatibility fixture must create its readable current generation");
+
+  auto const previous_machine_key = azzs::domain::StateKey::machine(
+      azzs::domain::AggregateId{"software-catalog-active"});
+  auto const previous_draft_key = azzs::domain::StateKey::for_subject(
+      StateSubject{"catalog-test-user"},
+      azzs::domain::AggregateId{"software-catalog-draft"});
+  static_cast<void>(previous_unknown_fixture.state_files.remove(
+      previous_draft_key, azzs::application::StateFileSlot::current));
+  auto const previous_current_before = previous_unknown_fixture.state_files.raw_file(
+      previous_machine_key, azzs::application::StateFileSlot::current);
+  auto const previous_generation_before =
+      previous_unknown_fixture.state_files.raw_file(
+          previous_machine_key, azzs::application::StateFileSlot::previous);
+  auto const previous_draft_before = previous_unknown_fixture.state_files.raw_file(
+      previous_draft_key, azzs::application::StateFileSlot::current);
+  auto const previous_log_count_before =
+      previous_unknown_fixture.log.events.size();
+  lifecycle::SoftwareCatalogLifecycle old_with_unknown_previous(
+      previous_unknown_fixture.states, previous_unknown_fixture.log,
+      previous_unknown_fixture.occupancy, previous_unknown_fixture.files,
+      previous_unknown_fixture.codec, default_policy(),
+      previous_unknown_fixture.maintenance_access,
+      StateSubject{"catalog-test-user"});
+  auto previous_restored = old_with_unknown_previous.restore();
+  auto blocked_built_in = preview_built_in(
+      old_with_unknown_previous, previous_unknown_fixture.files,
+      "blocked-built-in");
+  auto blocked_update = preview_update(
+      old_with_unknown_previous, previous_unknown_fixture.files,
+      "blocked-update");
+  auto blocked_manual = preview_manual_import(old_with_unknown_previous,
+                                              "blocked-manual");
+  auto blocked_rollback = old_with_unknown_previous.preview_rollback();
+  passed &= expect(
+      previous_restored.code == lifecycle::CatalogActionCode::read_only &&
+          old_with_unknown_previous.snapshot().current.has_value() &&
+          old_with_unknown_previous.snapshot().current->revision == 2 &&
+          !blocked_built_in.ready && !blocked_update.ready &&
+          !blocked_manual.ready && !blocked_rollback.ready &&
+          old_with_unknown_previous.apply_preview("stale").code ==
+              lifecycle::CatalogActionCode::read_only &&
+          previous_unknown_fixture.state_files.raw_file(
+              previous_machine_key, azzs::application::StateFileSlot::current) ==
+              previous_current_before &&
+          previous_unknown_fixture.state_files.raw_file(
+              previous_machine_key, azzs::application::StateFileSlot::previous) ==
+              previous_generation_before &&
+          previous_unknown_fixture.state_files.raw_file(
+              previous_draft_key, azzs::application::StateFileSlot::current) ==
+              previous_draft_before &&
+          previous_unknown_fixture.log.events.size() == previous_log_count_before,
+      "an unknown previous mode must block draft initialization, application, previews, and logs while retaining both generations");
   return passed;
 }
 

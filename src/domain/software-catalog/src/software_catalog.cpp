@@ -176,8 +176,9 @@ void validate_reference_list(std::vector<std::string> const& values,
          issue.code == CatalogIssueCode::unavailable_dependency;
 }
 
-[[nodiscard]] bool prohibited_catalog_text(std::string_view value) {
-  if (value.find("破解") != std::string_view::npos ||
+[[nodiscard]] bool prohibited_resource_identity(std::string_view value) {
+  if (value.find("破解补丁") != std::string_view::npos ||
+      value.find("破解") != std::string_view::npos ||
       value.find("授权绕过") != std::string_view::npos) {
     return true;
   }
@@ -204,57 +205,14 @@ void validate_reference_list(std::vector<std::string> const& values,
 void validate_prohibited_catalog_content(
     SoftwareCatalogDocument const& document, std::vector<CatalogIssue>& issues) {
   bool found{};
-  auto check = [&](std::string_view value, std::string location,
-                   std::string item_id) {
-    if (!found && prohibited_catalog_text(value)) {
+  auto check_resource = [&](std::string_view value, std::string location,
+                            std::string item_id) {
+    if (!found && prohibited_resource_identity(value)) {
       found = true;
       add_issue(issues, CatalogIssueScope::package,
                 CatalogIssueCode::prohibited_content, std::move(location),
                 std::move(item_id),
                 "catalog contains content prohibited by SEC-08");
-    }
-  };
-  auto check_extensions = [&](std::vector<DisplayExtension> const& values,
-                              std::string_view location,
-                              std::string_view item_id) {
-    for (auto const& extension : values) {
-      check(extension.key, std::string{location} + ".extension.key",
-            std::string{item_id});
-      check(extension.text, std::string{location} + ".extension",
-            std::string{item_id});
-      for (auto const& text : extension.text_list) {
-        check(text, std::string{location} + ".extension",
-              std::string{item_id});
-      }
-    }
-  };
-  auto check_localizations = [&](std::vector<CatalogLocalization> const& values,
-                                 std::string_view location,
-                                 std::string_view item_id) {
-    for (auto const& localization : values) {
-      auto const localized_location =
-          std::string{location} + ".localizations." + localization.locale;
-      check(localization.locale, localized_location + ".locale",
-            std::string{item_id});
-      if (localization.name.has_value()) {
-        check(*localization.name, localized_location + ".name",
-              std::string{item_id});
-      }
-      if (localization.notice.has_value()) {
-        check(*localization.notice, localized_location + ".notice",
-              std::string{item_id});
-      }
-      if (localization.optimization_note.has_value()) {
-        check(*localization.optimization_note,
-              localized_location + ".optimization_note", std::string{item_id});
-      }
-      if (localization.education_description.has_value()) {
-        check(*localization.education_description,
-              localized_location + ".education_description",
-              std::string{item_id});
-      }
-      check_extensions(localization.display_extensions, localized_location,
-                       item_id);
     }
   };
   auto check_sources = [&](std::vector<CatalogSource> const& values,
@@ -264,91 +222,52 @@ void validate_prohibited_catalog_content(
       auto const& source = values[index];
       auto const source_location =
           std::string{location} + ".sources[" + std::to_string(index) + "]";
-      check(source.address, source_location + ".address", std::string{item_id});
+      check_resource(source.address, source_location + ".address",
+                     std::string{item_id});
       if (source.version.has_value()) {
-        check(*source.version, source_location + ".version",
-              std::string{item_id});
+        check_resource(*source.version, source_location + ".version",
+                       std::string{item_id});
       }
-      check_extensions(source.display_extensions, source_location, item_id);
       for (std::size_t history_index = 0; history_index < source.history.size();
            ++history_index) {
         auto const& history = source.history[history_index];
         auto const history_location = source_location + ".history[" +
                                       std::to_string(history_index) + "]";
-        check(history.version, history_location + ".version",
-              std::string{item_id});
-        check(history.address, history_location + ".address",
-              std::string{item_id});
-        check(history.reason, history_location + ".reason",
-              std::string{item_id});
-        check_extensions(history.display_extensions, history_location, item_id);
+        check_resource(history.version, history_location + ".version",
+                       std::string{item_id});
+        check_resource(history.address, history_location + ".address",
+                       std::string{item_id});
       }
     }
   };
 
-  check(document.catalog_id, "catalog_id", {});
-  check(document.default_locale, "default_locale", {});
-  check_extensions(document.display_extensions, "root", {});
-  for (std::size_t index = 0; index < document.categories.size(); ++index) {
-    auto const& category = document.categories[index];
-    auto const location = "categories[" + std::to_string(index) + "]";
-    check(category.id, location + ".id", category.id);
-    check(category.name, location + ".name", category.id);
-    check_extensions(category.display_extensions, location, category.id);
-    check_localizations(category.localizations, location, category.id);
-  }
   for (std::size_t index = 0; index < document.software.size(); ++index) {
     auto const& software = document.software[index];
     auto const location = "software[" + std::to_string(index) + "]";
-    check(software.id, location + ".id", software.id);
-    check(software.name, location + ".name", software.id);
-    check(software.category_id, location + ".category_id", software.id);
-    check(software.branch, location + ".branch", software.id);
+    check_resource(software.id, location + ".id", software.id);
+    check_resource(software.name, location + ".name", software.id);
+    check_resource(software.branch, location + ".branch", software.id);
     if (software.fixed_version.has_value()) {
-      check(*software.fixed_version, location + ".fixed_version", software.id);
+      check_resource(*software.fixed_version, location + ".fixed_version",
+                     software.id);
     }
-    check(software.notice, location + ".notice", software.id);
-    if (software.optimization_note.has_value()) {
-      check(*software.optimization_note, location + ".optimization_note",
-            software.id);
-    }
-    if (software.install_profile.has_value()) {
-      check(*software.install_profile, location + ".install_profile", software.id);
-    }
-    for (auto const& dependency : software.dependencies) {
-      check(dependency, location + ".dependencies", software.id);
-    }
-    for (auto const& edition : software.bundled_editions) {
-      check(edition, location + ".bundled_editions", software.id);
-    }
-    check_extensions(software.display_extensions, location, software.id);
     check_sources(software.sources, location, software.id);
     if (software.education.has_value()) {
-      check(software.education->address, location + ".education.address",
-            software.id);
-      check(software.education->description,
-            location + ".education.description", software.id);
-      check_extensions(software.education->display_extensions,
-                       location + ".education", software.id);
+      check_resource(software.education->address,
+                     location + ".education.address", software.id);
     }
-    check_localizations(software.localizations, location, software.id);
   }
   for (std::size_t index = 0; index < document.drivers.size(); ++index) {
     auto const& driver = document.drivers[index];
     auto const location = "drivers[" + std::to_string(index) + "]";
-    check(driver.id, location + ".id", driver.id);
-    check(driver.name, location + ".name", driver.id);
-    check(driver.branch, location + ".branch", driver.id);
+    check_resource(driver.id, location + ".id", driver.id);
+    check_resource(driver.name, location + ".name", driver.id);
+    check_resource(driver.branch, location + ".branch", driver.id);
     if (driver.fixed_version.has_value()) {
-      check(*driver.fixed_version, location + ".fixed_version", driver.id);
+      check_resource(*driver.fixed_version, location + ".fixed_version",
+                     driver.id);
     }
-    check(driver.notice, location + ".notice", driver.id);
-    for (auto const& hardware_kind : driver.hardware_kinds) {
-      check(hardware_kind, location + ".hardware_kinds", driver.id);
-    }
-    check_extensions(driver.display_extensions, location, driver.id);
     check_sources(driver.sources, location, driver.id);
-    check_localizations(driver.localizations, location, driver.id);
   }
 }
 
