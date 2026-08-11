@@ -131,8 +131,9 @@ function(_azzs_guardrail_capture_imported_target dependency)
   get_property(interface_libraries GLOBAL PROPERTY
     "AZZS_GUARDRAIL_IMPORTED_INTERFACE_LINK_LIBRARIES_${target_key}")
   foreach(interface_library IN LISTS interface_libraries)
-    if(interface_library MATCHES "^\\$<LINK_ONLY:(.+)>$" OR
-       interface_library MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
+    if(interface_library MATCHES "^\\$<LINK_ONLY:(.+)>$")
+      set(interface_library "${CMAKE_MATCH_1}")
+    elseif(interface_library MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
       set(interface_library "${CMAKE_MATCH_1}")
     endif()
     if(TARGET "${interface_library}")
@@ -177,8 +178,9 @@ function(_azzs_guardrail_refresh_imported_target dependency)
   get_property(interface_libraries GLOBAL PROPERTY
     "AZZS_GUARDRAIL_IMPORTED_INTERFACE_LINK_LIBRARIES_${target_key}")
   foreach(interface_library IN LISTS interface_libraries)
-    if(interface_library MATCHES "^\\$<LINK_ONLY:(.+)>$" OR
-       interface_library MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
+    if(interface_library MATCHES "^\\$<LINK_ONLY:(.+)>$")
+      set(interface_library "${CMAKE_MATCH_1}")
+    elseif(interface_library MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
       set(interface_library "${CMAKE_MATCH_1}")
     endif()
     _azzs_guardrail_capture_imported_target("${interface_library}")
@@ -506,8 +508,9 @@ function(_azzs_finalize_project_guardrails_impl)
       if(dependency MATCHES "^::@" OR
          dependency MATCHES "^\\$<INSTALL_INTERFACE:")
         continue()
-      elseif(dependency MATCHES "^\\$<LINK_ONLY:(.+)>$" OR
-             dependency MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
+      elseif(dependency MATCHES "^\\$<LINK_ONLY:(.+)>$")
+        set(dependency "${CMAKE_MATCH_1}")
+      elseif(dependency MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
         set(dependency "${CMAKE_MATCH_1}")
       endif()
 
@@ -627,8 +630,9 @@ function(_azzs_finalize_project_guardrails_impl)
       if(dependency STREQUAL "" OR dependency MATCHES "^::@" OR
          dependency MATCHES "^\\$<INSTALL_INTERFACE:")
         continue()
-      elseif(dependency MATCHES "^\\$<LINK_ONLY:(.+)>$" OR
-             dependency MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
+      elseif(dependency MATCHES "^\\$<LINK_ONLY:(.+)>$")
+        set(dependency "${CMAKE_MATCH_1}")
+      elseif(dependency MATCHES "^\\$<BUILD_INTERFACE:(.+)>$")
         set(dependency "${CMAKE_MATCH_1}")
       elseif(dependency MATCHES "^\\$<")
         set(canonical_dependency "expression:${dependency}")
