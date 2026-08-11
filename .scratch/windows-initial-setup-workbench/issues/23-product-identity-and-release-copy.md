@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 01
 Owner: issue-23
+Claimed by: Codex issue-23 task
 Consumers: 21, 34, 35
 Verification: 对当前规格、八制品名称和候选发布说明进行文案、风险披露与本地化人工审查。
 Evidence freshness: 每个发行候选及产品标识、风险政策或最低目标版本变化后重审。
