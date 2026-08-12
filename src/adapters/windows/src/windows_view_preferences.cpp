@@ -1,6 +1,7 @@
 #include "azzs/adapters/windows/windows_view_preferences.hpp"
 
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.h>
 
 namespace azzs::adapters::windows {
