@@ -1,7 +1,16 @@
 #include "azzs/adapters/windows/windows_application_update_platform.hpp"
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <ranges>
 #include <string>
