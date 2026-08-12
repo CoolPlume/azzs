@@ -11,6 +11,7 @@ class ArchitectureSelectionLifecycle;
 }
 
 class DeviceStateStore;
+class EmergencyWithdrawalService;
 class ExecutionLog;
 class SharedOperationOccupancy;
 
@@ -23,6 +24,8 @@ class WorkbenchServices {
   [[nodiscard]] virtual domain::StateSubject const& state_subject()
       const noexcept = 0;
   [[nodiscard]] virtual DeviceStateStore& device_states() noexcept = 0;
+  [[nodiscard]] virtual EmergencyWithdrawalService& emergency_withdrawals()
+      noexcept = 0;
   [[nodiscard]] virtual ExecutionLog& execution_log() noexcept = 0;
   [[nodiscard]] virtual SharedOperationOccupancy& operation_occupancy()
       noexcept = 0;

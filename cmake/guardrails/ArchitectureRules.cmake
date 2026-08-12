@@ -129,6 +129,7 @@ set(AZZS_ARCHITECTURE_EXTERNAL_CMAKE_TARGETS
   "ole32|external:windows-platform|platform_runtime"
   "rpcrt4|external:windows-platform|platform_runtime"
   "shell32|external:windows-platform|platform_runtime"
+  "winhttp|external:windows-platform|platform_runtime"
   "wtsapi32|external:windows-platform|platform_runtime"
 )
 set(AZZS_ARCHITECTURE_EXTERNAL_LINK_ITEM_PATTERNS
@@ -146,6 +147,7 @@ set(AZZS_ARCHITECTURE_EXTERNAL_MSBUILD_LIBRARIES
   "ole32.lib|external:windows-platform|platform_runtime"
   "rpcrt4.lib|external:windows-platform|platform_runtime"
   "shell32.lib|external:windows-platform|platform_runtime"
+  "winhttp.lib|external:windows-platform|platform_runtime"
   "wtsapi32.lib|external:windows-platform|platform_runtime"
   "windowsapp.lib|external:windows-platform|platform_runtime"
 )
