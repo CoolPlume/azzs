@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 01, 02
 Owner: issue-17
 Claimed by: Codex issue-17 task
@@ -41,4 +41,12 @@ Evidence freshness: 绑定当前提交、目标发行与资产身份和更新适
 
 - 2026-08-12：已在 `codex/issue-17-application-update` 实现可移植更新领域筛选、应用更新状态机、设备级健康记录存储、Windows 类型化平台接缝、Workbench/composition 连接和应用设置页静态投影；合同测试覆盖正式稳定 Release 筛选、资产匹配、版本比较、更新延后、用户确认、替换失败回退、首次启动健康选择、重试失败自动回退、双版本只读恢复、手动下载与诊断入口。真实 GitHub 查询、下载、替换、UAC、进程重启保持未接通并明确返回不可用，真实 Windows 下载/替换/UAC 与便携/安装形态实机验收仍是边界。
 
+- 2026-08-12：功能 head `41f52923d5df64db70f8589293b5f40dfe51d279` 在普通 merge 最新 `origin/codex/v1-integration`（`43225e13d2716d182f3dfbee5b800283c1362fd8`）后完成最小 `application-update.contract` 验证（1/1）；PR [#20](https://github.com/CoolPlume/azzs/pull/20) 已转为 Ready 并普通合入 `codex/v1-integration`，merge commit 为 `ecab5b468dc2fa577827bf7f899deaebf3d28632`。GitHub Actions run `31596686142` 绑定该精确 feature head，x64 Release 与 ARM64 Release 均通过。
+
+- 未验证边界：Windows CI 仅证明 x64/ARM64 的构建与自动测试；真实 GitHub Release 查询、资产下载、替换、回退、UAC、进程重启、便携版/安装版切换和 Windows 实机健康恢复仍未验证。Windows 适配器当前按设计返回类型化 `unavailable`，未把未验证能力表述为已通过。
+
 - 2026-08-10：Q4 已确认一键更新不设项目级信任门槛；所选 Release/资产、替换和回退结果只作事实记录，不得表述为已验证。Q19 已确认活动或待恢复初始化操作优先，更新必须延后；Q20 已确认一键更新只显示正式稳定发行。Q25-Q26 已确定测试发行仅由用户主动切换到最新匹配稳定制品，且缺少匹配制品时只给手动下载入口。Q28 已确定新版本无法进入工作台时由用户选择重试或恢复旧版本，Q30 已确定正式稳定版只接受可确认的更高版本。Q34-Q37 已确定重试新版本失败后自动恢复旧版本；若旧版本也无法进入工作台，进入保留本机数据的更新故障恢复界面，不再自动覆盖版本。产品决定和更新健康合同已经闭合，本事项改为 `ready-for-agent`；实现与验证证据仍须在结票前取得。
+
+## Answer
+
+事项 17 已完成。可移植 application 核心拥有唯一 `UpdateSnapshot`，实现正式稳定 Release/资产筛选与版本比较、活动操作延后、用户确认、替换/回退事实、首次启动健康确认、重试失败自动回退和双版本故障恢复；Windows composition 与应用设置页仅接入类型化平台接缝和静态快照投影。合同测试、合并后定向 host 验证及精确 head 的 Windows x64/ARM64 CI 均已通过。
