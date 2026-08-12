@@ -38,7 +38,7 @@ Evidence freshness: 绑定当前提交、设置目录修订和声明的 Windows 
 
 ## Comments
 
-- 实现提交：`7680ce6 feat: apply controlled system settings`；合并最新 `origin/codex/v1-integration`：`0c43fcb`。
-- 验证：`cmake --build --preset host-debug`、`ctest --test-dir out/build/host-debug -R '^(system-settings-apply|hardware-overview)\.contract$' --output-on-failure`、UI 与产品标识静态合同均通过。
-- 已按要求执行过一次 `cmake --workflow --preset host-guardrails`；本次合并后未重复执行完整门禁。
-- 未进行真实 Windows 实机验证；Windows 映射由受控类型边界与无 UI 合同测试覆盖。
+- 最终集成：PR #19 已合入 `codex/v1-integration`，提交 `ebcbf9346a2400314760201e71ac5bac5b70443a`。
+- 验证：合并前的精确 head `1e140e7eae457b96d09d992524a5443ce5bec3b8` 通过 Windows x64 与 ARM64 CI（run `31597847926`）；合并后受影响的 host 构建及 `system-settings-apply`、`application-update` 合同测试通过。
+- 已按要求执行过一次 `cmake --workflow --preset host-guardrails`，未重复运行既已通过的完整门禁。
+- 未进行真实 Windows 实机验证；Windows 映射由受控类型边界、合同测试与 GitHub Windows CI 覆盖，但不代表真实资源管理器重启、UAC 或 UI 交互已验证。
