@@ -1,11 +1,13 @@
 find_package(Threads REQUIRED)
 
 add_library(azzs_application STATIC
+  src/application_update.cpp
   src/bounded_cpu_scheduler.cpp
   src/device_state_store.cpp
   src/emergency_withdrawal_service.cpp
   src/hardware_overview.cpp
   src/operation_occupancy.cpp
+  src/system_settings_apply.cpp
   src/workbench.cpp
 )
 
@@ -21,6 +23,7 @@ azzs_project_target(
   ROLE application
   PUBLIC_LINKS
     azzs::domain
+    azzs::settings_catalog_domain
     Threads::Threads
 )
 

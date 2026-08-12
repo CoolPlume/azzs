@@ -11,6 +11,10 @@ namespace azzs::ui::winui {
 class MotionPreferences;
 }
 
+namespace azzs::application {
+class SystemSettingsApplyService;
+}
+
 namespace winrt::Azzs::Ui::implementation {
 
 struct MainWindow : MainWindowT<MainWindow> {
@@ -18,7 +22,9 @@ struct MainWindow : MainWindowT<MainWindow> {
 
   void bind(
       std::shared_ptr<azzs::application::Workbench> workbench,
-      std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences);
+      std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences,
+      std::shared_ptr<azzs::application::SystemSettingsApplyService>
+          system_settings);
   void OnNavigationSelectionChanged(
       Microsoft::UI::Xaml::Controls::NavigationView const&,
       Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&
@@ -33,6 +39,8 @@ struct MainWindow : MainWindowT<MainWindow> {
 
   std::shared_ptr<azzs::application::Workbench> workbench_;
   std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences_;
+  std::shared_ptr<azzs::application::SystemSettingsApplyService>
+      system_settings_;
 };
 
 }  // namespace winrt::Azzs::Ui::implementation
