@@ -20,6 +20,7 @@ class DeviceStateStore;
 class EmergencyWithdrawalService;
 class ExecutionLog;
 class SharedOperationOccupancy;
+class ApplicationUpdateLifecycle;
 
 // The application-facing service bundle assembled exactly once by the host.
 // Concrete filesystem, lock and Win32 types remain behind these typed seams.
@@ -34,6 +35,8 @@ class WorkbenchServices {
       noexcept = 0;
   [[nodiscard]] virtual ExecutionLog& execution_log() noexcept = 0;
   [[nodiscard]] virtual SharedOperationOccupancy& operation_occupancy()
+      noexcept = 0;
+  [[nodiscard]] virtual ApplicationUpdateLifecycle& application_updates()
       noexcept = 0;
   [[nodiscard]] virtual architecture_selection::ArchitectureSelectionLifecycle&
   architecture_selection() noexcept = 0;

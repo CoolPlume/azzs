@@ -12,6 +12,7 @@ endif()
 
 if(WIN32)
   add_library(azzs_windows_adapter STATIC
+    src/windows_application_update_platform.cpp
     src/windows_device_data_environment.cpp
     src/windows_emergency_withdrawal_notice_source.cpp
     src/windows_external_address_launcher.cpp
@@ -30,6 +31,7 @@ if(WIN32)
 
   target_compile_definitions(azzs_windows_adapter
     PRIVATE
+      AZZS_APPLICATION_VERSION="${PROJECT_VERSION}"
       AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT="${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}"
   )
 endif()
