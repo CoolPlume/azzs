@@ -25,6 +25,7 @@
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
+#include "azzs/adapters/windows/windows_sogou_optimization_adapter.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
 #include "azzs/application/application_update.hpp"
@@ -33,6 +34,7 @@
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/software_selection.hpp"
+#include "azzs/application/sogou_optimization.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
 
@@ -84,6 +86,10 @@ class WindowsWorkbenchServices final
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_),
+        sogou_optimization_adapter_{},
+        sogou_optimizations_(sogou_optimization_adapter_,
+                             sogou_optimization_adapter_),
+        platform_info_{},
         operation_activity_(occupancy_),
         application_update_health_storage_(states_),
         application_update_platform_(platform_info_,
@@ -140,6 +146,11 @@ class WindowsWorkbenchServices final
     return occupancy_;
   }
 
+  [[nodiscard]] application::sogou_optimization::SogouOptimizationService&
+  sogou_optimizations() noexcept override {
+    return sogou_optimizations_;
+  }
+
   [[nodiscard]] application::ApplicationUpdateLifecycle& application_updates()
       noexcept override {
     return application_updates_;
@@ -182,6 +193,10 @@ class WindowsWorkbenchServices final
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;
+  adapters::windows::WindowsSogouOptimizationAdapter
+      sogou_optimization_adapter_;
+  application::sogou_optimization::SogouOptimizationService
+      sogou_optimizations_;
   adapters::windows::WindowsPlatformInfo platform_info_;
   class OperationActivity final
       : public application::InitializationOperationActivity {

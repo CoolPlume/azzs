@@ -1,0 +1,495 @@
+schema_version = 1
+semantics_version = 1
+catalog_id = "software-optimization"
+revision = 1
+release_state = "release"
+default_locale = "zh-CN"
+
+[[targets]]
+id = "sogou-input-target-v1"
+identity_anchor = "vendor.sogou.input.windows"
+required_first_release = true
+support_mode = "supported"
+version_min = "16.7"
+version_max = "16.7"
+install_detection_kind = "built_in_definition"
+install_detection_definition = "sogou.detect.installed.v1"
+version_detection_kind = "built_in_definition"
+version_detection_definition = "sogou.detect.version.v1"
+installation_item_id = "sogou-input"
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[schemes]]
+id = "sogou-input-recommended-v1"
+target_id = "sogou-input-target-v1"
+required_first_release = true
+automation = "controlled"
+version_min = "16.7"
+version_max = "16.7"
+impact = "按用户选择调整搜狗输入法自身设置和搜狗右键扩展。"
+risk = "medium"
+exit_requirement = "graceful_exit"
+restart_requirement = "none"
+required_scheme_ids = []
+conflicting_scheme_ids = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+manual_emergency_explanation = "受控路径失败或版本未识别时，只能打开搜狗官方设置中心核对；手动结果不记为自动成功。"
+
+[[options]]
+id = "sogou-input-hide-status-bar-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "隐藏搜狗状态栏。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.hide-status-bar-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.hide-status-bar-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-input-indicator-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭显示输入法指示器。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-input-indicator-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-input-indicator-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-status-bar-language-bar-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭状态栏嵌入语言栏。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-status-bar-language-bar-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-status-bar-language-bar-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-paired-punctuation-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭标点配对的自动补全成对标点。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-paired-punctuation-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-paired-punctuation-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-smart-punctuation-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭智能调整数字后的标点。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-smart-punctuation-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-smart-punctuation-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-candidate-count-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "调整候选词个数。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.set-candidate-count-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.set-candidate-count-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = ["three", "four", "five", "six", "seven", "eight", "nine"]
+default_value = "five"
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-system-shortcuts-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭账户中的系统功能快捷键。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-system-shortcuts-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-system-shortcuts-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-input-assistant-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭输入助手总开关。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-input-assistant-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-input-assistant-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-startup-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭开机自动启用。"
+default_selected = true
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-startup-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-startup-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-i-mode-skin-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭 i 模式换肤。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-i-mode-skin-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-i-mode-skin-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-skin-recommendation-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭皮肤推荐。"
+default_selected = true
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-skin-recommendation-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-skin-recommendation-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-skin-popup-recommendation-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭皮肤弹泡推荐。"
+default_selected = true
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-skin-popup-recommendation-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-skin-popup-recommendation-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-desktop-recommendation-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭桌面右下角推荐。"
+default_selected = true
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-desktop-recommendation-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-desktop-recommendation-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-search-recommendation-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭搜索推荐。"
+default_selected = true
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-search-recommendation-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-search-recommendation-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-equals-search-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭等号搜索。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-equals-search-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-equals-search-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-ai-emoji-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭 AI 表情。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-ai-emoji-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-ai-emoji-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-quick-search-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭快捷搜索。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-quick-search-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-quick-search-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-selection-tool-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭划词工具。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-selection-tool-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-selection-tool-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-ai-hotkey-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭快捷键唤起 AI 汪仔。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-ai-hotkey-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-ai-hotkey-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-ai-startup-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭自启动 AI 汪仔。"
+default_selected = true
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-ai-startup-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-ai-startup-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-fast-search-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭候选提示中的快速搜索。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-fast-search-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-fast-search-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-toolbox-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭候选提示中的工具箱。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-toolbox-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-toolbox-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-pdf-shell-extension-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭搜狗提供的 PDF 右键扩展。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-pdf-shell-extension-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-pdf-shell-extension-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-disk-shell-extension-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭搜狗提供的磁盘管理右键扩展。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-disk-shell-extension-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-disk-shell-extension-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[options]]
+id = "sogou-input-disable-compression-shell-extension-v1"
+scheme_id = "sogou-input-recommended-v1"
+version_min = "16.7"
+version_max = "16.7"
+impact = "关闭搜狗提供的压缩右键扩展。"
+default_selected = false
+required = false
+automation = "controlled"
+execution_kind = "built_in_definition"
+execution_definition = "sogou.optimize.execute.disable-compression-shell-extension-v1"
+state_detection_kind = "built_in_definition"
+state_detection_definition = "sogou.optimize.detect.disable-compression-shell-extension-v1"
+required_option_ids = []
+conflicting_option_ids = []
+allowed_values = []
+explanation_source = "https://coolplume.github.io/posts/f4654180.html"
+
+[[compatibility_baselines]]
+id = "sogou-input-windows-16.7-optimization-baseline-v1"
+target_id = "sogou-input-target-v1"
+software_item_id = "sogou-input"
+installer_baseline_id = "sogou-input-windows-16.7"
+installed_version_min = "16.7"
+installed_version_max = "16.7"
