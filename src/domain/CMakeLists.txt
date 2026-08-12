@@ -1,5 +1,6 @@
 add_library(azzs_domain STATIC
   src/minimum_version_policy.cpp
+  src/emergency_withdrawal.cpp
 )
 
 add_library(azzs::domain ALIAS azzs_domain)

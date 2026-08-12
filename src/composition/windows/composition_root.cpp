@@ -19,6 +19,7 @@
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/device_state_store.hpp"
+#include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
@@ -35,6 +36,10 @@ class WindowsWorkbenchServices final : public application::WorkbenchServices {
         states_(state_files_, clock_),
         log_storage_(environment.root_utf8, environment.subject_id),
         log_(log_storage_, clock_),
+        emergency_notice_source_(),
+        emergency_withdrawals_(
+            states_, clock_, emergency_notice_source_,
+            {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_) {}
 
@@ -46,6 +51,11 @@ class WindowsWorkbenchServices final : public application::WorkbenchServices {
   [[nodiscard]] application::DeviceStateStore& device_states()
       noexcept override {
     return states_;
+  }
+
+  [[nodiscard]] application::EmergencyWithdrawalService&
+  emergency_withdrawals() noexcept override {
+    return emergency_withdrawals_;
   }
 
   [[nodiscard]] application::ExecutionLog& execution_log()
@@ -65,6 +75,14 @@ class WindowsWorkbenchServices final : public application::WorkbenchServices {
   application::DeviceStateStore states_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;
   adapters::infrastructure::StructuredExecutionLog log_;
+  class UnconfiguredEmergencyNoticeSource final
+      : public application::EmergencyWithdrawalNoticeSource {
+   public:
+    [[nodiscard]] application::NoticeFetchResult fetch() override {
+      return {.error = "emergency withdrawal notice source is not configured"};
+    }
+  } emergency_notice_source_;
+  application::EmergencyWithdrawalService emergency_withdrawals_;
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;

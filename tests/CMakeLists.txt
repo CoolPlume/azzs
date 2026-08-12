@@ -7,6 +7,7 @@ add_subdirectory(operation-occupancy-contract)
 add_subdirectory(software-catalog-contract)
 add_subdirectory(settings-catalog-contract)
 add_subdirectory(software-optimization-catalog-contract)
+add_subdirectory(emergency-withdrawal-contract)
 add_subdirectory(ui-design-contract)
 add_subdirectory(product-identity-contract)
 
