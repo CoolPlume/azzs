@@ -157,6 +157,8 @@ set(AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES
   "Azzs.WinUI|azzs_infrastructure_adapter"
   "Azzs.WinUI|azzs_application"
   "Azzs.WinUI|azzs_domain"
+  "Azzs.WinUI|azzs_architecture_selection_application"
+  "Azzs.WinUI|azzs_architecture_selection_domain"
   "Azzs.WinUI|external:windows-platform"
 )
 

@@ -6,6 +6,10 @@ struct StateSubject;
 
 namespace azzs::application {
 
+namespace architecture_selection {
+class ArchitectureSelectionLifecycle;
+}
+
 class DeviceStateStore;
 class EmergencyWithdrawalService;
 class ExecutionLog;
@@ -25,6 +29,8 @@ class WorkbenchServices {
   [[nodiscard]] virtual ExecutionLog& execution_log() noexcept = 0;
   [[nodiscard]] virtual SharedOperationOccupancy& operation_occupancy()
       noexcept = 0;
+  [[nodiscard]] virtual architecture_selection::ArchitectureSelectionLifecycle&
+  architecture_selection() noexcept = 0;
 };
 
 }  // namespace azzs::application

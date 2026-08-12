@@ -21,6 +21,7 @@
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
 #include "azzs/application/clock.hpp"
+#include "azzs/application/architecture_selection.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/operation_occupancy.hpp"
@@ -46,7 +47,13 @@ class WindowsWorkbenchServices final
             states_, clock_, emergency_notice_source_,
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
-        occupancy_(occupancy_storage_, lease_tokens_) {}
+        occupancy_(occupancy_storage_, lease_tokens_),
+        architecture_selection_(platform_info_, log_,
+                                application::architecture_selection::
+                                    selection_domain::ArchitecturePreference::
+                                        prefer_arm64_prompt_fallback) {
+    static_cast<void>(architecture_selection_.start());
+  }
 
   void start_emergency_preflight() {
     std::call_once(emergency_preflight_started_, [this] {
@@ -87,6 +94,17 @@ class WindowsWorkbenchServices final
     return occupancy_;
   }
 
+  [[nodiscard]] application::architecture_selection::
+      ArchitectureSelectionLifecycle& architecture_selection()
+      noexcept override {
+    return architecture_selection_;
+  }
+
+  [[nodiscard]] adapters::windows::WindowsPlatformInfo const& platform_info()
+      const noexcept {
+    return platform_info_;
+  }
+
  private:
   domain::StateSubject state_subject_;
   adapters::infrastructure::SystemClock clock_;
@@ -101,12 +119,14 @@ class WindowsWorkbenchServices final
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;
+  adapters::windows::WindowsPlatformInfo platform_info_;
+  application::architecture_selection::ArchitectureSelectionLifecycle
+      architecture_selection_;
 };
 
 }  // namespace
 
 winrt::Microsoft::UI::Xaml::Window create_main_window() {
-  adapters::windows::WindowsPlatformInfo const platform_info;
   auto environment =
       adapters::windows::WindowsDeviceDataEnvironment::prepare();
   if (!environment) {
@@ -116,8 +136,8 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
   }
   auto services = std::make_shared<WindowsWorkbenchServices>(
       std::move(*environment.environment));
-  auto workbench =
-      std::make_shared<application::Workbench>(platform_info, services);
+  auto workbench = std::make_shared<application::Workbench>(
+      services->platform_info(), services);
   services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
