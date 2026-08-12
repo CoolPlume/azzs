@@ -15,6 +15,7 @@
 #include "Pages/SoftwareOptimizationPage.xaml.h"
 #include "Pages/SystemOptimizationPage.xaml.h"
 #include "azzs/application/software_selection.hpp"
+#include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench_services.hpp"
 
 #if __has_include("MainWindow.g.cpp")
@@ -55,9 +56,12 @@ MainWindow::MainWindow() {
 
 void MainWindow::bind(
     std::shared_ptr<azzs::application::Workbench> workbench,
-    std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences) {
+    std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences,
+    std::shared_ptr<azzs::application::SystemSettingsApplyService>
+        system_settings) {
   workbench_ = std::move(workbench);
   motion_preferences_ = std::move(motion_preferences);
+  system_settings_ = std::move(system_settings);
   auto snapshot = workbench_->snapshot();
   if (snapshot.update.state ==
           azzs::application::UpdateState::candidate_pending_start_health ||
@@ -153,6 +157,12 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::system_optimization:
       ContentFrame().Navigate(xaml_typename<Pages::SystemOptimizationPage>(),
                               nullptr, transition);
+      if (auto page =
+              ContentFrame().Content().try_as<Pages::SystemOptimizationPage>();
+          page && system_settings_) {
+        winrt::get_self<Pages::implementation::SystemOptimizationPage>(page)
+            ->bind(system_settings_);
+      }
       break;
     case PageId::software_installation:
       ContentFrame().Navigate(xaml_typename<Pages::SoftwareInstallationPage>(),

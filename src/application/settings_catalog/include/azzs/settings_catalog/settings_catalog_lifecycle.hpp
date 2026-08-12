@@ -9,6 +9,7 @@
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/execution_log.hpp"
 #include "azzs/application/operation_occupancy.hpp"
+#include "azzs/application/system_settings_apply.hpp"
 #include "azzs/settings_catalog/settings_catalog.hpp"
 
 namespace azzs::application::settings_catalog {
@@ -195,7 +196,8 @@ struct ConfirmResult final {
   std::string detail;
 };
 
-class SettingsCatalogLifecycle final {
+class SettingsCatalogLifecycle final
+    : public application::SystemSettingsCatalogSnapshotSource {
  public:
   SettingsCatalogLifecycle(
       SettingsCatalogStateStorage& storage,
@@ -205,6 +207,8 @@ class SettingsCatalogLifecycle final {
       catalog_domain::SupportedCapabilities capabilities) noexcept;
 
   [[nodiscard]] CatalogSnapshot snapshot();
+  [[nodiscard]] std::optional<catalog_domain::ValidatedSettingsCatalog>
+  current_settings_catalog() override;
   [[nodiscard]] InitializeResult initialize_builtin(
       catalog_domain::SettingsCatalog catalog);
   [[nodiscard]] PrepareResult prepare_update(

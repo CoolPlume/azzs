@@ -73,6 +73,28 @@
   <data name="FixedDriverEntrypointsDescription.Text" xml:space="preserve"><value>硬件识别失败时，这些入口仍会保留。</value></data>
   <data name="FixedDriverEntrypointsItems.Text" xml:space="preserve"><value>AMD 驱动助手 · Intel 官方驱动页 · NVIDIA 官方驱动页</value></data>
   <data name="SystemOptimizationPageTitle.Text" xml:space="preserve"><value>系统优化</value></data>
+  <data name="SystemSettingsRecommendedTitle.Text" xml:space="preserve"><value>推荐总体优化</value></data>
+  <data name="SystemSettingsSelectRecommendedButtonText.Text" xml:space="preserve"><value>选择推荐项</value></data>
+  <data name="SystemSettingsApplySelectedButtonText.Text" xml:space="preserve"><value>应用所选优化</value></data>
+  <data name="SystemSettingsRestartExplorerButtonText.Text" xml:space="preserve"><value>立即重启资源管理器</value></data>
+  <data name="SystemSettingsRestartExplorerNotice.Text" xml:space="preserve"><value>任务栏和已打开的资源管理器窗口会短暂关闭。</value></data>
+  <data name="SystemSettingsUnavailableSummary" xml:space="preserve"><value>当前没有可执行的系统设置目录。</value></data>
+  <data name="SystemSettingsNoPlanSummary" xml:space="preserve"><value>推荐总体优化与单项设置使用同一选择、执行记录和恢复记录。</value></data>
+  <data name="SystemSettingsSelectionName" xml:space="preserve"><value>选择系统优化：{name}</value></data>
+  <data name="SystemSettingsAlreadyEffective" xml:space="preserve"><value>已生效</value></data>
+  <data name="SystemSettingsWaitingExplorerRestart" xml:space="preserve"><value>等待资源管理器重启</value></data>
+  <data name="SystemSettingsItemsName" xml:space="preserve"><value>系统优化项，共 {count} 项</value></data>
+  <data name="SystemSettingsWindowsVersion" xml:space="preserve"><value>Windows {generation} {year}H{half}</value></data>
+  <data name="SystemSettingsKnownRange" xml:space="preserve"><value>已知适用范围：{range}</value></data>
+  <data name="SystemSettingsMinimumRange" xml:space="preserve"><value>已知适用范围：不早于 {version}</value></data>
+  <data name="SystemSettingsMaximumRange" xml:space="preserve"><value>已知适用范围：不晚于 {version}</value></data>
+  <data name="SystemSettingsUnknownRange" xml:space="preserve"><value>已知适用范围：未声明</value></data>
+  <data name="SystemSettingsExplorerRestartRequired" xml:space="preserve"><value>需要重启资源管理器后验证。</value></data>
+  <data name="SystemSettingsWindowsRestartRequired" xml:space="preserve"><value>需要重启 Windows 后验证。</value></data>
+  <data name="SystemSettingsNoRestartRequired" xml:space="preserve"><value>不需要重启。</value></data>
+  <data name="SystemSettingsRecoveryAvailable" xml:space="preserve"><value>支持依据已保存原值恢复。</value></data>
+  <data name="SystemSettingsRecoveryUnavailable" xml:space="preserve"><value>未声明可恢复方式。</value></data>
+  <data name="SystemSettingsSource" xml:space="preserve"><value>说明来源：{source}</value></data>
   <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
   <data name="SoftwareSelectionStatusAccessibleName" xml:space="preserve"><value>软件选择状态</value></data>
   <data name="SoftwareSelectionAvailableTitle" xml:space="preserve"><value>软件选择</value></data>
