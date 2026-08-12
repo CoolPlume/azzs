@@ -17,7 +17,9 @@
 #include <vector>
 
 #include "azzs/adapters/infrastructure/local_software_optimization_catalog_file.hpp"
+#include "azzs/application/sogou_optimization.hpp"
 #include "azzs/application/software_optimization_catalog_lifecycle.hpp"
+#include "azzs/domain/controlled_install_profiles.hpp"
 #include "azzs/domain/software_optimization_catalog.hpp"
 #include "azzs/testing/fixed_clock.hpp"
 #include "azzs/testing/in_memory_operation_occupancy_storage.hpp"
@@ -26,6 +28,8 @@
 namespace {
 
 namespace catalog = azzs::domain::software_optimization_catalog;
+namespace sogou = azzs::application::sogou_optimization;
+namespace install_catalog = azzs::domain::software_catalog;
 
 using azzs::application::CorrelationId;
 using azzs::application::DiagnosticContext;
@@ -129,6 +133,44 @@ class FixedCatalogDebugAuthorization final
   bool allowed_{false};
 };
 
+class RecordingSogouAdapter final
+    : public sogou::SogouOptimizationPlatformAdapter {
+ public:
+  [[nodiscard]] sogou::SogouTargetDetection detect_target() override {
+    ++target_detection_calls;
+    return {.status = sogou::SogouOptimizationStatus::succeeded,
+            .installed_version = "16.7",
+            .detail = "test adapter"};
+  }
+
+  [[nodiscard]] sogou::SogouOptionDetection detect_option(
+      sogou::SogouOptimizationAction action,
+      std::optional<sogou::SogouCandidateCount> expected_value) override {
+    ++option_detection_calls;
+    last_action = action;
+    last_value = expected_value;
+    return {.status = next_status, .candidate_count = expected_value,
+            .detail = "test adapter"};
+  }
+
+  [[nodiscard]] sogou::SogouOptimizationExecution execute(
+      sogou::SogouOptimizationAction action,
+      std::optional<sogou::SogouCandidateCount> value) override {
+    ++execution_calls;
+    last_action = action;
+    last_value = value;
+    return {.status = next_status, .detail = "test adapter"};
+  }
+
+  sogou::SogouOptimizationStatus next_status{
+      sogou::SogouOptimizationStatus::succeeded};
+  std::size_t target_detection_calls{0};
+  std::size_t option_detection_calls{0};
+  std::size_t execution_calls{0};
+  std::optional<sogou::SogouOptimizationAction> last_action;
+  std::optional<sogou::SogouCandidateCount> last_value;
+};
+
 [[nodiscard]] std::vector<catalog::BuiltInRuleDefinition>
 built_in_rule_definitions() {
   using catalog::RulePurpose;
@@ -154,6 +196,225 @@ matching_installer_baselines() {
       .installer_baseline_id = catalog::StableId{"sogou-stable-windows"},
       .installed_versions = {"14.5", "14.9"},
   }};
+}
+
+[[nodiscard]] bool has_issue(
+    std::vector<catalog::CatalogIssue> const& issues,
+    catalog::CatalogIssueCode code);
+
+[[nodiscard]] bool verify_sogou_catalog_and_capability_contract() {
+  LocalSoftwareOptimizationCatalogFile file_adapter;
+  auto const file = file_adapter.read(AZZS_SOFTWARE_OPTIMIZATION_CATALOG_PATH);
+  bool passed = expect(
+      file.succeeded,
+      "the first Sogou optimization catalog must be readable offline");
+  if (!file.succeeded) {
+    return false;
+  }
+
+  auto loaded = catalog::load_catalog(
+      file.source, sogou::built_in_rule_definitions());
+  passed &= expect(loaded.accepted(),
+                   "the first Sogou optimization catalog must load formally");
+  if (!loaded.catalog.has_value()) {
+    return false;
+  }
+
+  auto const& optimized = *loaded.catalog;
+  passed &= expect(
+      optimized.revision == 1 &&
+          optimized.publication_state == catalog::PublicationState::release &&
+          optimized.targets.size() == 1 && optimized.schemes.size() == 1 &&
+          optimized.compatibility_baselines.size() == 1,
+      "the first Sogou catalog must contain one released target, scheme, and baseline");
+  auto const* target = optimized.find_target("sogou-input-target-v1");
+  auto const* scheme = optimized.find_scheme("sogou-input-recommended-v1");
+  passed &= expect(
+      target != nullptr && target->identity_anchor.value ==
+                               "vendor.sogou.input.windows" &&
+          target->installation_item_id.has_value() &&
+          target->installation_item_id->value == "sogou-input" &&
+          target->supported_versions.minimum == "16.7" &&
+          target->supported_versions.maximum == "16.7" &&
+          target->install_detection.kind == catalog::RuleKind::built_in_definition &&
+          target->version_detection.kind == catalog::RuleKind::built_in_definition,
+      "the Sogou target must bind the software item and exact 16.7 baseline");
+  passed &= expect(
+      scheme != nullptr && scheme->automation == catalog::AutomationSupport::controlled &&
+          scheme->required_first_release && scheme->options.size() == 25,
+      "the first Sogou scheme must expose all 25 controlled options");
+  if (target == nullptr || scheme == nullptr) {
+    return false;
+  }
+
+  auto const& baseline = optimized.compatibility_baselines.front();
+  passed &= expect(
+      baseline.software_item_id.value == "sogou-input" &&
+          baseline.installer_baseline_id.value == "sogou-input-windows-16.7" &&
+          baseline.installed_versions.minimum == "16.7" &&
+          baseline.installed_versions.maximum == "16.7",
+      "the optimization baseline must exactly match the 16.7 installer output");
+  std::array const installer_baseline{
+      catalog::SoftwareCatalogInstallerBaseline{
+          .software_item_id = catalog::StableId{"sogou-input"},
+          .installer_baseline_id = catalog::StableId{"sogou-input-windows-16.7"},
+          .installed_versions = {"16.7", "16.7"},
+      }};
+  auto const compatibility =
+      catalog::assess_release_compatibility(optimized, installer_baseline);
+  passed &= expect(
+      compatibility.compatible,
+      "the first Sogou catalog must pass its exact installer compatibility gate");
+
+  std::array<bool, 25> seen_actions{};
+  std::size_t default_selected_count = 0;
+  std::array<std::string_view, 6> expected_defaults{
+      "sogou-input-disable-startup-v1",
+      "sogou-input-disable-skin-recommendation-v1",
+      "sogou-input-disable-skin-popup-recommendation-v1",
+      "sogou-input-disable-desktop-recommendation-v1",
+      "sogou-input-disable-search-recommendation-v1",
+      "sogou-input-disable-ai-startup-v1",
+  };
+  for (auto const& option : scheme->options) {
+    passed &= expect(
+        option.automation == catalog::AutomationSupport::controlled &&
+            option.execution.kind == catalog::RuleKind::built_in_definition &&
+            option.state_detection.kind == catalog::RuleKind::built_in_definition &&
+            option.supported_versions.minimum == "16.7" &&
+            option.supported_versions.maximum == "16.7",
+        "every Sogou option must declare controlled execution and detection for 16.7");
+    auto const execution = sogou::map_execution_rule(
+        option.execution.definition.value);
+    auto const detection = sogou::map_detection_rule(
+        option.state_detection.definition.value);
+    passed &= expect(execution.has_value() && detection.has_value() &&
+                         execution == detection,
+                     "every Sogou option must use a registered execution/detection pair");
+    if (execution.has_value()) {
+      auto const index = static_cast<std::size_t>(*execution);
+      passed &= expect(index < seen_actions.size() && !seen_actions[index],
+                       "Sogou option actions must form a closed unique set");
+      if (index < seen_actions.size()) {
+        seen_actions[index] = true;
+      }
+    }
+    if (option.default_selected) {
+      ++default_selected_count;
+      passed &= expect(
+          std::ranges::find(expected_defaults, option.id.value) !=
+              expected_defaults.end(),
+          "only the confirmed low-impact Sogou options may be selected by default");
+    } else {
+      passed &= expect(
+          std::ranges::find(expected_defaults, option.id.value) ==
+              expected_defaults.end(),
+          "confirmed low-impact Sogou defaults must be selected in the catalog");
+    }
+    if (option.id.value == "sogou-input-candidate-count-v1") {
+      passed &= expect(
+          option.allowed_values == std::vector<std::string>{
+              "three", "four", "five", "six", "seven", "eight", "nine"} &&
+              option.default_value.has_value() &&
+              *option.default_value == "five",
+          "candidate count must use the seven-value closed set with five as default");
+    } else {
+      passed &= expect(option.allowed_values.empty() &&
+                           !option.default_value.has_value(),
+                       "non-valued Sogou options must not carry free-form parameters");
+    }
+  }
+  passed &= expect(default_selected_count == expected_defaults.size() &&
+                       std::ranges::all_of(seen_actions, [](bool seen) { return seen; }),
+                   "all 25 Sogou actions and exactly six defaults must be represented");
+  passed &= expect(sogou::built_in_rule_definitions().size() == 52,
+                   "the built-in registry must include target rules and 25 rule pairs");
+  passed &= expect(!sogou::parse_candidate_count("ten").has_value(),
+                   "candidate count parser must reject values outside the enum");
+
+  for (auto const& field : std::array<std::string_view, 6>{
+           "command", "script", "registry_path", "config_path", "selector",
+           "ui_steps"}) {
+    auto candidate = file.source;
+    candidate.append("\n");
+    candidate.append(field);
+    candidate.append(field == "ui_steps" ? " = [\"click\"]" :
+                                                " = \"arbitrary\"");
+    auto rejected = catalog::load_catalog(
+        candidate, sogou::built_in_rule_definitions());
+    passed &= expect(!rejected.accepted() &&
+                         has_issue(rejected.package_issues,
+                                   catalog::CatalogIssueCode::unknown_execution_semantics),
+                     "arbitrary command, script, path, selector, and UI fields must reject the whole package");
+  }
+
+  auto install_preferences =
+      install_catalog::initial_controlled_install_profiles();
+  auto const install_profile = std::ranges::find(
+      install_preferences, "sogou-input-defaults-v1",
+      &install_catalog::ControlledInstallProfile::id);
+  passed &= expect(install_profile != install_preferences.end(),
+                   "the installation profile must remain separately declared");
+  if (install_profile != install_preferences.end()) {
+    for (auto const& preference : install_profile->preferences) {
+      passed &= expect(
+          std::ranges::none_of(scheme->options, [&](auto const& option) {
+            return option.id.value == preference.id;
+          }),
+          "installation-stage Sogou preference ids must not be duplicated in optimization options");
+    }
+  }
+
+  RecordingSogouAdapter adapter;
+  sogou::SogouOptimizationService service{adapter, adapter};
+  passed &= expect(service.detect_target().status ==
+                       sogou::SogouOptimizationStatus::succeeded &&
+                       adapter.target_detection_calls == 1,
+                   "the application service must expose typed target detection");
+  auto const ordinary = std::ranges::find_if(
+      scheme->options, [](auto const& option) {
+        return option.id.value == "sogou-input-hide-status-bar-v1";
+      });
+  auto const candidate = std::ranges::find_if(
+      scheme->options, [](auto const& option) {
+        return option.id.value == "sogou-input-candidate-count-v1";
+      });
+  passed &= expect(ordinary != scheme->options.end() &&
+                       candidate != scheme->options.end(),
+                   "contract must find representative ordinary and valued options");
+  if (ordinary == scheme->options.end() || candidate == scheme->options.end()) {
+    return false;
+  }
+  passed &= expect(
+      service.execute_option(*ordinary).status ==
+          sogou::SogouOptimizationStatus::succeeded &&
+          adapter.last_action == sogou::SogouOptimizationAction::hide_status_bar &&
+          !adapter.last_value.has_value(),
+      "ordinary options must reach the typed executor without extra parameters");
+  passed &= expect(
+      service.execute_option(*candidate).status ==
+          sogou::SogouOptimizationStatus::succeeded &&
+          adapter.last_action == sogou::SogouOptimizationAction::set_candidate_count &&
+          adapter.last_value == sogou::SogouCandidateCount::five,
+      "candidate count must use the catalog default through the typed seam");
+  auto const calls_before_invalid = adapter.execution_calls;
+  passed &= expect(
+      service.execute_option(*candidate, "ten").status ==
+          sogou::SogouOptimizationStatus::invalid_request &&
+          adapter.execution_calls == calls_before_invalid,
+      "candidate count ten must be rejected before reaching an executor");
+  auto invalid_kind = *ordinary;
+  invalid_kind.execution.kind = catalog::RuleKind::none;
+  passed &= expect(
+      service.detect_option(invalid_kind).status ==
+          sogou::SogouOptimizationStatus::invalid_request,
+      "an option without a built-in execution definition must be rejected");
+  passed &= expect(
+      service.detect_option(*ordinary).status ==
+          sogou::SogouOptimizationStatus::succeeded &&
+          adapter.option_detection_calls == 1,
+      "valid option detection must reach the typed detector");
+  return passed;
 }
 
 struct Fixture final {
@@ -1149,6 +1410,7 @@ class TemporaryCatalogFile final {
 
 int main() {
   bool passed = true;
+  passed &= verify_sogou_catalog_and_capability_contract();
   passed &= verify_domain_validation_and_compatibility();
   passed &= verify_lifecycle_import_downgrade_and_rollback();
   passed &= verify_downgrade_disclosure_rejects_field_boundary_collision();
