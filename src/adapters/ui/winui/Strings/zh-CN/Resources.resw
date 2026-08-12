@@ -90,4 +90,27 @@
   <data name="VersionRiskTitle" xml:space="preserve"><value>Windows 版本风险</value></data>
   <data name="VersionRiskEarlierMessage" xml:space="preserve"><value>当前版本为 {observed}，早于目标版本 Windows 10 22H2（{target}）。部分功能可能无法正常工作，你仍可继续使用。</value></data>
   <data name="VersionRiskUnavailableMessage" xml:space="preserve"><value>无法读取当前 Windows 版本。部分功能可能无法正常工作，你仍可继续使用。</value></data>
+  <data name="ApplicationUpdateTitle" xml:space="preserve"><value>应用更新</value></data>
+  <data name="ApplicationUpdateReadyMessage" xml:space="preserve"><value>当前版本可以主动检查 GitHub 正式稳定发行。</value></data>
+  <data name="ApplicationUpdateCheckButton" xml:space="preserve"><value>检查更新</value></data>
+  <data name="ApplicationUpdateLatestMessage" xml:space="preserve"><value>当前已是可确认的最新正式稳定版。</value></data>
+  <data name="ApplicationUpdateAvailableMessage" xml:space="preserve"><value>发现匹配的正式稳定版。更新不会后台下载或自动替换。</value></data>
+  <data name="ApplicationUpdateStableSwitchMessage" xml:space="preserve"><value>当前是测试发行版。只有你主动确认后，才会切换到最新匹配的正式稳定版。</value></data>
+  <data name="ApplicationUpdateNoMatchMessage" xml:space="preserve"><value>没有与当前架构、内容版和发行形态匹配的正式稳定制品，不能自动更新。可以打开 GitHub 下载入口。</value></data>
+  <data name="ApplicationUpdateRequestButton" xml:space="preserve"><value>开始更新</value></data>
+  <data name="ApplicationUpdateUnsignedMessage" xml:space="preserve"><value>发行包未签名，项目未提供可用于验证完整性的校验信息。再次点击“确认更新”后才会继续。</value></data>
+  <data name="ApplicationUpdateConfirmButton" xml:space="preserve"><value>确认更新</value></data>
+  <data name="ApplicationUpdateConfirmHealthButton" xml:space="preserve"><value>确认工作台已正常进入</value></data>
+  <data name="ApplicationUpdateDeferredMessage" xml:space="preserve"><value>当前有初始化操作正在执行、等待确认、等待重启或待恢复，更新已延后。完成后请再次主动检查。</value></data>
+  <data name="ApplicationUpdateUnavailableMessage" xml:space="preserve"><value>暂时无法取得 GitHub 发行信息。可以打开 GitHub 下载入口或导出诊断资料。</value></data>
+  <data name="ApplicationUpdateRestoredMessage" xml:space="preserve"><value>更新或替换失败，上一版本已请求恢复。请确认工作台正常后再继续使用。</value></data>
+  <data name="ApplicationUpdateHealthPendingMessage" xml:space="preserve"><value>新版本已经启动，正在等待工作台健康确认。</value></data>
+  <data name="ApplicationUpdateRecoveryChoiceMessage" xml:space="preserve"><value>新版本未能进入工作台。请选择重试新版本或恢复旧版本。</value></data>
+  <data name="ApplicationUpdateRetryButton" xml:space="preserve"><value>重试新版本</value></data>
+  <data name="ApplicationUpdateRestoreButton" xml:space="preserve"><value>恢复旧版本</value></data>
+  <data name="ApplicationUpdatePreviousHealthMessage" xml:space="preserve"><value>旧版本已请求恢复，正在等待工作台健康确认。</value></data>
+  <data name="ApplicationUpdateReadOnlyMessage" xml:space="preserve"><value>更新故障恢复状态：本机数据保留为只读。可打开 GitHub 下载入口或导出诊断资料。</value></data>
+  <data name="ApplicationUpdateReadOnlyDetail" xml:space="preserve"><value>恢复记录（旧版本 / 失败版本 / UTC 毫秒时间）：</value></data>
+  <data name="ApplicationUpdateManualButton" xml:space="preserve"><value>打开 GitHub 下载</value></data>
+  <data name="ApplicationUpdateDiagnosticButton" xml:space="preserve"><value>导出诊断资料</value></data>
 </root>

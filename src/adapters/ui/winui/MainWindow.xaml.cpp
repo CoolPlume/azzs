@@ -58,7 +58,15 @@ void MainWindow::bind(
     std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences) {
   workbench_ = std::move(workbench);
   motion_preferences_ = std::move(motion_preferences);
-  auto const snapshot = workbench_->snapshot();
+  auto snapshot = workbench_->snapshot();
+  if (snapshot.update.state ==
+          azzs::application::UpdateState::candidate_pending_start_health ||
+      snapshot.update.state ==
+          azzs::application::UpdateState::previous_pending_start_health) {
+    static_cast<void>(workbench_->handle_update(
+        azzs::application::UpdateUserIntent::confirm_started_healthy));
+    snapshot = workbench_->snapshot();
+  }
   project(snapshot);
   navigate_to(snapshot.current_page);
 }
@@ -168,6 +176,12 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::application_settings:
       ContentFrame().Navigate(xaml_typename<Pages::ApplicationSettingsPage>(),
                               nullptr, transition);
+      if (auto settings = ContentFrame().Content().try_as<
+              Pages::ApplicationSettingsPage>()) {
+        winrt::get_self<Pages::implementation::ApplicationSettingsPage>(
+            settings)
+            ->bind(workbench_);
+      }
       break;
   }
 }
