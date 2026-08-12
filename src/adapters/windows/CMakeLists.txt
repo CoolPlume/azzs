@@ -14,6 +14,7 @@ if(WIN32)
   add_library(azzs_windows_adapter STATIC
     src/windows_device_data_environment.cpp
     src/windows_emergency_withdrawal_notice_source.cpp
+    src/windows_external_address_launcher.cpp
     src/windows_hardware_observer.cpp
     src/windows_lease_token_source.cpp
     src/windows_platform_info.cpp
@@ -39,6 +40,7 @@ azzs_project_target(
   OPTIONAL
   PUBLIC_LINKS
     azzs::application
+    azzs::software_selection_application
   PRIVATE_LINKS
     advapi32
     ole32

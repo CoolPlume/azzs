@@ -38,6 +38,7 @@ class Workbench final {
   [[nodiscard]] HardwareOverviewSnapshot refresh_hardware(
       std::stop_token cancellation = {});
   [[nodiscard]] WorkbenchSnapshot snapshot() const;
+  [[nodiscard]] std::shared_ptr<WorkbenchServices> services() const noexcept;
 
  private:
   WorkbenchSnapshot snapshot_;

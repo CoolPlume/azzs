@@ -1,6 +1,7 @@
 add_library(azzs_ui_presentation_contract STATIC
   Fixtures/design_system_fixture.cpp
   presentation_contract.cpp
+  software_selection_presentation.cpp
 )
 
 add_library(azzs::ui_presentation_contract ALIAS
@@ -14,4 +15,6 @@ target_include_directories(azzs_ui_presentation_contract
 azzs_project_target(
   TARGET azzs_ui_presentation_contract
   ROLE ui
+  PUBLIC_LINKS
+    azzs::software_selection_application
 )
