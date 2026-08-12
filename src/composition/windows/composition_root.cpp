@@ -4,15 +4,18 @@
 
 #include <memory>
 #include <mutex>
+#include <filesystem>
 #include <thread>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "../../adapters/ui/winui/DesignSystem/motion_preferences.hpp"
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
+#include "azzs/adapters/infrastructure/local_package_cache_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
@@ -28,6 +31,7 @@
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
+#include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/workbench.hpp"
@@ -47,10 +51,16 @@ class UnavailableControlledSourceResolver final
 };
 
 class OfflineNetworkObserver final
-    : public application::software_selection::NetworkObserver {
+    : public application::software_selection::NetworkObserver,
+      public application::offline_package_cache::PackageCacheNetworkObserver {
  public:
   [[nodiscard]] bool available() const noexcept override { return false; }
 };
+
+[[nodiscard]] std::filesystem::path path_from_utf8(std::string const& value) {
+  auto const* begin = reinterpret_cast<char8_t const*>(value.data());
+  return std::filesystem::path{std::u8string{begin, begin + value.size()}};
+}
 
 class UnavailableSoftwarePresenceDetector final
     : public application::software_selection::SoftwarePresenceDetector {
@@ -85,11 +95,24 @@ class WindowsWorkbenchServices final
                                 application::architecture_selection::
                                     selection_domain::ArchitecturePreference::
                                         prefer_arm64_prompt_fallback),
+        cache_root_{.kind = application::offline_package_cache::
+                        CacheLocationKind::system_directory,
+                    .id = "program-data"},
+        cache_storage_({adapters::infrastructure::
+            ControlledPackageCacheRootConfiguration{
+                .root = cache_root_,
+                .directory = path_from_utf8(environment.root_utf8) /
+                             "package-cache-v1",
+                .create_if_missing = true}}),
+        cache_downloader_{},
+        offline_package_cache_(cache_storage_, cache_downloader_, network_,
+                              clock_, cache_root_),
         software_selection_(states_, clock_, log_, architecture_selection_,
                             source_resolver_, network_, presence_detector_,
                             external_launcher_, state_subject_) {
     static_cast<void>(architecture_selection_.start());
     static_cast<void>(software_selection_.restore());
+    synchronize_offline_package_cache();
   }
 
   void start_emergency_preflight() {
@@ -147,12 +170,32 @@ class WindowsWorkbenchServices final
     return hardware_overview_;
   }
 
+  [[nodiscard]] application::offline_package_cache::OfflinePackageCacheService&
+  offline_package_cache() noexcept override {
+    synchronize_offline_package_cache();
+    return offline_package_cache_;
+  }
+
   [[nodiscard]] adapters::windows::WindowsPlatformInfo const& platform_info()
       const noexcept {
     return platform_info_;
   }
 
  private:
+  void synchronize_offline_package_cache() {
+    auto const selection = software_selection_.snapshot();
+    std::vector<application::offline_package_cache::CacheAsset> assets;
+    for (auto const& source : selection.sources) {
+      for (auto const& package : source.packages) {
+        if (auto asset = application::offline_package_cache::make_cache_asset(
+                source, package)) {
+          assets.push_back(std::move(*asset));
+        }
+      }
+    }
+    offline_package_cache_.synchronize_assets(std::move(assets));
+  }
+
   domain::StateSubject state_subject_;
   adapters::infrastructure::SystemClock clock_;
   adapters::windows::WindowsHardwareObserver hardware_observer_;
@@ -173,6 +216,12 @@ class WindowsWorkbenchServices final
       architecture_selection_;
   UnavailableControlledSourceResolver source_resolver_;
   OfflineNetworkObserver network_;
+  application::offline_package_cache::ControlledCacheRoot cache_root_;
+  adapters::infrastructure::LocalPackageCacheStorage cache_storage_;
+  adapters::infrastructure::UnavailableControlledPackageDownloader
+      cache_downloader_;
+  application::offline_package_cache::OfflinePackageCacheService
+      offline_package_cache_;
   UnavailableSoftwarePresenceDetector presence_detector_;
   adapters::windows::WindowsExternalAddressLauncher external_launcher_;
   application::software_selection::SoftwareSelectionLifecycle
@@ -197,7 +246,11 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
   window->bind(std::move(workbench), std::move(motion_preferences));
-  return window.as<winrt::Microsoft::UI::Xaml::Window>();
+  auto result = window.as<winrt::Microsoft::UI::Xaml::Window>();
+  result.Closed([services](auto&&, auto&&) {
+    services->offline_package_cache().shutdown();
+  });
+  return result;
 }
 
 }  // namespace azzs::composition::windows
