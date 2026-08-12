@@ -1,5 +1,6 @@
 #include "azzs/application/workbench.hpp"
 
+#include <stop_token>
 #include <utility>
 
 #include "azzs/application/workbench_services.hpp"
@@ -53,7 +54,28 @@ UpdateCommandResult Workbench::handle_update(UpdateUserIntent intent) {
   return result;
 }
 
-WorkbenchSnapshot Workbench::snapshot() const noexcept {
+HardwareOverviewSnapshot Workbench::observe_hardware(
+    HardwareOverviewTrigger trigger, std::stop_token cancellation) {
+  if (!services_) {
+    snapshot_.hardware_overview = HardwareOverviewSnapshot{
+        .state = HardwareOverviewState::unrecognized,
+        .error = "hardware overview service is unavailable",
+        .stale = false,
+    };
+    return snapshot_.hardware_overview;
+  }
+  snapshot_.hardware_overview =
+      services_->hardware_overview().observe(trigger, cancellation);
+  return snapshot_.hardware_overview;
+}
+
+HardwareOverviewSnapshot Workbench::refresh_hardware(
+    std::stop_token cancellation) {
+  return observe_hardware(HardwareOverviewTrigger::user_refresh,
+                          cancellation);
+}
+
+WorkbenchSnapshot Workbench::snapshot() const {
   return snapshot_;
 }
 
