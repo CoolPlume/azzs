@@ -11,7 +11,7 @@
 namespace azzs::adapters::infrastructure {
 namespace {
 
-constexpr std::uint32_t k_format_version = 1;
+constexpr std::uint32_t k_format_version = 2;
 
 [[nodiscard]] domain::StateKey key() {
   return domain::StateKey::machine(domain::AggregateId{"system-settings-recovery"});
@@ -122,11 +122,13 @@ void encode_value(Writer& writer,
   for (auto const& record : records) {
     writer.u64(record.record_id);
     writer.text(record.setting_id.value);
+    writer.text(record.display_name);
     writer.u64(record.catalog_revision);
     writer.u8(static_cast<std::uint8_t>(record.setting));
     encode_value(writer, record.original_value);
     writer.u8(static_cast<std::uint8_t>(record.restart_requirement));
     writer.u8(static_cast<std::uint8_t>(record.status));
+    writer.u8(static_cast<std::uint8_t>(record.operation));
   }
   return std::move(writer).finish();
 }
@@ -137,7 +139,7 @@ void encode_value(Writer& writer,
   Reader reader{bytes};
   std::uint32_t version{};
   std::uint32_t count{};
-  if (!reader.u32(version) || version != k_format_version ||
+  if (!reader.u32(version) || (version != 1 && version != k_format_version) ||
       !reader.u32(count) || count > 100'000) {
     return false;
   }
@@ -149,6 +151,7 @@ void encode_value(Writer& writer,
     std::uint8_t restart{};
     std::uint8_t status{};
     if (!reader.u64(record.record_id) || !reader.text(record.setting_id.value) ||
+        (version >= 2 && !reader.text(record.display_name)) ||
         !reader.u64(record.catalog_revision) || !reader.u8(setting) ||
         !decode_value(reader, record.original_value) || !reader.u8(restart) ||
         !reader.u8(status) ||
@@ -157,14 +160,22 @@ void encode_value(Writer& writer,
         restart > static_cast<std::uint8_t>(
                       domain::settings_catalog::RestartRequirement::windows) ||
         status > static_cast<std::uint8_t>(
-                     application::RecoveryRecordStatus::
-                         waiting_explorer_restart)) {
+                     application::RecoveryRecordStatus::restore_failed)) {
+      return false;
+    }
+    std::uint8_t operation{};
+    if (version >= 2 &&
+        (!reader.u8(operation) || operation > static_cast<std::uint8_t>(
+                                           application::RecoveryRecordOperation::
+                                               windows11_default))) {
       return false;
     }
     record.setting = static_cast<application::ControlledSystemSetting>(setting);
     record.restart_requirement =
         static_cast<domain::settings_catalog::RestartRequirement>(restart);
     record.status = static_cast<application::RecoveryRecordStatus>(status);
+    record.operation =
+        static_cast<application::RecoveryRecordOperation>(operation);
     records.push_back(std::move(record));
   }
   return reader.done();
@@ -242,6 +253,43 @@ application::RecoveryStorageWrite SystemSettingsRecoveryStore::save(
       !committed.snapshot.has_value()) {
     return {.status = application::RecoveryStorageStatus::failed,
             .detail = committed.error.empty() ? "恢复记录提交失败"
+                                               : committed.error};
+  }
+  revision_ = committed.snapshot->revision;
+  records_ = std::move(next_records);
+  return {.status = application::RecoveryStorageStatus::committed};
+}
+
+application::RecoveryStorageWrite SystemSettingsRecoveryStore::erase(
+    std::uint64_t record_id) {
+  if (!loaded_ && read().status != application::RecoveryStorageStatus::loaded) {
+    return {.detail = "系统设置恢复记录尚未加载"};
+  }
+  auto next_records = records_;
+  auto const found = std::ranges::find(
+      next_records, record_id,
+      &application::SystemSettingsRecoveryRecord::record_id);
+  if (found == next_records.end()) {
+    return {.status = application::RecoveryStorageStatus::failed,
+            .detail = "恢复记录不存在"};
+  }
+  next_records.erase(found);
+  auto state = domain::DeviceState{
+      .value = {.schema = 2,
+                .minimum_reader = 1,
+                .minimum_writer = 2,
+                .payload = encode(next_records)}};
+  application::StateCommitResult committed;
+  if (!revision_.has_value()) {
+    committed = states_.initialize(key(), std::move(state));
+  } else {
+    committed = states_.commit(application::StateCommitRequest{
+        .key = key(), .expected_revision = *revision_, .state = std::move(state)});
+  }
+  if (committed.status != application::StateCommitStatus::committed ||
+      !committed.snapshot.has_value()) {
+    return {.status = application::RecoveryStorageStatus::failed,
+            .detail = committed.error.empty() ? "恢复记录删除提交失败"
                                                : committed.error};
   }
   revision_ = committed.snapshot->revision;

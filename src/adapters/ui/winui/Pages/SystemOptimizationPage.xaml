@@ -22,6 +22,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="SystemOptimizationPageTitle"
@@ -91,6 +92,23 @@
                 Grid.Row="3"
                 AutomationProperties.AutomationId="AzzsSystemOptimizationItems"
                 Spacing="{StaticResource AzzsSpaceStandard}" />
+            <StackPanel
+                Grid.Row="4"
+                Spacing="{StaticResource AzzsSpaceSmall}">
+                <TextBlock
+                    x:Uid="SystemSettingsRecoveryTitle"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    x:Name="RecoveryDeletionNotice"
+                    Style="{StaticResource AzzsMetadataTextStyle}"
+                    TextWrapping="Wrap"
+                    Visibility="Collapsed" />
+                <StackPanel
+                    x:Name="RecoveryItems"
+                    AutomationProperties.AutomationId="AzzsSystemSettingsRecoveryItems"
+                    Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
         </Grid>
     </ScrollViewer>
 </Page>
