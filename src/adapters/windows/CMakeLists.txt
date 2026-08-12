@@ -1,12 +1,11 @@
 set(AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT
   "https://raw.githubusercontent.com/CoolPlume/azzs/main/release/emergency-withdrawal-notice.txt"
-  CACHE STRING
-  "Fixed project HTTPS endpoint embedded in the Windows emergency withdrawal notice adapter")
-set(azzs_emergency_withdrawal_notice_endpoint
-  "${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}")
+  CACHE INTERNAL
+  "Fixed project HTTPS endpoint embedded in the Windows emergency withdrawal notice adapter"
+  FORCE)
 
-if("${azzs_emergency_withdrawal_notice_endpoint}" STREQUAL "" OR
-   NOT "${azzs_emergency_withdrawal_notice_endpoint}" MATCHES "^https://")
+if("${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}" STREQUAL "" OR
+   NOT "${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}" MATCHES "^https://")
   message(FATAL_ERROR
     "AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT must be a non-empty fixed HTTPS URL")
 endif()
@@ -29,7 +28,7 @@ if(WIN32)
 
   target_compile_definitions(azzs_windows_adapter
     PRIVATE
-      AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT="${azzs_emergency_withdrawal_notice_endpoint}"
+      AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT="${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}"
   )
 endif()
 

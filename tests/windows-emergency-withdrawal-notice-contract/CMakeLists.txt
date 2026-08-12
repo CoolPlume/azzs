@@ -4,7 +4,7 @@ add_executable(azzs_windows_emergency_withdrawal_notice_contract
 
 target_compile_definitions(azzs_windows_emergency_withdrawal_notice_contract
   PRIVATE
-    AZZS_NOTICE_SOURCE_EXPECTED_ENDPOINT="${azzs_emergency_withdrawal_notice_endpoint}"
+    AZZS_NOTICE_SOURCE_EXPECTED_ENDPOINT="${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}"
 )
 
 azzs_project_target(
