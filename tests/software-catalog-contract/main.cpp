@@ -13,6 +13,7 @@
 
 #include "azzs/adapters/infrastructure/software_catalog_file.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
+#include "azzs/domain/controlled_install_profiles.hpp"
 #include "azzs/testing/fixed_clock.hpp"
 #include "azzs/testing/in_memory_operation_occupancy_storage.hpp"
 #include "azzs/testing/in_memory_state_file_system.hpp"
@@ -57,10 +58,99 @@ using azzs::testing::StateFileOperation;
   });
 }
 
+[[nodiscard]] bool has_issue_for_item(
+    std::vector<catalog::CatalogIssue> const& issues,
+    catalog::CatalogIssueCode code, std::string_view item_id,
+    std::optional<catalog::CatalogIssueScope> scope = std::nullopt) {
+  return std::ranges::any_of(issues, [&](catalog::CatalogIssue const& issue) {
+    return issue.code == code && issue.item_id == item_id &&
+           (!scope.has_value() || issue.scope == *scope);
+  });
+}
+
 [[nodiscard]] bool contains(std::vector<std::string> const& values,
                             std::string_view value) {
   return std::ranges::find(values, value) != values.end();
 }
+
+template <typename Value, typename Projection>
+[[nodiscard]] Value const* find_by_id(std::vector<Value> const& values,
+                                      std::string_view id,
+                                      Projection projection) {
+  auto const found = std::ranges::find(values, id, projection);
+  return found == values.end() ? nullptr : &*found;
+}
+
+[[nodiscard]] catalog::CatalogSource const* primary_source(
+    std::vector<catalog::CatalogSource> const& sources) {
+  auto const found = std::ranges::find_if(
+      sources, [](catalog::CatalogSource const& source) {
+        return source.purpose == catalog::SourcePurpose::primary;
+      });
+  return found == sources.end() ? nullptr : &*found;
+}
+
+[[nodiscard]] bool contains_prohibited_identity(std::string_view value) {
+  if (value.find("破解") != std::string_view::npos ||
+      value.find("授权绕过") != std::string_view::npos) {
+    return true;
+  }
+
+  std::string normalized;
+  normalized.reserve(value.size() + 2U);
+  normalized.push_back(' ');
+  for (char character : value) {
+    if (character >= 'A' && character <= 'Z') {
+      character = static_cast<char>(character - 'A' + 'a');
+    }
+    normalized.push_back((character >= 'a' && character <= 'z') ||
+                                 (character >= '0' && character <= '9')
+                             ? character
+                             : ' ');
+  }
+  normalized.push_back(' ');
+  return normalized.find(" crack ") != std::string::npos ||
+         normalized.find(" keygen ") != std::string::npos;
+}
+
+template <typename Item>
+[[nodiscard]] bool item_has_no_prohibited_identity(Item const& item) {
+  if (contains_prohibited_identity(item.id) ||
+      contains_prohibited_identity(item.name) ||
+      contains_prohibited_identity(item.branch) ||
+      contains_prohibited_identity(item.notice) ||
+      (item.fixed_version.has_value() &&
+       contains_prohibited_identity(*item.fixed_version))) {
+    return false;
+  }
+  for (auto const& source : item.sources) {
+    if (contains_prohibited_identity(source.address) ||
+        (source.version.has_value() &&
+         contains_prohibited_identity(*source.version))) {
+      return false;
+    }
+    for (auto const& history : source.history) {
+      if (contains_prohibited_identity(history.version) ||
+          contains_prohibited_identity(history.address)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+template <typename Profile>
+concept ProfileExposesForbiddenExecutionField =
+    requires(Profile const& profile) { profile.command; } ||
+    requires(Profile const& profile) { profile.arguments; } ||
+    requires(Profile const& profile) { profile.script; } ||
+    requires(Profile const& profile) { profile.download_url; } ||
+    requires(Profile const& profile) { profile.path; } ||
+    requires(Profile const& profile) { profile.selector; } ||
+    requires(Profile const& profile) { profile.registry; };
+
+static_assert(!ProfileExposesForbiddenExecutionField<
+              catalog::ControlledInstallProfile>);
 
 [[nodiscard]] bool has_impact(
     lifecycle::CatalogSelectionImpact const& impact, std::string_view id,
@@ -367,15 +457,7 @@ struct LifecycleFixture final {
   if (!decoded.document.has_value() || !decoded.issues.empty()) {
     return false;
   }
-  auto policy = default_policy();
-  policy.install_profiles.push_back(
-      {.id = "sogou-input-defaults-v1",
-       .software_ids = {"sogou-input"},
-       .runtime_status = catalog::InstallProfileRuntimeStatus::available,
-       .release_ready = false});
-  policy.required_install_profiles.push_back(
-      {.software_id = "sogou-input",
-       .profile_id = "sogou-input-defaults-v1"});
+  auto policy = catalog::initial_software_catalog_policy();
   auto runtime = catalog::validate_for_runtime(*decoded.document, policy);
   auto gate = catalog::evaluate_release_gate(
       *decoded.document, runtime, policy,
@@ -383,14 +465,25 @@ struct LifecycleFixture final {
   passed &= expect(runtime.accepted() && runtime.catalog.has_value(),
                    "the draft authoritative catalog must runtime-load");
   passed &= expect(runtime.catalog.has_value() &&
-                       runtime.catalog->software.size() == 2 &&
-                       runtime.catalog->drivers.empty(),
-                   "disabled maintenance entries must stay out of runtime data");
+                       runtime.catalog->software.size() == 7 &&
+                       runtime.catalog->drivers.size() == 3,
+                   "enabled initial software and driver entries must enter one runtime package");
+  auto const sogou_runtime = std::ranges::find_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id == "sogou-input";
+      });
+  passed &= expect(sogou_runtime != runtime.catalog->software.end() &&
+                       sogou_runtime->availability ==
+                           catalog::ItemAvailability::install_profile_unavailable,
+                   "the declaration-only Sogou profile must remain unavailable to execution");
   passed &= expect(!gate.passed() &&
                        has_issue(gate.issues,
                                  catalog::CatalogIssueCode::draft_release_state,
+                                 catalog::CatalogIssueScope::release) &&
+                       has_issue(gate.issues,
+                                 catalog::CatalogIssueCode::install_profile_not_release_ready,
                                  catalog::CatalogIssueScope::release),
-                   "runtime success must not turn a draft into a release");
+                   "draft state and missing Windows execution must block formal release");
 
   auto const encoded = codec.encode(*decoded.document);
   auto round_trip = codec.decode(encoded);
@@ -401,6 +494,331 @@ struct LifecycleFixture final {
                                 ".missing")
                         .succeeded,
                    "file adapter failures must be explicit");
+  return passed;
+}
+
+[[nodiscard]] bool initial_catalog_content_contract() {
+  LocalSoftwareCatalogFileReader reader;
+  TomlSoftwareCatalogCodec codec;
+  auto const file = reader.read(AZZS_SOFTWARE_CATALOG_PATH);
+  auto decoded = codec.decode(file.bytes);
+  bool passed = true;
+  passed &= expect(decoded.document.has_value() && decoded.issues.empty(),
+                   "initial catalog content must decode before content checks");
+  if (!decoded.document.has_value() || !decoded.issues.empty()) {
+    return false;
+  }
+
+  auto policy = catalog::initial_software_catalog_policy();
+  std::vector<std::string> expected_ids{
+      "qq", "sogou-input", "game-cheats-manager", "cheat-engine",
+      "office-tool-plus", "internet-download-manager",
+      "the-geometers-sketchpad", "java-runtime", "dotnet-runtime",
+      "directx-runtime", "powershell-7"};
+  auto actual_ids = expected_ids;
+  actual_ids.clear();
+  for (auto const& software : decoded.document->software) {
+    actual_ids.push_back(software.id);
+    passed &= expect(item_has_no_prohibited_identity(software),
+                     "software catalog must exclude prohibited resource identities");
+    if (software.enabled) {
+      passed &= expect(!software.category_id.empty() && !software.branch.empty() &&
+                           software.version_policy.has_value() &&
+                           software.dependencies_declared &&
+                           software.bundled_editions_declared &&
+                           std::ranges::count_if(
+                               software.sources, [](catalog::CatalogSource const& source) {
+                                 return source.purpose == catalog::SourcePurpose::primary;
+                               }) == 1,
+                       "enabled software must have complete catalog structure and one primary source");
+    }
+  }
+  std::ranges::sort(expected_ids);
+  std::ranges::sort(actual_ids);
+  passed &= expect(actual_ids == expected_ids &&
+                       std::ranges::adjacent_find(actual_ids) == actual_ids.end(),
+                   "the catalog must contain exactly eleven unique first-release software ids");
+
+  for (auto const id : {"game-cheats-manager", "cheat-engine",
+                        "office-tool-plus", "internet-download-manager",
+                        "the-geometers-sketchpad"}) {
+    auto const* software = find_by_id(
+        decoded.document->software, id, &catalog::SoftwareDefinition::id);
+    passed &= expect(software != nullptr && software->enabled &&
+                         software->tier == catalog::SoftwareTier::normal &&
+                         !software->notice.empty(),
+                     "the five prompted applications must be selectable normal software with notices");
+  }
+
+  auto const profiles = catalog::initial_controlled_install_profiles();
+  auto const facts = catalog::initial_software_install_facts();
+  passed &= expect(profiles.size() == 1 && facts.size() == 11,
+                   "initial declarations must cover one controlled profile and eleven software facts");
+  passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
+                       catalog::validate_software_install_facts(facts).accepted(),
+                   "initial declaration registries must satisfy their value contracts");
+  std::vector<std::string> fact_ids;
+  fact_ids.reserve(facts.size());
+  for (auto const& fact : facts) {
+    fact_ids.push_back(fact.software_id);
+    passed &= expect(
+        fact.capabilities.offline_install == catalog::CapabilitySupport::unknown &&
+            fact.capabilities.silent_install ==
+                catalog::CapabilitySupport::unknown &&
+            fact.capabilities.completion_boundary ==
+                catalog::CapabilitySupport::unknown &&
+            fact.capabilities.post_install_behavior ==
+                catalog::CapabilitySupport::unknown &&
+            fact.capabilities.restart_verification ==
+                catalog::CapabilitySupport::unknown &&
+            fact.capabilities.result_detection ==
+                catalog::CapabilitySupport::unknown,
+        "unobserved install capabilities must remain unknown");
+  }
+  std::ranges::sort(fact_ids);
+  passed &= expect(fact_ids == expected_ids,
+                   "typed install facts must cover the same eleven software ids");
+  auto const dotnet_facts = std::ranges::find(
+      facts, "dotnet-runtime", &catalog::SoftwareInstallFacts::software_id);
+  passed &= expect(dotnet_facts != facts.end() &&
+                       dotnet_facts->capabilities.architectures.knowledge ==
+                           catalog::FactKnowledge::unknown &&
+                       dotnet_facts->capabilities.architectures.values.empty(),
+                   "unobserved .NET installer architecture must remain unknown");
+  if (!profiles.empty()) {
+    auto const& profile = profiles.front();
+    passed &= expect(profile.id == "sogou-input-defaults-v1" &&
+                         profile.software_id == "sogou-input" &&
+                         profile.execution ==
+                             catalog::WindowsExecutionReadiness::declaration_only &&
+                         profile.baselines.size() == 1 &&
+                         profile.baselines.front().version == "16.7" &&
+                         profile.preferences.size() == 2,
+                     "Sogou must record the observed 16.7 baseline and two controlled preferences");
+    if (profile.preferences.size() == 2) {
+      auto const& first = profile.preferences[0];
+      auto const& second = profile.preferences[1];
+      passed &= expect(first.phase == catalog::InstallPhase::custom_install &&
+                           first.effect == catalog::InstallPreferenceEffect::disable_sogou_search_candidates &&
+                           first.default_choice == catalog::PreferenceDefault::decline &&
+                           second.phase == catalog::InstallPhase::installation_complete &&
+                           second.effect == catalog::InstallPreferenceEffect::decline_sogou_tencent_yuanbao &&
+                           second.default_choice == catalog::PreferenceDefault::decline &&
+                           first.disposition_order == second.disposition_order,
+                       "Sogou preferences must default to decline with the fixed three-level fallback");
+    }
+  }
+
+  std::vector<std::string> required = policy.required_release_software;
+  std::ranges::sort(required);
+  passed &= expect(required == expected_ids && policy.supported_driver_hardware_kinds ==
+                       std::vector<std::string>{"gpu"},
+                   "the initial policy must require all eleven software ids and the registered GPU kind");
+  std::vector<std::string> release_fact_ids;
+  release_fact_ids.reserve(policy.required_release_install_facts.size());
+  for (auto const& requirement : policy.required_release_install_facts) {
+    release_fact_ids.push_back(requirement.software_id);
+    passed &= expect(!requirement.complete(),
+                     "unknown initial installation facts must not be release-ready");
+  }
+  std::ranges::sort(release_fact_ids);
+  passed &= expect(release_fact_ids == expected_ids,
+                   "the release policy must consume install facts for every required software id");
+  auto const* sogou_profile = find_by_id(
+      policy.install_profiles, "sogou-input-defaults-v1",
+      &catalog::InstallProfileSupport::id);
+  passed &= expect(sogou_profile != nullptr &&
+                       sogou_profile->runtime_status ==
+                           catalog::InstallProfileRuntimeStatus::missing &&
+                       !sogou_profile->release_ready &&
+                       policy.required_install_profiles.size() == 1,
+                   "the Sogou profile must remain declaration-only and release-incomplete");
+
+  auto released = codec.decode(replace_once(
+      file.bytes, "release_state = \"draft\"", "release_state = \"release\""));
+  passed &= expect(released.document.has_value() && released.issues.empty(),
+                   "a release-gate candidate must retain the authoritative TOML shape");
+  if (!released.document.has_value() || !released.issues.empty()) {
+    return false;
+  }
+  auto evaluate_release_candidate = [&](catalog::SoftwareCatalogDocument const& candidate,
+                                        catalog::SoftwareCatalogPolicy const& candidate_policy) {
+    auto runtime = catalog::validate_for_runtime(candidate, candidate_policy);
+    auto gate = catalog::evaluate_release_gate(
+        candidate, runtime, candidate_policy, catalog::content_identity(file.bytes));
+    return std::pair{std::move(runtime), std::move(gate)};
+  };
+  auto release_only = evaluate_release_candidate(*released.document, policy);
+  passed &= expect(
+      release_only.first.accepted() && !release_only.second.passed() &&
+          static_cast<std::size_t>(std::ranges::count_if(
+              release_only.second.issues, [](catalog::CatalogIssue const& issue) {
+                return issue.scope == catalog::CatalogIssueScope::release &&
+                       issue.code ==
+                           catalog::CatalogIssueCode::unknown_execution_semantics;
+              })) == expected_ids.size() &&
+          has_issue_for_item(
+              release_only.second.issues,
+              catalog::CatalogIssueCode::unknown_execution_semantics, "qq",
+              catalog::CatalogIssueScope::release),
+      "changing only release_state must leave every unknown first-release install fact blocked");
+
+  auto sogou_ready_policy = policy;
+  auto sogou_profile_support = std::ranges::find(
+      sogou_ready_policy.install_profiles, "sogou-input-defaults-v1",
+      &catalog::InstallProfileSupport::id);
+  if (sogou_profile_support == sogou_ready_policy.install_profiles.end()) {
+    return false;
+  }
+  sogou_profile_support->runtime_status =
+      catalog::InstallProfileRuntimeStatus::available;
+  sogou_profile_support->release_ready = true;
+  auto sogou_only =
+      evaluate_release_candidate(*released.document, sogou_ready_policy);
+  passed &= expect(
+      sogou_only.first.accepted() && !sogou_only.second.passed() &&
+          has_issue_for_item(
+              sogou_only.second.issues,
+              catalog::CatalogIssueCode::unknown_execution_semantics,
+              "game-cheats-manager", catalog::CatalogIssueScope::release),
+      "making only the Sogou profile ready must not release the remaining unknown facts");
+
+  auto const* required_amd = find_by_id(
+      policy.required_release_drivers, "amd-auto-detect-and-install",
+      &catalog::RequiredReleaseDriverEntry::id);
+  auto const* required_intel = find_by_id(
+      policy.required_release_drivers, "intel-gpu-driver-page",
+      &catalog::RequiredReleaseDriverEntry::id);
+  auto const* required_nvidia = find_by_id(
+      policy.required_release_drivers, "nvidia-gpu-driver-page",
+      &catalog::RequiredReleaseDriverEntry::id);
+  passed &= expect(
+      policy.required_release_drivers.size() == 3 && required_amd != nullptr &&
+          required_intel != nullptr && required_nvidia != nullptr &&
+          required_amd->entry_type == catalog::DriverEntryType::assistant &&
+          required_intel->entry_type == catalog::DriverEntryType::vendor_page &&
+          required_nvidia->entry_type == catalog::DriverEntryType::vendor_page &&
+          required_amd->hardware_kind == "gpu" &&
+          required_intel->hardware_kind == "gpu" &&
+          required_nvidia->hardware_kind == "gpu" &&
+          required_amd->primary_source_address ==
+              "https://www.amd.com/en/support/download/drivers.html" &&
+          required_intel->primary_source_address ==
+              "https://www.intel.com/content/www/us/en/download-center/home.html" &&
+          required_nvidia->primary_source_address ==
+              "https://www.nvidia.com/Download/index.aspx",
+      "the release policy must require the three exact official GPU driver entries");
+  for (auto const& requirement : policy.required_release_drivers) {
+    auto const* driver = find_by_id(
+        released.document->drivers, requirement.id,
+        &catalog::DriverDefinition::id);
+    auto const* source = driver == nullptr ? nullptr : primary_source(driver->sources);
+    passed &= expect(driver != nullptr && driver->enabled &&
+                         driver->entry_type == requirement.entry_type &&
+                         contains(driver->hardware_kinds,
+                                  requirement.hardware_kind) &&
+                         source != nullptr &&
+                         source->address == requirement.primary_source_address,
+                     "the authoritative catalog must match each required driver release policy entry");
+  }
+
+  auto missing_intel = *released.document;
+  auto missing_intel_driver = std::ranges::find(
+      missing_intel.drivers, "intel-gpu-driver-page",
+      &catalog::DriverDefinition::id);
+  if (missing_intel_driver == missing_intel.drivers.end()) {
+    return false;
+  }
+  missing_intel.drivers.erase(missing_intel_driver);
+  auto missing_intel_result = evaluate_release_candidate(missing_intel, policy);
+  passed &= expect(
+      missing_intel_result.first.accepted() &&
+          has_issue_for_item(
+              missing_intel_result.second.issues,
+              catalog::CatalogIssueCode::required_item_missing,
+              "intel-gpu-driver-page", catalog::CatalogIssueScope::release),
+      "deleting a required initial driver must block release");
+
+  auto disabled_nvidia = *released.document;
+  auto disabled_nvidia_driver = std::ranges::find(
+      disabled_nvidia.drivers, "nvidia-gpu-driver-page",
+      &catalog::DriverDefinition::id);
+  if (disabled_nvidia_driver == disabled_nvidia.drivers.end()) {
+    return false;
+  }
+  disabled_nvidia_driver->enabled = false;
+  auto disabled_nvidia_result =
+      evaluate_release_candidate(disabled_nvidia, policy);
+  passed &= expect(
+      disabled_nvidia_result.first.accepted() &&
+          has_issue_for_item(
+              disabled_nvidia_result.second.issues,
+              catalog::CatalogIssueCode::required_item_disabled,
+              "nvidia-gpu-driver-page", catalog::CatalogIssueScope::release),
+      "disabling a required initial driver must block release");
+
+  auto wrong_amd_type = *released.document;
+  auto wrong_amd_driver = std::ranges::find(
+      wrong_amd_type.drivers, "amd-auto-detect-and-install",
+      &catalog::DriverDefinition::id);
+  if (wrong_amd_driver == wrong_amd_type.drivers.end()) {
+    return false;
+  }
+  wrong_amd_driver->entry_type = catalog::DriverEntryType::vendor_page;
+  auto wrong_amd_type_result =
+      evaluate_release_candidate(wrong_amd_type, policy);
+  passed &= expect(
+      wrong_amd_type_result.first.accepted() &&
+          has_issue_for_item(wrong_amd_type_result.second.issues,
+                             catalog::CatalogIssueCode::invalid_field,
+                             "amd-auto-detect-and-install",
+                             catalog::CatalogIssueScope::release),
+      "changing a required driver entry type must block release");
+
+  auto wrong_nvidia_address = *released.document;
+  auto wrong_nvidia_driver = std::ranges::find(
+      wrong_nvidia_address.drivers, "nvidia-gpu-driver-page",
+      &catalog::DriverDefinition::id);
+  if (wrong_nvidia_driver == wrong_nvidia_address.drivers.end()) {
+    return false;
+  }
+  auto wrong_nvidia_source = primary_source(wrong_nvidia_driver->sources);
+  if (wrong_nvidia_source == nullptr) {
+    return false;
+  }
+  auto mutable_nvidia_source = std::ranges::find_if(
+      wrong_nvidia_driver->sources, [](catalog::CatalogSource const& source) {
+        return source.purpose == catalog::SourcePurpose::primary;
+      });
+  mutable_nvidia_source->address = "https://www.nvidia.com/Download/other.aspx";
+  auto wrong_nvidia_address_result =
+      evaluate_release_candidate(wrong_nvidia_address, policy);
+  passed &= expect(
+      wrong_nvidia_address_result.first.accepted() &&
+          has_issue_for_item(wrong_nvidia_address_result.second.issues,
+                             catalog::CatalogIssueCode::invalid_field,
+                             "nvidia-gpu-driver-page",
+                             catalog::CatalogIssueScope::release),
+      "changing a required driver primary address must block release");
+
+  passed &= expect(decoded.document->release_state == catalog::ReleaseState::draft,
+                   "the initial maintenance catalog must remain draft");
+  for (auto const& driver : decoded.document->drivers) {
+    passed &= expect(driver.enabled && driver.hardware_kinds ==
+                         std::vector<std::string>{"gpu"} &&
+                         driver.entry_type.has_value() &&
+                         item_has_no_prohibited_identity(driver),
+                     "driver entries must be official GPU handoff entries without prohibited content");
+  }
+  passed &= expect(std::ranges::count_if(
+                       decoded.document->drivers, [](catalog::DriverDefinition const& driver) {
+                         return driver.entry_type == catalog::DriverEntryType::assistant;
+                       }) >= 1 &&
+                       std::ranges::count_if(
+                           decoded.document->drivers, [](catalog::DriverDefinition const& driver) {
+                             return driver.entry_type == catalog::DriverEntryType::vendor_page;
+                           }) >= 1,
+                   "the initial driver catalog must include an assistant and a vendor page");
   return passed;
 }
 
@@ -483,6 +901,11 @@ name = "GPU vendor page"
                        runtime.catalog->software.size() == 1 &&
                        runtime.catalog->drivers.size() == 1,
                    "both entry kinds must enter one runtime package");
+  auto generic_gate = catalog::evaluate_release_gate(
+      *decoded.document, runtime, default_policy(),
+      catalog::content_identity(fixture));
+  passed &= expect(generic_gate.passed(),
+                   "ordinary driver sources must not inherit issue-19 official-address requirements");
   passed &= expect(decoded.document->software.front().name == "工具\n套件" &&
                        !decoded.document->software.front()
                             .sources.front()
@@ -1515,6 +1938,16 @@ name = "GPU vendor page"
   LifecycleFixture identity_fixture;
   auto formal_policy = default_policy();
   formal_policy.required_release_software = {"core"};
+  formal_policy.required_release_install_facts = {{
+      .software_id = "core",
+      .architectures_confirmed = true,
+      .offline_install_confirmed = true,
+      .silent_install_confirmed = true,
+      .completion_boundary_confirmed = true,
+      .post_install_behavior_confirmed = true,
+      .restart_verification_confirmed = true,
+      .result_detection_confirmed = true,
+  }};
   auto const formal_text = one_item_catalog(
       5, "release", "Formal", "[]",
       "install_profile = \"profile-v1\"\n");
@@ -2195,6 +2628,7 @@ int main() {
   bool passed = true;
   passed &= content_identity_is_sha256();
   passed &= authoritative_catalog_loads_offline();
+  passed &= initial_catalog_content_contract();
   passed &= toml_shape_round_trips_software_and_drivers();
   passed &= package_errors_and_disabled_minimum_are_separate();
   passed &= dependency_errors_disable_only_the_local_closure();

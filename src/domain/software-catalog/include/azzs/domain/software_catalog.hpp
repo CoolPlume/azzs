@@ -228,12 +228,46 @@ struct RequiredInstallProfile final {
   auto operator<=>(RequiredInstallProfile const&) const = default;
 };
 
+// Release requirements are policy-owned facts, rather than TOML fields. This
+// keeps maintenance data declarative while formal publication remains blocked
+// until every required capability has been confirmed by a project owner.
+struct RequiredReleaseInstallFacts final {
+  std::string software_id;
+  bool architectures_confirmed{false};
+  bool offline_install_confirmed{false};
+  bool silent_install_confirmed{false};
+  bool completion_boundary_confirmed{false};
+  bool post_install_behavior_confirmed{false};
+  bool restart_verification_confirmed{false};
+  bool result_detection_confirmed{false};
+
+  [[nodiscard]] bool complete() const noexcept {
+    return architectures_confirmed && offline_install_confirmed &&
+           silent_install_confirmed && completion_boundary_confirmed &&
+           post_install_behavior_confirmed && restart_verification_confirmed &&
+           result_detection_confirmed;
+  }
+
+  auto operator<=>(RequiredReleaseInstallFacts const&) const = default;
+};
+
+struct RequiredReleaseDriverEntry final {
+  std::string id;
+  DriverEntryType entry_type{DriverEntryType::vendor_page};
+  std::string hardware_kind;
+  std::string primary_source_address;
+
+  auto operator<=>(RequiredReleaseDriverEntry const&) const = default;
+};
+
 struct SoftwareCatalogPolicy final {
   std::uint32_t supported_schema_version{1};
   std::vector<InstallProfileSupport> install_profiles;
   std::vector<RequiredInstallProfile> required_install_profiles;
   std::vector<std::string> supported_driver_hardware_kinds;
   std::vector<std::string> required_release_software;
+  std::vector<RequiredReleaseInstallFacts> required_release_install_facts;
+  std::vector<RequiredReleaseDriverEntry> required_release_drivers;
   std::optional<PublishedCatalogReference> last_published;
 };
 

@@ -1,4 +1,5 @@
 add_library(azzs_software_catalog_domain STATIC
+  src/controlled_install_profiles.cpp
   src/software_catalog.cpp
 )
 

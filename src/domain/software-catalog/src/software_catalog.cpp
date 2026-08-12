@@ -66,6 +66,15 @@ void add_issue(std::vector<CatalogIssue>& issues, CatalogIssueScope scope,
              profile.software_ids.end();
 }
 
+[[nodiscard]] CatalogSource const* find_primary_source(
+    std::vector<CatalogSource> const& sources) {
+  auto const found = std::ranges::find_if(
+      sources, [](CatalogSource const& source) {
+        return source.purpose == SourcePurpose::primary;
+      });
+  return found == sources.end() ? nullptr : &*found;
+}
+
 void validate_localizations(std::vector<CatalogLocalization> const& values,
                             std::string const& location,
                             std::string_view default_locale,
@@ -744,6 +753,19 @@ SoftwareCatalogReleaseGate evaluate_release_gate(
     }
   }
 
+  for (auto const& required_id : policy.required_release_software) {
+    auto const requirement = std::ranges::find(
+        policy.required_release_install_facts, required_id,
+        &RequiredReleaseInstallFacts::software_id);
+    if (requirement == policy.required_release_install_facts.end() ||
+        !requirement->complete()) {
+      add_issue(issues, CatalogIssueScope::release,
+                CatalogIssueCode::unknown_execution_semantics,
+                "software." + required_id + ".install_facts", required_id,
+                "required first-release install facts remain unknown");
+    }
+  }
+
   for (auto const& software : document.software) {
     if (!software.enabled || !software.install_profile.has_value()) {
       continue;
@@ -759,6 +781,37 @@ SoftwareCatalogReleaseGate evaluate_release_gate(
                 CatalogIssueCode::install_profile_not_release_ready,
                 "software." + software.id + ".install_profile", software.id,
                 "install profile is not ready for formal release");
+    }
+  }
+
+  for (auto const& requirement : policy.required_release_drivers) {
+    auto const definition = std::ranges::find(
+        document.drivers, requirement.id, &DriverDefinition::id);
+    if (definition == document.drivers.end()) {
+      add_issue(issues, CatalogIssueScope::release,
+                CatalogIssueCode::required_item_missing,
+                "drivers." + requirement.id, requirement.id,
+                "required first-release driver is missing");
+      continue;
+    }
+    if (!definition->enabled) {
+      add_issue(issues, CatalogIssueScope::release,
+                CatalogIssueCode::required_item_disabled,
+                "drivers." + requirement.id, requirement.id,
+                "required first-release driver is not enabled");
+      continue;
+    }
+    auto const* source = find_primary_source(definition->sources);
+    if (definition->entry_type != requirement.entry_type ||
+        std::ranges::find(definition->hardware_kinds,
+                          requirement.hardware_kind) ==
+            definition->hardware_kinds.end() ||
+        source == nullptr ||
+        source->address != requirement.primary_source_address) {
+      add_issue(issues, CatalogIssueScope::release,
+                CatalogIssueCode::invalid_field,
+                "drivers." + requirement.id, requirement.id,
+                "required first-release driver does not match its registered entry policy");
     }
   }
 
