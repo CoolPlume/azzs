@@ -129,8 +129,8 @@ class WindowsWorkbenchServices final
                                 application::architecture_selection::
                                     selection_domain::ArchitecturePreference::
                                         prefer_arm64_prompt_fallback),
-        cache_root_{.kind = application::offline_package_cache::
-                        CacheLocationKind::system_directory,
+        cache_root_{.kind = domain::offline_package_cache::
+                            CacheLocationKind::system_directory,
                     .id = "program-data"},
         cache_storage_({adapters::infrastructure::
             ControlledPackageCacheRootConfiguration{
