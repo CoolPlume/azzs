@@ -39,4 +39,17 @@ std::optional<domain::SystemVersion> WindowsPlatformInfo::windows_version()
   };
 }
 
+domain::SystemArchitecture WindowsPlatformInfo::windows_architecture() const {
+  SYSTEM_INFO system_info{};
+  ::GetNativeSystemInfo(&system_info);
+  switch (system_info.wProcessorArchitecture) {
+    case PROCESSOR_ARCHITECTURE_AMD64:
+      return domain::SystemArchitecture::x64;
+    case PROCESSOR_ARCHITECTURE_ARM64:
+      return domain::SystemArchitecture::arm64;
+    default:
+      return domain::SystemArchitecture::unknown;
+  }
+}
+
 }  // namespace azzs::adapters::windows
