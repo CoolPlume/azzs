@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "presentation_contract.hpp"
 
@@ -32,5 +33,21 @@ struct SoftwareSelectionPresentationText final {
 make_software_selection_presentation(
     application::software_selection::SoftwareSelectionSnapshot const& source,
     SoftwareSelectionPresentationText text = {});
+
+struct OfflinePackageCachePresentationText final {
+  std::string accessible_name{"Offline package cache status"};
+  std::string available_title{"Offline package cache"};
+  std::string unavailable_title{"Offline package cache unavailable"};
+  std::string available_body_prefix{"Controlled cache location: "};
+  std::string unavailable_body_prefix{
+      "Controlled cache location is unavailable: "};
+  std::string item_suffix{" cached package assets"};
+  std::string network_suffix{"; network unavailable"};
+};
+
+[[nodiscard]] std::shared_ptr<PresentationSnapshot const>
+make_offline_package_cache_presentation(
+    application::offline_package_cache::OfflinePackageCacheSnapshot const& source,
+    OfflinePackageCachePresentationText text = {});
 
 }  // namespace azzs::ui::presentation

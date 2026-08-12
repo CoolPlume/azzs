@@ -17,4 +17,5 @@ azzs_project_target(
   ROLE ui
   PUBLIC_LINKS
     azzs::software_selection_application
+    azzs::offline_package_cache_application
 )
