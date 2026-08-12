@@ -17,6 +17,7 @@ if(WIN32)
     src/windows_lease_token_source.cpp
     src/windows_platform_info.cpp
     src/windows_state_file_system.cpp
+    src/windows_system_settings_adapter.cpp
   )
 
   add_library(azzs::windows_adapter ALIAS azzs_windows_adapter)
