@@ -75,6 +75,11 @@ bool adapter_contract() {
                    "registered controlled root must be observable");
 
   auto first = storage.begin_write(root_id, package);
+  if (first.code != cache::CacheWriteBeginCode::acquired) {
+    std::cerr << "local package cache adapter diagnostic: first begin code="
+              << static_cast<int>(first.code) << " detail=" << first.detail
+              << '\n';
+  }
   passed &= expect(first.code == cache::CacheWriteBeginCode::acquired &&
                        first.session != nullptr,
                    "first writer must acquire a typed controlled asset lock");
