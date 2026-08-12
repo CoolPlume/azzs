@@ -159,8 +159,11 @@ set(AZZS_ARCHITECTURE_EXTERNAL_MSBUILD_LIBRARIES
 set(AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES
   "Azzs.WinUI|azzs_windows_adapter"
   "Azzs.WinUI|azzs_infrastructure_adapter"
+  "Azzs.WinUI|azzs_settings_catalog_file_adapter"
   "Azzs.WinUI|azzs_application"
+  "Azzs.WinUI|azzs_settings_catalog_lifecycle"
   "Azzs.WinUI|azzs_domain"
+  "Azzs.WinUI|azzs_settings_catalog_domain"
   "Azzs.WinUI|azzs_architecture_selection_application"
   "Azzs.WinUI|azzs_architecture_selection_domain"
   "Azzs.WinUI|azzs_software_catalog_application"
@@ -207,6 +210,7 @@ set(AZZS_ARCHITECTURE_WINUI_GENERATED_HEADER_PATTERNS
 
 set(AZZS_ARCHITECTURE_PLATFORM_HEADER_PATTERNS
   "^win[^/]*\\.h$"
+  "^winternl\\.h$"
   "^aclapi\\.h$"
   "^knownfolders\\.h$"
   "^rpc\\.h$"

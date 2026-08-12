@@ -334,6 +334,16 @@ CatalogSnapshot SettingsCatalogLifecycle::snapshot() {
   };
 }
 
+std::optional<catalog_domain::ValidatedSettingsCatalog>
+SettingsCatalogLifecycle::current_settings_catalog() {
+  auto loaded = load();
+  if (loaded.storage_status != CatalogStorageReadStatus::writable ||
+      !loaded.current.has_value()) {
+    return std::nullopt;
+  }
+  return std::move(loaded.current);
+}
+
 InitializeResult SettingsCatalogLifecycle::initialize_builtin(
     catalog_domain::SettingsCatalog catalog) {
   auto validation = catalog_domain::validate(std::move(catalog), capabilities_);
