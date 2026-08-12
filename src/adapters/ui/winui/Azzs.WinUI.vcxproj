@@ -98,7 +98,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(AzzsCoreLibraryDirectory);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_application.lib;azzs_domain.lib;azzs_architecture_selection_application.lib;azzs_architecture_selection_domain.lib;advapi32.lib;ole32.lib;rpcrt4.lib;shell32.lib;winhttp.lib;wtsapi32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_application.lib;azzs_domain.lib;azzs_architecture_selection_application.lib;azzs_architecture_selection_domain.lib;advapi32.lib;ole32.lib;oleaut32.lib;rpcrt4.lib;shell32.lib;wbemuuid.lib;winhttp.lib;wtsapi32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>

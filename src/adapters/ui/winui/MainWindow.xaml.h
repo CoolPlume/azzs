@@ -28,6 +28,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   [[nodiscard]] std::optional<azzs::application::PageId> page_for_item(
       Microsoft::UI::Xaml::Controls::NavigationViewItem const& item);
   void navigate_to(azzs::application::PageId page);
+  void refresh_drivers_page();
   void project(azzs::application::WorkbenchSnapshot const& snapshot);
 
   std::shared_ptr<azzs::application::Workbench> workbench_;
