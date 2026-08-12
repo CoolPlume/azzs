@@ -14,11 +14,13 @@
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
 #include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
+#include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
 #include "azzs/adapters/infrastructure/system_settings_recovery_store.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
+#include "azzs/adapters/windows/windows_application_update_platform.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_external_address_launcher.hpp"
 #include "azzs/adapters/windows/windows_hardware_observer.hpp"
@@ -28,6 +30,7 @@
 #include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
+#include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
@@ -106,6 +109,12 @@ class WindowsWorkbenchServices final
         system_settings_recovery_(states_),
         system_settings_apply_(settings_catalog_, system_settings_adapter_,
                                system_settings_recovery_, occupancy_, log_),
+        operation_activity_(occupancy_),
+        application_update_health_storage_(states_),
+        application_update_platform_(platform_info_,
+                                     application_update_health_storage_),
+        application_updates_(application_update_platform_, operation_activity_,
+                             log_, clock_),
         architecture_selection_(platform_info_, log_,
                                 application::architecture_selection::
                                     selection_domain::ArchitecturePreference::
@@ -167,6 +176,11 @@ class WindowsWorkbenchServices final
         shared_from_this(), &system_settings_apply_);
   }
 
+  [[nodiscard]] application::ApplicationUpdateLifecycle& application_updates()
+      noexcept override {
+    return application_updates_;
+  }
+
   [[nodiscard]] application::architecture_selection::
       ArchitectureSelectionLifecycle& architecture_selection()
       noexcept override {
@@ -212,6 +226,37 @@ class WindowsWorkbenchServices final
       system_settings_recovery_;
   application::SystemSettingsApplyService system_settings_apply_;
   adapters::windows::WindowsPlatformInfo platform_info_;
+  class OperationActivity final
+      : public application::InitializationOperationActivity {
+   public:
+    explicit OperationActivity(application::SharedOperationOccupancy& occupancy)
+        : occupancy_(occupancy) {}
+
+    [[nodiscard]] application::InitializationOperationActivitySnapshot observe()
+        override {
+      auto occupied = occupancy_.inspect();
+      if (occupied.code == application::OccupancyResultCode::observed) {
+        if (!occupied.current.has_value()) {
+          return {};
+        }
+        return {.phase = application::InitializationOperationPhase::active,
+                .operation_id = occupied.current->identity.operation_id,
+                .detail = "another workbench initialization operation is active"};
+      }
+      return {.phase = application::InitializationOperationPhase::
+                         observation_unavailable,
+              .detail = occupied.detail.empty()
+                            ? "initialization operation occupancy is unavailable"
+                            : std::move(occupied.detail)};
+    }
+
+   private:
+    application::SharedOperationOccupancy& occupancy_;
+  } operation_activity_;
+  adapters::infrastructure::StateApplicationUpdateHealthStorage
+      application_update_health_storage_;
+  adapters::windows::WindowsApplicationUpdatePlatform application_update_platform_;
+  application::ApplicationUpdateLifecycle application_updates_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
   UnavailableControlledSourceResolver source_resolver_;

@@ -4,6 +4,7 @@
 #include <optional>
 #include <stop_token>
 
+#include "azzs/application/application_update.hpp"
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/platform_info.hpp"
@@ -22,6 +23,7 @@ struct WorkbenchSnapshot final {
   std::optional<domain::SystemVersion> observed_windows_version;
   domain::SystemVersion target_windows_version;
   SystemSettingsApplySnapshot system_settings;
+  UpdateSnapshot update;
   HardwareOverviewSnapshot hardware_overview;
 };
 
@@ -34,6 +36,7 @@ class Workbench final {
             std::shared_ptr<WorkbenchServices> services);
 
   void navigate(PageId page) noexcept;
+  [[nodiscard]] UpdateCommandResult handle_update(UpdateUserIntent intent);
   [[nodiscard]] HardwareOverviewSnapshot observe_hardware(
       HardwareOverviewTrigger trigger,
       std::stop_token cancellation = {});
