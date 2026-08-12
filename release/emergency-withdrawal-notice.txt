@@ -1,0 +1,4 @@
+source=project-security
+revision=1
+published_at_ms=1786422400000
+entry=project-security-baseline|software_optimization|||initial project security notice|release

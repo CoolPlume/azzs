@@ -13,4 +13,5 @@ add_subdirectory(product-identity-contract)
 
 if(WIN32)
   add_subdirectory(windows-device-data-contract)
+  add_subdirectory(windows-emergency-withdrawal-notice-contract)
 endif()

@@ -3,6 +3,8 @@
 #include "composition_root.hpp"
 
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -14,6 +16,7 @@
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
+#include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
@@ -27,7 +30,9 @@
 namespace azzs::composition::windows {
 namespace {
 
-class WindowsWorkbenchServices final : public application::WorkbenchServices {
+class WindowsWorkbenchServices final
+    : public application::WorkbenchServices,
+      public std::enable_shared_from_this<WindowsWorkbenchServices> {
  public:
   explicit WindowsWorkbenchServices(
       adapters::windows::DeviceDataEnvironment environment)
@@ -42,6 +47,20 @@ class WindowsWorkbenchServices final : public application::WorkbenchServices {
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_) {}
+
+  void start_emergency_preflight() {
+    std::call_once(emergency_preflight_started_, [this] {
+      auto self = shared_from_this();
+      std::thread([self = std::move(self)] {
+        try {
+          (void)self->emergency_withdrawals_.preflight_check();
+        } catch (...) {
+          // The service owns the typed failure path; the adapter boundary must
+          // never terminate the workbench because a startup check threw.
+        }
+      }).detach();
+    });
+  }
 
   [[nodiscard]] domain::StateSubject const& state_subject()
       const noexcept override {
@@ -75,13 +94,9 @@ class WindowsWorkbenchServices final : public application::WorkbenchServices {
   application::DeviceStateStore states_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;
   adapters::infrastructure::StructuredExecutionLog log_;
-  class UnconfiguredEmergencyNoticeSource final
-      : public application::EmergencyWithdrawalNoticeSource {
-   public:
-    [[nodiscard]] application::NoticeFetchResult fetch() override {
-      return {.error = "emergency withdrawal notice source is not configured"};
-    }
-  } emergency_notice_source_;
+  std::once_flag emergency_preflight_started_;
+  adapters::windows::WindowsEmergencyWithdrawalNoticeSource
+      emergency_notice_source_;
   application::EmergencyWithdrawalService emergency_withdrawals_;
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
@@ -103,6 +118,7 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
       std::move(*environment.environment));
   auto workbench =
       std::make_shared<application::Workbench>(platform_info, services);
+  services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
   window->bind(std::move(workbench), std::move(motion_preferences));

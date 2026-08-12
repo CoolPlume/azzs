@@ -463,6 +463,106 @@ bool EmergencyWithdrawalService::has_version_scoped_withdrawal(
   });
 }
 
+EmergencyWithdrawalSnapshot EmergencyWithdrawalService::with_transient_safety(
+    EmergencyWithdrawalSnapshot snapshot) const {
+  if (unpersisted_withdrawals_.empty()) {
+    return snapshot;
+  }
+  snapshot.state = EmergencyWithdrawalServiceState::unpersisted;
+  snapshot.possibly_stale = true;
+  snapshot.persistence_pending = true;
+  snapshot.error = unpersisted_error_;
+  if (!snapshot.last_observed_at.has_value()) {
+    snapshot.last_observed_at = unpersisted_withdrawals_.front().observed_at;
+  }
+  return snapshot;
+}
+
+void EmergencyWithdrawalService::retain_unpersisted_withdrawals(
+    withdrawal::EmergencyWithdrawalNotice const& notice, std::string error) {
+  auto const observed_at = clock_.now();
+  for (auto const& entry : notice.entries) {
+    if (entry.action == withdrawal::NoticeAction::withdraw) {
+      auto const known = std::ranges::any_of(
+          unpersisted_withdrawals_, [&](auto const& existing) {
+            return existing.source == notice.source &&
+                   existing.revision == notice.revision &&
+                   existing.entry == entry;
+          });
+      if (!known) {
+        unpersisted_withdrawals_.push_back(
+            {.entry = entry,
+             .source = notice.source,
+             .revision = notice.revision,
+             .observed_at = observed_at});
+      }
+    }
+  }
+  unpersisted_error_ = std::move(error);
+}
+
+void EmergencyWithdrawalService::clear_unpersisted_withdrawals(
+    withdrawal::EmergencyWithdrawalNotice const& notice) {
+  auto const latest = std::ranges::max_element(
+      unpersisted_withdrawals_, {}, [&](auto const& withdrawal) {
+        return withdrawal.source == notice.source ? withdrawal.revision : 0;
+      });
+  if (latest == unpersisted_withdrawals_.end() ||
+      latest->source != notice.source || latest->revision > notice.revision) {
+    return;
+  }
+  if (latest->revision == notice.revision) {
+    auto const contains_every_withdrawal = std::ranges::all_of(
+        unpersisted_withdrawals_, [&](auto const& withdrawal) {
+          if (withdrawal.source != notice.source ||
+              withdrawal.revision != notice.revision) {
+            return true;
+          }
+          return std::ranges::any_of(notice.entries, [&](auto const& entry) {
+            return entry == withdrawal.entry;
+          });
+        });
+    if (!contains_every_withdrawal) {
+      return;
+    }
+  }
+  std::erase_if(unpersisted_withdrawals_, [&](auto const& withdrawal) {
+    return withdrawal.source == notice.source;
+  });
+  if (unpersisted_withdrawals_.empty()) {
+    unpersisted_error_.clear();
+  }
+}
+
+std::optional<EmergencyWithdrawalService::TransientWithdrawal>
+EmergencyWithdrawalService::matching_unpersisted_withdrawal(
+    withdrawal::OperationTarget const& target) const {
+  auto const found = std::ranges::find_if(
+      unpersisted_withdrawals_, [&](auto const& withdrawal) {
+        return entry_matches(withdrawal.entry, target);
+      });
+  if (found == unpersisted_withdrawals_.end()) {
+    return std::nullopt;
+  }
+  return *found;
+}
+
+std::optional<EmergencyWithdrawalService::TransientWithdrawal>
+EmergencyWithdrawalService::version_scoped_unpersisted_withdrawal(
+    withdrawal::OperationTarget const& target) const {
+  auto const found = std::ranges::find_if(
+      unpersisted_withdrawals_, [&](auto const& withdrawal) {
+        return withdrawal.entry.stable_id == target.stable_id &&
+               withdrawal.entry.category == target.category &&
+               (!withdrawal.entry.affected_versions.minimum.empty() ||
+                !withdrawal.entry.affected_versions.maximum.empty());
+      });
+  if (found == unpersisted_withdrawals_.end()) {
+    return std::nullopt;
+  }
+  return *found;
+}
+
 EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
     domain::emergency_withdrawal::EmergencyWithdrawalNotice notice) {
   for (unsigned attempt = 0; attempt < 2; ++attempt) {
@@ -471,14 +571,17 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
     auto current = load_snapshot(&read);
     auto const authoritative = current;
     if (current.state == EmergencyWithdrawalServiceState::read_only) {
+      retain_unpersisted_withdrawals(
+          notice, "emergency withdrawal state is read-only");
       return {.code = EmergencyWithdrawalCheckCode::read_only,
-              .snapshot = std::move(current),
+              .snapshot = with_transient_safety(std::move(current)),
               .error = "emergency withdrawal state is read-only"};
     }
     if (current.state == EmergencyWithdrawalServiceState::failed) {
       auto error = current.error;
+      retain_unpersisted_withdrawals(notice, error);
       return {.code = EmergencyWithdrawalCheckCode::failed,
-              .snapshot = std::move(current),
+              .snapshot = with_transient_safety(std::move(current)),
               .error = std::move(error)};
     }
     auto found = std::ranges::find_if(current.notices, [&](auto const& existing) {
@@ -505,8 +608,9 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
         auto failed = authoritative;
         failed.state = EmergencyWithdrawalServiceState::failed;
         failed.error = "emergency withdrawal state exceeds persistence limits";
+        retain_unpersisted_withdrawals(notice, failed.error);
         return {.code = EmergencyWithdrawalCheckCode::failed,
-                .snapshot = std::move(failed),
+                .snapshot = with_transient_safety(std::move(failed)),
                 .error = "emergency withdrawal state exceeds persistence limits"};
       }
       auto committed = persist(current, read.snapshot.has_value()
@@ -519,8 +623,9 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
             confirmed.last_observed_at == current.last_observed_at) {
           confirmed.state = EmergencyWithdrawalServiceState::fresh;
           confirmed.possibly_stale = false;
+          clear_unpersisted_withdrawals(notice);
           return {.code = EmergencyWithdrawalCheckCode::stale_ignored,
-                  .snapshot = std::move(confirmed)};
+                  .snapshot = with_transient_safety(std::move(confirmed))};
         }
         auto failed = authoritative;
         failed.state = EmergencyWithdrawalServiceState::failed;
@@ -528,8 +633,9 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
                            ? "emergency withdrawal persistence outcome is unknown"
                            : committed.error;
         auto error = failed.error;
+        retain_unpersisted_withdrawals(notice, error);
         return {.code = EmergencyWithdrawalCheckCode::outcome_unknown,
-                .snapshot = std::move(failed),
+                .snapshot = with_transient_safety(std::move(failed)),
                 .error = std::move(error)};
       }
       if (committed.status != StateCommitStatus::committed) {
@@ -538,14 +644,16 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
                            ? EmergencyWithdrawalServiceState::read_only
                            : EmergencyWithdrawalServiceState::failed;
         failed.error = committed.error;
+        retain_unpersisted_withdrawals(notice, failed.error);
         return {.code = committed.status == StateCommitStatus::read_only
                              ? EmergencyWithdrawalCheckCode::read_only
                              : EmergencyWithdrawalCheckCode::failed,
-                .snapshot = std::move(failed),
+                .snapshot = with_transient_safety(std::move(failed)),
                 .error = committed.error};
       }
+      clear_unpersisted_withdrawals(notice);
       return {.code = EmergencyWithdrawalCheckCode::stale_ignored,
-              .snapshot = std::move(current)};
+              .snapshot = with_transient_safety(std::move(current))};
     }
     if (found == current.notices.end()) {
       current.notices.push_back(std::move(candidate));
@@ -561,8 +669,9 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
       auto failed = authoritative;
       failed.state = EmergencyWithdrawalServiceState::failed;
       failed.error = "emergency withdrawal state exceeds persistence limits";
+      retain_unpersisted_withdrawals(notice, failed.error);
       return {.code = EmergencyWithdrawalCheckCode::failed,
-              .snapshot = std::move(failed),
+              .snapshot = with_transient_safety(std::move(failed)),
               .error = "emergency withdrawal state exceeds persistence limits"};
     }
     auto committed = persist(current, read.snapshot.has_value()
@@ -575,8 +684,9 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
           confirmed.last_observed_at == current.last_observed_at) {
         confirmed.state = EmergencyWithdrawalServiceState::fresh;
         confirmed.possibly_stale = false;
+        clear_unpersisted_withdrawals(notice);
         return {.code = EmergencyWithdrawalCheckCode::updated,
-                .snapshot = std::move(confirmed)};
+                .snapshot = with_transient_safety(std::move(confirmed))};
       }
       auto failed = authoritative;
       failed.state = EmergencyWithdrawalServiceState::failed;
@@ -584,8 +694,9 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
                          ? "emergency withdrawal persistence outcome is unknown"
                          : committed.error;
       auto error = failed.error;
+      retain_unpersisted_withdrawals(notice, error);
       return {.code = EmergencyWithdrawalCheckCode::outcome_unknown,
-              .snapshot = std::move(failed),
+              .snapshot = with_transient_safety(std::move(failed)),
               .error = std::move(error)};
     }
     if (committed.status != StateCommitStatus::committed) {
@@ -594,35 +705,38 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::persist_notice(
                          ? EmergencyWithdrawalServiceState::read_only
                          : EmergencyWithdrawalServiceState::failed;
       failed.error = committed.error;
+      retain_unpersisted_withdrawals(notice, failed.error);
       return {.code = committed.status == StateCommitStatus::read_only
                            ? EmergencyWithdrawalCheckCode::read_only
                            : EmergencyWithdrawalCheckCode::failed,
-              .snapshot = std::move(failed),
+              .snapshot = with_transient_safety(std::move(failed)),
               .error = committed.error};
     }
+    clear_unpersisted_withdrawals(notice);
     return {.code = EmergencyWithdrawalCheckCode::updated,
-            .snapshot = std::move(current)};
+            .snapshot = with_transient_safety(std::move(current))};
   }
   auto snapshot = load_snapshot();
   snapshot.state = EmergencyWithdrawalServiceState::failed;
   snapshot.error = "emergency withdrawal state changed during notice acceptance";
+  retain_unpersisted_withdrawals(notice, snapshot.error);
   return {.code = EmergencyWithdrawalCheckCode::failed,
-          .snapshot = std::move(snapshot),
+          .snapshot = with_transient_safety(std::move(snapshot)),
           .error = "emergency withdrawal state changed during notice acceptance"};
 }
 
-EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check() {
+EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check_locked() {
   StateRead read;
   auto current = load_snapshot(&read);
   if (current.state == EmergencyWithdrawalServiceState::read_only) {
     return {.code = EmergencyWithdrawalCheckCode::read_only,
-            .snapshot = std::move(current),
+            .snapshot = with_transient_safety(std::move(current)),
             .error = "emergency withdrawal state is read-only"};
   }
   if (current.state == EmergencyWithdrawalServiceState::failed) {
     auto error = current.error;
     return {.code = EmergencyWithdrawalCheckCode::failed,
-            .snapshot = std::move(current),
+            .snapshot = with_transient_safety(std::move(current)),
             .error = std::move(error)};
   }
   auto fetched = source_.fetch();
@@ -651,14 +765,14 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check() {
       current.possibly_stale = true;
       current.error = fetched.error;
       return {.code = EmergencyWithdrawalCheckCode::cached,
-              .snapshot = std::move(current),
+              .snapshot = with_transient_safety(std::move(current)),
               .error = fetched.error};
     }
     current.state = EmergencyWithdrawalServiceState::unknown;
     current.possibly_stale = true;
     current.error = fetched.error;
     return {.code = EmergencyWithdrawalCheckCode::unknown,
-            .snapshot = std::move(current),
+            .snapshot = with_transient_safety(std::move(current)),
             .error = fetched.error};
   }
   auto parsed = domain::emergency_withdrawal::parse_notice(fetched.document);
@@ -684,13 +798,13 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check() {
       current.state = EmergencyWithdrawalServiceState::cached;
       current.possibly_stale = true;
       return {.code = EmergencyWithdrawalCheckCode::rejected,
-              .snapshot = std::move(current),
+              .snapshot = with_transient_safety(std::move(current)),
               .error = parsed.detail};
     }
     current.state = EmergencyWithdrawalServiceState::unknown;
     current.possibly_stale = true;
     return {.code = EmergencyWithdrawalCheckCode::rejected,
-            .snapshot = std::move(current),
+            .snapshot = with_transient_safety(std::move(current)),
             .error = parsed.detail};
   }
 
@@ -727,15 +841,23 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check() {
 }
 
 EmergencyWithdrawalCheckResult EmergencyWithdrawalService::preflight_check() {
-  return check();
+  std::scoped_lock lock{mutex_};
+  return check_locked();
+}
+
+EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check() {
+  std::scoped_lock lock{mutex_};
+  return check_locked();
 }
 
 EmergencyWithdrawalSnapshot EmergencyWithdrawalService::snapshot() {
-  return load_snapshot();
+  std::scoped_lock lock{mutex_};
+  return with_transient_safety(load_snapshot());
 }
 
 OperationAuthorizationResult EmergencyWithdrawalService::authorize(
     domain::emergency_withdrawal::OperationTarget const& target) {
+  std::scoped_lock lock{mutex_};
   StateRead read;
   auto current = load_snapshot(&read);
   auto record = [&](OperationAuthorizationResult result) {
@@ -780,6 +902,30 @@ OperationAuthorizationResult EmergencyWithdrawalService::authorize(
                    .observed_at = current.last_observed_at,
                    .reason = "emergency withdrawal target is invalid",
                    .possibly_stale = current.possibly_stale});
+  }
+  if (auto transient = matching_unpersisted_withdrawal(target);
+      transient.has_value()) {
+    return record({.code = OperationAuthorizationCode::blocked,
+                   .matching_notice = transient->entry,
+                   .notice_source = transient->source,
+                   .observed_at = transient->observed_at,
+                   .reason = transient->entry.reason,
+                   .notice_revision = transient->revision,
+                   .possibly_stale = true});
+  }
+  if (!target.version.has_value()) {
+    if (auto transient = version_scoped_unpersisted_withdrawal(target);
+        transient.has_value()) {
+      return record(
+          {.code = OperationAuthorizationCode::blocked,
+           .matching_notice = transient->entry,
+           .notice_source = transient->source,
+           .observed_at = transient->observed_at,
+           .reason =
+               "operation version is required while a version-scoped emergency withdrawal is active",
+           .notice_revision = transient->revision,
+           .possibly_stale = true});
+    }
   }
   if (current.state == EmergencyWithdrawalServiceState::read_only) {
     return record({.code = OperationAuthorizationCode::read_only,
@@ -836,13 +982,15 @@ OperationAuthorizationResult EmergencyWithdrawalService::authorize(
                    .possibly_stale = current.possibly_stale});
   }
   auto const unknown = current.state == EmergencyWithdrawalServiceState::unknown ||
-                       current.notices.empty();
+                       current.notices.empty() ||
+                       !unpersisted_withdrawals_.empty();
   return record({.code = unknown ? OperationAuthorizationCode::allowed_unknown
                                  : OperationAuthorizationCode::allowed,
                  .observed_at = current.last_observed_at,
                  .reason = unknown ? "latest emergency withdrawal notice is unknown"
                                    : "no matching emergency withdrawal",
-                 .possibly_stale = current.possibly_stale});
+                 .possibly_stale = current.possibly_stale ||
+                                   !unpersisted_withdrawals_.empty()});
 }
 
 }  // namespace azzs::application

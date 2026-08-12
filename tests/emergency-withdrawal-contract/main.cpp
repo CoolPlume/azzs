@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <future>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -58,6 +59,23 @@ class SequenceNoticeSource final : public EmergencyWithdrawalNoticeSource {
 
   std::string next_document;
   std::optional<std::string> next_error;
+};
+
+class BlockingNoticeSource final : public EmergencyWithdrawalNoticeSource {
+ public:
+  BlockingNoticeSource(std::shared_future<void> release,
+                       std::promise<void>& entered)
+      : release_(std::move(release)), entered_(entered) {}
+
+  [[nodiscard]] NoticeFetchResult fetch() override {
+    entered_.set_value();
+    release_.wait();
+    return {.error = "offline"};
+  }
+
+ private:
+  std::shared_future<void> release_;
+  std::promise<void>& entered_;
 };
 
 class RecordingLog final : public ExecutionLog {
@@ -293,14 +311,31 @@ struct Fixture final {
   Fixture fixture;
   fixture.source.next_error = "offline";
   auto first = fixture.service.check();
-  bool passed = expect(first.code == EmergencyWithdrawalCheckCode::unknown,
-                       "first failed check without cache must be unknown");
+  bool passed = expect(
+      first.code == EmergencyWithdrawalCheckCode::unknown &&
+          first.snapshot.state == EmergencyWithdrawalServiceState::unknown &&
+          !first.snapshot.persistence_pending,
+      "first fetch failure without cache must remain unknown rather than successful");
   auto allowed = fixture.service.authorize({
       .stable_id = "new-install",
       .category = withdrawal::OperationCategory::software_installation,
   });
   passed &= expect(allowed.code == OperationAuthorizationCode::allowed_unknown,
                    "unknown first state must allow new operations with warning");
+
+  fixture.source.next_document = "source=project-security\nrevision=1\n";
+  auto malformed_first = fixture.service.check();
+  auto malformed_authorization = fixture.service.authorize({
+      .stable_id = "new-install",
+      .category = withdrawal::OperationCategory::software_installation,
+  });
+  passed &= expect(
+      malformed_first.code == EmergencyWithdrawalCheckCode::rejected &&
+          malformed_first.snapshot.state == EmergencyWithdrawalServiceState::unknown &&
+          malformed_first.snapshot.notices.empty() &&
+          !malformed_first.snapshot.persistence_pending &&
+          malformed_authorization.code == OperationAuthorizationCode::allowed_unknown,
+      "first parse failure must remain unknown and must not enter a safety cache");
 
   fixture.source.next_document = notice(1);
   [[maybe_unused]] auto const cached_seed = fixture.service.check();
@@ -319,6 +354,17 @@ struct Fixture final {
   passed &= expect(snapshot.state == EmergencyWithdrawalServiceState::cached &&
                        snapshot.possibly_stale && snapshot.last_observed_at.has_value(),
                    "cached state must expose staleness and observation time");
+
+  fixture.source.next_document = "source=project-security\nrevision=2\n";
+  auto malformed_cached = fixture.service.check();
+  passed &= expect(
+      malformed_cached.code == EmergencyWithdrawalCheckCode::rejected &&
+          fixture.service.authorize({
+              .stable_id = "sogou-input",
+              .category = withdrawal::OperationCategory::software_optimization,
+              .version = "14.5",
+          }).code == OperationAuthorizationCode::blocked,
+      "a malformed refresh must not displace an effective cached withdrawal");
   return passed;
 }
 
@@ -503,17 +549,94 @@ struct Fixture final {
                           azzs::application::StateFileSlot::candidate);
   failure.source.next_document = notice(1);
   auto failed = failure.service.check();
-  passed &= expect(failed.code == EmergencyWithdrawalCheckCode::failed &&
-                       failed.snapshot.notices.empty(),
-                   "a failed authority commit must not return the uncommitted notice");
+  auto retained = failure.service.authorize({
+      .stable_id = "sogou-input",
+      .category = withdrawal::OperationCategory::software_optimization,
+      .version = "14.5",
+  });
+  auto retained_snapshot = failure.service.snapshot();
+  passed &= expect(
+      failed.code == EmergencyWithdrawalCheckCode::failed &&
+          failed.snapshot.notices.empty() &&
+          retained_snapshot.state == EmergencyWithdrawalServiceState::unpersisted &&
+          retained_snapshot.persistence_pending &&
+          retained_snapshot.possibly_stale &&
+          retained.code == OperationAuthorizationCode::blocked,
+      "a parsed withdrawal with a failed commit must remain blocked in this process");
+
+  failure.source.next_document =
+      "source=project-security\nrevision=2\n"
+      "entry=invalid-risk|future_category|||must not retain|withdraw\n";
+  auto malformed = failure.service.check();
+  auto invalid_target = failure.service.authorize({
+      .stable_id = "invalid-risk",
+      .category = withdrawal::OperationCategory::software_optimization,
+  });
+  passed &= expect(
+      malformed.code == EmergencyWithdrawalCheckCode::rejected &&
+          invalid_target.code == OperationAuthorizationCode::allowed_unknown &&
+          failure.service.authorize({
+              .stable_id = "sogou-input",
+              .category = withdrawal::OperationCategory::software_optimization,
+              .version = "14.5",
+          }).code == OperationAuthorizationCode::blocked,
+      "invalid input must not become an in-memory withdrawal while retained rules stay blocking");
+
+  DeviceStateStore restarted_states{failure.files, failure.clock};
+  SequenceNoticeSource restarted_source;
+  restarted_source.next_error = "offline";
+  EmergencyWithdrawalService restarted{restarted_states, failure.clock,
+                                       restarted_source};
+  auto restarted_check = restarted.preflight_check();
   passed &= expect(failure.service.authorize({
                         .stable_id = "sogou-input",
                         .category = withdrawal::OperationCategory::software_optimization,
                         .version = "14.5",
                     })
-                       .code == OperationAuthorizationCode::allowed_unknown,
-                   "a failed first commit must remain unknown instead of inventing a block");
+                       .code == OperationAuthorizationCode::blocked &&
+                       restarted_check.code == EmergencyWithdrawalCheckCode::unknown &&
+                       restarted.authorize({
+                           .stable_id = "sogou-input",
+                           .category = withdrawal::OperationCategory::software_optimization,
+                           .version = "14.5",
+                       }).code == OperationAuthorizationCode::allowed_unknown,
+                   "unpersisted protection must end on restart, which returns to the first-failure unknown rule");
   return passed;
+}
+
+[[nodiscard]] bool serialized_public_entry_contract() {
+  InMemoryStateFileSystem files;
+  FixedClock clock{azzs::application::WallClockTime{
+      std::chrono::milliseconds{1'786'422'500'000}}};
+  DeviceStateStore states{files, clock};
+  std::promise<void> release;
+  auto release_signal = release.get_future().share();
+  std::promise<void> entered;
+  auto entered_signal = entered.get_future();
+  BlockingNoticeSource source{release_signal, entered};
+  EmergencyWithdrawalService service{states, clock, source};
+  auto check = std::async(std::launch::async, [&] {
+    return service.check();
+  });
+  entered_signal.wait();
+  std::promise<void> authorization_invoking;
+  auto authorization_invoking_signal = authorization_invoking.get_future();
+  auto authorization = std::async(std::launch::async, [&] {
+    authorization_invoking.set_value();
+    return service.authorize({
+        .stable_id = "new-install",
+        .category = withdrawal::OperationCategory::software_installation,
+    });
+  });
+  authorization_invoking_signal.wait();
+  auto const serialized = authorization.wait_for(std::chrono::milliseconds{100}) ==
+                          std::future_status::timeout;
+  release.set_value();
+  auto const checked = check.get();
+  auto const authorized = authorization.get();
+  return expect(serialized && checked.code == EmergencyWithdrawalCheckCode::unknown &&
+                    authorized.code == OperationAuthorizationCode::allowed_unknown,
+                "concurrent check and authorization must serialize on one safety state");
 }
 
 }  // namespace
@@ -529,6 +652,7 @@ int main() {
   passed &= persistence_and_corruption_contract();
   passed &= persistence_limits_contract();
   passed &= release_only_and_commit_failure_contract();
+  passed &= serialized_public_entry_contract();
   if (!passed) return EXIT_FAILURE;
   std::cout << "emergency withdrawal contract passed\n";
   return EXIT_SUCCESS;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -32,6 +34,7 @@ enum class EmergencyWithdrawalServiceState {
   unknown,
   fresh,
   cached,
+  unpersisted,
   read_only,
   failed,
 };
@@ -42,6 +45,7 @@ struct EmergencyWithdrawalSnapshot final {
   std::vector<domain::emergency_withdrawal::EmergencyWithdrawalNotice> notices;
   std::optional<WallClockTime> last_observed_at;
   bool possibly_stale{false};
+  bool persistence_pending{false};
   std::string error;
 };
 
@@ -101,6 +105,13 @@ class EmergencyWithdrawalService final {
       domain::emergency_withdrawal::OperationTarget const& target);
 
  private:
+  struct TransientWithdrawal final {
+    domain::emergency_withdrawal::WithdrawalEntry entry;
+    std::string source;
+    std::uint64_t revision{};
+    WallClockTime observed_at{};
+  };
+
   [[nodiscard]] domain::StateKey state_key() const;
   [[nodiscard]] EmergencyWithdrawalSnapshot load_snapshot(
       StateRead* read_result = nullptr);
@@ -115,14 +126,31 @@ class EmergencyWithdrawalService final {
       EmergencyWithdrawalSnapshot const& snapshot,
       domain::emergency_withdrawal::OperationTarget const& target) const
       noexcept;
+  [[nodiscard]] EmergencyWithdrawalSnapshot with_transient_safety(
+      EmergencyWithdrawalSnapshot snapshot) const;
+  void retain_unpersisted_withdrawals(
+      domain::emergency_withdrawal::EmergencyWithdrawalNotice const& notice,
+      std::string error);
+  void clear_unpersisted_withdrawals(
+      domain::emergency_withdrawal::EmergencyWithdrawalNotice const& notice);
+  [[nodiscard]] std::optional<TransientWithdrawal>
+  matching_unpersisted_withdrawal(
+      domain::emergency_withdrawal::OperationTarget const& target) const;
+  [[nodiscard]] std::optional<TransientWithdrawal>
+  version_scoped_unpersisted_withdrawal(
+      domain::emergency_withdrawal::OperationTarget const& target) const;
   [[nodiscard]] EmergencyWithdrawalCheckResult persist_notice(
       domain::emergency_withdrawal::EmergencyWithdrawalNotice notice);
+  [[nodiscard]] EmergencyWithdrawalCheckResult check_locked();
 
   DeviceStateStore& states_;
   Clock const& clock_;
   EmergencyWithdrawalNoticeSource& source_;
   ExecutionLog* log_{};
   CorrelationId correlation_;
+  std::mutex mutex_;
+  std::vector<TransientWithdrawal> unpersisted_withdrawals_;
+  std::string unpersisted_error_;
 };
 
 }  // namespace azzs::application
