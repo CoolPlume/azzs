@@ -96,12 +96,12 @@ class RecordingRequestExecutor final
           failed_result.error == "simulated transport failure",
       "a non-network transport failure must cross the adapter boundary explicitly");
 
-  executor.result = {
-      .succeeded = true,
-      .document = std::string{
-          WindowsEmergencyWithdrawalNoticeSource::kMaximumDocumentBytes + 1U,
-          'x'},
-  };
+  azzs::application::NoticeFetchResult oversized_response;
+  oversized_response.succeeded = true;
+  oversized_response.document = std::string{
+      WindowsEmergencyWithdrawalNoticeSource::kMaximumDocumentBytes + 1U,
+      'x'};
+  executor.result = oversized_response;
   auto const oversized_result = source.fetch();
   passed &= expect(
       !oversized_result.succeeded && executor.calls == 2 &&
