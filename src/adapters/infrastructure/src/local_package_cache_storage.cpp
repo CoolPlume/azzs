@@ -10,6 +10,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <cerrno>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
@@ -206,7 +207,9 @@ class AssetLock final {
   }
 
   [[nodiscard]] static std::optional<AssetLock> try_acquire(
-      std::filesystem::path const& path) {
+      std::filesystem::path const& path, bool& busy, std::string& detail) {
+    busy = false;
+    detail.clear();
 #ifdef _WIN32
     HANDLE handle = ::CreateFileW(
         path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_NEW,
@@ -221,8 +224,17 @@ class AssetLock final {
                              FILE_ATTRIBUTE_HIDDEN |
                                  FILE_FLAG_OPEN_REPARSE_POINT,
                              nullptr);
-    }
-    if (handle == INVALID_HANDLE_VALUE) {
+      if (handle == INVALID_HANDLE_VALUE) {
+        auto const open_error = ::GetLastError();
+        busy = open_error == ERROR_SHARING_VIOLATION ||
+               open_error == ERROR_LOCK_VIOLATION;
+        detail = "controlled cache lock open failed (" +
+                 std::to_string(open_error) + ")";
+        return std::nullopt;
+      }
+    } else if (handle == INVALID_HANDLE_VALUE) {
+      detail = "controlled cache lock create failed (" +
+               std::to_string(create_error) + ")";
       return std::nullopt;
     }
     if (created) {
@@ -233,6 +245,7 @@ class AssetLock final {
                                         &attributes, sizeof(attributes)) ||
         (attributes.FileAttributes &
          (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+      detail = "controlled cache lock file is unsafe";
       ::CloseHandle(handle);
       return std::nullopt;
     }
@@ -240,7 +253,16 @@ class AssetLock final {
 #else
     auto const descriptor = ::open(path.c_str(), O_CREAT | O_RDWR | O_NOFOLLOW,
                                    S_IRUSR | S_IWUSR);
-    if (descriptor < 0 || ::flock(descriptor, LOCK_EX | LOCK_NB) != 0) {
+    if (descriptor < 0) {
+      detail = "controlled cache lock open failed (" +
+               std::to_string(errno) + ")";
+      return std::nullopt;
+    }
+    if (::flock(descriptor, LOCK_EX | LOCK_NB) != 0) {
+      auto const lock_error = errno;
+      busy = lock_error == EACCES || lock_error == EAGAIN;
+      detail = "controlled cache lock acquire failed (" +
+               std::to_string(lock_error) + ")";
       if (descriptor >= 0) {
         ::close(descriptor);
       }
@@ -633,11 +655,17 @@ cache::CacheWriteBegin LocalPackageCacheStorage::begin_write(
             .detail = "cache root is not registered by the host"};
   }
   auto const key = asset.identity.stable_key();
+  bool lock_busy = false;
+  std::string lock_detail;
   auto lock = AssetLock::try_acquire(
-      path_for(configuration->directory, key, kLockSuffix));
+      path_for(configuration->directory, key, kLockSuffix), lock_busy,
+      lock_detail);
   if (!lock.has_value()) {
-    return {.code = cache::CacheWriteBeginCode::busy,
-            .detail = "controlled cache asset is locked by another session"};
+    return {.code = lock_busy ? cache::CacheWriteBeginCode::busy
+                              : cache::CacheWriteBeginCode::failed,
+            .detail = lock_detail.empty()
+                          ? "controlled cache asset is locked by another session"
+                          : std::move(lock_detail)};
   }
   std::error_code error;
   static_cast<void>(remove_file(
@@ -689,8 +717,11 @@ cache::CacheStorageCleanupResult LocalPackageCacheStorage::clean_orphaned_partia
     if (!key.has_value()) {
       continue;
     }
+    bool lock_busy = false;
+    std::string lock_detail;
     auto lock = AssetLock::try_acquire(
-        path_for(configuration->directory, *key, kLockSuffix));
+        path_for(configuration->directory, *key, kLockSuffix), lock_busy,
+        lock_detail);
     if (!lock.has_value()) {
       continue;
     }
@@ -748,11 +779,15 @@ cache::CacheStorageRemovalResult LocalPackageCacheStorage::remove_completed(
             .detail = "cache root is not registered by the host"};
   }
   auto const key = identity.stable_key();
+  bool lock_busy = false;
+  std::string lock_detail;
   auto lock = AssetLock::try_acquire(
-      path_for(configuration->directory, key, kLockSuffix));
+      path_for(configuration->directory, key, kLockSuffix), lock_busy,
+      lock_detail);
   if (!lock.has_value()) {
     return {.code = cache::CacheStorageRemovalCode::failed,
-            .detail = "controlled cache asset is busy"};
+            .detail = lock_detail.empty() ? "controlled cache asset is busy"
+                                           : std::move(lock_detail)};
   }
   auto existing = read_completed(root, identity);
   if (existing.code == cache::CompletedCacheReadCode::root_unavailable) {
