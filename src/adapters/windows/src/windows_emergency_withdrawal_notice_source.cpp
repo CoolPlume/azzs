@@ -121,8 +121,9 @@ struct ParsedHttpsEndpoint final {
   ParsedHttpsEndpoint parsed{
       .host = std::wstring{components.lpszHostName,
                            components.dwHostNameLength},
-      .port = components.nPort == 0 ? INTERNET_DEFAULT_HTTPS_PORT
-                                    : components.nPort,
+      .port = components.nPort == 0
+                  ? static_cast<INTERNET_PORT>(INTERNET_DEFAULT_HTTPS_PORT)
+                  : components.nPort,
   };
   if (components.lpszUrlPath != nullptr && components.dwUrlPathLength != 0) {
     parsed.object_name.assign(components.lpszUrlPath,
