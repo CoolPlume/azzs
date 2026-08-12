@@ -126,6 +126,19 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::drivers:
       ContentFrame().Navigate(xaml_typename<Pages::DriversPage>(), nullptr,
                               transition);
+      if (auto const drivers_page =
+              ContentFrame().Content().try_as<Pages::DriversPage>()) {
+        auto const hardware =
+            workbench_->observe_hardware(
+                azzs::application::HardwareOverviewTrigger::page_entered);
+        auto weak_this = get_weak();
+        winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
+            ->bind(hardware, [weak_this] {
+              if (auto self = weak_this.get()) {
+                self->refresh_drivers_page();
+              }
+            });
+      }
       break;
     case PageId::system_optimization:
       ContentFrame().Navigate(xaml_typename<Pages::SystemOptimizationPage>(),
@@ -147,6 +160,18 @@ void MainWindow::navigate_to(PageId page) {
       ContentFrame().Navigate(xaml_typename<Pages::ApplicationSettingsPage>(),
                               nullptr, transition);
       break;
+  }
+}
+
+void MainWindow::refresh_drivers_page() {
+  if (!workbench_) {
+    return;
+  }
+  auto const hardware = workbench_->refresh_hardware();
+  if (auto const drivers_page =
+          ContentFrame().Content().try_as<Pages::DriversPage>()) {
+    winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
+        ->project(hardware);
   }
 }
 
