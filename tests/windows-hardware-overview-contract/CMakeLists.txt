@@ -12,5 +12,5 @@ azzs_project_target(
 azzs_register_test(
   NAME windows-hardware-overview.contract
   TARGET azzs_windows_hardware_overview_contract
-  LABELS contract windows
+  LABELS contract
 )
