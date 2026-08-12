@@ -27,6 +27,7 @@
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
+#include "azzs/adapters/windows/windows_sogou_optimization_adapter.hpp"
 #include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
@@ -36,6 +37,7 @@
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/software_selection.hpp"
+#include "azzs/application/sogou_optimization.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
@@ -98,6 +100,10 @@ class WindowsWorkbenchServices final
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_),
+        sogou_optimization_adapter_{},
+        sogou_optimizations_(sogou_optimization_adapter_,
+                             sogou_optimization_adapter_),
+        platform_info_{},
         settings_catalog_file_(states_),
         settings_catalog_(settings_catalog_file_, settings_catalog_file_, log_,
                           occupancy_, settings_import_authorization_,
@@ -169,6 +175,11 @@ class WindowsWorkbenchServices final
     return occupancy_;
   }
 
+  [[nodiscard]] application::sogou_optimization::SogouOptimizationService&
+  sogou_optimizations() noexcept override {
+    return sogou_optimizations_;
+  }
+
   [[nodiscard]] application::SystemSettingsApplyService& system_settings_apply()
       noexcept override {
     return system_settings_apply_;
@@ -222,6 +233,10 @@ class WindowsWorkbenchServices final
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;
+  adapters::windows::WindowsSogouOptimizationAdapter
+      sogou_optimization_adapter_;
+  application::sogou_optimization::SogouOptimizationService
+      sogou_optimizations_;
   adapters::infrastructure::SettingsCatalogFileAdapter settings_catalog_file_;
   ProductionSettingsCatalogImportAuthorization settings_import_authorization_;
   application::settings_catalog::SettingsCatalogLifecycle settings_catalog_;

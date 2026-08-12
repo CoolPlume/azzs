@@ -32,6 +32,7 @@ add_subdirectory(architecture-selection)
 add_subdirectory(software-selection)
 
 add_library(azzs_software_optimization_catalog_application STATIC
+  src/sogou_optimization.cpp
   src/software_optimization_catalog_lifecycle.cpp
 )
 
