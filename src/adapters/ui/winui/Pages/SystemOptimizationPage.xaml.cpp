@@ -68,7 +68,7 @@ namespace {
     return resource_with_token(resources, L"SystemSettingsMaximumRange",
                                L"{version}", maximum);
   }
-  return resources.GetString(L"SystemSettingsUnknownRange");
+  return std::wstring{resources.GetString(L"SystemSettingsUnknownRange")};
 }
 
 }  // namespace
@@ -129,9 +129,10 @@ void SystemOptimizationPage::OnSettingSelectionChanged(
     return;
   }
   auto const id = winrt::unbox_value<winrt::hstring>(check_box.Tag());
+  auto const checked = check_box.IsChecked();
   static_cast<void>(service_->set_selected(
       azzs::application::settings_domain::StableId{winrt::to_string(id)},
-      check_box.IsChecked().value_or(false)));
+      checked ? checked.Value() : false));
   project(service_->snapshot());
 }
 
