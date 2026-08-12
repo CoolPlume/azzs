@@ -26,8 +26,8 @@
 | --- | --- |
 | 总调度、跨事项取舍、全局集成决策 | GPT-5.6 Sol Ultra |
 | 固定 diff、日志摘取、状态核对、简单文档和其他机械工作 | GPT-5.6 Luna XHigh 或 Max |
-| 边界明确的局部实现、定向测试、Git/PR 收口 | GPT-5.5 XHigh 或 Max |
-| 既有模式下的普通实现、冲突不复杂的集成 | GPT-5.5 Max；共享核心或不确定接口再用 GPT-5.6 Terra Max |
+| 边界明确的局部实现、定向测试、Git/PR 收口 | GPT-5.5 XHigh |
+| 既有模式下的普通实现、冲突不复杂的集成 | GPT-5.5 XHigh；共享核心或不确定接口再用 GPT-5.6 Terra Max |
 | 安全状态、并发生命周期、跨层语义、复杂冲突、连续 CI 根因或低阶模型已失败 | GPT-5.6 Terra Ultra |
 | 极复杂且影响全局的分析或 Terra 仍难以收敛的任务 | GPT-5.6 Sol Ultra |
 
