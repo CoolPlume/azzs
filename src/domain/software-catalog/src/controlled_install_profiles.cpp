@@ -174,6 +174,32 @@ void validate_facts(std::string const& item_id,
   }
 }
 
+[[nodiscard]] RequiredReleaseInstallFacts release_requirement_from(
+    SoftwareInstallFacts const& facts) {
+  auto const architectures_confirmed =
+      facts.capabilities.architectures.knowledge == FactKnowledge::confirmed &&
+      !facts.capabilities.architectures.values.empty();
+  auto const capability_confirmed = [](CapabilitySupport value) {
+    return value != CapabilitySupport::unknown;
+  };
+  return {
+      .software_id = facts.software_id,
+      .architectures_confirmed = architectures_confirmed,
+      .offline_install_confirmed =
+          capability_confirmed(facts.capabilities.offline_install),
+      .silent_install_confirmed =
+          capability_confirmed(facts.capabilities.silent_install),
+      .completion_boundary_confirmed =
+          capability_confirmed(facts.capabilities.completion_boundary),
+      .post_install_behavior_confirmed =
+          capability_confirmed(facts.capabilities.post_install_behavior),
+      .restart_verification_confirmed =
+          capability_confirmed(facts.capabilities.restart_verification),
+      .result_detection_confirmed =
+          capability_confirmed(facts.capabilities.result_detection),
+  };
+}
+
 }  // namespace
 
 std::span<ControlledInstallProfile const>
@@ -295,7 +321,31 @@ SoftwareCatalogPolicy initial_software_catalog_policy() {
   }
   for (auto const& fact : initial_software_install_facts()) {
     policy.required_release_software.push_back(fact.software_id);
+    policy.required_release_install_facts.push_back(
+        release_requirement_from(fact));
   }
+  policy.required_release_drivers = {
+      {
+          .id = "amd-auto-detect-and-install",
+          .entry_type = DriverEntryType::assistant,
+          .hardware_kind = "gpu",
+          .primary_source_address =
+              "https://www.amd.com/en/support/download/drivers.html",
+      },
+      {
+          .id = "intel-gpu-driver-page",
+          .entry_type = DriverEntryType::vendor_page,
+          .hardware_kind = "gpu",
+          .primary_source_address =
+              "https://www.intel.com/content/www/us/en/download-center/home.html",
+      },
+      {
+          .id = "nvidia-gpu-driver-page",
+          .entry_type = DriverEntryType::vendor_page,
+          .hardware_kind = "gpu",
+          .primary_source_address = "https://www.nvidia.com/Download/index.aspx",
+      },
+  };
   return policy;
 }
 

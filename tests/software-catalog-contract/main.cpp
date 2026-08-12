@@ -58,6 +58,16 @@ using azzs::testing::StateFileOperation;
   });
 }
 
+[[nodiscard]] bool has_issue_for_item(
+    std::vector<catalog::CatalogIssue> const& issues,
+    catalog::CatalogIssueCode code, std::string_view item_id,
+    std::optional<catalog::CatalogIssueScope> scope = std::nullopt) {
+  return std::ranges::any_of(issues, [&](catalog::CatalogIssue const& issue) {
+    return issue.code == code && issue.item_id == item_id &&
+           (!scope.has_value() || issue.scope == *scope);
+  });
+}
+
 [[nodiscard]] bool contains(std::vector<std::string> const& values,
                             std::string_view value) {
   return std::ranges::find(values, value) != values.end();
@@ -69,6 +79,15 @@ template <typename Value, typename Projection>
                                       Projection projection) {
   auto const found = std::ranges::find(values, id, projection);
   return found == values.end() ? nullptr : &*found;
+}
+
+[[nodiscard]] catalog::CatalogSource const* primary_source(
+    std::vector<catalog::CatalogSource> const& sources) {
+  auto const found = std::ranges::find_if(
+      sources, [](catalog::CatalogSource const& source) {
+        return source.purpose == catalog::SourcePurpose::primary;
+      });
+  return found == sources.end() ? nullptr : &*found;
 }
 
 [[nodiscard]] bool contains_prohibited_identity(std::string_view value) {
@@ -490,6 +509,7 @@ struct LifecycleFixture final {
     return false;
   }
 
+  auto policy = catalog::initial_software_catalog_policy();
   std::vector<std::string> expected_ids{
       "qq", "sogou-input", "game-cheats-manager", "cheat-engine",
       "office-tool-plus", "internet-download-manager",
@@ -589,12 +609,21 @@ struct LifecycleFixture final {
     }
   }
 
-  auto policy = catalog::initial_software_catalog_policy();
   std::vector<std::string> required = policy.required_release_software;
   std::ranges::sort(required);
   passed &= expect(required == expected_ids && policy.supported_driver_hardware_kinds ==
                        std::vector<std::string>{"gpu"},
                    "the initial policy must require all eleven software ids and the registered GPU kind");
+  std::vector<std::string> release_fact_ids;
+  release_fact_ids.reserve(policy.required_release_install_facts.size());
+  for (auto const& requirement : policy.required_release_install_facts) {
+    release_fact_ids.push_back(requirement.software_id);
+    passed &= expect(!requirement.complete(),
+                     "unknown initial installation facts must not be release-ready");
+  }
+  std::ranges::sort(release_fact_ids);
+  passed &= expect(release_fact_ids == expected_ids,
+                   "the release policy must consume install facts for every required software id");
   auto const* sogou_profile = find_by_id(
       policy.install_profiles, "sogou-input-defaults-v1",
       &catalog::InstallProfileSupport::id);
@@ -604,6 +633,173 @@ struct LifecycleFixture final {
                        !sogou_profile->release_ready &&
                        policy.required_install_profiles.size() == 1,
                    "the Sogou profile must remain declaration-only and release-incomplete");
+
+  auto released = codec.decode(replace_once(
+      file.bytes, "release_state = \"draft\"", "release_state = \"release\""));
+  passed &= expect(released.document.has_value() && released.issues.empty(),
+                   "a release-gate candidate must retain the authoritative TOML shape");
+  if (!released.document.has_value() || !released.issues.empty()) {
+    return false;
+  }
+  auto evaluate_release_candidate = [&](catalog::SoftwareCatalogDocument const& candidate,
+                                        catalog::SoftwareCatalogPolicy const& candidate_policy) {
+    auto runtime = catalog::validate_for_runtime(candidate, candidate_policy);
+    auto gate = catalog::evaluate_release_gate(
+        candidate, runtime, candidate_policy, catalog::content_identity(file.bytes));
+    return std::pair{std::move(runtime), std::move(gate)};
+  };
+  auto release_only = evaluate_release_candidate(*released.document, policy);
+  passed &= expect(
+      release_only.first.accepted() && !release_only.second.passed() &&
+          static_cast<std::size_t>(std::ranges::count_if(
+              release_only.second.issues, [](catalog::CatalogIssue const& issue) {
+                return issue.scope == catalog::CatalogIssueScope::release &&
+                       issue.code ==
+                           catalog::CatalogIssueCode::unknown_execution_semantics;
+              })) == expected_ids.size() &&
+          has_issue_for_item(
+              release_only.second.issues,
+              catalog::CatalogIssueCode::unknown_execution_semantics, "qq",
+              catalog::CatalogIssueScope::release),
+      "changing only release_state must leave every unknown first-release install fact blocked");
+
+  auto sogou_ready_policy = policy;
+  auto sogou_profile_support = std::ranges::find(
+      sogou_ready_policy.install_profiles, "sogou-input-defaults-v1",
+      &catalog::InstallProfileSupport::id);
+  if (sogou_profile_support == sogou_ready_policy.install_profiles.end()) {
+    return false;
+  }
+  sogou_profile_support->runtime_status =
+      catalog::InstallProfileRuntimeStatus::available;
+  sogou_profile_support->release_ready = true;
+  auto sogou_only =
+      evaluate_release_candidate(*released.document, sogou_ready_policy);
+  passed &= expect(
+      sogou_only.first.accepted() && !sogou_only.second.passed() &&
+          has_issue_for_item(
+              sogou_only.second.issues,
+              catalog::CatalogIssueCode::unknown_execution_semantics,
+              "game-cheats-manager", catalog::CatalogIssueScope::release),
+      "making only the Sogou profile ready must not release the remaining unknown facts");
+
+  auto const* required_amd = find_by_id(
+      policy.required_release_drivers, "amd-auto-detect-and-install",
+      &catalog::RequiredReleaseDriverEntry::id);
+  auto const* required_intel = find_by_id(
+      policy.required_release_drivers, "intel-gpu-driver-page",
+      &catalog::RequiredReleaseDriverEntry::id);
+  auto const* required_nvidia = find_by_id(
+      policy.required_release_drivers, "nvidia-gpu-driver-page",
+      &catalog::RequiredReleaseDriverEntry::id);
+  passed &= expect(
+      policy.required_release_drivers.size() == 3 && required_amd != nullptr &&
+          required_intel != nullptr && required_nvidia != nullptr &&
+          required_amd->entry_type == catalog::DriverEntryType::assistant &&
+          required_intel->entry_type == catalog::DriverEntryType::vendor_page &&
+          required_nvidia->entry_type == catalog::DriverEntryType::vendor_page &&
+          required_amd->hardware_kind == "gpu" &&
+          required_intel->hardware_kind == "gpu" &&
+          required_nvidia->hardware_kind == "gpu" &&
+          required_amd->primary_source_address ==
+              "https://www.amd.com/en/support/download/drivers.html" &&
+          required_intel->primary_source_address ==
+              "https://www.intel.com/content/www/us/en/download-center/home.html" &&
+          required_nvidia->primary_source_address ==
+              "https://www.nvidia.com/Download/index.aspx",
+      "the release policy must require the three exact official GPU driver entries");
+  for (auto const& requirement : policy.required_release_drivers) {
+    auto const* driver = find_by_id(
+        released.document->drivers, requirement.id,
+        &catalog::DriverDefinition::id);
+    auto const* source = driver == nullptr ? nullptr : primary_source(driver->sources);
+    passed &= expect(driver != nullptr && driver->enabled &&
+                         driver->entry_type == requirement.entry_type &&
+                         contains(driver->hardware_kinds,
+                                  requirement.hardware_kind) &&
+                         source != nullptr &&
+                         source->address == requirement.primary_source_address,
+                     "the authoritative catalog must match each required driver release policy entry");
+  }
+
+  auto missing_intel = *released.document;
+  auto missing_intel_driver = std::ranges::find(
+      missing_intel.drivers, "intel-gpu-driver-page",
+      &catalog::DriverDefinition::id);
+  if (missing_intel_driver == missing_intel.drivers.end()) {
+    return false;
+  }
+  missing_intel.drivers.erase(missing_intel_driver);
+  auto missing_intel_result = evaluate_release_candidate(missing_intel, policy);
+  passed &= expect(
+      missing_intel_result.first.accepted() &&
+          has_issue_for_item(
+              missing_intel_result.second.issues,
+              catalog::CatalogIssueCode::required_item_missing,
+              "intel-gpu-driver-page", catalog::CatalogIssueScope::release),
+      "deleting a required initial driver must block release");
+
+  auto disabled_nvidia = *released.document;
+  auto disabled_nvidia_driver = std::ranges::find(
+      disabled_nvidia.drivers, "nvidia-gpu-driver-page",
+      &catalog::DriverDefinition::id);
+  if (disabled_nvidia_driver == disabled_nvidia.drivers.end()) {
+    return false;
+  }
+  disabled_nvidia_driver->enabled = false;
+  auto disabled_nvidia_result =
+      evaluate_release_candidate(disabled_nvidia, policy);
+  passed &= expect(
+      disabled_nvidia_result.first.accepted() &&
+          has_issue_for_item(
+              disabled_nvidia_result.second.issues,
+              catalog::CatalogIssueCode::required_item_disabled,
+              "nvidia-gpu-driver-page", catalog::CatalogIssueScope::release),
+      "disabling a required initial driver must block release");
+
+  auto wrong_amd_type = *released.document;
+  auto wrong_amd_driver = std::ranges::find(
+      wrong_amd_type.drivers, "amd-auto-detect-and-install",
+      &catalog::DriverDefinition::id);
+  if (wrong_amd_driver == wrong_amd_type.drivers.end()) {
+    return false;
+  }
+  wrong_amd_driver->entry_type = catalog::DriverEntryType::vendor_page;
+  auto wrong_amd_type_result =
+      evaluate_release_candidate(wrong_amd_type, policy);
+  passed &= expect(
+      wrong_amd_type_result.first.accepted() &&
+          has_issue_for_item(wrong_amd_type_result.second.issues,
+                             catalog::CatalogIssueCode::invalid_field,
+                             "amd-auto-detect-and-install",
+                             catalog::CatalogIssueScope::release),
+      "changing a required driver entry type must block release");
+
+  auto wrong_nvidia_address = *released.document;
+  auto wrong_nvidia_driver = std::ranges::find(
+      wrong_nvidia_address.drivers, "nvidia-gpu-driver-page",
+      &catalog::DriverDefinition::id);
+  if (wrong_nvidia_driver == wrong_nvidia_address.drivers.end()) {
+    return false;
+  }
+  auto wrong_nvidia_source = primary_source(wrong_nvidia_driver->sources);
+  if (wrong_nvidia_source == nullptr) {
+    return false;
+  }
+  auto mutable_nvidia_source = std::ranges::find_if(
+      wrong_nvidia_driver->sources, [](catalog::CatalogSource const& source) {
+        return source.purpose == catalog::SourcePurpose::primary;
+      });
+  mutable_nvidia_source->address = "https://www.nvidia.com/Download/other.aspx";
+  auto wrong_nvidia_address_result =
+      evaluate_release_candidate(wrong_nvidia_address, policy);
+  passed &= expect(
+      wrong_nvidia_address_result.first.accepted() &&
+          has_issue_for_item(wrong_nvidia_address_result.second.issues,
+                             catalog::CatalogIssueCode::invalid_field,
+                             "nvidia-gpu-driver-page",
+                             catalog::CatalogIssueScope::release),
+      "changing a required driver primary address must block release");
 
   passed &= expect(decoded.document->release_state == catalog::ReleaseState::draft,
                    "the initial maintenance catalog must remain draft");
@@ -705,6 +901,11 @@ name = "GPU vendor page"
                        runtime.catalog->software.size() == 1 &&
                        runtime.catalog->drivers.size() == 1,
                    "both entry kinds must enter one runtime package");
+  auto generic_gate = catalog::evaluate_release_gate(
+      *decoded.document, runtime, default_policy(),
+      catalog::content_identity(fixture));
+  passed &= expect(generic_gate.passed(),
+                   "ordinary driver sources must not inherit issue-19 official-address requirements");
   passed &= expect(decoded.document->software.front().name == "工具\n套件" &&
                        !decoded.document->software.front()
                             .sources.front()
@@ -1737,6 +1938,16 @@ name = "GPU vendor page"
   LifecycleFixture identity_fixture;
   auto formal_policy = default_policy();
   formal_policy.required_release_software = {"core"};
+  formal_policy.required_release_install_facts = {{
+      .software_id = "core",
+      .architectures_confirmed = true,
+      .offline_install_confirmed = true,
+      .silent_install_confirmed = true,
+      .completion_boundary_confirmed = true,
+      .post_install_behavior_confirmed = true,
+      .restart_verification_confirmed = true,
+      .result_detection_confirmed = true,
+  }};
   auto const formal_text = one_item_catalog(
       5, "release", "Formal", "[]",
       "install_profile = \"profile-v1\"\n");
