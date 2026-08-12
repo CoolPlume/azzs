@@ -92,10 +92,44 @@ SystemSettingsApplySnapshot SystemSettingsApplyService::refresh() {
   auto previous = snapshot_;
   snapshot_ = {};
   snapshot_.recovery_records = recovery_records_;
+  auto project_waiting_recovery = [&] {
+    for (auto const& record : recovery_records_) {
+      if (record.status != RecoveryRecordStatus::waiting_explorer_restart) {
+        continue;
+      }
+      snapshot_.waiting_for_explorer_restart = true;
+      auto const expected = expected_value_for_recovery(record);
+      auto observed = platform_.read(record.setting);
+      auto* item = find_snapshot(record.setting_id);
+      if (expected.has_value() &&
+          observed.status == SystemSettingsAdapterStatus::succeeded &&
+          observed.value.has_value() && same_value(*observed.value, *expected)) {
+        if (item != nullptr) {
+          item->selected = false;
+          item->state = SystemSettingApplyState::waiting_explorer_restart;
+          item->detail = record.operation == RecoveryRecordOperation::restore
+                             ? "撤销后等待资源管理器重启并重新检测"
+                             : "等待资源管理器重启后重新检测";
+        }
+        continue;
+      }
+      if (item != nullptr) {
+        item->selected = false;
+        item->state = SystemSettingApplyState::failed;
+        item->detail = observed.detail.empty()
+                           ? "重新打开后未检测到预期系统设置"
+                           : observed.detail;
+      }
+      if (snapshot_.status != SystemSettingsSnapshotStatus::unavailable) {
+        snapshot_.status = SystemSettingsSnapshotStatus::failed;
+      }
+    }
+  };
   auto current = catalog_.current_settings_catalog();
   if (!current.has_value()) {
     snapshot_.status = SystemSettingsSnapshotStatus::unavailable;
     snapshot_.detail = "当前有效系统设置目录不可用";
+    project_waiting_recovery();
     return snapshot_;
   }
 
@@ -158,41 +192,7 @@ SystemSettingsApplySnapshot SystemSettingsApplyService::refresh() {
                            ? SystemSettingsSnapshotStatus::ready
                            : previous.status;
   }
-  for (auto& item : snapshot_.settings) {
-    auto const recovery = std::ranges::find_if(
-        recovery_records_.rbegin(), recovery_records_.rend(),
-        [&](SystemSettingsRecoveryRecord const& record) {
-          return record.setting_id == item.id &&
-                 record.status ==
-                     RecoveryRecordStatus::waiting_explorer_restart;
-        });
-    if (recovery == recovery_records_.rend()) {
-      continue;
-    }
-    auto const definition =
-        settings_domain::find_setting(*current, item.id);
-    auto const kind =
-        definition == nullptr ? std::nullopt : map_setting(*definition);
-    auto const expected =
-        kind.has_value() ? target_value(*kind) : std::nullopt;
-    auto observed =
-        kind.has_value() ? platform_.read(*kind) : SystemSettingsRead{};
-    item.selected = false;
-    if (expected.has_value() &&
-        observed.status == SystemSettingsAdapterStatus::succeeded &&
-        observed.value.has_value() &&
-        same_value(*observed.value, *expected)) {
-      item.state = SystemSettingApplyState::waiting_explorer_restart;
-      item.detail = "等待资源管理器重启后重新检测";
-      snapshot_.waiting_for_explorer_restart = true;
-    } else {
-      item.state = SystemSettingApplyState::failed;
-      item.detail = observed.detail.empty()
-                        ? "重新打开后未检测到预期系统设置"
-                        : observed.detail;
-      snapshot_.status = SystemSettingsSnapshotStatus::failed;
-    }
-  }
+  project_waiting_recovery();
   snapshot_.can_apply = std::ranges::any_of(
       snapshot_.settings, [](auto const& item) { return item.selected; });
   return snapshot_;
@@ -347,7 +347,8 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
     if (item == nullptr) {
       continue;
     }
-    if (!dependency_ready(setting)) {
+    if (request.target == SystemSettingsApplyRequest::Target::catalog_target &&
+        !dependency_ready(setting)) {
       item->state = SystemSettingApplyState::blocked_by_dependency;
       item->detail = "依赖项未成功完成";
       continue;
@@ -373,7 +374,7 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
       continue;
     }
 
-    auto const target = target_value(*kind);
+    auto const target = target_value(*kind, request.target);
     if (!target.has_value()) {
       item->state = SystemSettingApplyState::failed;
       item->detail = "受控 Windows 目标状态无效";
@@ -395,11 +396,16 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
     SystemSettingsRecoveryRecord record{
         .record_id = next_recovery_record_id_++,
         .setting_id = setting.id,
+        .display_name = setting.display_name,
         .catalog_revision = frozen.catalog_revision,
         .setting = *kind,
         .original_value = *observed.value,
         .restart_requirement = setting.restart_requirement,
         .status = RecoveryRecordStatus::pending,
+        .operation = request.target == SystemSettingsApplyRequest::Target::
+                                      windows11_default
+                         ? RecoveryRecordOperation::windows11_default
+                         : RecoveryRecordOperation::apply,
     };
     auto persisted = recovery_store_.save(record);
     if (persisted.status != RecoveryStorageStatus::committed) {
@@ -412,7 +418,10 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
 
     append_log(correlation, "read-and-save-original", ExecutionResult::succeeded,
                setting.id.value, "原值已保存");
-    auto applied = platform_.apply(*kind);
+    auto applied = request.target == SystemSettingsApplyRequest::Target::
+                       windows11_default
+                       ? platform_.restore(*kind, *target)
+                       : platform_.apply(*kind);
     if (applied.status != SystemSettingsAdapterStatus::succeeded) {
       item->state = SystemSettingApplyState::failed;
       item->detail = applied.detail.empty() ? "应用设置失败" : applied.detail;
@@ -469,23 +478,28 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
         if (item.state != SystemSettingApplyState::waiting_explorer_restart) {
           continue;
         }
-        auto const kind = [&]() -> std::optional<ControlledSystemSetting> {
-          auto found = std::ranges::find(
-              current->catalog.settings, item.id,
-              &settings_domain::SettingDefinition::id);
-          return found == current->catalog.settings.end() ? std::nullopt
-                                                           : map_setting(*found);
-        }();
-        auto const expected =
-            kind.has_value() ? target_value(*kind) : std::nullopt;
+        auto const record = std::ranges::find_if(
+            recovery_records_.rbegin(), recovery_records_.rend(),
+            [&](SystemSettingsRecoveryRecord const& candidate) {
+              return candidate.setting_id == item.id &&
+                     candidate.status ==
+                         RecoveryRecordStatus::waiting_explorer_restart;
+            });
+        if (record == recovery_records_.rend()) {
+          item.state = SystemSettingApplyState::failed;
+          item.detail = "等待重启的恢复记录不可用";
+          continue;
+        }
+        auto const expected = expected_value_for_recovery(*record);
         auto observed =
-            kind.has_value() ? platform_.read(*kind) : SystemSettingsRead{};
+            platform_.read(record->setting);
         if (expected.has_value() &&
             observed.status == SystemSettingsAdapterStatus::succeeded &&
             observed.value.has_value() &&
             same_value(*observed.value, *expected)) {
           std::string recovery_detail;
-          if (mark_explorer_restart_verified(item.id, recovery_detail)) {
+          if (mark_explorer_restart_verified(record->record_id,
+                                             recovery_detail)) {
             item.state = SystemSettingApplyState::applied;
             item.detail = "已重启资源管理器并重新验证";
           } else {
@@ -568,52 +582,44 @@ SystemSettingsApplyResult SystemSettingsApplyService::restart_explorer_now() {
     return result;
   }
 
-  auto current = catalog_.current_settings_catalog();
-  if (!current.has_value() ||
-      current->catalog.revision != snapshot_.catalog_revision) {
-    result.status = SystemSettingsSnapshotStatus::failed;
-    result.detail = "系统设置目录在资源管理器重启前发生变化";
-    static_cast<void>(occupancy_.release(*lease.lease));
-    return result;
-  }
-  for (auto& item : snapshot_.settings) {
-    if (item.state != SystemSettingApplyState::waiting_explorer_restart) {
+  bool verification_failed = false;
+  for (auto& record : recovery_records_) {
+    if (record.status != RecoveryRecordStatus::waiting_explorer_restart) {
       continue;
     }
-    auto const definition = std::ranges::find(
-        current->catalog.settings, item.id,
-        &settings_domain::SettingDefinition::id);
-    if (definition == current->catalog.settings.end()) {
-      item.state = SystemSettingApplyState::failed;
-      item.detail = "等待重启的设置已不在当前目录中";
-      continue;
-    }
-    auto const kind = map_setting(*definition);
-    auto const expected = kind.has_value() ? target_value(*kind) : std::nullopt;
-    auto observed = kind.has_value() ? platform_.read(*kind) : SystemSettingsRead{};
+    auto const expected = expected_value_for_recovery(record);
+    auto observed = platform_.read(record.setting);
     if (!expected.has_value() ||
         observed.status != SystemSettingsAdapterStatus::succeeded ||
         !observed.value.has_value() ||
         !same_value(*observed.value, *expected)) {
-      item.state = SystemSettingApplyState::failed;
-      item.detail = observed.detail.empty() ? "资源管理器重启后验证失败"
-                                            : observed.detail;
+      verification_failed = true;
+      if (auto* item = find_snapshot(record.setting_id); item != nullptr) {
+        item->state = SystemSettingApplyState::failed;
+        item->detail = observed.detail.empty() ? "资源管理器重启后验证失败"
+                                              : observed.detail;
+      }
       continue;
     }
     std::string recovery_detail;
-    if (!mark_explorer_restart_verified(item.id, recovery_detail)) {
-      item.state = SystemSettingApplyState::failed;
-      item.detail = std::move(recovery_detail);
+    if (!mark_explorer_restart_verified(record.record_id, recovery_detail)) {
+      verification_failed = true;
+      if (auto* item = find_snapshot(record.setting_id); item != nullptr) {
+        item->state = SystemSettingApplyState::failed;
+        item->detail = std::move(recovery_detail);
+      }
       continue;
     }
-    item.state = SystemSettingApplyState::applied;
-    item.detail = "已重启资源管理器并重新验证";
+    if (auto* item = find_snapshot(record.setting_id); item != nullptr) {
+      item->state = SystemSettingApplyState::applied;
+      item->detail = "已重启资源管理器并重新验证";
+    }
   }
   snapshot_.waiting_for_explorer_restart = std::ranges::any_of(
-      snapshot_.settings, [](auto const& item) {
-        return item.state == SystemSettingApplyState::waiting_explorer_restart;
+      recovery_records_, [](auto const& record) {
+        return record.status == RecoveryRecordStatus::waiting_explorer_restart;
       });
-  snapshot_.status = std::ranges::any_of(
+  snapshot_.status = verification_failed || std::ranges::any_of(
                          snapshot_.settings, [](auto const& item) {
                            return item.state == SystemSettingApplyState::failed;
                          })
@@ -634,9 +640,216 @@ SystemSettingsApplyResult SystemSettingsApplyService::restart_explorer_now() {
   return result;
 }
 
+SystemSettingsApplyResult SystemSettingsApplyService::restore_windows11_default(
+    settings_domain::StableId const& setting_id,
+    SystemSettingsApplyRequest::ExplorerRestartAction restart_action) {
+  auto* item = find_snapshot(setting_id);
+  if (item == nullptr) {
+    return {.status = SystemSettingsSnapshotStatus::failed,
+            .settings = snapshot_.settings,
+            .detail = "当前设置目录中不存在该受控系统设置"};
+  }
+  auto const selected_plan = snapshot_.selected_plan;
+  auto const plan_name = snapshot_.plan_name;
+  auto const plan_description = snapshot_.plan_description;
+  std::vector<settings_domain::StableId> selected;
+  for (auto const& candidate : snapshot_.settings) {
+    if (candidate.selected) {
+      selected.push_back(candidate.id);
+    }
+  }
+  for (auto& candidate : snapshot_.settings) {
+    candidate.selected = false;
+  }
+  item->selected = true;
+  snapshot_.selected_plan.reset();
+  snapshot_.can_apply = true;
+  auto result = apply_selected(
+      {.target = SystemSettingsApplyRequest::Target::windows11_default,
+       .explorer_restart_action = restart_action});
+  for (auto& candidate : snapshot_.settings) {
+    candidate.selected = std::ranges::find(selected, candidate.id) !=
+                         selected.end();
+  }
+  snapshot_.selected_plan = selected_plan;
+  snapshot_.plan_name = plan_name;
+  snapshot_.plan_description = plan_description;
+  snapshot_.can_apply = std::ranges::any_of(
+      snapshot_.settings, [](auto const& candidate) { return candidate.selected; });
+  result.settings = snapshot_.settings;
+  return result;
+}
+
 std::vector<SystemSettingsRecoveryRecord>
 SystemSettingsApplyService::recovery_records() const {
   return recovery_records_;
+}
+
+SystemSettingsUndoResult SystemSettingsApplyService::undo(
+    settings_domain::StableId const& setting_id,
+    SystemSettingsUndoRequest request) {
+  SystemSettingsUndoResult result;
+  auto record = std::ranges::find_if(
+      recovery_records_.rbegin(), recovery_records_.rend(),
+      [&](SystemSettingsRecoveryRecord const& candidate) {
+        return candidate.setting_id == setting_id &&
+               candidate.status != RecoveryRecordStatus::restored;
+      });
+  if (record == recovery_records_.rend()) {
+    result.status = SystemSettingsUndoStatus::no_record;
+    result.detail = "没有可撤销的恢复记录";
+    return result;
+  }
+  result.record_id = record->record_id;
+  if (record->status == RecoveryRecordStatus::waiting_explorer_restart) {
+    result.status = SystemSettingsUndoStatus::confirmation_required;
+    result.detail = "该设置正在等待资源管理器重启验证";
+    return result;
+  }
+
+  auto const correlation = CorrelationId{
+      "system-settings-undo-" + std::to_string(next_correlation_id_++)};
+  auto const lease = occupancy_.try_acquire(
+      OperationIdentity{.kind = "system-settings",
+                        .operation_id = "undo",
+                        .correlation_id = correlation.value});
+  if (lease.code != OccupancyResultCode::acquired || !lease.lease.has_value()) {
+    result.detail = "系统设置正在由另一项工作处理";
+    return result;
+  }
+
+  auto current = *record;
+  current.operation = RecoveryRecordOperation::restore;
+  current.status = RecoveryRecordStatus::restoring;
+  if (auto saved = recovery_store_.save(current);
+      saved.status != RecoveryStorageStatus::committed) {
+    result.detail = saved.detail.empty() ? "撤销状态保存失败" : saved.detail;
+    static_cast<void>(occupancy_.release(*lease.lease));
+    return result;
+  }
+  *record = current;
+  snapshot_.recovery_records = recovery_records_;
+  append_log(correlation, "undo-start", ExecutionResult::started,
+             current.setting_id.value, "使用已冻结的原值和恢复记录");
+
+  auto restored = platform_.restore(current.setting, current.original_value);
+  if (restored.status != SystemSettingsAdapterStatus::succeeded) {
+    current.status = RecoveryRecordStatus::restore_failed;
+    static_cast<void>(recovery_store_.save(current));
+    *record = current;
+    snapshot_.recovery_records = recovery_records_;
+    result.detail = restored.detail.empty() ? "恢复原值失败" : restored.detail;
+    append_log(correlation, "undo-restore", ExecutionResult::failed,
+               current.setting_id.value, result.detail);
+    static_cast<void>(occupancy_.release(*lease.lease));
+    return result;
+  }
+  auto verified = platform_.read(current.setting);
+  if (verified.status != SystemSettingsAdapterStatus::succeeded ||
+      !verified.value.has_value() ||
+      !same_value(*verified.value, current.original_value)) {
+    current.status = RecoveryRecordStatus::restore_failed;
+    static_cast<void>(recovery_store_.save(current));
+    *record = current;
+    snapshot_.recovery_records = recovery_records_;
+    result.detail = verified.detail.empty() ? "恢复原值后验证失败"
+                                             : verified.detail;
+    append_log(correlation, "undo-verify", ExecutionResult::failed,
+               current.setting_id.value, result.detail);
+    static_cast<void>(occupancy_.release(*lease.lease));
+    return result;
+  }
+
+  current.status = current.restart_requirement ==
+                           settings_domain::RestartRequirement::explorer
+                       ? RecoveryRecordStatus::waiting_explorer_restart
+                       : RecoveryRecordStatus::restored;
+  if (auto committed = recovery_store_.save(current);
+      committed.status != RecoveryStorageStatus::committed) {
+    current.status = RecoveryRecordStatus::restore_failed;
+    static_cast<void>(recovery_store_.save(current));
+    *record = current;
+    snapshot_.recovery_records = recovery_records_;
+    result.detail = committed.detail.empty() ? "撤销结果提交失败"
+                                               : committed.detail;
+    static_cast<void>(occupancy_.release(*lease.lease));
+    return result;
+  }
+  *record = current;
+  snapshot_.recovery_records = recovery_records_;
+  snapshot_.waiting_for_explorer_restart = std::ranges::any_of(
+      recovery_records_, [](auto const& candidate) {
+        return candidate.status == RecoveryRecordStatus::waiting_explorer_restart;
+      });
+  if (current.status == RecoveryRecordStatus::waiting_explorer_restart) {
+    result.status = SystemSettingsUndoStatus::waiting_explorer_restart;
+    result.detail = "原值已恢复，等待资源管理器重启后重新验证";
+    if (request.explorer_restart_action ==
+        SystemSettingsApplyRequest::ExplorerRestartAction::restart_now) {
+      result.explorer_restart_attempted = true;
+      static_cast<void>(occupancy_.release(*lease.lease));
+      auto restarted = restart_explorer_now();
+      if (restarted.status == SystemSettingsSnapshotStatus::failed) {
+        result.status = SystemSettingsUndoStatus::failed;
+        result.detail = restarted.detail;
+      } else if (auto const* updated = find_recovery_record(current.record_id);
+                 updated != nullptr &&
+                 updated->status == RecoveryRecordStatus::restored) {
+        result.status = SystemSettingsUndoStatus::restored;
+        result.detail = "已重启资源管理器并验证恢复原值";
+      }
+      append_log(correlation, "undo-finished",
+                 result.status == SystemSettingsUndoStatus::failed
+                     ? ExecutionResult::failed
+                     : ExecutionResult::succeeded,
+                 current.setting_id.value, result.detail);
+      return result;
+    }
+  } else {
+    result.status = SystemSettingsUndoStatus::restored;
+    result.detail = "已恢复保存的原值并验证";
+  }
+  append_log(correlation, "undo-finished",
+             result.status == SystemSettingsUndoStatus::failed
+                 ? ExecutionResult::failed
+                 : ExecutionResult::succeeded,
+             current.setting_id.value, result.detail);
+  static_cast<void>(occupancy_.release(*lease.lease));
+  return result;
+}
+
+RecoveryRecordDeleteResult SystemSettingsApplyService::delete_recovery_record(
+    std::uint64_t record_id, bool confirmed) {
+  RecoveryRecordDeleteResult result;
+  auto const* record = find_recovery_record(record_id);
+  if (record == nullptr) {
+    result.status = RecoveryRecordDeleteStatus::not_found;
+    result.detail = "恢复记录不存在";
+    return result;
+  }
+  if (std::ranges::any_of(recovery_records_, [&](auto const& candidate) {
+        return recovery_is_protected(candidate.status);
+      })) {
+    result.status = RecoveryRecordDeleteStatus::blocked;
+    result.detail = "等待重启或待恢复流程期间不能删除恢复记录";
+    return result;
+  }
+  if (!confirmed) {
+    result.status = RecoveryRecordDeleteStatus::confirmation_required;
+    result.detail = "删除后将无法恢复“" + record->display_name + "”的保存原值";
+    return result;
+  }
+  auto committed = recovery_store_.erase(record_id);
+  if (committed.status != RecoveryStorageStatus::committed) {
+    result.detail = committed.detail.empty() ? "恢复记录删除失败" : committed.detail;
+    return result;
+  }
+  recovery_records_.erase(std::ranges::find(
+      recovery_records_, record_id, &SystemSettingsRecoveryRecord::record_id));
+  snapshot_.recovery_records = recovery_records_;
+  result.status = RecoveryRecordDeleteStatus::deleted;
+  result.detail = "恢复记录已删除";
+  return result;
 }
 
 std::optional<ControlledSystemSetting> SystemSettingsApplyService::map_setting(
@@ -657,7 +870,16 @@ std::optional<ControlledSystemSetting> SystemSettingsApplyService::map_setting(
 }
 
 std::optional<WindowsSystemSettingValue>
-SystemSettingsApplyService::target_value(ControlledSystemSetting setting) {
+SystemSettingsApplyService::target_value(
+    ControlledSystemSetting setting, SystemSettingsApplyRequest::Target target) {
+  if (target == SystemSettingsApplyRequest::Target::windows11_default) {
+    switch (setting) {
+      case ControlledSystemSetting::classic_context_menu:
+        return WindowsSystemSettingValue{ClassicContextMenuMode::windows11};
+      case ControlledSystemSetting::windows10_explorer:
+        return WindowsSystemSettingValue{ExplorerPresentationMode::windows11};
+    }
+  }
   switch (setting) {
     case ControlledSystemSetting::classic_context_menu:
       return WindowsSystemSettingValue{ClassicContextMenuMode::classic};
@@ -681,21 +903,54 @@ SystemSettingApplySnapshot const* SystemSettingsApplyService::find_snapshot(
   return found == snapshot_.settings.end() ? nullptr : &*found;
 }
 
+SystemSettingsRecoveryRecord* SystemSettingsApplyService::find_recovery_record(
+    std::uint64_t record_id) noexcept {
+  auto found = std::ranges::find(recovery_records_, record_id,
+                                 &SystemSettingsRecoveryRecord::record_id);
+  return found == recovery_records_.end() ? nullptr : &*found;
+}
+
+SystemSettingsRecoveryRecord const*
+SystemSettingsApplyService::find_recovery_record(
+    std::uint64_t record_id) const noexcept {
+  auto found = std::ranges::find(recovery_records_, record_id,
+                                 &SystemSettingsRecoveryRecord::record_id);
+  return found == recovery_records_.end() ? nullptr : &*found;
+}
+
+std::optional<WindowsSystemSettingValue>
+SystemSettingsApplyService::expected_value_for_recovery(
+    SystemSettingsRecoveryRecord const& record) const {
+  return record.operation == RecoveryRecordOperation::restore
+             ? std::optional<WindowsSystemSettingValue>{record.original_value}
+             : target_value(record.setting,
+                            record.operation ==
+                                    RecoveryRecordOperation::windows11_default
+                                ? SystemSettingsApplyRequest::Target::
+                                      windows11_default
+                                : SystemSettingsApplyRequest::Target::
+                                      catalog_target);
+}
+
+bool SystemSettingsApplyService::recovery_is_protected(
+    RecoveryRecordStatus status) const noexcept {
+  return status == RecoveryRecordStatus::pending ||
+         status == RecoveryRecordStatus::restoring ||
+         status == RecoveryRecordStatus::waiting_explorer_restart;
+}
+
 bool SystemSettingsApplyService::mark_explorer_restart_verified(
-    settings_domain::StableId const& setting_id, std::string& detail) {
-  auto found = std::ranges::find_if(
-      recovery_records_.rbegin(), recovery_records_.rend(),
-      [&](SystemSettingsRecoveryRecord const& record) {
-        return record.setting_id == setting_id &&
-               record.status ==
-                   RecoveryRecordStatus::waiting_explorer_restart;
-      });
-  if (found == recovery_records_.rend()) {
+    std::uint64_t record_id, std::string& detail) {
+  auto* found = find_recovery_record(record_id);
+  if (found == nullptr ||
+      found->status != RecoveryRecordStatus::waiting_explorer_restart) {
     detail = "等待资源管理器重启的恢复记录不可用";
     return false;
   }
   auto record = *found;
-  record.status = RecoveryRecordStatus::applied;
+  record.status = record.operation == RecoveryRecordOperation::restore
+                      ? RecoveryRecordStatus::restored
+                      : RecoveryRecordStatus::applied;
   auto committed = recovery_store_.save(record);
   if (committed.status != RecoveryStorageStatus::committed) {
     detail = committed.detail.empty() ? "资源管理器重启验证提交失败"

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -10,10 +11,14 @@
 #include <vector>
 
 #include "azzs/application/execution_log.hpp"
+#include "azzs/adapters/infrastructure/system_settings_recovery_store.hpp"
+#include "azzs/application/device_state_store.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/settings_catalog/settings_catalog.hpp"
 #include "azzs/testing/in_memory_operation_occupancy_storage.hpp"
+#include "azzs/testing/in_memory_state_file_system.hpp"
+#include "azzs/testing/fixed_clock.hpp"
 
 namespace {
 
@@ -28,6 +33,9 @@ using azzs::application::ExecutionLog;
 using azzs::application::ExecutionLogClearReceipt;
 using azzs::application::ExecutionLogReceipt;
 using azzs::application::ExplorerPresentationMode;
+using azzs::application::RecoveryRecordDeleteStatus;
+using azzs::application::RecoveryRecordOperation;
+using azzs::application::RecoveryRecordStatus;
 using azzs::application::RecoveryStorageRead;
 using azzs::application::RecoveryStorageStatus;
 using azzs::application::RecoveryStorageWrite;
@@ -42,8 +50,14 @@ using azzs::application::SystemSettingsRead;
 using azzs::application::SystemSettingsRecoveryRecord;
 using azzs::application::SystemSettingsRecoveryStore;
 using azzs::application::SystemSettingsSnapshotStatus;
+using azzs::application::SystemSettingsUndoStatus;
 using azzs::application::WindowsSystemSettingValue;
+using InfrastructureRecoveryStore =
+    azzs::adapters::infrastructure::SystemSettingsRecoveryStore;
+using azzs::application::DeviceStateStore;
+using azzs::testing::FixedClock;
 using azzs::testing::InMemoryOperationOccupancyStorage;
+using azzs::testing::InMemoryStateFileSystem;
 using azzs::testing::SequenceLeaseTokenSource;
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
@@ -199,6 +213,18 @@ class MemoryRecoveryStore final : public SystemSettingsRecoveryStore {
     return {.status = RecoveryStorageStatus::committed};
   }
 
+  [[nodiscard]] RecoveryStorageWrite erase(std::uint64_t record_id) override {
+    events_.push_back("erase:" + std::to_string(record_id));
+    auto found = std::ranges::find(records, record_id,
+                                   &SystemSettingsRecoveryRecord::record_id);
+    if (found == records.end()) {
+      return {.status = RecoveryStorageStatus::failed,
+              .detail = "injected missing recovery record"};
+    }
+    records.erase(found);
+    return {.status = RecoveryStorageStatus::committed};
+  }
+
   std::vector<SystemSettingsRecoveryRecord> records;
 
  private:
@@ -247,6 +273,10 @@ class MemoryPlatform final : public SystemSettingsPlatformAdapter {
   [[nodiscard]] SystemSettingsAdapterResult restore(
       ControlledSystemSetting setting, WindowsSystemSettingValue value) override {
     events_.push_back("restore:" + name(setting));
+    if (fail_restore == setting) {
+      return {.status = SystemSettingsAdapterStatus::restore_failed,
+              .detail = "injected restore failure"};
+    }
     values_[setting] = value;
     return {.status = SystemSettingsAdapterStatus::succeeded};
   }
@@ -269,6 +299,7 @@ class MemoryPlatform final : public SystemSettingsPlatformAdapter {
 
   std::optional<catalog::WindowsVersion> version{windows11_25h2()};
   std::optional<ControlledSystemSetting> fail_apply;
+  std::optional<ControlledSystemSetting> fail_restore;
   bool restarted{false};
 
  private:
@@ -499,6 +530,204 @@ class Harness final {
   return passed;
 }
 
+[[nodiscard]] bool verify_undo_restores_most_recent_original_value() {
+  SystemSettingsRecoveryRecord first{
+      .record_id = 1,
+      .setting_id = catalog::StableId{"setting.classic-context-menu"},
+      .display_name = "经典右键菜单",
+      .catalog_revision = 11,
+      .setting = ControlledSystemSetting::classic_context_menu,
+      .original_value = ClassicContextMenuMode::windows11,
+      .restart_requirement = catalog::RestartRequirement::none,
+      .status = RecoveryRecordStatus::applied,
+  };
+  SystemSettingsRecoveryRecord most_recent = first;
+  most_recent.record_id = 2;
+  most_recent.catalog_revision = 12;
+  most_recent.original_value = ClassicContextMenuMode::classic;
+  Harness harness{make_catalog(false), {first, most_recent}};
+  static_cast<void>(
+      harness.platform.apply(ControlledSystemSetting::classic_context_menu));
+  harness.events.clear();
+  auto result = harness.service.undo(
+      catalog::StableId{"setting.classic-context-menu"});
+  bool passed = true;
+  passed &= expect(result.status == SystemSettingsUndoStatus::restored,
+                   "undo must restore the newest saved original value");
+  passed &= expect(result.record_id == 2,
+                   "undo must target the latest recovery record");
+  passed &= expect(harness.recovery.records[1].status ==
+                       RecoveryRecordStatus::restored,
+                   "verified undo must mark the target record restored");
+  passed &= expect(std::ranges::find(harness.events, "restore:classic") !=
+                       harness.events.end(),
+                   "undo must call the typed platform restore seam");
+  return passed;
+}
+
+[[nodiscard]] bool verify_undo_survives_retired_catalog_item() {
+  SystemSettingsRecoveryRecord record{
+      .record_id = 7,
+      .setting_id = catalog::StableId{"retired.classic-context-menu"},
+      .display_name = "已下架经典右键菜单",
+      .catalog_revision = 7,
+      .setting = ControlledSystemSetting::classic_context_menu,
+      .original_value = ClassicContextMenuMode::windows11,
+      .restart_requirement = catalog::RestartRequirement::none,
+      .status = RecoveryRecordStatus::applied,
+  };
+  Harness harness{make_catalog(false), {record}};
+  static_cast<void>(
+      harness.platform.apply(ControlledSystemSetting::classic_context_menu));
+  auto result = harness.service.undo(record.setting_id);
+  bool passed = true;
+  passed &= expect(result.status == SystemSettingsUndoStatus::restored,
+                   "retired settings with recovery records remain undoable");
+  passed &= expect(harness.recovery.records[0].status ==
+                       RecoveryRecordStatus::restored,
+                   "retired setting undo must commit against its old snapshot");
+  return passed;
+}
+
+[[nodiscard]] bool verify_failed_undo_keeps_retryable_record() {
+  SystemSettingsRecoveryRecord record{
+      .record_id = 8,
+      .setting_id = catalog::StableId{"setting.windows10-explorer"},
+      .display_name = "Windows 10 风格资源管理器",
+      .catalog_revision = 42,
+      .setting = ControlledSystemSetting::windows10_explorer,
+      .original_value = ExplorerPresentationMode::windows11,
+      .restart_requirement = catalog::RestartRequirement::explorer,
+      .status = RecoveryRecordStatus::applied,
+  };
+  Harness harness{make_catalog(false), {record}};
+  static_cast<void>(
+      harness.platform.apply(ControlledSystemSetting::windows10_explorer));
+  harness.platform.fail_restore = ControlledSystemSetting::windows10_explorer;
+  auto failed = harness.service.undo(record.setting_id);
+  bool passed = true;
+  passed &= expect(failed.status == SystemSettingsUndoStatus::failed,
+                   "restore failure must be reported");
+  passed &= expect(harness.recovery.records[0].status ==
+                       RecoveryRecordStatus::restore_failed,
+                   "failed undo must retain a retryable recovery record");
+  harness.platform.fail_restore.reset();
+  auto retried = harness.service.undo(record.setting_id);
+  passed &= expect(retried.status ==
+                       SystemSettingsUndoStatus::waiting_explorer_restart,
+                   "failed undo must allow a later retry");
+  passed &= expect(harness.recovery.records[0].status ==
+                       RecoveryRecordStatus::waiting_explorer_restart,
+                   "retry must retain the restart verification state");
+  return passed;
+}
+
+[[nodiscard]] bool verify_undo_restart_validation_and_delete_protection() {
+  SystemSettingsRecoveryRecord record{
+      .record_id = 9,
+      .setting_id = catalog::StableId{"setting.windows10-explorer"},
+      .display_name = "Windows 10 风格资源管理器",
+      .catalog_revision = 42,
+      .setting = ControlledSystemSetting::windows10_explorer,
+      .original_value = ExplorerPresentationMode::windows11,
+      .restart_requirement = catalog::RestartRequirement::explorer,
+      .status = RecoveryRecordStatus::applied,
+  };
+  Harness harness{make_catalog(false), {record}};
+  static_cast<void>(
+      harness.platform.apply(ControlledSystemSetting::windows10_explorer));
+  auto undo = harness.service.undo(record.setting_id);
+  bool passed = true;
+  passed &= expect(undo.status ==
+                       SystemSettingsUndoStatus::waiting_explorer_restart,
+                   "explorer undo must wait for restart verification");
+  passed &= expect(harness.service.delete_recovery_record(record.record_id, true)
+                       .status == RecoveryRecordDeleteStatus::blocked,
+                   "pending restart verification protects recovery records");
+  auto restarted = harness.service.restart_explorer_now();
+  passed &= expect(restarted.status == SystemSettingsSnapshotStatus::completed,
+                   "restart verifies the frozen undo snapshot");
+  passed &= expect(harness.recovery.records[0].status ==
+                       RecoveryRecordStatus::restored,
+                   "record remains until undo restart verification succeeds");
+  auto confirmation =
+      harness.service.delete_recovery_record(record.record_id, false);
+  passed &= expect(confirmation.status ==
+                       RecoveryRecordDeleteStatus::confirmation_required,
+                   "recovery deletion requires a separate confirmation");
+  passed &= expect(harness.service.delete_recovery_record(record.record_id, true)
+                       .status == RecoveryRecordDeleteStatus::deleted,
+                   "confirmed deletion removes the persisted recovery record");
+  passed &= expect(harness.recovery.records.empty(),
+                   "confirmed deletion must remove the in-memory projection");
+  return passed;
+}
+
+[[nodiscard]] bool verify_windows11_default_saves_current_value() {
+  Harness harness{make_catalog(false)};
+  static_cast<void>(harness.service.set_selected(
+      catalog::StableId{"setting.windows10-explorer"}, true));
+  static_cast<void>(
+      harness.platform.apply(ControlledSystemSetting::classic_context_menu));
+  harness.events.clear();
+  auto result = harness.service.restore_windows11_default(
+      catalog::StableId{"setting.classic-context-menu"});
+  bool passed = true;
+  passed &= expect(result.status == SystemSettingsSnapshotStatus::completed,
+                   "Windows 11 default target must execute through the service");
+  passed &= expect(harness.recovery.records.size() == 1 &&
+                       harness.recovery.records[0].original_value ==
+                           WindowsSystemSettingValue{ClassicContextMenuMode::classic},
+                   "Windows 11 default must save the current value first");
+  passed &= expect(harness.recovery.records[0].operation ==
+                       RecoveryRecordOperation::windows11_default,
+                   "Windows 11 default must remain distinct from historical undo");
+  passed &= expect(harness.service.snapshot().settings[1].selected,
+                   "Windows 11 default must preserve existing user selection");
+  return passed;
+}
+
+[[nodiscard]] bool verify_recovery_store_persists_undo_snapshot_and_erase() {
+  InMemoryStateFileSystem files;
+  FixedClock clock{azzs::application::WallClockTime{
+      std::chrono::milliseconds{1'786'508'800'000}}};
+  DeviceStateStore first_states{files, clock};
+  InfrastructureRecoveryStore first{first_states};
+  SystemSettingsRecoveryRecord record{
+      .record_id = 22,
+      .setting_id = catalog::StableId{"retired.classic-context-menu"},
+      .display_name = "已下架经典右键菜单",
+      .catalog_revision = 7,
+      .setting = ControlledSystemSetting::classic_context_menu,
+      .original_value = ClassicContextMenuMode::windows11,
+      .restart_requirement = catalog::RestartRequirement::explorer,
+      .status = RecoveryRecordStatus::waiting_explorer_restart,
+      .operation = RecoveryRecordOperation::restore,
+  };
+  bool passed = true;
+  passed &= expect(first.save(record).status == RecoveryStorageStatus::committed,
+                   "infrastructure recovery store must save an undo snapshot");
+  DeviceStateStore restarted_states{files, clock};
+  InfrastructureRecoveryStore restarted{restarted_states};
+  auto loaded = restarted.read();
+  passed &= expect(loaded.status == RecoveryStorageStatus::loaded &&
+                       loaded.records.size() == 1 &&
+                       loaded.records[0].display_name == record.display_name &&
+                       loaded.records[0].operation ==
+                           RecoveryRecordOperation::restore,
+                   "restart must retain frozen undo display and operation data");
+  passed &= expect(restarted.erase(record.record_id).status ==
+                       RecoveryStorageStatus::committed,
+                   "infrastructure recovery store must erase a confirmed record");
+  DeviceStateStore erased_states{files, clock};
+  InfrastructureRecoveryStore erased{erased_states};
+  auto empty = erased.read();
+  passed &= expect(empty.status == RecoveryStorageStatus::loaded &&
+                       empty.records.empty(),
+                   "erased recovery records must stay absent after restart");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -510,6 +739,12 @@ int main() {
   passed &= verify_applicability_and_force_attempt();
   passed &= verify_explorer_restart_validation();
   passed &= verify_reopened_explorer_wait_state();
+  passed &= verify_undo_restores_most_recent_original_value();
+  passed &= verify_undo_survives_retired_catalog_item();
+  passed &= verify_failed_undo_keeps_retryable_record();
+  passed &= verify_undo_restart_validation_and_delete_protection();
+  passed &= verify_windows11_default_saves_current_value();
+  passed &= verify_recovery_store_persists_undo_snapshot_and_erase();
   if (!passed) {
     return EXIT_FAILURE;
   }
