@@ -160,7 +160,9 @@ SystemSettingsApplySnapshot SystemSettingsApplyService::refresh() {
                 settings_domain::ForceAttemptRule::
                     allowed_with_explicit_confirmation &&
             setting.recovery_requirement ==
-                settings_domain::RecoveryRequirement::restore_record_required,
+                settings_domain::RecoveryRequirement::restore_record_required &&
+            (!version.has_value() ||
+             version->generation != settings_domain::WindowsGeneration::windows_10),
         .recovery_available =
             setting.recovery_requirement ==
             settings_domain::RecoveryRequirement::restore_record_required,
@@ -358,12 +360,17 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
     auto const applicable =
         platform_version.has_value() &&
         setting.known_windows_range.contains(*platform_version);
+    auto const force_attempt_allowed =
+        item->can_force_attempt &&
+        (!platform_version.has_value() ||
+         platform_version->generation !=
+             settings_domain::WindowsGeneration::windows_10);
     if (!applicable &&
-        !(request.force_attempt_confirmed && item->can_force_attempt)) {
-      item->state = item->can_force_attempt
+        !(request.force_attempt_confirmed && force_attempt_allowed)) {
+      item->state = force_attempt_allowed
                         ? SystemSettingApplyState::force_confirmation_required
                         : SystemSettingApplyState::not_applicable;
-      item->detail = item->can_force_attempt
+      item->detail = force_attempt_allowed
                          ? "高级视图需要确认后仍然尝试"
                          : "当前 Windows 版本可能不适用";
       continue;

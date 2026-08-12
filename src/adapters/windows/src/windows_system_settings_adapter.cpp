@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace azzs::adapters::windows {
 namespace {
@@ -27,18 +28,25 @@ namespace settings_domain = application::settings_domain;
 constexpr wchar_t kClassicMenuSubKey[] =
     L"Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
     L"\\InprocServer32";
-constexpr wchar_t kExplorerLegacyOne[] =
-    L"Software\\Classes\\CLSID\\{2aa9162e-c906-4dd9-ad0b-3d24a8eef5a0}"
-    L"\\InprocServer32";
-constexpr wchar_t kExplorerLegacyTwo[] =
-    L"Software\\Classes\\CLSID\\{6480100b-5a83-4d1e-9f69-8ae5a88e9a33}"
-    L"\\InprocServer32";
+constexpr wchar_t kExplorerLegacyParentOne[] =
+    L"Software\\Classes\\CLSID\\{2aa9162e-c906-4dd9-ad0b-3d24a8eef5a0}";
+constexpr wchar_t kExplorerLegacyParentTwo[] =
+    L"Software\\Classes\\CLSID\\{6480100b-5a83-4d1e-9f69-8ae5a88e9a33}";
+constexpr wchar_t kExplorerLegacyParentDefaultOne[] =
+    L"CLSID_ItemsViewAdapter";
+constexpr wchar_t kExplorerLegacyParentDefaultTwo[] =
+    L"File Explorer Xaml Island View Adapter";
+constexpr wchar_t kExplorerLegacyInprocDefault[] =
+    L"C:\\Windows\\System32\\Windows.UI.FileExplorer.dll_";
+constexpr wchar_t kExplorerLegacyThreadingModel[] = L"Apartment";
 
 enum class FixedKeyState : std::uint8_t {
   absent,
   controlled_empty_default,
   unexpected,
 };
+
+[[nodiscard]] bool delete_key_tree(wchar_t const* subkey);
 
 [[nodiscard]] SystemSettingsRead read_failure(
     SystemSettingsAdapterStatus status, std::string detail) {
@@ -109,6 +117,149 @@ enum class FixedKeyState : std::uint8_t {
       reinterpret_cast<BYTE const*>(kEmptyValue), sizeof(kEmptyValue));
   ::RegCloseKey(key);
   return write_status == ERROR_SUCCESS;
+}
+
+[[nodiscard]] bool read_reg_sz(HKEY key, wchar_t const* value_name,
+                               std::wstring& value) {
+  DWORD type{};
+  DWORD size{};
+  auto status =
+      ::RegQueryValueExW(key, value_name, nullptr, &type, nullptr, &size);
+  if (status != ERROR_SUCCESS || type != REG_SZ || size < sizeof(wchar_t) ||
+      size % sizeof(wchar_t) != 0) {
+    return false;
+  }
+  std::vector<wchar_t> buffer(size / sizeof(wchar_t));
+  status = ::RegQueryValueExW(key, value_name, nullptr, &type,
+                              reinterpret_cast<BYTE*>(buffer.data()), &size);
+  if (status != ERROR_SUCCESS || type != REG_SZ || buffer.back() != L'\0') {
+    return false;
+  }
+  value.assign(buffer.data(), buffer.size() - 1);
+  return true;
+}
+
+[[nodiscard]] FixedKeyState inspect_legacy_explorer_key(
+    wchar_t const* parent_subkey, wchar_t const* parent_default) {
+  HKEY parent{};
+  auto status =
+      ::RegOpenKeyExW(HKEY_CURRENT_USER, parent_subkey, 0, KEY_READ, &parent);
+  if (status == ERROR_FILE_NOT_FOUND) {
+    return FixedKeyState::absent;
+  }
+  if (status != ERROR_SUCCESS) {
+    return FixedKeyState::unexpected;
+  }
+
+  DWORD subkey_count{};
+  DWORD value_count{};
+  status = ::RegQueryInfoKeyW(parent, nullptr, nullptr, nullptr, &subkey_count,
+                              nullptr, nullptr, &value_count, nullptr, nullptr,
+                              nullptr, nullptr);
+  std::wstring parent_value;
+  auto const parent_valid =
+      status == ERROR_SUCCESS && subkey_count == 1 && value_count == 1 &&
+      read_reg_sz(parent, nullptr, parent_value) &&
+      parent_value == parent_default;
+  HKEY inproc{};
+  if (parent_valid) {
+    status = ::RegOpenKeyExW(parent, L"InprocServer32", 0, KEY_READ, &inproc);
+  }
+  if (!parent_valid || status != ERROR_SUCCESS) {
+    if (parent_valid && status == ERROR_FILE_NOT_FOUND) {
+      ::RegCloseKey(parent);
+      return FixedKeyState::unexpected;
+    }
+    ::RegCloseKey(parent);
+    return FixedKeyState::unexpected;
+  }
+
+  DWORD inproc_subkey_count{};
+  DWORD inproc_value_count{};
+  status = ::RegQueryInfoKeyW(
+      inproc, nullptr, nullptr, nullptr, &inproc_subkey_count, nullptr,
+      nullptr, &inproc_value_count, nullptr, nullptr, nullptr, nullptr);
+  std::wstring inproc_value;
+  std::wstring threading_model;
+  auto const controlled =
+      status == ERROR_SUCCESS && inproc_subkey_count == 0 &&
+      inproc_value_count == 2 && read_reg_sz(inproc, nullptr, inproc_value) &&
+      read_reg_sz(inproc, L"ThreadingModel", threading_model) &&
+      inproc_value == kExplorerLegacyInprocDefault &&
+      threading_model == kExplorerLegacyThreadingModel;
+  ::RegCloseKey(inproc);
+  ::RegCloseKey(parent);
+  return controlled ? FixedKeyState::controlled_empty_default
+                    : FixedKeyState::unexpected;
+}
+
+[[nodiscard]] bool ensure_legacy_explorer_key(wchar_t const* parent_subkey,
+                                               wchar_t const* parent_default) {
+  auto const existing =
+      inspect_legacy_explorer_key(parent_subkey, parent_default);
+  if (existing == FixedKeyState::controlled_empty_default) {
+    return true;
+  }
+  if (existing == FixedKeyState::unexpected) {
+    return false;
+  }
+
+  HKEY parent{};
+  auto status = ::RegCreateKeyExW(
+      HKEY_CURRENT_USER, parent_subkey, 0, nullptr, REG_OPTION_NON_VOLATILE,
+      KEY_WRITE, nullptr, &parent, nullptr);
+  if (status != ERROR_SUCCESS) {
+    return false;
+  }
+  auto const parent_bytes = static_cast<DWORD>(
+      (std::wstring_view{parent_default}.size() + 1) * sizeof(wchar_t));
+  status = ::RegSetValueExW(
+      parent, nullptr, 0, REG_SZ,
+      reinterpret_cast<BYTE const*>(parent_default), parent_bytes);
+  HKEY inproc{};
+  if (status == ERROR_SUCCESS) {
+    status = ::RegCreateKeyExW(parent, L"InprocServer32", 0, nullptr,
+                               REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr,
+                               &inproc, nullptr);
+  }
+  if (status == ERROR_SUCCESS) {
+    auto const inproc_bytes = static_cast<DWORD>(
+        (std::wstring_view{kExplorerLegacyInprocDefault}.size() + 1) *
+        sizeof(wchar_t));
+    status = ::RegSetValueExW(
+        inproc, nullptr, 0, REG_SZ,
+        reinterpret_cast<BYTE const*>(kExplorerLegacyInprocDefault),
+        inproc_bytes);
+  }
+  if (status == ERROR_SUCCESS) {
+    auto const threading_bytes = static_cast<DWORD>(
+        (std::wstring_view{kExplorerLegacyThreadingModel}.size() + 1) *
+        sizeof(wchar_t));
+    status = ::RegSetValueExW(
+        inproc, L"ThreadingModel", 0, REG_SZ,
+        reinterpret_cast<BYTE const*>(kExplorerLegacyThreadingModel),
+        threading_bytes);
+  }
+  if (inproc != nullptr) {
+    ::RegCloseKey(inproc);
+  }
+  ::RegCloseKey(parent);
+  if (status != ERROR_SUCCESS) {
+    static_cast<void>(delete_key_tree(parent_subkey));
+    return false;
+  }
+  return true;
+}
+
+[[nodiscard]] bool delete_legacy_explorer_key(wchar_t const* parent_subkey,
+                                               wchar_t const* parent_default) {
+  auto const existing =
+      inspect_legacy_explorer_key(parent_subkey, parent_default);
+  if (existing == FixedKeyState::absent) {
+    return true;
+  }
+  return existing == FixedKeyState::controlled_empty_default &&
+         delete_key_tree(parent_subkey);
 }
 
 [[nodiscard]] bool delete_key_tree(wchar_t const* subkey) {
@@ -264,8 +415,10 @@ SystemSettingsRead WindowsSystemSettingsAdapter::read(
       }
       break;
     case ControlledSystemSetting::windows10_explorer:
-      auto const first = inspect_fixed_empty_key(kExplorerLegacyOne);
-      auto const second = inspect_fixed_empty_key(kExplorerLegacyTwo);
+      auto const first = inspect_legacy_explorer_key(
+          kExplorerLegacyParentOne, kExplorerLegacyParentDefaultOne);
+      auto const second = inspect_legacy_explorer_key(
+          kExplorerLegacyParentTwo, kExplorerLegacyParentDefaultTwo);
       if (first == FixedKeyState::unexpected ||
           second == FixedKeyState::unexpected) {
         return read_failure(
@@ -297,8 +450,10 @@ SystemSettingsAdapterResult WindowsSystemSettingsAdapter::apply(
                  : result(SystemSettingsAdapterStatus::apply_failed,
                           "创建经典右键菜单受控键失败");
     case ControlledSystemSetting::windows10_explorer:
-      return ensure_fixed_empty_key(kExplorerLegacyOne) &&
-                     ensure_fixed_empty_key(kExplorerLegacyTwo)
+      return ensure_legacy_explorer_key(kExplorerLegacyParentOne,
+                                        kExplorerLegacyParentDefaultOne) &&
+                     ensure_legacy_explorer_key(kExplorerLegacyParentTwo,
+                                                kExplorerLegacyParentDefaultTwo)
                  ? result(SystemSettingsAdapterStatus::succeeded)
                  : result(SystemSettingsAdapterStatus::apply_failed,
                           "应用 Windows 10 风格资源管理器固定映射失败");
@@ -331,8 +486,11 @@ SystemSettingsAdapterResult WindowsSystemSettingsAdapter::restore(
       }
       return *mode == ExplorerPresentationMode::windows10
                  ? apply(setting)
-                 : delete_fixed_empty_key(kExplorerLegacyOne) &&
-                           delete_fixed_empty_key(kExplorerLegacyTwo)
+                 : delete_legacy_explorer_key(kExplorerLegacyParentOne,
+                                               kExplorerLegacyParentDefaultOne) &&
+                           delete_legacy_explorer_key(
+                               kExplorerLegacyParentTwo,
+                               kExplorerLegacyParentDefaultTwo)
                        ? result(SystemSettingsAdapterStatus::succeeded)
                        : result(SystemSettingsAdapterStatus::restore_failed);
     }
