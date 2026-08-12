@@ -18,11 +18,12 @@ ApplicationSettingsPage::ApplicationSettingsPage() {
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   auto const resources = ResourceLoader{};
   ApplicationUpdateCommandButton().Content(
-      resources.GetString(L"ApplicationUpdateCheckButton"));
+      winrt::box_value(resources.GetString(L"ApplicationUpdateCheckButton")));
   ApplicationUpdateManualButton().Content(
-      resources.GetString(L"ApplicationUpdateManualButton"));
+      winrt::box_value(resources.GetString(L"ApplicationUpdateManualButton")));
   ApplicationUpdateDiagnosticButton().Content(
-      resources.GetString(L"ApplicationUpdateDiagnosticButton"));
+      winrt::box_value(
+          resources.GetString(L"ApplicationUpdateDiagnosticButton")));
 }
 
 void ApplicationSettingsPage::bind(
@@ -120,7 +121,7 @@ void ApplicationSettingsPage::project(
   ApplicationUpdateRestoreButton().Visibility(Visibility::Collapsed);
   ApplicationUpdateCommandButton().IsEnabled(true);
   ApplicationUpdateCommandButton().Content(
-      resources.GetString(L"ApplicationUpdateCheckButton"));
+      winrt::box_value(resources.GetString(L"ApplicationUpdateCheckButton")));
 
   switch (snapshot.state) {
     case UpdateState::idle:
@@ -132,14 +133,14 @@ void ApplicationSettingsPage::project(
       message =
           std::wstring{resources.GetString(L"ApplicationUpdateAvailableMessage")};
       ApplicationUpdateCommandButton().Content(
-          resources.GetString(L"ApplicationUpdateRequestButton"));
+          winrt::box_value(resources.GetString(L"ApplicationUpdateRequestButton")));
       severity = InfoBarSeverity::Warning;
       break;
     case UpdateState::stable_switch_available:
       message = std::wstring{
           resources.GetString(L"ApplicationUpdateStableSwitchMessage")};
       ApplicationUpdateCommandButton().Content(
-          resources.GetString(L"ApplicationUpdateRequestButton"));
+          winrt::box_value(resources.GetString(L"ApplicationUpdateRequestButton")));
       severity = InfoBarSeverity::Warning;
       break;
     case UpdateState::no_matching_stable_asset:
@@ -151,7 +152,7 @@ void ApplicationSettingsPage::project(
       message =
           std::wstring{resources.GetString(L"ApplicationUpdateUnsignedMessage")};
       ApplicationUpdateCommandButton().Content(
-          resources.GetString(L"ApplicationUpdateConfirmButton"));
+          winrt::box_value(resources.GetString(L"ApplicationUpdateConfirmButton")));
       severity = InfoBarSeverity::Warning;
       break;
     case UpdateState::deferred_initialization_operation:
@@ -168,24 +169,26 @@ void ApplicationSettingsPage::project(
       message =
           std::wstring{resources.GetString(L"ApplicationUpdateRestoredMessage")};
       ApplicationUpdateCommandButton().Content(
-          resources.GetString(L"ApplicationUpdateConfirmHealthButton"));
+          winrt::box_value(
+              resources.GetString(L"ApplicationUpdateConfirmHealthButton")));
       severity = InfoBarSeverity::Error;
       break;
     case UpdateState::candidate_pending_start_health:
       message = std::wstring{
           resources.GetString(L"ApplicationUpdateHealthPendingMessage")};
       ApplicationUpdateCommandButton().Content(
-          resources.GetString(L"ApplicationUpdateConfirmHealthButton"));
+          winrt::box_value(
+              resources.GetString(L"ApplicationUpdateConfirmHealthButton")));
       severity = InfoBarSeverity::Warning;
       break;
     case UpdateState::awaiting_start_recovery_choice:
       message = std::wstring{
           resources.GetString(L"ApplicationUpdateRecoveryChoiceMessage")};
       ApplicationUpdateRetryButton().Content(
-          resources.GetString(L"ApplicationUpdateRetryButton"));
+          winrt::box_value(resources.GetString(L"ApplicationUpdateRetryButton")));
       ApplicationUpdateRetryButton().Visibility(Visibility::Visible);
       ApplicationUpdateRestoreButton().Content(
-          resources.GetString(L"ApplicationUpdateRestoreButton"));
+          winrt::box_value(resources.GetString(L"ApplicationUpdateRestoreButton")));
       ApplicationUpdateRestoreButton().Visibility(Visibility::Visible);
       severity = InfoBarSeverity::Error;
       break;
@@ -193,7 +196,8 @@ void ApplicationSettingsPage::project(
       message = std::wstring{
           resources.GetString(L"ApplicationUpdatePreviousHealthMessage")};
       ApplicationUpdateCommandButton().Content(
-          resources.GetString(L"ApplicationUpdateConfirmHealthButton"));
+          winrt::box_value(
+              resources.GetString(L"ApplicationUpdateConfirmHealthButton")));
       severity = InfoBarSeverity::Warning;
       break;
     case UpdateState::recovery_read_only:
