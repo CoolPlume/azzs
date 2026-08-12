@@ -2,8 +2,10 @@
 
 #include <memory>
 #include <optional>
+#include <stop_token>
 
 #include "azzs/application/page_id.hpp"
+#include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/platform_info.hpp"
 #include "azzs/domain/minimum_version_policy.hpp"
 #include "azzs/domain/system_version.hpp"
@@ -18,6 +20,7 @@ struct WorkbenchSnapshot final {
       domain::MinimumVersionRisk::version_unavailable};
   std::optional<domain::SystemVersion> observed_windows_version;
   domain::SystemVersion target_windows_version;
+  HardwareOverviewSnapshot hardware_overview;
 };
 
 class Workbench final {
@@ -29,7 +32,12 @@ class Workbench final {
             std::shared_ptr<WorkbenchServices> services);
 
   void navigate(PageId page) noexcept;
-  [[nodiscard]] WorkbenchSnapshot snapshot() const noexcept;
+  [[nodiscard]] HardwareOverviewSnapshot observe_hardware(
+      HardwareOverviewTrigger trigger,
+      std::stop_token cancellation = {});
+  [[nodiscard]] HardwareOverviewSnapshot refresh_hardware(
+      std::stop_token cancellation = {});
+  [[nodiscard]] WorkbenchSnapshot snapshot() const;
 
  private:
   WorkbenchSnapshot snapshot_;
