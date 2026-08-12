@@ -140,9 +140,21 @@ ArchitectureSelectionLifecycle::confirm_fallback(std::string_view software_id) {
   auto pending = std::move(found->second);
   pending_fallbacks_.erase(found);
   auto const recheck = observe("fallback-confirmed");
-  return evaluate_with_observation(
-      pending.request, recheck.current,
-      selection_domain::PackageArchitecture::x64, "fallback-confirmed");
+  auto result = selection_domain::select_package(
+      recheck.current, preference_, pending.request.software_id,
+      pending.request.candidates);
+  if (result.requires_confirmation()) {
+    result = selection_domain::select_package(
+        recheck.current, preference_, pending.request.software_id,
+        pending.request.candidates, selection_domain::PackageArchitecture::x64);
+  }
+  log_event(selection_domain::to_string(result.status), event_result(result.status),
+            recheck.current, pending.request.software_id,
+            result.package.has_value()
+                ? std::optional{result.package->architecture}
+                : std::nullopt,
+            "fallback-confirmed; " + result.reason);
+  return result;
 }
 
 selection_domain::SelectionResult
@@ -157,31 +169,19 @@ ArchitectureSelectionLifecycle::refuse_fallback(std::string_view software_id) {
   auto pending = std::move(found->second);
   pending_fallbacks_.erase(found);
   auto const recheck = observe("fallback-refused");
-  auto result = selection_domain::select_package(
+  auto const reevaluated = selection_domain::select_package(
       recheck.current, preference_, pending.request.software_id,
       pending.request.candidates);
-  if (result.status == selection_domain::SelectionStatus::fallback_confirmation_required) {
-    result.status = selection_domain::SelectionStatus::fallback_refused;
-    result.reason = "the user refused the x64 compatibility fallback for this item";
-    log_event("fallback-refused", ExecutionResult::cancelled, recheck.current,
-              software_id, std::nullopt, result.reason);
-    return result;
-  }
-  if (result.status == selection_domain::SelectionStatus::detection_failed_paused ||
-      result.status == selection_domain::SelectionStatus::package_information_unavailable) {
-    log_event(selection_domain::to_string(result.status), event_result(result.status),
-              recheck.current, software_id, std::nullopt,
-              "fallback refusal was invalidated by a fresh observation; " +
-                  result.reason);
-    return result;
-  }
-  log_event(selection_domain::to_string(result.status), event_result(result.status),
-            recheck.current, software_id,
-            result.package.has_value()
-                ? std::optional{result.package->architecture}
-                : std::nullopt,
-            "fallback refusal was invalidated by a fresh observation; " +
-                result.reason);
+  auto result = selection_domain::SelectionResult{
+      .software_id = pending.request.software_id,
+      .status = selection_domain::SelectionStatus::fallback_refused,
+      .observation = recheck.current,
+      .reason = "the user refused the x64 compatibility fallback for this item; "
+                "current reevaluation: " +
+                reevaluated.reason,
+  };
+  log_event("fallback-refused", ExecutionResult::cancelled, recheck.current,
+            software_id, std::nullopt, result.reason);
   return result;
 }
 
@@ -199,10 +199,15 @@ BatchArchitectureRecheck ArchitectureSelectionLifecycle::recheck_batch(
   auto const recheck = observe("batch-recheck");
   auto const frozen_changed =
       selection_domain::architecture_changed(frozen, recheck.current);
-  BatchArchitectureRecheck result{.observation = recheck,
-                                  .changed = frozen_changed ||
-                                             (frozen.detected() &&
-                                              !recheck.current.detected())};
+  if (!frozen.detected() || !recheck.current.detected() || frozen_changed) {
+    batches_requiring_reassessment_.insert(frozen);
+  }
+  auto const reassessment_required =
+      batches_requiring_reassessment_.contains(frozen);
+  BatchArchitectureRecheck result{
+      .observation = recheck,
+      .changed = reassessment_required,
+  };
   for (auto const& item : pending_items) {
     if (item.package.architecture ==
         selection_domain::PackageArchitecture::architecture_independent) {
@@ -222,6 +227,8 @@ BatchArchitectureRecheck ArchitectureSelectionLifecycle::recheck_batch(
                                                   preference_)) {
       status = selection_domain::SelectionStatus::fallback_confirmation_required;
       reason = "the frozen x64 package requires confirmation on the current ARM64 system";
+    } else if (reassessment_required) {
+      reason = "the frozen batch requires explicit reassessment after an architecture change or unavailable observation";
     } else if (!package_matches_system(item.package.architecture,
                                        recheck.current.system)) {
       reason = "the frozen package architecture no longer matches the current system";

@@ -84,6 +84,17 @@ class RecordingLog final : public ExecutionLog {
     });
   }
 
+  [[nodiscard]] bool has_stage_with_field(std::string_view stage,
+                                          std::string_view key,
+                                          std::string_view value) const {
+    return std::ranges::any_of(events, [&](ExecutionEvent const& event) {
+      return event.stage == stage &&
+             std::ranges::any_of(event.fields, [&](auto const& field) {
+               return field.key == key && field.value == value;
+             });
+    });
+  }
+
   std::vector<ExecutionEvent> events;
 
  private:
@@ -224,6 +235,59 @@ class RecordingLog final : public ExecutionLog {
   return passed;
 }
 
+[[nodiscard]] bool verify_batch_recheck_stays_paused_after_uncertain_observation() {
+  bool passed = true;
+  SequencePlatformInfo platform{
+      {SystemArchitecture::x64, SystemArchitecture::unknown,
+       SystemArchitecture::x64}};
+  RecordingLog log;
+  app_selection::ArchitectureSelectionLifecycle lifecycle{
+      platform, log,
+      domain_selection::ArchitecturePreference::prefer_arm64_prompt_fallback};
+  auto const frozen = lifecycle.start().current;
+  app_selection::BatchPackageSnapshot old_batch{
+      .software_id = "editor",
+      .package = package("editor", domain_selection::PackageArchitecture::x64,
+                         "editor-x64"),
+      .observation = frozen,
+  };
+  auto const original_package = old_batch.package;
+  auto const original_observation = old_batch.observation;
+
+  auto const unavailable = lifecycle.recheck_batch(
+      frozen,
+      std::span<app_selection::BatchPackageSnapshot const>{&old_batch, 1});
+  auto const recovered = lifecycle.recheck_batch(
+      frozen,
+      std::span<app_selection::BatchPackageSnapshot const>{&old_batch, 1});
+  auto const recovered_requires_reassessment =
+      recovered.changed && recovered.affected.size() == 1;
+
+  passed &= expect(
+      unavailable.changed && unavailable.affected.size() == 1 &&
+          unavailable.affected.front().status ==
+              domain_selection::SelectionStatus::detection_failed_paused,
+      "an uncertain architecture observation must pause a frozen batch item");
+  passed &= expect(
+      recovered_requires_reassessment &&
+          recovered.affected.front().status ==
+              domain_selection::SelectionStatus::architecture_changed &&
+          !recovered.affected.front().selected(),
+      "x64 after an uncertain observation must require explicit batch reassessment instead of continuing automatically");
+  passed &= expect(
+      recovered_requires_reassessment &&
+          recovered.affected.front().package == original_package &&
+          old_batch.package == original_package &&
+          old_batch.observation == original_observation,
+      "architecture rechecks must not rewrite the frozen package or observation");
+  passed &= expect(
+      log.has_stage_with_field("detection-failed-paused", "software_id", "editor") &&
+          log.has_stage_with_field("architecture-changed", "package_architecture",
+                                   "x64"),
+      "the paused batch and later reassessment requirement must be structured log events");
+  return passed;
+}
+
 [[nodiscard]] bool verify_lifecycle_rechecks_and_scopes_refusal() {
   bool passed = true;
   SequencePlatformInfo platform{
@@ -346,8 +410,9 @@ class RecordingLog final : public ExecutionLog {
     static_cast<void>(lifecycle.evaluate(request));
     auto const refused = lifecycle.refuse_fallback("editor");
     passed &= expect(
-        refused.status == domain_selection::SelectionStatus::selected_native,
-        "refusing a stale fallback must not skip an item native to the new architecture");
+        refused.status == domain_selection::SelectionStatus::fallback_refused &&
+            !refused.package.has_value(),
+        "refusing a stale fallback must skip only the current item even when a fresh observation is native");
   }
 
   return passed;
@@ -391,6 +456,44 @@ class RecordingLog final : public ExecutionLog {
   return passed;
 }
 
+[[nodiscard]] bool verify_preference_change_refusal_skips_the_item() {
+  bool passed = true;
+  app_selection::SoftwarePackageRequest request{
+      .software_id = "editor",
+      .candidates = {package("editor", domain_selection::PackageArchitecture::x64,
+                              "editor-x64")},
+  };
+
+  for (auto const preference : {
+           domain_selection::ArchitecturePreference::prefer_arm64_auto_fallback,
+           domain_selection::ArchitecturePreference::prefer_x64,
+       }) {
+    SequencePlatformInfo platform{
+        {SystemArchitecture::arm64, SystemArchitecture::arm64}};
+    RecordingLog log;
+    app_selection::ArchitectureSelectionLifecycle lifecycle{
+        platform, log,
+        domain_selection::ArchitecturePreference::prefer_arm64_prompt_fallback};
+    static_cast<void>(lifecycle.start());
+    auto const pending = lifecycle.evaluate(request);
+    lifecycle.set_preference(preference);
+    auto const refused = lifecycle.refuse_fallback("editor");
+
+    passed &= expect(
+        pending.requires_confirmation() &&
+            refused.status == domain_selection::SelectionStatus::fallback_refused &&
+            !refused.package.has_value() && !refused.selected() &&
+            refused.observation.system == SystemArchitecture::arm64,
+        "refusing after a preference change must skip only the pending item without selecting x64");
+    passed &= expect(
+        log.has_stage_with_field(
+            "fallback-refused", "architecture_preference",
+            domain_selection::to_string(preference)),
+        "fallback refusal must log the preference used for its fresh reassessment");
+  }
+  return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -399,6 +502,8 @@ int main() {
   passed &= verify_confirmation_rechecks_and_batch_pause();
   passed &= verify_current_preference_and_one_shot_scope();
   passed &= verify_batch_rechecks_new_arm64_fallback();
+  passed &= verify_batch_recheck_stays_paused_after_uncertain_observation();
+  passed &= verify_preference_change_refusal_skips_the_item();
   if (!passed) {
     return EXIT_FAILURE;
   }
