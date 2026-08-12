@@ -7,6 +7,7 @@ azzs_project_target(
   ROLE test
   PRIVATE_LINKS
     azzs::ui_presentation_contract
+    azzs::software_selection_application
 )
 
 azzs_register_test(

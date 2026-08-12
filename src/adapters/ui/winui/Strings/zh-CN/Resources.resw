@@ -74,6 +74,16 @@
   <data name="FixedDriverEntrypointsItems.Text" xml:space="preserve"><value>AMD 驱动助手 · Intel 官方驱动页 · NVIDIA 官方驱动页</value></data>
   <data name="SystemOptimizationPageTitle.Text" xml:space="preserve"><value>系统优化</value></data>
   <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
+  <data name="SoftwareSelectionStatusAccessibleName" xml:space="preserve"><value>软件选择状态</value></data>
+  <data name="SoftwareSelectionAvailableTitle" xml:space="preserve"><value>软件选择</value></data>
+  <data name="SoftwareSelectionAvailableBodyPrefix" xml:space="preserve"><value>已保留 </value></data>
+  <data name="SoftwareSelectionAvailableBodySuffix" xml:space="preserve"><value> 个软件选择。受目录变化影响的项目需要重新确认。</value></data>
+  <data name="SoftwareSelectionAbsentCatalogTitle" xml:space="preserve"><value>当前有效目录尚未加载</value></data>
+  <data name="SoftwareSelectionAbsentCatalogBody" xml:space="preserve"><value>尚未加载当前有效目录。软件选择、来源解析和外部交接均不会自动开始。</value></data>
+  <data name="SoftwareSelectionNotRestoredBody" xml:space="preserve"><value>软件选择状态尚未恢复；不会自动访问网络或检测软件。</value></data>
+  <data name="SoftwareSelectionRestoreFailedBody" xml:space="preserve"><value>无法恢复软件选择状态。</value></data>
+  <data name="SoftwareSelectionAdvancedAvailable" xml:space="preserve"><value>标准与高级视图共享相同的软件选择状态。</value></data>
+  <data name="SoftwareSelectionAdvancedAbsentCatalog" xml:space="preserve"><value>当前页面不会将内置 draft 目录当作当前有效目录，也不会启动来源解析、浏览器或软件检测。</value></data>
   <data name="SoftwareOptimizationPageTitle.Text" xml:space="preserve"><value>软件优化</value></data>
   <data name="HistoryAndLogsPageTitle.Text" xml:space="preserve"><value>历史与日志</value></data>
   <data name="ApplicationSettingsPageTitle.Text" xml:space="preserve"><value>应用设置</value></data>

@@ -14,6 +14,8 @@
 #include "Pages/SoftwareInstallationPage.xaml.h"
 #include "Pages/SoftwareOptimizationPage.xaml.h"
 #include "Pages/SystemOptimizationPage.xaml.h"
+#include "azzs/application/software_selection.hpp"
+#include "azzs/application/workbench_services.hpp"
 
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -155,6 +157,13 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::software_installation:
       ContentFrame().Navigate(xaml_typename<Pages::SoftwareInstallationPage>(),
                               nullptr, transition);
+      if (auto const services = workbench_->services()) {
+        auto const page = ContentFrame()
+                              .Content()
+                              .as<Pages::SoftwareInstallationPage>();
+        winrt::get_self<Pages::implementation::SoftwareInstallationPage>(page)
+            ->project(services->software_selection().snapshot());
+      }
       break;
     case PageId::software_optimization:
       ContentFrame().Navigate(xaml_typename<Pages::SoftwareOptimizationPage>(),
