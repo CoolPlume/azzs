@@ -2,9 +2,10 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 02, 25
 Owner: issue-28
+Claimed by: Codex issue-28 task
 Consumers: 15, 21, 26, 27
 Verification: 通知解析、修订防回滚、离线与首次失败、跨类别阻止、解除和持久化合同测试。
 Evidence freshness: 每条结果记录 observed_at 与通知或策略修订；按票内启动和执行事件重新检查，失败时不得把旧或未知证据升级为最新通过。
@@ -33,3 +34,5 @@ Evidence freshness: 每条结果记录 observed_at 与通知或策略修订；�
 ## Comments
 
 - 2026-08-10：Q49 已确认首次检查失败且本机没有有效紧急撤回信息时，允许新操作继续并持续提示信息未知；已知撤回仍按跨类别阻止规则生效。
+- 2026-08-12：Resolution completed。feature head `be752beb08a0f7ef091624b703f2f2bb40060c34` 经 PR #11（https://github.com/CoolPlume/azzs/pull/11）合入；该 feature 的 Windows read-only validation run `31573232211` 在 x64 Release 与 ARM64 Release 均成功。PR 已 Squash 到 `codex/v1-integration`，integration squash 为 `194b3a3948e3fdb77d52625013cd7258f04b80b0`；最终 integration run `31573791901` 在该提交上的 x64/ARM64 均成功，host guardrails 为 15/15 通过。
+- 未验证边界：上述是 GitHub 自动 CI 和 host guardrails 证据，不是 Windows 实机通过；未执行真实 Windows UI、UAC 或设备验证。未获完整自动证据的验收项保持未勾选。
