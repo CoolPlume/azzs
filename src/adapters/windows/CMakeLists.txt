@@ -20,6 +20,7 @@ if(WIN32)
     src/windows_lease_token_source.cpp
     src/windows_platform_info.cpp
     src/windows_state_file_system.cpp
+    src/windows_sogou_optimization_adapter.cpp
     src/windows_system_settings_adapter.cpp
   )
 
@@ -44,6 +45,7 @@ azzs_project_target(
   PUBLIC_LINKS
     azzs::application
     azzs::software_selection_application
+    azzs::software_optimization_catalog_application
   PRIVATE_LINKS
     advapi32
     ole32
