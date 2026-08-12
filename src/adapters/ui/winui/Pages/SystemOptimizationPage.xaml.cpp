@@ -84,7 +84,7 @@ void SystemOptimizationPage::bind(
 }
 
 void SystemOptimizationPage::OnSelectRecommended(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (!service_) {
     return;
@@ -98,7 +98,7 @@ void SystemOptimizationPage::OnSelectRecommended(
 }
 
 void SystemOptimizationPage::OnApplySelected(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (!service_) {
     return;
@@ -108,7 +108,7 @@ void SystemOptimizationPage::OnApplySelected(
 }
 
 void SystemOptimizationPage::OnRestartExplorerNow(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (!service_) {
     return;

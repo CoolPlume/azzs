@@ -16,13 +16,13 @@ struct SystemOptimizationPage : SystemOptimizationPageT<SystemOptimizationPage> 
   void bind(
       std::shared_ptr<azzs::application::SystemSettingsApplyService> service);
   void OnSelectRecommended(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      winrt::Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnApplySelected(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      winrt::Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnRestartExplorerNow(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      winrt::Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
 
  private:
