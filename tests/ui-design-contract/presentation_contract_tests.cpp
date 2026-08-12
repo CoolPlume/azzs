@@ -11,6 +11,7 @@
 
 #include "motion_contract.hpp"
 #include "presentation_contract.hpp"
+#include "software_selection_presentation.hpp"
 #include "Fixtures/design_system_fixture.hpp"
 
 namespace {
@@ -361,12 +362,41 @@ using azzs::ui::presentation::WorkflowStage;
   return passed;
 }
 
+[[nodiscard]] bool verify_software_selection_empty_catalog_projection() {
+  auto const source =
+      azzs::application::software_selection::SoftwareSelectionSnapshot{
+          .mode = azzs::application::software_selection::
+              SelectionLifecycleMode::ready,
+      };
+  auto const snapshot =
+      azzs::ui::presentation::make_software_selection_presentation(source);
+  ReadOnlyPresentation const standard{snapshot, ViewMode::standard};
+  ReadOnlyPresentation const advanced{snapshot, ViewMode::advanced};
+  auto const* status = snapshot->find_component("software-selection.status");
+
+  bool passed = true;
+  passed &= expect(status != nullptr &&
+                       status->state == PresentationState::waiting_for_network &&
+                       status->body.find("No current effective catalog") !=
+                           std::string::npos,
+                   "software installation must honestly expose an absent current catalog");
+  passed &= expect(std::addressof(standard.source()) ==
+                       std::addressof(advanced.source()),
+                   "software standard and advanced views must share one snapshot");
+  passed &= expect(status != nullptr && standard.visible(*status) &&
+                       advanced.visible(*status) &&
+                       !status->advanced_detail.empty(),
+                   "the absent-catalog warning must remain visible while advanced adds detail");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
   bool passed = true;
   passed &= verify_motion_contract();
   passed &= verify_fixture_contract();
+  passed &= verify_software_selection_empty_catalog_projection();
   if (!passed) {
     return EXIT_FAILURE;
   }
