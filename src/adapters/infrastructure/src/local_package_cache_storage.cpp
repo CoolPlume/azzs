@@ -208,9 +208,17 @@ class AssetLock final {
   [[nodiscard]] static std::optional<AssetLock> try_acquire(
       std::filesystem::path const& path) {
 #ifdef _WIN32
-    auto const handle = ::CreateFileW(
-        path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+    HANDLE handle = ::CreateFileW(
+        path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_NEW,
         FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (handle == INVALID_HANDLE_VALUE &&
+        ::GetLastError() == ERROR_FILE_EXISTS) {
+      handle = ::CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+                             nullptr, OPEN_EXISTING,
+                             FILE_ATTRIBUTE_HIDDEN |
+                                 FILE_FLAG_OPEN_REPARSE_POINT,
+                             nullptr);
+    }
     if (handle == INVALID_HANDLE_VALUE) {
       return std::nullopt;
     }
