@@ -46,7 +46,9 @@ void SoftwareInstallationPage::project(
       .advanced_absent_catalog = winrt::to_string(
           resources.GetString(L"SoftwareSelectionAdvancedAbsentCatalog")),
   };
-  SoftwareSelectionStatus().project(
+  using SurfaceImplementation = winrt::Azzs::Ui::DesignSystem::Controls::
+      implementation::ReadOnlyPresentationSurface;
+  winrt::get_self<SurfaceImplementation>(SoftwareSelectionStatus())->project(
       azzs::ui::presentation::make_software_selection_presentation(
           snapshot, std::move(text)),
       "software-selection.status", azzs::ui::presentation::ViewMode::standard,
