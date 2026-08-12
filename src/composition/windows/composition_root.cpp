@@ -13,9 +13,11 @@
 #include "../../adapters/ui/winui/DesignSystem/motion_preferences.hpp"
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
+#include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
 #include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
+#include "azzs/adapters/infrastructure/system_settings_recovery_store.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #include "azzs/adapters/windows/windows_application_update_platform.hpp"
@@ -26,6 +28,7 @@
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
 #include "azzs/adapters/windows/windows_sogou_optimization_adapter.hpp"
+#include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
 #include "azzs/application/application_update.hpp"
@@ -35,11 +38,22 @@
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/sogou_optimization.hpp"
+#include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
+#include "azzs/settings_catalog/initial_settings_catalog.hpp"
+#include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 
 namespace azzs::composition::windows {
 namespace {
+
+class ProductionSettingsCatalogImportAuthorization final
+    : public application::settings_catalog::SettingsCatalogImportAuthorization {
+ public:
+  [[nodiscard]] bool debug_import_allowed() const noexcept override {
+    return false;
+  }
+};
 
 class UnavailableControlledSourceResolver final
     : public application::software_selection::ControlledSourceResolver {
@@ -90,6 +104,18 @@ class WindowsWorkbenchServices final
         sogou_optimizations_(sogou_optimization_adapter_,
                              sogou_optimization_adapter_),
         platform_info_{},
+        settings_catalog_file_(states_),
+        settings_catalog_(settings_catalog_file_, settings_catalog_file_, log_,
+                          occupancy_, settings_import_authorization_,
+                          {.apply = {"windows.classic-context-menu.apply",
+                                     "windows.windows10-explorer.apply"},
+                           .detect = {"windows.classic-context-menu.detect",
+                                      "windows.windows10-explorer.detect"},
+                           .recover = {"windows.classic-context-menu.restore",
+                                       "windows.windows10-explorer.restore"}}),
+        system_settings_recovery_(states_),
+        system_settings_apply_(settings_catalog_, system_settings_adapter_,
+                               system_settings_recovery_, occupancy_, log_),
         operation_activity_(occupancy_),
         application_update_health_storage_(states_),
         application_update_platform_(platform_info_,
@@ -103,6 +129,9 @@ class WindowsWorkbenchServices final
         software_selection_(states_, clock_, log_, architecture_selection_,
                             source_resolver_, network_, presence_detector_,
                             external_launcher_, state_subject_) {
+    static_cast<void>(settings_catalog_.initialize_builtin(
+        application::settings_catalog::initial_settings_catalog()));
+    static_cast<void>(system_settings_apply_.refresh());
     static_cast<void>(architecture_selection_.start());
     static_cast<void>(software_selection_.restore());
   }
@@ -151,6 +180,17 @@ class WindowsWorkbenchServices final
     return sogou_optimizations_;
   }
 
+  [[nodiscard]] application::SystemSettingsApplyService& system_settings_apply()
+      noexcept override {
+    return system_settings_apply_;
+  }
+
+  [[nodiscard]] std::shared_ptr<application::SystemSettingsApplyService>
+  system_settings_apply_shared() {
+    return std::shared_ptr<application::SystemSettingsApplyService>(
+        shared_from_this(), &system_settings_apply_);
+  }
+
   [[nodiscard]] application::ApplicationUpdateLifecycle& application_updates()
       noexcept override {
     return application_updates_;
@@ -197,6 +237,13 @@ class WindowsWorkbenchServices final
       sogou_optimization_adapter_;
   application::sogou_optimization::SogouOptimizationService
       sogou_optimizations_;
+  adapters::infrastructure::SettingsCatalogFileAdapter settings_catalog_file_;
+  ProductionSettingsCatalogImportAuthorization settings_import_authorization_;
+  application::settings_catalog::SettingsCatalogLifecycle settings_catalog_;
+  adapters::windows::WindowsSystemSettingsAdapter system_settings_adapter_;
+  adapters::infrastructure::SystemSettingsRecoveryStore
+      system_settings_recovery_;
+  application::SystemSettingsApplyService system_settings_apply_;
   adapters::windows::WindowsPlatformInfo platform_info_;
   class OperationActivity final
       : public application::InitializationOperationActivity {
@@ -253,10 +300,12 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
       std::move(*environment.environment));
   auto workbench = std::make_shared<application::Workbench>(
       services->platform_info(), services);
+  auto system_settings = services->system_settings_apply_shared();
   services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
-  window->bind(std::move(workbench), std::move(motion_preferences));
+  window->bind(std::move(workbench), std::move(motion_preferences),
+               std::move(system_settings));
   return window.as<winrt::Microsoft::UI::Xaml::Window>();
 }
 

@@ -745,8 +745,12 @@ if(AZZS_GRAPH_SCAN_PROJECT)
   endif()
 
   foreach(expected_edge IN LISTS AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES)
+    _azzs_parse_pair("${expected_edge}" expected_from expected_to)
+    _azzs_graph_key("${expected_to}" expected_to_key)
+    if(NOT DEFINED "AZZS_GRAPH_NAME_${expected_to_key}")
+      continue()
+    endif()
     if(NOT expected_edge IN_LIST graph_edges)
-      _azzs_parse_pair("${expected_edge}" expected_from expected_to)
       _azzs_architecture_fail(
         "${expected_from}"
         "${expected_from} -> missing required edge ${expected_to}"

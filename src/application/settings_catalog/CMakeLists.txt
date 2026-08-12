@@ -1,4 +1,5 @@
 add_library(azzs_settings_catalog_lifecycle STATIC
+  src/initial_settings_catalog.cpp
   src/settings_catalog_lifecycle.cpp
 )
 
