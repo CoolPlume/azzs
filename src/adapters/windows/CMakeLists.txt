@@ -15,6 +15,7 @@ if(WIN32)
     src/windows_device_data_environment.cpp
     src/windows_emergency_withdrawal_notice_source.cpp
     src/windows_external_address_launcher.cpp
+    src/windows_hardware_observer.cpp
     src/windows_lease_token_source.cpp
     src/windows_platform_info.cpp
     src/windows_state_file_system.cpp
@@ -43,8 +44,10 @@ azzs_project_target(
   PRIVATE_LINKS
     advapi32
     ole32
+    oleaut32
     rpcrt4
     shell32
+    wbemuuid
     winhttp
     wtsapi32
 )

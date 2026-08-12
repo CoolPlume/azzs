@@ -60,6 +60,18 @@
   <data name="NavigationApplicationSettings.Content" xml:space="preserve"><value>应用设置</value></data>
   <data name="OverviewPageTitle.Text" xml:space="preserve"><value>概览</value></data>
   <data name="DriversPageTitle.Text" xml:space="preserve"><value>驱动</value></data>
+  <data name="DriversRefresh.Text" xml:space="preserve"><value>刷新硬件</value></data>
+  <data name="HardwareUnrecognizedValue" xml:space="preserve"><value>未识别</value></data>
+  <data name="HardwareStatusTitle" xml:space="preserve"><value>硬件未识别</value></data>
+  <data name="HardwareStatusMessage" xml:space="preserve"><value>本次硬件检测没有生成可用概览。</value></data>
+  <data name="HardwareCpuLabel.Text" xml:space="preserve"><value>CPU</value></data>
+  <data name="HardwareGpuLabel.Text" xml:space="preserve"><value>显卡</value></data>
+  <data name="HardwareMotherboardLabel.Text" xml:space="preserve"><value>主板</value></data>
+  <data name="HardwareNetworkLabel.Text" xml:space="preserve"><value>网卡</value></data>
+  <data name="HardwareOemLabel.Text" xml:space="preserve"><value>整机 OEM 型号</value></data>
+  <data name="FixedDriverEntrypointsTitle.Text" xml:space="preserve"><value>固定驱动入口</value></data>
+  <data name="FixedDriverEntrypointsDescription.Text" xml:space="preserve"><value>硬件识别失败时，这些入口仍会保留。</value></data>
+  <data name="FixedDriverEntrypointsItems.Text" xml:space="preserve"><value>AMD 驱动助手 · Intel 官方驱动页 · NVIDIA 官方驱动页</value></data>
   <data name="SystemOptimizationPageTitle.Text" xml:space="preserve"><value>系统优化</value></data>
   <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
   <data name="SoftwareSelectionStatusAccessibleName" xml:space="preserve"><value>软件选择状态</value></data>
