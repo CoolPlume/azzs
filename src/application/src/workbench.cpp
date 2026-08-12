@@ -21,6 +21,9 @@ Workbench::Workbench(PlatformInfo const& platform_info,
       .minimum_version_risk = policy.assess(observed_version),
       .observed_windows_version = observed_version,
       .target_windows_version = policy.target(),
+      .system_settings =
+          services_ ? services_->system_settings_apply().snapshot()
+                    : SystemSettingsApplySnapshot{},
   };
   if (services_) {
     snapshot_.update = services_->application_updates().snapshot();

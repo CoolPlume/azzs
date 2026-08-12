@@ -91,14 +91,14 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\..\..\application\include;$(MSBuildThisFileDirectory)..\..\..\application\architecture-selection\include;$(MSBuildThisFileDirectory)..\..\..\application\software-catalog\include;$(MSBuildThisFileDirectory)..\..\..\application\software-selection\include;$(MSBuildThisFileDirectory)..\..\..\domain\include;$(MSBuildThisFileDirectory)..\..\..\domain\architecture-selection\include;$(MSBuildThisFileDirectory)..\..\..\domain\software-catalog\include;$(MSBuildThisFileDirectory)..\..\..\domain\software-selection\include;$(MSBuildThisFileDirectory)..\..\infrastructure\include;$(MSBuildThisFileDirectory)..\..\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\..\..\application\include;$(MSBuildThisFileDirectory)..\..\..\application\architecture-selection\include;$(MSBuildThisFileDirectory)..\..\..\application\settings_catalog\include;$(MSBuildThisFileDirectory)..\..\..\application\software-catalog\include;$(MSBuildThisFileDirectory)..\..\..\application\software-selection\include;$(MSBuildThisFileDirectory)..\..\..\domain\include;$(MSBuildThisFileDirectory)..\..\..\domain\architecture-selection\include;$(MSBuildThisFileDirectory)..\..\..\domain\settings_catalog\include;$(MSBuildThisFileDirectory)..\..\..\domain\software-catalog\include;$(MSBuildThisFileDirectory)..\..\..\domain\software-selection\include;$(MSBuildThisFileDirectory)..\..\infrastructure\include;$(MSBuildThisFileDirectory)..\..\infrastructure\settings_catalog\include;$(MSBuildThisFileDirectory)..\..\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/Zc:__cplusplus /utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(AzzsCoreLibraryDirectory);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_application.lib;azzs_domain.lib;azzs_architecture_selection_application.lib;azzs_architecture_selection_domain.lib;azzs_software_catalog_application.lib;azzs_software_catalog_domain.lib;azzs_software_selection_application.lib;azzs_software_selection_domain.lib;azzs_software_optimization_catalog_application.lib;azzs_software_optimization_catalog_domain.lib;advapi32.lib;ole32.lib;oleaut32.lib;rpcrt4.lib;shell32.lib;wbemuuid.lib;winhttp.lib;wtsapi32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_settings_catalog_file_adapter.lib;azzs_application.lib;azzs_settings_catalog_lifecycle.lib;azzs_domain.lib;azzs_settings_catalog_domain.lib;azzs_architecture_selection_application.lib;azzs_architecture_selection_domain.lib;azzs_software_catalog_application.lib;azzs_software_catalog_domain.lib;azzs_software_selection_application.lib;azzs_software_selection_domain.lib;azzs_software_optimization_catalog_application.lib;azzs_software_optimization_catalog_domain.lib;advapi32.lib;ole32.lib;oleaut32.lib;rpcrt4.lib;shell32.lib;wbemuuid.lib;winhttp.lib;wtsapi32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -231,8 +231,10 @@
   <Target Name="ValidateAzzsCoreLibraries" BeforeTargets="Link">
     <Error Condition="'$(AzzsCoreLibraryDirectory)'==''" Text="AzzsCoreLibraryDirectory must point to the CMake library output." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_application.lib')" Text="The CMake application core has not been built for $(Platform)|$(Configuration)." />
+    <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_settings_catalog_lifecycle.lib')" Text="The CMake settings catalog lifecycle has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_architecture_selection_application.lib')" Text="The CMake architecture selection application core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_architecture_selection_domain.lib')" Text="The CMake architecture selection domain core has not been built for $(Platform)|$(Configuration)." />
+    <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_settings_catalog_domain.lib')" Text="The CMake settings catalog domain core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_catalog_application.lib')" Text="The CMake software catalog application core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_catalog_domain.lib')" Text="The CMake software catalog domain core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_selection_application.lib')" Text="The CMake software selection application core has not been built for $(Platform)|$(Configuration)." />
@@ -240,6 +242,7 @@
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_catalog_application.lib')" Text="The CMake software optimization catalog application core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_catalog_domain.lib')" Text="The CMake software optimization catalog domain core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_infrastructure_adapter.lib')" Text="The CMake infrastructure adapter has not been built for $(Platform)|$(Configuration)." />
+    <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_settings_catalog_file_adapter.lib')" Text="The CMake settings catalog file adapter has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_windows_adapter.lib')" Text="The CMake Windows adapter has not been built for $(Platform)|$(Configuration)." />
   </Target>
 </Project>

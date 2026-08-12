@@ -24,6 +24,7 @@ class DeviceStateStore;
 class EmergencyWithdrawalService;
 class ExecutionLog;
 class SharedOperationOccupancy;
+class SystemSettingsApplyService;
 class ApplicationUpdateLifecycle;
 
 // The application-facing service bundle assembled exactly once by the host.
@@ -42,6 +43,8 @@ class WorkbenchServices {
       noexcept = 0;
   [[nodiscard]] virtual sogou_optimization::SogouOptimizationService&
   sogou_optimizations() noexcept = 0;
+  [[nodiscard]] virtual SystemSettingsApplyService& system_settings_apply()
+      noexcept = 0;
   [[nodiscard]] virtual ApplicationUpdateLifecycle& application_updates()
       noexcept = 0;
   [[nodiscard]] virtual architecture_selection::ArchitectureSelectionLifecycle&
