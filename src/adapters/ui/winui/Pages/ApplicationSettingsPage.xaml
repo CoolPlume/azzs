@@ -19,6 +19,7 @@
             </VisualStateManager.VisualStateGroups>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="ApplicationSettingsPageTitle"
@@ -27,6 +28,44 @@
                 AutomationProperties.HeadingLevel="Level1"
                 Style="{StaticResource AzzsPageTitleTextStyle}"
                 TextWrapping="Wrap" />
+            <StackPanel Grid.Row="1" Spacing="{StaticResource AzzsSpaceStandard}">
+                <InfoBar
+                    x:Name="ApplicationUpdateStatus"
+                    AutomationProperties.AutomationId="AzzsApplicationUpdateStatus"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Style="{StaticResource AzzsStatusBandStyle}" />
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
+                    <Button
+                        x:Name="ApplicationUpdateCommandButton"
+                        AutomationProperties.AutomationId="AzzsApplicationUpdateCommand"
+                        Click="OnApplicationUpdateCommandClick"
+                        Style="{StaticResource AzzsPrimaryCommandButtonStyle}" />
+                    <Button
+                        x:Name="ApplicationUpdateRetryButton"
+                        AutomationProperties.AutomationId="AzzsApplicationUpdateRetry"
+                        Click="OnApplicationUpdateRetryClick"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}"
+                        Visibility="Collapsed" />
+                    <Button
+                        x:Name="ApplicationUpdateRestoreButton"
+                        AutomationProperties.AutomationId="AzzsApplicationUpdateRestore"
+                        Click="OnApplicationUpdateRestoreClick"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}"
+                        Visibility="Collapsed" />
+                    <Button
+                        x:Name="ApplicationUpdateManualButton"
+                        AutomationProperties.AutomationId="AzzsApplicationUpdateManual"
+                        Click="OnApplicationUpdateManualClick"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                    <Button
+                        x:Name="ApplicationUpdateDiagnosticButton"
+                        AutomationProperties.AutomationId="AzzsApplicationUpdateDiagnostic"
+                        Click="OnApplicationUpdateDiagnosticClick"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                </StackPanel>
+            </StackPanel>
         </Grid>
     </ScrollViewer>
 </Page>

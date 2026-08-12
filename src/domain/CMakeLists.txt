@@ -1,4 +1,5 @@
 add_library(azzs_domain STATIC
+  src/application_update.cpp
   src/minimum_version_policy.cpp
   src/emergency_withdrawal.cpp
 )
