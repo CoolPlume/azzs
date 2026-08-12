@@ -16,6 +16,10 @@
 
 使用单上下文布局：根目录 `CONTEXT.md` 与 `docs/adr/`。详见 `docs/agents/domain.md`。
 
+### Orchestration
+
+进行项目总调度、拆分 Codex 会话或子代理、选择模型、控制并发、跨机器交接或跨分支集成时，必须先阅读 `docs/agents/orchestration.md`。
+
 ### Architecture and code quality
 
 实现或重构界面、核心、平台适配器、目录内容扩展或内置受控能力前，先阅读 `docs/engineering/architecture-and-code-quality.md`。保持单向依赖、状态唯一来源、唯一装配入口和无界面核心测试；普通目录内容不得引入第三方可执行插件。
