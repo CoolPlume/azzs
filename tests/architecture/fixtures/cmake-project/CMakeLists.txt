@@ -23,6 +23,8 @@ endif()
 
 add_subdirectory(src/domain)
 add_subdirectory(src/application)
+add_subdirectory(src/domain/architecture-selection)
+add_subdirectory(src/application/architecture-selection)
 add_subdirectory(src/adapters/infrastructure)
 add_subdirectory(src/adapters/windows)
 if(BUILD_TESTING)

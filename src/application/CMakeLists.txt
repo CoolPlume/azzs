@@ -23,6 +23,7 @@ azzs_project_target(
 )
 
 add_subdirectory(software-catalog)
+add_subdirectory(architecture-selection)
 
 add_library(azzs_software_optimization_catalog_application STATIC
   src/software_optimization_catalog_lifecycle.cpp

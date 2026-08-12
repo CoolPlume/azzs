@@ -11,6 +11,8 @@ class WindowsPlatformInfo final : public application::PlatformInfo {
  public:
   [[nodiscard]] std::optional<domain::SystemVersion> windows_version()
       const override;
+  [[nodiscard]] domain::SystemArchitecture windows_architecture()
+      const override;
 };
 
 }  // namespace azzs::adapters::windows
