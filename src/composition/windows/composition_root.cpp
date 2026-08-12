@@ -19,6 +19,7 @@
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
+#include "azzs/adapters/windows/windows_hardware_observer.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
@@ -27,6 +28,7 @@
 #include "azzs/application/architecture_selection.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
+#include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
@@ -51,6 +53,9 @@ class WindowsWorkbenchServices final
   explicit WindowsWorkbenchServices(
       adapters::windows::DeviceDataEnvironment environment)
       : state_subject_{environment.subject_id},
+        clock_{},
+        hardware_observer_{},
+        hardware_overview_(hardware_observer_, clock_),
         state_files_(environment),
         states_(state_files_, clock_),
         log_storage_(environment.root_utf8, environment.subject_id),
@@ -136,6 +141,11 @@ class WindowsWorkbenchServices final
     return architecture_selection_;
   }
 
+  [[nodiscard]] application::HardwareOverviewService& hardware_overview()
+      noexcept override {
+    return hardware_overview_;
+  }
+
   [[nodiscard]] adapters::windows::WindowsPlatformInfo const& platform_info()
       const noexcept {
     return platform_info_;
@@ -144,6 +154,8 @@ class WindowsWorkbenchServices final
  private:
   domain::StateSubject state_subject_;
   adapters::infrastructure::SystemClock clock_;
+  adapters::windows::WindowsHardwareObserver hardware_observer_;
+  application::HardwareOverviewService hardware_overview_;
   adapters::windows::WindowsStateFileSystem state_files_;
   application::DeviceStateStore states_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;

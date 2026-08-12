@@ -19,14 +19,80 @@
             </VisualStateManager.VisualStateGroups>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <TextBlock
-                x:Uid="DriversPageTitle"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Top"
-                AutomationProperties.HeadingLevel="Level1"
-                Style="{StaticResource AzzsPageTitleTextStyle}"
-                TextWrapping="Wrap" />
+            <Grid ColumnSpacing="{StaticResource AzzsSpaceStandard}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Uid="DriversPageTitle"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    AutomationProperties.HeadingLevel="Level1"
+                    Style="{StaticResource AzzsPageTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <Button
+                    x:Name="RefreshHardwareButton"
+                    Grid.Column="1"
+                    AutomationProperties.AutomationId="AzzsHardwareRefresh"
+                    Click="OnRefreshClicked"
+                    Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
+                        <SymbolIcon Symbol="Refresh" />
+                        <TextBlock x:Uid="DriversRefresh" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <InfoBar
+                x:Name="HardwareStatus"
+                Grid.Row="1"
+                AutomationProperties.AutomationId="AzzsHardwareStatus"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False"
+                Style="{StaticResource AzzsStatusBandStyle}" />
+            <Border
+                Grid.Row="2"
+                AutomationProperties.AutomationId="AzzsHardwareOverview"
+                Style="{StaticResource AzzsSummarySurfaceStyle}">
+                <Grid RowSpacing="{StaticResource AzzsSpaceMedium}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="HardwareCpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="CpuValue" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareCpu" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareGpuLabel" Grid.Row="1" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="GpuValue" Grid.Row="1" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareMotherboardLabel" Grid.Row="2" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="MotherboardValue" Grid.Row="2" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareNetworkLabel" Grid.Row="3" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="NetworkValue" Grid.Row="3" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareNetwork" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareOemLabel" Grid.Row="4" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="OemValue" Grid.Row="4" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareOem" Style="{StaticResource AzzsBodyTextStyle}" />
+                </Grid>
+            </Border>
+            <Border
+                Grid.Row="3"
+                AutomationProperties.AutomationId="AzzsFixedDriverEntrypoints"
+                Style="{StaticResource AzzsSectionSurfaceStyle}">
+                <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                    <TextBlock x:Uid="FixedDriverEntrypointsTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                    <TextBlock x:Uid="FixedDriverEntrypointsDescription" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Uid="FixedDriverEntrypointsItems" Style="{StaticResource AzzsBodyTextStyle}" />
+                </StackPanel>
+            </Border>
         </Grid>
     </ScrollViewer>
 </Page>
