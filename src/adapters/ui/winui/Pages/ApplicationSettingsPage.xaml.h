@@ -13,19 +13,19 @@ struct ApplicationSettingsPage
 
   void bind(std::shared_ptr<azzs::application::Workbench> workbench);
   void OnApplicationUpdateCommandClick(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnApplicationUpdateRetryClick(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnApplicationUpdateRestoreClick(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnApplicationUpdateManualClick(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnApplicationUpdateDiagnosticClick(
-      Microsoft::UI::Xaml::Controls::Button const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
 
  private:

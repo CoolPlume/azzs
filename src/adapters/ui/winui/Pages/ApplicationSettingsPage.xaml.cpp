@@ -35,7 +35,7 @@ void ApplicationSettingsPage::bind(
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateCommandClick(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (!workbench_) {
     return;
@@ -62,7 +62,7 @@ void ApplicationSettingsPage::OnApplicationUpdateCommandClick(
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateRetryClick(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (workbench_) {
     project(workbench_->handle_update(
@@ -72,7 +72,7 @@ void ApplicationSettingsPage::OnApplicationUpdateRetryClick(
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateRestoreClick(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (workbench_) {
     project(workbench_->handle_update(
@@ -83,7 +83,7 @@ void ApplicationSettingsPage::OnApplicationUpdateRestoreClick(
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateManualClick(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (workbench_) {
     project(workbench_->handle_update(
@@ -94,7 +94,7 @@ void ApplicationSettingsPage::OnApplicationUpdateManualClick(
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateDiagnosticClick(
-    Microsoft::UI::Xaml::Controls::Button const&,
+    Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (workbench_) {
     project(workbench_->handle_update(
