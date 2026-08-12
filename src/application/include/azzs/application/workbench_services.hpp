@@ -10,6 +10,8 @@ namespace architecture_selection {
 class ArchitectureSelectionLifecycle;
 }
 
+class HardwareOverviewService;
+
 class DeviceStateStore;
 class EmergencyWithdrawalService;
 class ExecutionLog;
@@ -31,6 +33,8 @@ class WorkbenchServices {
       noexcept = 0;
   [[nodiscard]] virtual architecture_selection::ArchitectureSelectionLifecycle&
   architecture_selection() noexcept = 0;
+  [[nodiscard]] virtual HardwareOverviewService& hardware_overview()
+      noexcept = 0;
 };
 
 }  // namespace azzs::application
