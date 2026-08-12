@@ -6,8 +6,7 @@
 #include "Pages/DriversPage.g.h"
 
 namespace azzs::application {
-class HardwareOverviewSnapshot;
-class Workbench;
+struct HardwareOverviewSnapshot;
 }
 
 namespace winrt::Azzs::Ui::Pages::implementation {
