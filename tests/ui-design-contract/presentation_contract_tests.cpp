@@ -13,6 +13,7 @@
 #include "presentation_contract.hpp"
 #include "software_selection_presentation.hpp"
 #include "Fixtures/design_system_fixture.hpp"
+#include "azzs/application/advanced_view_preferences.hpp"
 
 namespace {
 
@@ -30,6 +31,27 @@ using azzs::ui::presentation::ReadOnlyPresentation;
 using azzs::ui::presentation::RiskLevel;
 using azzs::ui::presentation::ViewMode;
 using azzs::ui::presentation::WorkflowStage;
+
+class InMemoryAdvancedViewPreferenceStore final
+    : public azzs::application::AdvancedViewPreferenceStore {
+ public:
+  [[nodiscard]] azzs::application::AdvancedViewPreferenceRead
+  read_advanced_view() override {
+    return read;
+  }
+
+  [[nodiscard]] azzs::application::AdvancedViewPreferenceWriteStatus
+  write_advanced_view(bool enabled) override {
+    last_written = enabled;
+    return write_status;
+  }
+
+  azzs::application::AdvancedViewPreferenceRead read{
+      .status = azzs::application::AdvancedViewPreferenceReadStatus::loaded};
+  azzs::application::AdvancedViewPreferenceWriteStatus write_status{
+      azzs::application::AdvancedViewPreferenceWriteStatus::saved};
+  bool last_written{false};
+};
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
   if (!condition) {
@@ -359,6 +381,26 @@ using azzs::ui::presentation::WorkflowStage;
           shared_advanced_intent->kind == IntentKind::open_source,
       "advanced view must add only the typed low-frequency projection");
 
+  auto const* force_attempt =
+      fixture->find_component("fixture.system-settings-force-attempt");
+  passed &= expect(
+      force_attempt != nullptr && standard.visible(*force_attempt) &&
+          advanced.visible(*force_attempt) &&
+          force_attempt->state == PresentationState::pending_confirmation &&
+          force_attempt->risk == RiskLevel::high,
+      "out-of-range system-setting risk must remain visible in both views");
+  passed &= expect(
+      !standard
+           .intent_for("fixture.system-settings-force-attempt", "force-attempt")
+           .has_value(),
+      "standard view must not emit a force-attempt intent");
+  auto const force_attempt_intent = advanced.intent_for(
+      "fixture.system-settings-force-attempt", "force-attempt");
+  passed &= expect(
+      force_attempt_intent.has_value() &&
+          force_attempt_intent->kind == IntentKind::confirm_risk,
+      "advanced view must emit only the typed confirmed force-attempt intent");
+
   return passed;
 }
 
@@ -390,6 +432,32 @@ using azzs::ui::presentation::WorkflowStage;
   return passed;
 }
 
+[[nodiscard]] bool verify_advanced_view_preference_fallback() {
+  bool passed = true;
+  auto store = std::make_shared<InMemoryAdvancedViewPreferenceStore>();
+  store->read.enabled = true;
+  azzs::application::AdvancedViewPreferences preferences{store};
+  passed &= expect(preferences.enabled(),
+                   "loaded advanced-view preference must initialize application state");
+  passed &= expect(preferences.set_enabled(false) == false &&
+                       store->last_written == false,
+                   "successful advanced-view write must update application state");
+
+  store->write_status =
+      azzs::application::AdvancedViewPreferenceWriteStatus::unavailable;
+  passed &= expect(preferences.set_enabled(true) == false,
+                   "failed advanced-view write must preserve application state");
+
+  auto unavailable = std::make_shared<InMemoryAdvancedViewPreferenceStore>();
+  unavailable->read.status =
+      azzs::application::AdvancedViewPreferenceReadStatus::unavailable;
+  unavailable->read.enabled = true;
+  azzs::application::AdvancedViewPreferences fallback{unavailable};
+  passed &= expect(!fallback.enabled(),
+                   "unavailable advanced-view read must fall back to standard view");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -397,6 +465,7 @@ int main() {
   passed &= verify_motion_contract();
   passed &= verify_fixture_contract();
   passed &= verify_software_selection_empty_catalog_projection();
+  passed &= verify_advanced_view_preference_fallback();
   if (!passed) {
     return EXIT_FAILURE;
   }

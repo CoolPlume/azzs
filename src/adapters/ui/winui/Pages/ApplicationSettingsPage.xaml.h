@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "Pages/ApplicationSettingsPage.g.h"
@@ -9,9 +10,16 @@ namespace winrt::Azzs::Ui::Pages::implementation {
 
 struct ApplicationSettingsPage
     : ApplicationSettingsPageT<ApplicationSettingsPage> {
+  using AdvancedViewChangedHandler = std::function<bool(bool)>;
+
   ApplicationSettingsPage();
 
-  void bind(std::shared_ptr<azzs::application::Workbench> workbench);
+  void bind(std::shared_ptr<azzs::application::Workbench> workbench,
+            bool advanced_view,
+            AdvancedViewChangedHandler advanced_view_changed);
+  void OnAdvancedViewToggled(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnApplicationUpdateCommandClick(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
@@ -32,6 +40,7 @@ struct ApplicationSettingsPage
   void project(azzs::application::UpdateSnapshot const& snapshot);
 
   std::shared_ptr<azzs::application::Workbench> workbench_;
+  AdvancedViewChangedHandler advanced_view_changed_;
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation

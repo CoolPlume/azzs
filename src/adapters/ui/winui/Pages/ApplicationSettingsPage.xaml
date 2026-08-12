@@ -20,6 +20,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="ApplicationSettingsPageTitle"
@@ -29,6 +30,17 @@
                 Style="{StaticResource AzzsPageTitleTextStyle}"
                 TextWrapping="Wrap" />
             <StackPanel Grid.Row="1" Spacing="{StaticResource AzzsSpaceStandard}">
+                <TextBlock
+                    x:Uid="ApplicationViewTitle"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <ToggleSwitch
+                    x:Name="AdvancedViewToggle"
+                    x:Uid="ApplicationAdvancedViewToggle"
+                    AutomationProperties.AutomationId="AzzsApplicationAdvancedView"
+                    Toggled="OnAdvancedViewToggled" />
+            </StackPanel>
+            <StackPanel Grid.Row="2" Spacing="{StaticResource AzzsSpaceStandard}">
                 <InfoBar
                     x:Name="ApplicationUpdateStatus"
                     AutomationProperties.AutomationId="AzzsApplicationUpdateStatus"
