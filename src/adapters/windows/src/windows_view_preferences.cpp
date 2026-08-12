@@ -1,5 +1,6 @@
 #include "azzs/adapters/windows/windows_view_preferences.hpp"
 
+#include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.h>
 
 namespace azzs::adapters::windows {
@@ -16,8 +17,14 @@ WindowsViewPreferences::read_advanced_view() {
                            .LocalSettings()
                            .Values()
                            .TryLookup(kAdvancedViewPreference);
+    auto const property_value =
+        value.try_as<winrt::Windows::Foundation::IPropertyValue>();
+    if (!property_value || property_value.Type() !=
+                               winrt::Windows::Foundation::PropertyType::Boolean) {
+      return {.status = application::AdvancedViewPreferenceReadStatus::loaded};
+    }
     return {.status = application::AdvancedViewPreferenceReadStatus::loaded,
-            .enabled = winrt::unbox_value_or<bool>(value, false)};
+            .enabled = winrt::unbox_value<bool>(value)};
   } catch (...) {
     return {};
   }
