@@ -5,6 +5,7 @@
 
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/platform_info.hpp"
+#include "azzs/application/system_settings_apply.hpp"
 #include "azzs/domain/minimum_version_policy.hpp"
 #include "azzs/domain/system_version.hpp"
 
@@ -18,6 +19,7 @@ struct WorkbenchSnapshot final {
       domain::MinimumVersionRisk::version_unavailable};
   std::optional<domain::SystemVersion> observed_windows_version;
   domain::SystemVersion target_windows_version;
+  SystemSettingsApplySnapshot system_settings;
 };
 
 class Workbench final {

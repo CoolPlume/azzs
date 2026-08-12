@@ -1,11 +1,37 @@
 #pragma once
 
+#include <memory>
+
 #include "Pages/SystemOptimizationPage.g.h"
+
+namespace azzs::application {
+class SystemSettingsApplyService;
+struct SystemSettingsApplySnapshot;
+}
 
 namespace winrt::Azzs::Ui::Pages::implementation {
 
 struct SystemOptimizationPage : SystemOptimizationPageT<SystemOptimizationPage> {
   SystemOptimizationPage();
+  void bind(
+      std::shared_ptr<azzs::application::SystemSettingsApplyService> service);
+  void OnSelectRecommended(
+      Microsoft::UI::Xaml::Controls::Button const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnApplySelected(
+      Microsoft::UI::Xaml::Controls::Button const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnRestartExplorerNow(
+      Microsoft::UI::Xaml::Controls::Button const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
+
+ private:
+  void OnSettingSelectionChanged(
+      winrt::Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void project(azzs::application::SystemSettingsApplySnapshot const& snapshot);
+
+  std::shared_ptr<azzs::application::SystemSettingsApplyService> service_;
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation

@@ -12,24 +12,37 @@
 #include "../../adapters/ui/winui/DesignSystem/motion_preferences.hpp"
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
+#include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
+#include "azzs/adapters/infrastructure/system_settings_recovery_store.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
+#include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/operation_occupancy.hpp"
+#include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
+#include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 
 namespace azzs::composition::windows {
 namespace {
+
+class ProductionSettingsCatalogImportAuthorization final
+    : public application::settings_catalog::SettingsCatalogImportAuthorization {
+ public:
+  [[nodiscard]] bool debug_import_allowed() const noexcept override {
+    return false;
+  }
+};
 
 class WindowsWorkbenchServices final
     : public application::WorkbenchServices,
@@ -48,6 +61,18 @@ class WindowsWorkbenchServices final
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_),
+        settings_catalog_file_(states_),
+        settings_catalog_(settings_catalog_file_, settings_catalog_file_, log_,
+                          occupancy_, settings_import_authorization_,
+                          {.apply = {"windows.classic-context-menu.apply",
+                                     "windows.windows10-explorer.apply"},
+                           .detect = {"windows.classic-context-menu.detect",
+                                      "windows.windows10-explorer.detect"},
+                           .recover = {"windows.classic-context-menu.restore",
+                                       "windows.windows10-explorer.restore"}}),
+        system_settings_recovery_(states_),
+        system_settings_apply_(settings_catalog_, system_settings_adapter_,
+                               system_settings_recovery_, occupancy_, log_),
         architecture_selection_(platform_info_, log_,
                                 application::architecture_selection::
                                     selection_domain::ArchitecturePreference::
@@ -94,6 +119,17 @@ class WindowsWorkbenchServices final
     return occupancy_;
   }
 
+  [[nodiscard]] application::SystemSettingsApplyService& system_settings_apply()
+      noexcept override {
+    return system_settings_apply_;
+  }
+
+  [[nodiscard]] std::shared_ptr<application::SystemSettingsApplyService>
+  system_settings_apply_shared() {
+    return std::shared_ptr<application::SystemSettingsApplyService>(
+        shared_from_this(), &system_settings_apply_);
+  }
+
   [[nodiscard]] application::architecture_selection::
       ArchitectureSelectionLifecycle& architecture_selection()
       noexcept override {
@@ -119,6 +155,13 @@ class WindowsWorkbenchServices final
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;
+  adapters::infrastructure::SettingsCatalogFileAdapter settings_catalog_file_;
+  ProductionSettingsCatalogImportAuthorization settings_import_authorization_;
+  application::settings_catalog::SettingsCatalogLifecycle settings_catalog_;
+  adapters::windows::WindowsSystemSettingsAdapter system_settings_adapter_;
+  adapters::infrastructure::SystemSettingsRecoveryStore
+      system_settings_recovery_;
+  application::SystemSettingsApplyService system_settings_apply_;
   adapters::windows::WindowsPlatformInfo platform_info_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
@@ -138,10 +181,12 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
       std::move(*environment.environment));
   auto workbench = std::make_shared<application::Workbench>(
       services->platform_info(), services);
+  auto system_settings = services->system_settings_apply_shared();
   services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
-  window->bind(std::move(workbench), std::move(motion_preferences));
+  window->bind(std::move(workbench), std::move(motion_preferences),
+               std::move(system_settings));
   return window.as<winrt::Microsoft::UI::Xaml::Window>();
 }
 

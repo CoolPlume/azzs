@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "azzs/application/workbench_services.hpp"
+
 namespace azzs::application {
 
 Workbench::Workbench(PlatformInfo const& platform_info)
@@ -18,6 +20,9 @@ Workbench::Workbench(PlatformInfo const& platform_info,
       .minimum_version_risk = policy.assess(observed_version),
       .observed_windows_version = observed_version,
       .target_windows_version = policy.target(),
+      .system_settings =
+          services_ ? services_->system_settings_apply().snapshot()
+                    : SystemSettingsApplySnapshot{},
   };
 }
 
