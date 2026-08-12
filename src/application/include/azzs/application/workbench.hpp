@@ -30,6 +30,7 @@ class Workbench final {
 
   void navigate(PageId page) noexcept;
   [[nodiscard]] WorkbenchSnapshot snapshot() const noexcept;
+  [[nodiscard]] std::shared_ptr<WorkbenchServices> services() const noexcept;
 
  private:
   WorkbenchSnapshot snapshot_;

@@ -12,3 +12,23 @@ elseif(AZZS_NEGATIVE_SCENARIO STREQUAL "include-bypass")
 endif()
 
 azzs_project_target(TARGET azzs_domain ROLE domain)
+
+add_library(azzs_software_catalog_domain INTERFACE)
+add_library(azzs::software_catalog_domain ALIAS
+  azzs_software_catalog_domain)
+
+azzs_project_target(
+  TARGET azzs_software_catalog_domain
+  ROLE domain
+)
+
+add_library(azzs_software_selection_domain INTERFACE)
+add_library(azzs::software_selection_domain ALIAS
+  azzs_software_selection_domain)
+
+azzs_project_target(
+  TARGET azzs_software_selection_domain
+  ROLE domain
+  INTERFACE_LINKS
+    azzs::software_catalog_domain
+)
