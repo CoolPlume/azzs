@@ -53,4 +53,8 @@ WorkbenchSnapshot Workbench::snapshot() const {
   return snapshot_;
 }
 
+std::shared_ptr<WorkbenchServices> Workbench::services() const noexcept {
+  return services_;
+}
+
 }  // namespace azzs::application

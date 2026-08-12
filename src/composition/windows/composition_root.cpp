@@ -7,6 +7,7 @@
 #include <thread>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "../../adapters/ui/winui/DesignSystem/motion_preferences.hpp"
@@ -17,6 +18,7 @@
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
+#include "azzs/adapters/windows/windows_external_address_launcher.hpp"
 #include "azzs/adapters/windows/windows_hardware_observer.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
@@ -27,11 +29,37 @@
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/operation_occupancy.hpp"
+#include "azzs/application/software_selection.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
 
 namespace azzs::composition::windows {
 namespace {
+
+class UnavailableControlledSourceResolver final
+    : public application::software_selection::ControlledSourceResolver {
+ public:
+  [[nodiscard]] application::software_selection::SourceResolutionResult resolve(
+      std::string_view,
+      domain::software_catalog::CatalogSource const&) override {
+    return {.error = "controlled source resolution is not configured"};
+  }
+};
+
+class OfflineNetworkObserver final
+    : public application::software_selection::NetworkObserver {
+ public:
+  [[nodiscard]] bool available() const noexcept override { return false; }
+};
+
+class UnavailableSoftwarePresenceDetector final
+    : public application::software_selection::SoftwarePresenceDetector {
+ public:
+  [[nodiscard]] application::software_selection::PresenceDetection detect(
+      std::string_view) override {
+    return {.detail = "software presence detection is not configured"};
+  }
+};
 
 class WindowsWorkbenchServices final
     : public application::WorkbenchServices,
@@ -56,8 +84,12 @@ class WindowsWorkbenchServices final
         architecture_selection_(platform_info_, log_,
                                 application::architecture_selection::
                                     selection_domain::ArchitecturePreference::
-                                        prefer_arm64_prompt_fallback) {
+                                        prefer_arm64_prompt_fallback),
+        software_selection_(states_, clock_, log_, architecture_selection_,
+                            source_resolver_, network_, presence_detector_,
+                            external_launcher_, state_subject_) {
     static_cast<void>(architecture_selection_.start());
+    static_cast<void>(software_selection_.restore());
   }
 
   void start_emergency_preflight() {
@@ -105,6 +137,11 @@ class WindowsWorkbenchServices final
     return architecture_selection_;
   }
 
+  [[nodiscard]] application::software_selection::SoftwareSelectionLifecycle&
+  software_selection() noexcept override {
+    return software_selection_;
+  }
+
   [[nodiscard]] application::HardwareOverviewService& hardware_overview()
       noexcept override {
     return hardware_overview_;
@@ -134,6 +171,12 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsPlatformInfo platform_info_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
+  UnavailableControlledSourceResolver source_resolver_;
+  OfflineNetworkObserver network_;
+  UnavailableSoftwarePresenceDetector presence_detector_;
+  adapters::windows::WindowsExternalAddressLauncher external_launcher_;
+  application::software_selection::SoftwareSelectionLifecycle
+      software_selection_;
 };
 
 }  // namespace
