@@ -98,9 +98,9 @@ class RecordingRequestExecutor final
 
   azzs::application::NoticeFetchResult oversized_response;
   oversized_response.succeeded = true;
-  oversized_response.document = std::string{
+  oversized_response.document = std::string(
       WindowsEmergencyWithdrawalNoticeSource::kMaximumDocumentBytes + 1U,
-      'x'};
+      'x');
   executor.result = oversized_response;
   auto const oversized_result = source.fetch();
   passed &= expect(
