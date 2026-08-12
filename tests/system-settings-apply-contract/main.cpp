@@ -15,6 +15,7 @@
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/system_settings_apply.hpp"
+#include "azzs/settings_catalog/initial_settings_catalog.hpp"
 #include "azzs/settings_catalog/settings_catalog.hpp"
 #include "azzs/testing/in_memory_operation_occupancy_storage.hpp"
 #include "azzs/testing/in_memory_state_file_system.hpp"
@@ -86,6 +87,12 @@ using azzs::testing::SequenceLeaseTokenSource;
   return {.generation = catalog::WindowsGeneration::windows_10,
           .feature_update_year = 22,
           .feature_update_half = 2};
+}
+
+[[nodiscard]] catalog::WindowsVersion windows11_26h1() {
+  return {.generation = catalog::WindowsGeneration::windows_11,
+          .feature_update_year = 26,
+          .feature_update_half = 1};
 }
 
 [[nodiscard]] catalog::SettingDefinition setting(
@@ -371,6 +378,35 @@ class Harness final {
   return passed;
 }
 
+[[nodiscard]] bool verify_initial_catalog_executes_through_service() {
+  Harness harness{
+      azzs::application::settings_catalog::initial_settings_catalog()};
+  bool passed = true;
+  auto snapshot = harness.service.snapshot();
+  passed &= expect(snapshot.catalog_revision == 1 &&
+                       snapshot.settings.size() == 2 &&
+                       snapshot.recommended_plan.has_value(),
+                   "initial catalog must be projected by the apply service");
+  passed &= expect(harness.service.select_recommended_plan(
+                       catalog::StableId{"plan.recommended"}),
+                   "initial recommended plan must use the apply service seam");
+  passed &= expect(!harness.service.snapshot().can_apply,
+                   "initial recommended plan must remain opt-in");
+  passed &= expect(harness.service.set_selected(
+                       catalog::StableId{"setting.classic-context-menu"}, true),
+                   "initial classic menu item must be independently selectable");
+  auto result = harness.service.apply_selected();
+  passed &= expect(state_for(result.settings, "setting.classic-context-menu") ==
+                       SystemSettingApplyState::waiting_explorer_restart,
+                   "initial classic menu item must execute through the typed service");
+  passed &= expect(harness.recovery.records.size() == 1 &&
+                       harness.recovery.records[0].catalog_revision == 1 &&
+                       harness.recovery.records[0].setting ==
+                           ControlledSystemSetting::classic_context_menu,
+                   "initial execution must persist a typed frozen recovery record");
+  return passed;
+}
+
 [[nodiscard]] bool verify_serial_apply_and_recovery() {
   Harness harness{make_catalog(false)};
   bool passed = true;
@@ -464,7 +500,7 @@ class Harness final {
 [[nodiscard]] bool verify_applicability_and_force_attempt() {
   Harness harness{make_catalog(false)};
   bool passed = true;
-  harness.platform.version = windows10_22h2();
+  harness.platform.version = windows11_26h1();
   auto snapshot = harness.service.refresh();
   passed &= expect(!snapshot.settings[0].applicable,
                    "standard path marks out-of-range setting not applicable");
@@ -476,9 +512,21 @@ class Harness final {
                        SystemSettingApplyState::force_confirmation_required,
                    "recoverable out-of-range item requires explicit confirmation");
   result = harness.service.apply_selected({.force_attempt_confirmed = true});
-  passed &= expect(state_for(result.settings, "setting.classic-context-menu") ==
-                       SystemSettingApplyState::waiting_explorer_restart,
-                   "advanced confirmed force attempt may execute");
+  passed &= expect(
+      state_for(result.settings, "setting.classic-context-menu") ==
+          SystemSettingApplyState::waiting_explorer_restart,
+      "advanced confirmed force attempt may execute");
+  Harness windows10{make_catalog(false)};
+  windows10.platform.version = windows10_22h2();
+  passed &= expect(windows10.service.set_selected(
+                       catalog::StableId{"setting.classic-context-menu"}, true),
+                   "Windows 10 setting can be selected for an applicability result");
+  auto windows10_result = windows10.service.apply_selected(
+      {.force_attempt_confirmed = true});
+  passed &= expect(
+      state_for(windows10_result.settings, "setting.classic-context-menu") ==
+          SystemSettingApplyState::not_applicable,
+      "Windows 10 must not force-apply a Windows 11-only setting");
   return passed;
 }
 
@@ -732,6 +780,7 @@ class Harness final {
 
 int main() {
   bool passed = true;
+  passed &= verify_initial_catalog_executes_through_service();
   passed &= verify_selection_snapshot();
   passed &= verify_serial_apply_and_recovery();
   passed &= verify_already_effective_skips();

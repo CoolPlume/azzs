@@ -7,6 +7,7 @@ azzs_project_target(
   ROLE test
   PRIVATE_LINKS
     azzs::application
+    azzs::settings_catalog_lifecycle
     azzs::infrastructure_adapter
     azzs::test_support
 )

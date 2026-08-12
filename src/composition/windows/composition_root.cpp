@@ -39,6 +39,7 @@
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
+#include "azzs/settings_catalog/initial_settings_catalog.hpp"
 #include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 
 namespace azzs::composition::windows {
@@ -122,6 +123,9 @@ class WindowsWorkbenchServices final
         software_selection_(states_, clock_, log_, architecture_selection_,
                             source_resolver_, network_, presence_detector_,
                             external_launcher_, state_subject_) {
+    static_cast<void>(settings_catalog_.initialize_builtin(
+        application::settings_catalog::initial_settings_catalog()));
+    static_cast<void>(system_settings_apply_.refresh());
     static_cast<void>(architecture_selection_.start());
     static_cast<void>(software_selection_.restore());
   }
