@@ -17,6 +17,8 @@ class SystemSettingsRecoveryStore final
   [[nodiscard]] application::RecoveryStorageRead read() override;
   [[nodiscard]] application::RecoveryStorageWrite save(
       application::SystemSettingsRecoveryRecord record) override;
+  [[nodiscard]] application::RecoveryStorageWrite erase(
+      std::uint64_t record_id) override;
 
  private:
   application::DeviceStateStore& states_;

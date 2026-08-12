@@ -2,6 +2,8 @@
 
 #include "SystemOptimizationPage.xaml.h"
 
+#include <algorithm>
+#include <ranges>
 #include <string>
 #include <string_view>
 
@@ -117,6 +119,66 @@ void SystemOptimizationPage::OnRestartExplorerNow(
   project(service_->snapshot());
 }
 
+void SystemOptimizationPage::OnUndoRecoveryRecord(
+    winrt::Windows::Foundation::IInspectable const& sender,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (!service_) {
+    return;
+  }
+  auto const button =
+      sender.try_as<winrt::Microsoft::UI::Xaml::Controls::Button>();
+  if (!button) {
+    return;
+  }
+  auto const id = winrt::unbox_value<winrt::hstring>(button.Tag());
+  static_cast<void>(service_->undo(
+      azzs::application::settings_domain::StableId{winrt::to_string(id)}));
+  project(service_->snapshot());
+}
+
+void SystemOptimizationPage::OnDeleteRecoveryRecord(
+    winrt::Windows::Foundation::IInspectable const& sender,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (!service_) {
+    return;
+  }
+  auto const button =
+      sender.try_as<winrt::Microsoft::UI::Xaml::Controls::Button>();
+  if (!button) {
+    return;
+  }
+  auto const record_id = winrt::unbox_value<std::uint64_t>(button.Tag());
+  auto const confirmed = pending_recovery_record_deletion_.has_value() &&
+                         *pending_recovery_record_deletion_ == record_id;
+  auto result = service_->delete_recovery_record(record_id, confirmed);
+  if (result.status ==
+      azzs::application::RecoveryRecordDeleteStatus::confirmation_required) {
+    pending_recovery_record_deletion_ = record_id;
+    recovery_deletion_notice_ = winrt::to_hstring(result.detail).c_str();
+  } else {
+    pending_recovery_record_deletion_.reset();
+    recovery_deletion_notice_.clear();
+  }
+  project(service_->snapshot());
+}
+
+void SystemOptimizationPage::OnRestoreWindows11Default(
+    winrt::Windows::Foundation::IInspectable const& sender,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (!service_) {
+    return;
+  }
+  auto const button =
+      sender.try_as<winrt::Microsoft::UI::Xaml::Controls::Button>();
+  if (!button) {
+    return;
+  }
+  auto const id = winrt::unbox_value<winrt::hstring>(button.Tag());
+  static_cast<void>(service_->restore_windows11_default(
+      azzs::application::settings_domain::StableId{winrt::to_string(id)}));
+  project(service_->snapshot());
+}
+
 void SystemOptimizationPage::OnSettingSelectionChanged(
     winrt::Windows::Foundation::IInspectable const& sender,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
@@ -147,6 +209,90 @@ void SystemOptimizationPage::project(
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
   auto const resources = ResourceLoader{};
+  auto const metadata_style = Application::Current().Resources().Lookup(
+      winrt::box_value(L"AzzsMetadataTextStyle"))
+                                  .as<winrt::Microsoft::UI::Xaml::Style>();
+  auto const recovery_protected = [](auto status) {
+    using azzs::application::RecoveryRecordStatus;
+    return status == RecoveryRecordStatus::pending ||
+           status == RecoveryRecordStatus::restoring ||
+           status == RecoveryRecordStatus::restore_failed ||
+           status == RecoveryRecordStatus::waiting_explorer_restart;
+  };
+  auto const recovery_text = [&](auto const& record) {
+    using azzs::application::RecoveryRecordStatus;
+    if (record.status == RecoveryRecordStatus::restored) {
+      return resources.GetString(L"SystemSettingsRecoveryRestored");
+    }
+    if (record.status == RecoveryRecordStatus::waiting_explorer_restart) {
+      return resources.GetString(L"SystemSettingsUndoWaitingExplorerRestart");
+    }
+    if (record.status == RecoveryRecordStatus::restore_failed) {
+      return resources.GetString(L"SystemSettingsRecoveryRestoreFailed");
+    }
+    if (record.status == RecoveryRecordStatus::pending ||
+        record.status == RecoveryRecordStatus::restoring) {
+      return resources.GetString(L"SystemSettingsRecoveryPending");
+    }
+    return resources.GetString(L"SystemSettingsRecoveryAvailable");
+  };
+  auto render_recovery = [&] {
+    using azzs::application::RecoveryRecordStatus;
+    using winrt::Microsoft::UI::Xaml::Controls::Button;
+    using winrt::Microsoft::UI::Xaml::Controls::StackPanel;
+    RecoveryItems().Children().Clear();
+    auto const deletion_protected = std::ranges::any_of(
+        snapshot.recovery_records, [&](auto const& record) {
+          return recovery_protected(record.status);
+        });
+    RecoveryDeletionNotice().Visibility(
+        pending_recovery_record_deletion_.has_value() || deletion_protected
+            ? winrt::Microsoft::UI::Xaml::Visibility::Visible
+            : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+    RecoveryDeletionNotice().Text(
+        pending_recovery_record_deletion_.has_value()
+            ? winrt::hstring{recovery_deletion_notice_}
+            : deletion_protected
+                  ? resources.GetString(L"SystemSettingsRecoveryPending")
+                  : winrt::hstring{});
+    for (auto const& record : snapshot.recovery_records) {
+      auto row = StackPanel{};
+      row.Spacing(4);
+      auto name = TextBlock{};
+      name.Text(winrt::to_hstring(record.display_name.empty()
+                                       ? record.setting_id.value
+                                       : record.display_name));
+      auto state = TextBlock{};
+      state.Style(metadata_style);
+      state.Text(recovery_text(record));
+      auto actions = StackPanel{};
+      actions.Orientation(winrt::Microsoft::UI::Xaml::Controls::Orientation::Horizontal);
+      actions.Spacing(8);
+      auto undo = Button{};
+      undo.Content(winrt::box_value(
+          resources.GetString(L"SystemSettingsUndoButtonText")));
+      undo.Tag(winrt::box_value(winrt::to_hstring(record.setting_id.value)));
+      undo.IsEnabled(record.status == RecoveryRecordStatus::applied ||
+                     record.status == RecoveryRecordStatus::restore_failed);
+      undo.Click({this, &SystemOptimizationPage::OnUndoRecoveryRecord});
+      auto erase = Button{};
+      auto const confirm_delete = pending_recovery_record_deletion_.has_value() &&
+                                  *pending_recovery_record_deletion_ ==
+                                      record.record_id;
+      erase.Content(winrt::box_value(resources.GetString(
+          confirm_delete ? L"SystemSettingsConfirmDeleteRecoveryButtonText"
+                         : L"SystemSettingsDeleteRecoveryButtonText")));
+      erase.Tag(winrt::box_value(record.record_id));
+      erase.IsEnabled(!deletion_protected);
+      erase.Click({this, &SystemOptimizationPage::OnDeleteRecoveryRecord});
+      actions.Children().Append(undo);
+      actions.Children().Append(erase);
+      row.Children().Append(name);
+      row.Children().Append(state);
+      row.Children().Append(actions);
+      RecoveryItems().Children().Append(row);
+    }
+  };
 
   if (snapshot.status == SystemSettingsSnapshotStatus::unavailable) {
     SystemSettingsStatus().Severity(InfoBarSeverity::Warning);
@@ -161,6 +307,7 @@ void SystemOptimizationPage::project(
     RestartExplorerNotice().Visibility(
         winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
     SettingsItems().Children().Clear();
+    render_recovery();
     return;
   }
 
@@ -180,9 +327,6 @@ void SystemOptimizationPage::project(
           ? winrt::Microsoft::UI::Xaml::Visibility::Visible
           : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
 
-  auto const metadata_style = Application::Current().Resources().Lookup(
-      winrt::box_value(L"AzzsMetadataTextStyle"))
-                                  .as<winrt::Microsoft::UI::Xaml::Style>();
   SettingsItems().Children().Clear();
   for (auto const& item : snapshot.settings) {
     auto row = winrt::Microsoft::UI::Xaml::Controls::StackPanel{};
@@ -244,6 +388,14 @@ void SystemOptimizationPage::project(
     row.Children().Append(scope);
     row.Children().Append(restart);
     row.Children().Append(recovery);
+    auto restore_default = winrt::Microsoft::UI::Xaml::Controls::Button{};
+    restore_default.Content(winrt::box_value(
+        resources.GetString(L"SystemSettingsRestoreWindows11DefaultButtonText")));
+    restore_default.Tag(winrt::box_value(winrt::to_hstring(item.id.value)));
+    restore_default.IsEnabled(item.applicable && item.recovery_available);
+    restore_default.Click(
+        {this, &SystemOptimizationPage::OnRestoreWindows11Default});
+    row.Children().Append(restore_default);
     if (item.source_url.has_value()) {
       auto source = TextBlock{};
       source.Style(metadata_style);
@@ -259,6 +411,7 @@ void SystemOptimizationPage::project(
       winrt::hstring{resource_with_token(
           resources, L"SystemSettingsItemsName", L"{count}",
           std::to_wstring(snapshot.settings.size()))});
+  render_recovery();
 }
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation
