@@ -211,8 +211,11 @@ class AssetLock final {
     HANDLE handle = ::CreateFileW(
         path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_NEW,
         FILE_ATTRIBUTE_HIDDEN, nullptr);
+    auto const create_error = ::GetLastError();
+    auto const created = handle != INVALID_HANDLE_VALUE;
     if (handle == INVALID_HANDLE_VALUE &&
-        ::GetLastError() == ERROR_FILE_EXISTS) {
+        (create_error == ERROR_FILE_EXISTS ||
+         create_error == ERROR_ALREADY_EXISTS)) {
       handle = ::CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
                              nullptr, OPEN_EXISTING,
                              FILE_ATTRIBUTE_HIDDEN |
@@ -221,6 +224,9 @@ class AssetLock final {
     }
     if (handle == INVALID_HANDLE_VALUE) {
       return std::nullopt;
+    }
+    if (created) {
+      return AssetLock{handle};
     }
     FILE_ATTRIBUTE_TAG_INFO attributes{};
     if (!::GetFileInformationByHandleEx(handle, FileAttributeTagInfo,
