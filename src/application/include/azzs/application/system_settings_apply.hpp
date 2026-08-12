@@ -75,17 +75,27 @@ enum class RecoveryRecordStatus : std::uint8_t {
   applied = 1,
   restored = 2,
   waiting_explorer_restart = 3,
+  restoring = 4,
+  restore_failed = 5,
+};
+
+enum class RecoveryRecordOperation : std::uint8_t {
+  apply = 0,
+  restore = 1,
+  windows11_default = 2,
 };
 
 struct SystemSettingsRecoveryRecord final {
   std::uint64_t record_id{0};
   settings_domain::StableId setting_id;
+  std::string display_name;
   std::uint64_t catalog_revision{0};
   ControlledSystemSetting setting{ControlledSystemSetting::classic_context_menu};
   WindowsSystemSettingValue original_value{ClassicContextMenuMode::windows11};
   settings_domain::RestartRequirement restart_requirement{
-      settings_domain::RestartRequirement::none};
+        settings_domain::RestartRequirement::none};
   RecoveryRecordStatus status{RecoveryRecordStatus::pending};
+  RecoveryRecordOperation operation{RecoveryRecordOperation::apply};
 
   friend bool operator==(SystemSettingsRecoveryRecord const&,
                          SystemSettingsRecoveryRecord const&) = default;
@@ -115,6 +125,7 @@ class SystemSettingsRecoveryStore {
   [[nodiscard]] virtual RecoveryStorageRead read() = 0;
   [[nodiscard]] virtual RecoveryStorageWrite save(
       SystemSettingsRecoveryRecord record) = 0;
+  [[nodiscard]] virtual RecoveryStorageWrite erase(std::uint64_t record_id) = 0;
 };
 
 class SystemSettingsCatalogSnapshotSource {
@@ -176,6 +187,10 @@ struct SystemSettingsApplySnapshot final {
 };
 
 struct SystemSettingsApplyRequest final {
+  enum class Target : std::uint8_t {
+    catalog_target,
+    windows11_default,
+  } target{Target::catalog_target};
   bool force_attempt_confirmed{false};
   enum class ExplorerRestartAction : std::uint8_t {
     defer,
@@ -188,6 +203,39 @@ struct SystemSettingsApplyResult final {
   std::vector<SystemSettingApplySnapshot> settings;
   bool explorer_restart_attempted{false};
   bool waiting_for_explorer_restart{false};
+  std::string detail;
+};
+
+enum class SystemSettingsUndoStatus : std::uint8_t {
+  restored,
+  waiting_explorer_restart,
+  failed,
+  confirmation_required,
+  no_record,
+};
+
+struct SystemSettingsUndoRequest final {
+  SystemSettingsApplyRequest::ExplorerRestartAction explorer_restart_action{
+      SystemSettingsApplyRequest::ExplorerRestartAction::defer};
+};
+
+struct SystemSettingsUndoResult final {
+  SystemSettingsUndoStatus status{SystemSettingsUndoStatus::failed};
+  std::uint64_t record_id{0};
+  bool explorer_restart_attempted{false};
+  std::string detail;
+};
+
+enum class RecoveryRecordDeleteStatus : std::uint8_t {
+  deleted,
+  confirmation_required,
+  blocked,
+  failed,
+  not_found,
+};
+
+struct RecoveryRecordDeleteResult final {
+  RecoveryRecordDeleteStatus status{RecoveryRecordDeleteStatus::failed};
   std::string detail;
 };
 
@@ -207,7 +255,19 @@ class SystemSettingsApplyService final {
                                   bool selected);
   [[nodiscard]] SystemSettingsApplyResult apply_selected(
       SystemSettingsApplyRequest request = {});
+  [[nodiscard]] SystemSettingsApplyResult restore_windows11_default(
+      settings_domain::StableId const& setting_id,
+      SystemSettingsApplyRequest::ExplorerRestartAction restart_action =
+          SystemSettingsApplyRequest::ExplorerRestartAction::defer);
   [[nodiscard]] SystemSettingsApplyResult restart_explorer_now();
+
+  // Uses the most recent non-restored record and never consults a newer
+  // catalog for its typed setting, original value or restart semantics.
+  [[nodiscard]] SystemSettingsUndoResult undo(
+      settings_domain::StableId const& setting_id,
+      SystemSettingsUndoRequest request = {});
+  [[nodiscard]] RecoveryRecordDeleteResult delete_recovery_record(
+      std::uint64_t record_id, bool confirmed);
 
   // This is the read-only recovery contract consumed by the undo workflow.
   [[nodiscard]] std::vector<SystemSettingsRecoveryRecord> recovery_records()
@@ -222,13 +282,21 @@ class SystemSettingsApplyService final {
   [[nodiscard]] std::optional<ControlledSystemSetting> map_setting(
       settings_domain::SettingDefinition const& setting) const noexcept;
   [[nodiscard]] static std::optional<WindowsSystemSettingValue> target_value(
-      ControlledSystemSetting setting);
+      ControlledSystemSetting setting, SystemSettingsApplyRequest::Target target);
   [[nodiscard]] SystemSettingApplySnapshot* find_snapshot(
       settings_domain::StableId const& id) noexcept;
   [[nodiscard]] SystemSettingApplySnapshot const* find_snapshot(
       settings_domain::StableId const& id) const noexcept;
   [[nodiscard]] bool mark_explorer_restart_verified(
-      settings_domain::StableId const& setting_id, std::string& detail);
+      std::uint64_t record_id, std::string& detail);
+  [[nodiscard]] SystemSettingsRecoveryRecord* find_recovery_record(
+      std::uint64_t record_id) noexcept;
+  [[nodiscard]] SystemSettingsRecoveryRecord const* find_recovery_record(
+      std::uint64_t record_id) const noexcept;
+  [[nodiscard]] std::optional<WindowsSystemSettingValue>
+  expected_value_for_recovery(SystemSettingsRecoveryRecord const& record) const;
+  [[nodiscard]] bool recovery_is_protected(
+      RecoveryRecordStatus status) const noexcept;
   void append_log(CorrelationId const& correlation, std::string stage,
                   ExecutionResult result, std::string setting_id,
                   std::string detail = {});

@@ -76,6 +76,7 @@
   <data name="SystemSettingsRecommendedTitle.Text" xml:space="preserve"><value>推荐总体优化</value></data>
   <data name="SystemSettingsSelectRecommendedButtonText.Text" xml:space="preserve"><value>选择推荐项</value></data>
   <data name="SystemSettingsApplySelectedButtonText.Text" xml:space="preserve"><value>应用所选优化</value></data>
+  <data name="SystemSettingsRestoreWindows11DefaultButtonText" xml:space="preserve"><value>恢复 Windows 11 默认</value></data>
   <data name="SystemSettingsRestartExplorerButtonText.Text" xml:space="preserve"><value>立即重启资源管理器</value></data>
   <data name="SystemSettingsRestartExplorerNotice.Text" xml:space="preserve"><value>任务栏和已打开的资源管理器窗口会短暂关闭。</value></data>
   <data name="SystemSettingsUnavailableSummary" xml:space="preserve"><value>当前没有可执行的系统设置目录。</value></data>
@@ -95,6 +96,14 @@
   <data name="SystemSettingsRecoveryAvailable" xml:space="preserve"><value>支持依据已保存原值恢复。</value></data>
   <data name="SystemSettingsRecoveryUnavailable" xml:space="preserve"><value>未声明可恢复方式。</value></data>
   <data name="SystemSettingsSource" xml:space="preserve"><value>说明来源：{source}</value></data>
+  <data name="SystemSettingsRecoveryTitle.Text" xml:space="preserve"><value>恢复记录</value></data>
+  <data name="SystemSettingsUndoButtonText" xml:space="preserve"><value>撤销</value></data>
+  <data name="SystemSettingsDeleteRecoveryButtonText" xml:space="preserve"><value>删除恢复记录</value></data>
+  <data name="SystemSettingsConfirmDeleteRecoveryButtonText" xml:space="preserve"><value>确认删除恢复记录</value></data>
+  <data name="SystemSettingsUndoWaitingExplorerRestart" xml:space="preserve"><value>撤销后等待资源管理器重启</value></data>
+  <data name="SystemSettingsRecoveryRestored" xml:space="preserve"><value>已恢复保存的原值</value></data>
+  <data name="SystemSettingsRecoveryRestoreFailed" xml:space="preserve"><value>恢复失败，可重试</value></data>
+  <data name="SystemSettingsRecoveryPending" xml:space="preserve"><value>正在保存或恢复，暂时不能删除</value></data>
   <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
   <data name="SoftwareSelectionStatusAccessibleName" xml:space="preserve"><value>软件选择状态</value></data>
   <data name="SoftwareSelectionAvailableTitle" xml:space="preserve"><value>软件选择</value></data>
