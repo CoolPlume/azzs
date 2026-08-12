@@ -12,16 +12,19 @@
 #include "../../adapters/ui/winui/DesignSystem/motion_preferences.hpp"
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
+#include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
+#include "azzs/adapters/windows/windows_application_update_platform.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
+#include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/operation_occupancy.hpp"
@@ -48,6 +51,12 @@ class WindowsWorkbenchServices final
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_),
+        operation_activity_(occupancy_),
+        application_update_health_storage_(states_),
+        application_update_platform_(platform_info_,
+                                     application_update_health_storage_),
+        application_updates_(application_update_platform_, operation_activity_,
+                             log_, clock_),
         architecture_selection_(platform_info_, log_,
                                 application::architecture_selection::
                                     selection_domain::ArchitecturePreference::
@@ -94,6 +103,11 @@ class WindowsWorkbenchServices final
     return occupancy_;
   }
 
+  [[nodiscard]] application::ApplicationUpdateLifecycle& application_updates()
+      noexcept override {
+    return application_updates_;
+  }
+
   [[nodiscard]] application::architecture_selection::
       ArchitectureSelectionLifecycle& architecture_selection()
       noexcept override {
@@ -120,6 +134,37 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;
   adapters::windows::WindowsPlatformInfo platform_info_;
+  class OperationActivity final
+      : public application::InitializationOperationActivity {
+   public:
+    explicit OperationActivity(application::SharedOperationOccupancy& occupancy)
+        : occupancy_(occupancy) {}
+
+    [[nodiscard]] application::InitializationOperationActivitySnapshot observe()
+        override {
+      auto occupied = occupancy_.inspect();
+      if (occupied.code == application::OccupancyResultCode::observed) {
+        if (!occupied.current.has_value()) {
+          return {};
+        }
+        return {.phase = application::InitializationOperationPhase::active,
+                .operation_id = occupied.current->identity.operation_id,
+                .detail = "another workbench initialization operation is active"};
+      }
+      return {.phase = application::InitializationOperationPhase::
+                         observation_unavailable,
+              .detail = occupied.detail.empty()
+                            ? "initialization operation occupancy is unavailable"
+                            : std::move(occupied.detail)};
+    }
+
+   private:
+    application::SharedOperationOccupancy& occupancy_;
+  } operation_activity_;
+  adapters::infrastructure::StateApplicationUpdateHealthStorage
+      application_update_health_storage_;
+  adapters::windows::WindowsApplicationUpdatePlatform application_update_platform_;
+  application::ApplicationUpdateLifecycle application_updates_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
 };
