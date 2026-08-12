@@ -288,6 +288,55 @@ class RecordingLog final : public ExecutionLog {
   return passed;
 }
 
+[[nodiscard]] bool verify_restore_uncertainty_invalidates_old_batch() {
+  bool passed = true;
+  SequencePlatformInfo platform{
+      {SystemArchitecture::x64, SystemArchitecture::unknown,
+       SystemArchitecture::x64}};
+  RecordingLog log;
+  app_selection::ArchitectureSelectionLifecycle lifecycle{
+      platform, log,
+      domain_selection::ArchitecturePreference::prefer_arm64_prompt_fallback};
+  auto const frozen = lifecycle.start().current;
+  app_selection::BatchPackageSnapshot old_batch{
+      .software_id = "editor",
+      .package = package("editor", domain_selection::PackageArchitecture::x64,
+                         "editor-x64"),
+      .observation = frozen,
+  };
+  auto const original_package = old_batch.package;
+  auto const original_observation = old_batch.observation;
+
+  auto const restored = lifecycle.restore();
+  auto const recheck = lifecycle.recheck_batch(
+      frozen,
+      std::span<app_selection::BatchPackageSnapshot const>{&old_batch, 1});
+  auto const requires_reassessment =
+      recheck.changed && recheck.affected.size() == 1;
+
+  passed &= expect(
+      restored.current.system == SystemArchitecture::unknown,
+      "restore must retain an unavailable architecture observation before batch recheck");
+  passed &= expect(
+      requires_reassessment &&
+          recheck.affected.front().status ==
+              domain_selection::SelectionStatus::architecture_changed &&
+          !recheck.affected.front().selected(),
+      "an old x64 batch must not continue automatically after restore observed unknown then x64");
+  passed &= expect(
+      requires_reassessment &&
+          recheck.affected.front().package == original_package &&
+          old_batch.package == original_package &&
+          old_batch.observation == original_observation,
+      "restore uncertainty must not rewrite the frozen package or installation snapshot");
+  passed &= expect(
+      log.has_stage_with_field("architecture-observation", "system_architecture",
+                               "unknown") &&
+          log.has_stage_with_field("architecture-changed", "software_id", "editor"),
+      "restore uncertainty and required batch reassessment must be structured log events");
+  return passed;
+}
+
 [[nodiscard]] bool verify_lifecycle_rechecks_and_scopes_refusal() {
   bool passed = true;
   SequencePlatformInfo platform{
@@ -503,6 +552,7 @@ int main() {
   passed &= verify_current_preference_and_one_shot_scope();
   passed &= verify_batch_rechecks_new_arm64_fallback();
   passed &= verify_batch_recheck_stays_paused_after_uncertain_observation();
+  passed &= verify_restore_uncertainty_invalidates_old_batch();
   passed &= verify_preference_change_refusal_skips_the_item();
   if (!passed) {
     return EXIT_FAILURE;

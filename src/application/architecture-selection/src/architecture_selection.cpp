@@ -76,6 +76,9 @@ ArchitectureRecheck ArchitectureSelectionLifecycle::observe(
       .id = next_observation_id_++,
   };
   auto const changed = selection_domain::architecture_changed(previous, current);
+  if (!current.detected() || changed) {
+    batch_reassessment_epoch_ = current.id;
+  }
   current_ = current;
   auto const observation_result = current.detected() ? ExecutionResult::succeeded
                                                       : ExecutionResult::failed;
@@ -197,13 +200,8 @@ BatchArchitectureRecheck ArchitectureSelectionLifecycle::recheck_batch(
     selection_domain::ArchitectureObservation frozen,
     std::span<BatchPackageSnapshot const> pending_items) {
   auto const recheck = observe("batch-recheck");
-  auto const frozen_changed =
-      selection_domain::architecture_changed(frozen, recheck.current);
-  if (!frozen.detected() || !recheck.current.detected() || frozen_changed) {
-    batches_requiring_reassessment_.insert(frozen);
-  }
   auto const reassessment_required =
-      batches_requiring_reassessment_.contains(frozen);
+      frozen.id < batch_reassessment_epoch_;
   BatchArchitectureRecheck result{
       .observation = recheck,
       .changed = reassessment_required,

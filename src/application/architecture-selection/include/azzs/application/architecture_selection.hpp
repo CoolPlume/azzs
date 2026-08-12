@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <map>
 #include <optional>
-#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -93,8 +92,7 @@ class ArchitectureSelectionLifecycle final {
   selection_domain::ArchitecturePreference preference_;
   std::optional<selection_domain::ArchitectureObservation> current_;
   std::map<std::string, PendingFallback, std::less<>> pending_fallbacks_;
-  std::set<selection_domain::ArchitectureObservation>
-      batches_requiring_reassessment_;
+  std::uint64_t batch_reassessment_epoch_{0};
   std::uint64_t next_observation_id_{1};
 };
 
