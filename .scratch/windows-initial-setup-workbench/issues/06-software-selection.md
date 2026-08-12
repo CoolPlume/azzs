@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 03, 05, 24
 Owner: issue-06
 Consumers: 08
@@ -56,3 +56,7 @@ Evidence freshness: 绑定当前提交、目录修订、解析能力版本；外
 `SW-01` 至 `SW-13`、`SW-27` 至 `SW-28`、`SW-34` 至 `SW-50`、`SRC-01` 至 `SRC-07`、`SRC-14` 至 `SRC-36`、`CAT-42` 至 `CAT-52`、`SEC-08`、`UI-11` 至 `UI-16`、`UI-20` 至 `UI-21`、`UI-53` 至 `UI-55`、`DBG-09`、`FLOW-11` 至 `FLOW-12`、`RUN-07`、`RST-14`、`HIST-07`
 
 ## Comments
+
+- 2026-08-12: feature `7239fdaaed10ef4a107ed73bce4aa82ac01fea85` 经 [PR #17](https://github.com/CoolPlume/azzs/pull/17) 以普通 merge 合入 `codex/v1-integration`，merge SHA：`17155fc1c46fadbfc453c408b7b08adc9f72b14f`。
+- 已完成合并 integration 后的定向 host 验证；GitHub Actions run `31593296575` 的 x64 Release 与 ARM64 Release 均通过。
+- 未验证真实 Windows UI/UAC、浏览器、软件检测、Narrator、225% DPI 与多显示器边界。
