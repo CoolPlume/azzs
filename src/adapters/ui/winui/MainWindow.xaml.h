@@ -12,6 +12,7 @@ class MotionPreferences;
 }
 
 namespace azzs::application {
+class AdvancedViewPreferences;
 class SystemSettingsApplyService;
 }
 
@@ -24,7 +25,9 @@ struct MainWindow : MainWindowT<MainWindow> {
       std::shared_ptr<azzs::application::Workbench> workbench,
       std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences,
       std::shared_ptr<azzs::application::SystemSettingsApplyService>
-          system_settings);
+          system_settings,
+      std::shared_ptr<azzs::application::AdvancedViewPreferences>
+          advanced_view_preferences);
   void OnNavigationSelectionChanged(
       Microsoft::UI::Xaml::Controls::NavigationView const&,
       Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&
@@ -35,12 +38,16 @@ struct MainWindow : MainWindowT<MainWindow> {
       Microsoft::UI::Xaml::Controls::NavigationViewItem const& item);
   void navigate_to(azzs::application::PageId page);
   void refresh_drivers_page();
+  [[nodiscard]] bool set_advanced_view(bool enabled);
   void project(azzs::application::WorkbenchSnapshot const& snapshot);
 
   std::shared_ptr<azzs::application::Workbench> workbench_;
   std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences_;
   std::shared_ptr<azzs::application::SystemSettingsApplyService>
       system_settings_;
+  std::shared_ptr<azzs::application::AdvancedViewPreferences>
+      advanced_view_preferences_;
+  bool advanced_view_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::implementation
