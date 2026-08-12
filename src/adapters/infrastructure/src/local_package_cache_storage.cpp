@@ -210,7 +210,7 @@ class AssetLock final {
 #ifdef _WIN32
     HANDLE handle = ::CreateFileW(
         path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_NEW,
-        FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        FILE_ATTRIBUTE_HIDDEN, nullptr);
     if (handle == INVALID_HANDLE_VALUE &&
         ::GetLastError() == ERROR_FILE_EXISTS) {
       handle = ::CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
