@@ -19,6 +19,7 @@
 ### Orchestration
 
 进行项目总调度、拆分 Codex 会话或子代理、选择模型、控制并发、跨机器交接或跨分支集成时，必须先阅读 `docs/agents/orchestration.md`。
+在 Windows 原生环境开始新的总调度会话或接管既有进度时，还必须先阅读 `docs/agents/windows-native-takeover.md`。
 
 ### Architecture and code quality
 
