@@ -31,6 +31,9 @@ using azzs::ui::presentation::ReadOnlyPresentation;
 using azzs::ui::presentation::RiskLevel;
 using azzs::ui::presentation::ViewMode;
 using azzs::ui::presentation::WorkflowStage;
+using azzs::application::offline_package_cache::CacheLocationState;
+using azzs::application::offline_package_cache::OfflinePackageCacheSnapshot;
+using azzs::domain::offline_package_cache::CacheLocationKind;
 
 class InMemoryAdvancedViewPreferenceStore final
     : public azzs::application::AdvancedViewPreferenceStore {
@@ -404,6 +407,41 @@ class InMemoryAdvancedViewPreferenceStore final
   return passed;
 }
 
+[[nodiscard]] bool verify_offline_package_cache_projection() {
+  OfflinePackageCacheSnapshot source{
+      .selected_root = {.kind = CacheLocationKind::system_directory,
+                        .id = "program-data"},
+      .location_state = CacheLocationState::available,
+      .network_available = false,
+  };
+  auto const projected =
+      azzs::ui::presentation::make_offline_package_cache_presentation(source);
+  auto const* component = projected->find_component("offline-package-cache.status");
+  bool passed = true;
+  passed &= expect(component != nullptr,
+                   "offline cache projection must expose one stable component");
+  passed &= expect(component != nullptr &&
+                       component->automation_id ==
+                           "AzzsOfflinePackageCacheStatus" &&
+                       !component->accessible_name.empty() &&
+                       component->body.find("program-data") != std::string::npos,
+                   "offline cache projection must preserve typed location and accessibility");
+
+  source.location_state = CacheLocationState::unavailable;
+  source.location_detail = "removable media is unavailable";
+  auto const unavailable =
+      azzs::ui::presentation::make_offline_package_cache_presentation(source);
+  auto const* unavailable_component =
+      unavailable->find_component("offline-package-cache.status");
+  passed &= expect(unavailable_component != nullptr &&
+                       unavailable_component->state ==
+                           PresentationState::waiting_for_network &&
+                       unavailable_component->body.find("removable media") !=
+                           std::string::npos,
+                   "offline cache location loss must remain a visible static state");
+  return passed;
+}
+
 [[nodiscard]] bool verify_software_selection_empty_catalog_projection() {
   auto const source =
       azzs::application::software_selection::SoftwareSelectionSnapshot{
@@ -464,6 +502,7 @@ int main() {
   bool passed = true;
   passed &= verify_motion_contract();
   passed &= verify_fixture_contract();
+  passed &= verify_offline_package_cache_projection();
   passed &= verify_software_selection_empty_catalog_projection();
   passed &= verify_advanced_view_preference_fallback();
   if (!passed) {

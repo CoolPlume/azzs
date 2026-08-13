@@ -1,4 +1,5 @@
 add_library(azzs_infrastructure_adapter STATIC
+  src/local_package_cache_storage.cpp
   src/local_file_log_storage.cpp
   src/state_application_update_health_storage.cpp
   src/state_operation_occupancy_storage.cpp
@@ -23,6 +24,7 @@ azzs_project_target(
   ROLE infrastructure_adapter
   PUBLIC_LINKS
     azzs::application
+    azzs::offline_package_cache_application
   PRIVATE_LINKS
     ${azzs_infrastructure_private_links}
 )

@@ -64,4 +64,43 @@ make_software_selection_presentation(
   return std::make_shared<PresentationSnapshot const>(std::move(components));
 }
 
+std::shared_ptr<PresentationSnapshot const>
+make_offline_package_cache_presentation(
+    application::offline_package_cache::OfflinePackageCacheSnapshot const& source,
+    OfflinePackageCachePresentationText text) {
+  auto const available =
+      source.location_state == application::offline_package_cache::
+                                  CacheLocationState::available;
+  auto cached_count = std::size_t{};
+  for (auto const& item : source.items) {
+    if (item.cache_present) {
+      ++cached_count;
+    }
+  }
+
+  auto body = available ? text.available_body_prefix + source.selected_root.id
+                        : text.unavailable_body_prefix + source.location_detail;
+  body += "; " + std::to_string(cached_count) + text.item_suffix;
+  if (!source.network_available) {
+    body += text.network_suffix;
+  }
+  auto const state = available ? PresentationState::ready
+                               : PresentationState::waiting_for_network;
+  std::vector<ComponentProjection> components{
+      {
+          .id = "offline-package-cache.status",
+          .automation_id = "AzzsOfflinePackageCacheStatus",
+          .accessible_name = std::move(text.accessible_name),
+          .kind = ComponentKind::status_band,
+          .state = state,
+          .announcement = AnnouncementMode::none,
+          .title = available ? std::move(text.available_title)
+                             : std::move(text.unavailable_title),
+          .body = std::move(body),
+          .stage = WorkflowStage::software_installation,
+      },
+  };
+  return std::make_shared<PresentationSnapshot const>(std::move(components));
+}
+
 }  // namespace azzs::ui::presentation

@@ -172,6 +172,8 @@ set(AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES
   "Azzs.WinUI|azzs_software_catalog_domain"
   "Azzs.WinUI|azzs_software_selection_application"
   "Azzs.WinUI|azzs_software_selection_domain"
+  "Azzs.WinUI|azzs_offline_package_cache_application"
+  "Azzs.WinUI|azzs_offline_package_cache_domain"
   "Azzs.WinUI|azzs_software_optimization_catalog_application"
   "Azzs.WinUI|azzs_software_optimization_catalog_domain"
   "Azzs.WinUI|external:windows-platform"

@@ -14,6 +14,10 @@ namespace software_selection {
 class SoftwareSelectionLifecycle;
 }
 
+namespace offline_package_cache {
+class OfflinePackageCacheService;
+}
+
 namespace sogou_optimization {
 class SogouOptimizationService;
 }
@@ -53,6 +57,8 @@ class WorkbenchServices {
   software_selection() noexcept = 0;
   [[nodiscard]] virtual HardwareOverviewService& hardware_overview()
       noexcept = 0;
+  [[nodiscard]] virtual offline_package_cache::OfflinePackageCacheService&
+  offline_package_cache() noexcept = 0;
 };
 
 }  // namespace azzs::application

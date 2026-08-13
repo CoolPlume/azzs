@@ -16,12 +16,12 @@ SoftwareInstallationPage::SoftwareInstallationPage() {
   project({
       .mode = azzs::application::software_selection::SelectionLifecycleMode::
           not_restored,
-  });
+  }, {});
 }
 
 void SoftwareInstallationPage::project(
-    azzs::application::software_selection::SoftwareSelectionSnapshot const&
-        snapshot) {
+    azzs::application::software_selection::SoftwareSelectionSnapshot const& snapshot,
+    azzs::application::offline_package_cache::OfflinePackageCacheSnapshot const& cache) {
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   auto const resources = ResourceLoader{};
   auto text = azzs::ui::presentation::SoftwareSelectionPresentationText{
@@ -52,6 +52,27 @@ void SoftwareInstallationPage::project(
       azzs::ui::presentation::make_software_selection_presentation(
           snapshot, std::move(text)),
       "software-selection.status", azzs::ui::presentation::ViewMode::standard,
+      {}, 0, "SoftwareInstallation");
+  auto cache_text = azzs::ui::presentation::OfflinePackageCachePresentationText{
+      .accessible_name = winrt::to_string(
+          resources.GetString(L"OfflinePackageCacheStatusAccessibleName")),
+      .available_title = winrt::to_string(
+          resources.GetString(L"OfflinePackageCacheAvailableTitle")),
+      .unavailable_title = winrt::to_string(
+          resources.GetString(L"OfflinePackageCacheUnavailableTitle")),
+      .available_body_prefix = winrt::to_string(
+          resources.GetString(L"OfflinePackageCacheAvailableBodyPrefix")),
+      .unavailable_body_prefix = winrt::to_string(
+          resources.GetString(L"OfflinePackageCacheUnavailableBodyPrefix")),
+      .item_suffix = winrt::to_string(
+          resources.GetString(L"OfflinePackageCacheItemSuffix")),
+      .network_suffix = winrt::to_string(
+          resources.GetString(L"OfflinePackageCacheNetworkSuffix")),
+  };
+  winrt::get_self<SurfaceImplementation>(OfflinePackageCacheStatus())->project(
+      azzs::ui::presentation::make_offline_package_cache_presentation(
+          cache, std::move(cache_text)),
+      "offline-package-cache.status", azzs::ui::presentation::ViewMode::standard,
       {}, 0, "SoftwareInstallation");
 }
 
