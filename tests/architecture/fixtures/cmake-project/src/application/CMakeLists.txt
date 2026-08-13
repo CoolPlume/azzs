@@ -10,3 +10,41 @@ azzs_project_target(
     azzs::domain
     Threads::Threads
 )
+
+add_library(azzs_software_catalog_application INTERFACE)
+add_library(azzs::software_catalog_application ALIAS
+  azzs_software_catalog_application)
+
+azzs_project_target(
+  TARGET azzs_software_catalog_application
+  ROLE application
+  INTERFACE_LINKS
+    azzs::application
+    azzs::software_catalog_domain
+)
+
+add_library(azzs_software_selection_application INTERFACE)
+add_library(azzs::software_selection_application ALIAS
+  azzs_software_selection_application)
+
+azzs_project_target(
+  TARGET azzs_software_selection_application
+  ROLE application
+  INTERFACE_LINKS
+    azzs::application
+    azzs::software_selection_domain
+    azzs::software_catalog_application
+    azzs::architecture_selection_application
+)
+
+add_library(azzs_software_optimization_catalog_application INTERFACE)
+add_library(azzs::software_optimization_catalog_application ALIAS
+  azzs_software_optimization_catalog_application)
+
+azzs_project_target(
+  TARGET azzs_software_optimization_catalog_application
+  ROLE application
+  INTERFACE_LINKS
+    azzs::application
+    azzs::software_optimization_catalog_domain
+)

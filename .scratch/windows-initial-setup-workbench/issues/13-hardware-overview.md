@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 01, 02, 24
 Owner: issue-13
 Consumers: 14, 21
@@ -27,3 +27,5 @@ Evidence freshness: 绑定当前构建和设备环境；票内缓存失效事件
 `DRV-04` 至 `DRV-09`
 
 ## Comments
+
+- 2026-08-12：功能实现提交 `ae470bd6e05de5591061193f8c3ded800dbe8ad2` 经 PR [#16](https://github.com/CoolPlume/azzs/pull/16) 普通合入 `codex/v1-integration`，合入提交 `af149b5e12bdec081c76cd626a12105de37b8e5a`。feature head 的 host guardrails 为 16/16 通过；GitHub Actions run `31590067714` 的 x64 Release 与 ARM64 Release 均通过。真实 Windows 代表性设备人工检查尚未执行，未作为通过证据。

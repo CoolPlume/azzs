@@ -38,6 +38,7 @@ set(AZZS_ARCHITECTURE_ROLE_DIRECTORIES
   "composition|src/composition"
   "test_support|tests/support"
   "test|tests"
+  "platform_runtime|out"
 )
 
 set(AZZS_ARCHITECTURE_COMPOSITION_NODES
@@ -125,10 +126,13 @@ set(AZZS_ARCHITECTURE_ALLOWED_platform_runtime platform_runtime)
 # target-or-library | graph-node | role
 set(AZZS_ARCHITECTURE_EXTERNAL_CMAKE_TARGETS
   "Threads::Threads|external:threads|runtime"
+  "azzs_cppwinrt_headers|external:cppwinrt-projection|platform_runtime"
   "advapi32|external:windows-platform|platform_runtime"
   "ole32|external:windows-platform|platform_runtime"
+  "oleaut32|external:windows-platform|platform_runtime"
   "rpcrt4|external:windows-platform|platform_runtime"
   "shell32|external:windows-platform|platform_runtime"
+  "wbemuuid|external:windows-platform|platform_runtime"
   "winhttp|external:windows-platform|platform_runtime"
   "wtsapi32|external:windows-platform|platform_runtime"
 )
@@ -145,8 +149,10 @@ set(AZZS_ARCHITECTURE_CMAKE_DEPENDENCY_OPTION_PATTERNS
 set(AZZS_ARCHITECTURE_EXTERNAL_MSBUILD_LIBRARIES
   "advapi32.lib|external:windows-platform|platform_runtime"
   "ole32.lib|external:windows-platform|platform_runtime"
+  "oleaut32.lib|external:windows-platform|platform_runtime"
   "rpcrt4.lib|external:windows-platform|platform_runtime"
   "shell32.lib|external:windows-platform|platform_runtime"
+  "wbemuuid.lib|external:windows-platform|platform_runtime"
   "winhttp.lib|external:windows-platform|platform_runtime"
   "wtsapi32.lib|external:windows-platform|platform_runtime"
   "windowsapp.lib|external:windows-platform|platform_runtime"
@@ -155,10 +161,19 @@ set(AZZS_ARCHITECTURE_EXTERNAL_MSBUILD_LIBRARIES
 set(AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES
   "Azzs.WinUI|azzs_windows_adapter"
   "Azzs.WinUI|azzs_infrastructure_adapter"
+  "Azzs.WinUI|azzs_settings_catalog_file_adapter"
   "Azzs.WinUI|azzs_application"
+  "Azzs.WinUI|azzs_settings_catalog_lifecycle"
   "Azzs.WinUI|azzs_domain"
+  "Azzs.WinUI|azzs_settings_catalog_domain"
   "Azzs.WinUI|azzs_architecture_selection_application"
   "Azzs.WinUI|azzs_architecture_selection_domain"
+  "Azzs.WinUI|azzs_software_catalog_application"
+  "Azzs.WinUI|azzs_software_catalog_domain"
+  "Azzs.WinUI|azzs_software_selection_application"
+  "Azzs.WinUI|azzs_software_selection_domain"
+  "Azzs.WinUI|azzs_software_optimization_catalog_application"
+  "Azzs.WinUI|azzs_software_optimization_catalog_domain"
   "Azzs.WinUI|external:windows-platform"
 )
 
@@ -199,11 +214,14 @@ set(AZZS_ARCHITECTURE_WINUI_GENERATED_HEADER_PATTERNS
 
 set(AZZS_ARCHITECTURE_PLATFORM_HEADER_PATTERNS
   "^win[^/]*\\.h$"
+  "^winternl\\.h$"
   "^aclapi\\.h$"
   "^knownfolders\\.h$"
   "^rpc\\.h$"
   "^sddl\\.h$"
   "^wtsapi32\\.h$"
+  "^oleauto\\.h$"
+  "^wbemidl\\.h$"
   "^unknwn\\.h$"
   "^combaseapi\\.h$"
   "^objbase\\.h$"

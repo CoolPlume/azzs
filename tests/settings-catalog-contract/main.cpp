@@ -17,6 +17,7 @@
 #include "azzs/application/execution_log.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/settings_catalog/settings_catalog.hpp"
+#include "azzs/settings_catalog/initial_settings_catalog.hpp"
 #include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 #include "azzs/testing/fixed_clock.hpp"
 #include "azzs/testing/in_memory_operation_occupancy_storage.hpp"
@@ -26,6 +27,8 @@ namespace {
 
 namespace catalog_app = azzs::application::settings_catalog;
 namespace catalog_domain = azzs::domain::settings_catalog;
+
+[[nodiscard]] catalog_domain::SupportedCapabilities capabilities();
 
 using azzs::adapters::infrastructure::SettingsCatalogFileAdapter;
 using azzs::application::CorrelationId;
@@ -52,6 +55,85 @@ using azzs::testing::StateFileOperation;
     std::cerr << "settings catalog contract failed: " << message << '\n';
   }
   return condition;
+}
+
+[[nodiscard]] bool initial_catalog_contract() {
+  auto catalog =
+      azzs::application::settings_catalog::initial_settings_catalog();
+  auto validation = catalog_domain::validate(
+      std::move(catalog),
+      catalog_domain::SupportedCapabilities{
+          .apply = {"windows.classic-context-menu.apply",
+                    "windows.windows10-explorer.apply"},
+          .detect = {"windows.classic-context-menu.detect",
+                     "windows.windows10-explorer.detect"},
+          .recover = {"windows.classic-context-menu.restore",
+                      "windows.windows10-explorer.restore"}});
+  if (!validation.validated.has_value()) {
+    for (auto const& problem : validation.problems) {
+      std::cerr << "initial catalog problem: " << problem.detail << '\n';
+    }
+    return expect(false, "initial settings catalog must validate");
+  }
+  auto const& active = *validation.validated;
+  bool passed = expect(active.catalog.revision == 1,
+                       "initial settings catalog revision must be stable") &&
+                expect(active.catalog.settings.size() == 2,
+                       "initial settings catalog must contain two settings") &&
+                expect(active.catalog.plans.size() == 1,
+                       "initial settings catalog must contain one plan");
+  auto const* classic = catalog_domain::find_setting(
+      active, catalog_domain::StableId{"setting.classic-context-menu"});
+  auto const* explorer = catalog_domain::find_setting(
+      active, catalog_domain::StableId{"setting.windows10-explorer"});
+  passed &= expect(classic != nullptr && explorer != nullptr,
+                   "initial settings catalog must expose both stable ids");
+  if (classic == nullptr || explorer == nullptr) {
+    return false;
+  }
+  auto const expected_range = catalog_domain::WindowsVersionRange{
+      .minimum = catalog_domain::WindowsVersion{
+          .generation = catalog_domain::WindowsGeneration::windows_11,
+          .feature_update_year = 21,
+          .feature_update_half = 2},
+      .maximum = catalog_domain::WindowsVersion{
+          .generation = catalog_domain::WindowsGeneration::windows_11,
+          .feature_update_year = 25,
+          .feature_update_half = 2}};
+  for (auto const* setting : {classic, explorer}) {
+    passed &= expect(!setting->default_selected,
+                     "initial system settings must be opt-in");
+    passed &= expect(setting->known_windows_range == expected_range,
+                     "initial system settings must target Windows 11 through 25H2");
+    passed &= expect(setting->risk == catalog_domain::SettingRiskLevel::elevated &&
+                         setting->force_attempt_rule ==
+                             catalog_domain::ForceAttemptRule::
+                                 allowed_with_explicit_confirmation &&
+                         setting->recovery_requirement ==
+                             catalog_domain::RecoveryRequirement::
+                                 restore_record_required &&
+                         setting->restart_requirement ==
+                             catalog_domain::RestartRequirement::explorer,
+                     "initial settings must expose risk, recovery and Explorer restart semantics");
+  }
+  auto const* plan = catalog_domain::find_plan_availability(
+      active, catalog_domain::StableId{"plan.recommended"});
+  passed &= expect(plan != nullptr && plan->enabled &&
+                       plan->problems.empty(),
+                   "recommended plan must be enabled");
+  auto const& recommended = active.catalog.plans.front();
+  passed &= expect(recommended.members.size() == 2 &&
+                       recommended.members[0].setting_id == classic->id &&
+                       recommended.members[1].setting_id == explorer->id &&
+                       !recommended.members[0].default_selected &&
+                       !recommended.members[1].default_selected,
+                   "recommended plan must only reference both opt-in settings");
+  passed &= expect(classic->semantics.identity ==
+                       "windows11.classic-context-menu" &&
+                       explorer->semantics.identity ==
+                           "windows11.windows10-explorer",
+                   "initial settings must use the frozen target identities");
+  return passed;
 }
 
 class RecordingExecutionLog final : public ExecutionLog {
@@ -1115,6 +1197,7 @@ struct Fixture final {
 
 int main() {
   bool passed = true;
+  passed &= initial_catalog_contract();
   passed &= stable_identity_lifecycle_contract();
   passed &= legacy_state_identity_history_contract();
   passed &= legacy_package_fact_contract();

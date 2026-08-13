@@ -14,6 +14,10 @@
 #include "Pages/SoftwareInstallationPage.xaml.h"
 #include "Pages/SoftwareOptimizationPage.xaml.h"
 #include "Pages/SystemOptimizationPage.xaml.h"
+#include "azzs/application/advanced_view_preferences.hpp"
+#include "azzs/application/software_selection.hpp"
+#include "azzs/application/system_settings_apply.hpp"
+#include "azzs/application/workbench_services.hpp"
 
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -53,10 +57,27 @@ MainWindow::MainWindow() {
 
 void MainWindow::bind(
     std::shared_ptr<azzs::application::Workbench> workbench,
-    std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences) {
+    std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences,
+    std::shared_ptr<azzs::application::SystemSettingsApplyService>
+        system_settings,
+    std::shared_ptr<azzs::application::AdvancedViewPreferences>
+        advanced_view_preferences) {
   workbench_ = std::move(workbench);
   motion_preferences_ = std::move(motion_preferences);
-  auto const snapshot = workbench_->snapshot();
+  system_settings_ = std::move(system_settings);
+  advanced_view_preferences_ = std::move(advanced_view_preferences);
+  advanced_view_ = advanced_view_preferences_
+                       ? advanced_view_preferences_->enabled()
+                       : false;
+  auto snapshot = workbench_->snapshot();
+  if (snapshot.update.state ==
+          azzs::application::UpdateState::candidate_pending_start_health ||
+      snapshot.update.state ==
+          azzs::application::UpdateState::previous_pending_start_health) {
+    static_cast<void>(workbench_->handle_update(
+        azzs::application::UpdateUserIntent::confirm_started_healthy));
+    snapshot = workbench_->snapshot();
+  }
   project(snapshot);
   navigate_to(snapshot.current_page);
 }
@@ -126,14 +147,40 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::drivers:
       ContentFrame().Navigate(xaml_typename<Pages::DriversPage>(), nullptr,
                               transition);
+      if (auto const drivers_page =
+              ContentFrame().Content().try_as<Pages::DriversPage>()) {
+        auto const hardware =
+            workbench_->observe_hardware(
+                azzs::application::HardwareOverviewTrigger::page_entered);
+        auto weak_this = get_weak();
+        winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
+            ->bind(hardware, [weak_this] {
+              if (auto self = weak_this.get()) {
+                self->refresh_drivers_page();
+              }
+            });
+      }
       break;
     case PageId::system_optimization:
       ContentFrame().Navigate(xaml_typename<Pages::SystemOptimizationPage>(),
                               nullptr, transition);
+      if (auto page =
+              ContentFrame().Content().try_as<Pages::SystemOptimizationPage>();
+          page && system_settings_) {
+        winrt::get_self<Pages::implementation::SystemOptimizationPage>(page)
+            ->bind(system_settings_, advanced_view_);
+      }
       break;
     case PageId::software_installation:
       ContentFrame().Navigate(xaml_typename<Pages::SoftwareInstallationPage>(),
                               nullptr, transition);
+      if (auto const services = workbench_->services()) {
+        auto const page = ContentFrame()
+                              .Content()
+                              .as<Pages::SoftwareInstallationPage>();
+        winrt::get_self<Pages::implementation::SoftwareInstallationPage>(page)
+            ->project(services->software_selection().snapshot());
+      }
       break;
     case PageId::software_optimization:
       ContentFrame().Navigate(xaml_typename<Pages::SoftwareOptimizationPage>(),
@@ -146,7 +193,38 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::application_settings:
       ContentFrame().Navigate(xaml_typename<Pages::ApplicationSettingsPage>(),
                               nullptr, transition);
+      if (auto settings = ContentFrame().Content().try_as<
+              Pages::ApplicationSettingsPage>()) {
+        winrt::get_self<Pages::implementation::ApplicationSettingsPage>(
+            settings)
+            ->bind(workbench_, advanced_view_, [weak_this = get_weak()](
+                                              bool enabled) {
+              if (auto self = weak_this.get()) {
+                return self->set_advanced_view(enabled);
+              }
+              return false;
+            });
+      }
       break;
+  }
+}
+
+bool MainWindow::set_advanced_view(bool enabled) {
+  if (advanced_view_preferences_) {
+    advanced_view_ = advanced_view_preferences_->set_enabled(enabled);
+  }
+  return advanced_view_;
+}
+
+void MainWindow::refresh_drivers_page() {
+  if (!workbench_) {
+    return;
+  }
+  auto const hardware = workbench_->refresh_hardware();
+  if (auto const drivers_page =
+          ContentFrame().Content().try_as<Pages::DriversPage>()) {
+    winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
+        ->project(hardware);
   }
 }
 
