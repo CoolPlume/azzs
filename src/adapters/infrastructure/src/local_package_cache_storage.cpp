@@ -162,9 +162,7 @@ constexpr std::size_t kStableKeyLength = 16;
                                 cache::CompletedCacheEntry const& entry) {
   std::error_code status_error;
   auto const status = std::filesystem::symlink_status(marker, status_error);
-  if ((status_error &&
-       status_error !=
-           std::make_error_code(std::errc::no_such_file_or_directory)) ||
+  if ((status_error && status_error != std::errc::no_such_file_or_directory) ||
       (std::filesystem::exists(status) &&
        (std::filesystem::is_symlink(status) ||
         !std::filesystem::is_regular_file(status)))) {
@@ -307,7 +305,7 @@ class AssetLock final {
                                std::error_code& error) {
   error.clear();
   auto const status = std::filesystem::symlink_status(path, error);
-  if (error == std::make_error_code(std::errc::no_such_file_or_directory)) {
+  if (error == std::errc::no_such_file_or_directory) {
     error.clear();
     return true;
   }
@@ -444,9 +442,7 @@ class LocalWriteSession final : public cache::PackageCacheWriteSession {
         path_for(directory_, asset_.identity.stable_key(), kPartialSuffix);
     std::error_code status_error;
     auto const status = std::filesystem::symlink_status(partial, status_error);
-    if ((status_error &&
-         status_error !=
-             std::make_error_code(std::errc::no_such_file_or_directory)) ||
+    if ((status_error && status_error != std::errc::no_such_file_or_directory) ||
         (std::filesystem::exists(status) &&
          (std::filesystem::is_symlink(status) ||
           !std::filesystem::is_regular_file(status)))) {
