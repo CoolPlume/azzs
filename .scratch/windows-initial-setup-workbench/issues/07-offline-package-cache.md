@@ -2,17 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: completed
+Resolution: open
 Blocked by: 02, 03, 05
 Owner: issue-07
-Claimed by: codex/issue-07-offline-package-cache
 Consumers: 08, 14, 18, 21
 Verification: 下载与缓存适配器合同测试，覆盖断网、续传、并发、半成品、清理、介质失效和重试。
 Evidence freshness: 绑定当前提交、缓存模式和资产身份；执行或候选构建使用的来源可用性重新观察。
-
-## Answer
-
-已实现可移植离线资源与缓存核心、受控本地文件系统适配器、Windows 组合根接入和安装页最小静态状态投影。合同测试覆盖断网、在线安装器、身份隔离、内置资源、并发锁、完成标记、半成品清理、暂停续传、重下、自动重试、清理策略、空间/介质失效及 UI 投影；真实网络、网络共享、U 盘和 Windows 实机仍按事项边界未验证。
 
 ## Goal
 

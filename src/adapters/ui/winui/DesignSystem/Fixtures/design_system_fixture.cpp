@@ -108,6 +108,18 @@ std::shared_ptr<PresentationSnapshot const> make_design_system_fixture() {
       IntentKind::open_source, shared_view.id, true, false, true));
   components.push_back(std::move(shared_view));
 
+  auto force_attempt = component(
+      "fixture.system-settings-force-attempt",
+      "AzzsFixtureSystemSettingsForceAttempt", "系统优化强制尝试风险",
+      ComponentKind::risk_confirmation,
+      PresentationState::pending_confirmation, "可能不适用",
+      "此系统优化超出已知 Windows 适用范围。标准视图保留风险状态，高级视图才可在确认后仍然尝试，并保留恢复记录。");
+  force_attempt.risk = RiskLevel::high;
+  force_attempt.commands.push_back(command(
+      "force-attempt", "仍然尝试", CommandRole::danger,
+      IntentKind::confirm_risk, force_attempt.id, true, false, true));
+  components.push_back(std::move(force_attempt));
+
   auto summary = component(
       "fixture.summary", "AzzsFixtureSummary", "只读摘要夹具",
       ComponentKind::summary, PresentationState::ready, "摘要",

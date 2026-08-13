@@ -1,6 +1,7 @@
 find_package(Threads REQUIRED)
 
 add_library(azzs_application STATIC
+  src/advanced_view_preferences.cpp
   src/application_update.cpp
   src/bounded_cpu_scheduler.cpp
   src/device_state_store.cpp
@@ -33,6 +34,7 @@ add_subdirectory(software-selection)
 add_subdirectory(offline-package-cache)
 
 add_library(azzs_software_optimization_catalog_application STATIC
+  src/sogou_optimization.cpp
   src/software_optimization_catalog_lifecycle.cpp
 )
 

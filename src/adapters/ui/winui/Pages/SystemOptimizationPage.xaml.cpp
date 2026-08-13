@@ -80,8 +80,10 @@ SystemOptimizationPage::SystemOptimizationPage() {
 }
 
 void SystemOptimizationPage::bind(
-    std::shared_ptr<azzs::application::SystemSettingsApplyService> service) {
+    std::shared_ptr<azzs::application::SystemSettingsApplyService> service,
+    bool advanced_view) {
   service_ = std::move(service);
+  advanced_view_ = advanced_view;
   project(service_->refresh());
 }
 
@@ -176,6 +178,58 @@ void SystemOptimizationPage::OnRestoreWindows11Default(
   auto const id = winrt::unbox_value<winrt::hstring>(button.Tag());
   static_cast<void>(service_->restore_windows11_default(
       azzs::application::settings_domain::StableId{winrt::to_string(id)}));
+  project(service_->snapshot());
+}
+
+winrt::fire_and_forget SystemOptimizationPage::OnForceAttempt(
+    winrt::Windows::Foundation::IInspectable const& sender,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  auto lifetime = get_strong();
+  if (!service_ || !advanced_view_) {
+    co_return;
+  }
+  auto const button =
+      sender.try_as<winrt::Microsoft::UI::Xaml::Controls::Button>();
+  if (!button) {
+    co_return;
+  }
+  auto const id = winrt::unbox_value<winrt::hstring>(button.Tag());
+  auto const snapshot = service_->snapshot();
+  auto const item = std::ranges::find_if(
+      snapshot.settings, [&](auto const& candidate) {
+        return candidate.id.value == winrt::to_string(id);
+      });
+  if (item == snapshot.settings.end() || item->applicable ||
+      !item->can_force_attempt) {
+    co_return;
+  }
+
+  using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
+  using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
+  using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
+  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+
+  auto const resources = ResourceLoader{};
+  auto dialog = ContentDialog{};
+  dialog.XamlRoot(XamlRoot());
+  dialog.Title(winrt::box_value(
+      resources.GetString(L"SystemSettingsForceAttemptDialogTitle")));
+  dialog.Content(winrt::box_value(winrt::hstring{resource_with_token(
+      resources, L"SystemSettingsForceAttemptDialogBody", L"{name}",
+      std::wstring{winrt::to_hstring(item->display_name)})}));
+  dialog.PrimaryButtonText(
+      resources.GetString(L"SystemSettingsForceAttemptDialogPrimaryButtonText"));
+  dialog.CloseButtonText(
+      resources.GetString(L"SystemSettingsForceAttemptDialogCloseButtonText"));
+  dialog.DefaultButton(ContentDialogButton::Close);
+
+  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+    static_cast<void>(service_->set_selected(
+        azzs::application::settings_domain::StableId{winrt::to_string(id)},
+        true));
+    static_cast<void>(service_->apply_selected(
+        {.force_attempt_confirmed = true}));
+  }
   project(service_->snapshot());
 }
 
@@ -388,6 +442,30 @@ void SystemOptimizationPage::project(
     row.Children().Append(scope);
     row.Children().Append(restart);
     row.Children().Append(recovery);
+    if (!item.applicable && item.can_force_attempt && !advanced_view_) {
+      auto standard_view_notice = TextBlock{};
+      standard_view_notice.Style(metadata_style);
+      standard_view_notice.Text(
+          resources.GetString(L"SystemSettingsForceAttemptStandardViewNotice"));
+      row.Children().Append(standard_view_notice);
+    }
+    if (!item.applicable && item.can_force_attempt && advanced_view_) {
+      auto force_attempt = winrt::Microsoft::UI::Xaml::Controls::Button{};
+      force_attempt.Content(winrt::box_value(
+          resources.GetString(L"SystemSettingsForceAttemptButtonText")));
+      force_attempt.Tag(winrt::box_value(winrt::to_hstring(item.id.value)));
+      AutomationProperties::SetAutomationId(
+          force_attempt,
+          winrt::hstring{L"AzzsForceAttemptSystemSetting-"} +
+              winrt::to_hstring(item.id.value));
+      AutomationProperties::SetName(
+          force_attempt, resources.GetString(L"SystemSettingsForceAttemptButtonText"));
+      force_attempt.Style(Application::Current().Resources().Lookup(
+          winrt::box_value(L"AzzsDangerCommandButtonStyle"))
+                              .as<winrt::Microsoft::UI::Xaml::Style>());
+      force_attempt.Click({this, &SystemOptimizationPage::OnForceAttempt});
+      row.Children().Append(force_attempt);
+    }
     auto restore_default = winrt::Microsoft::UI::Xaml::Controls::Button{};
     restore_default.Content(winrt::box_value(
         resources.GetString(L"SystemSettingsRestoreWindows11DefaultButtonText")));

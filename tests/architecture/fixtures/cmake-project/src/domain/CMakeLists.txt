@@ -32,3 +32,12 @@ azzs_project_target(
   INTERFACE_LINKS
     azzs::software_catalog_domain
 )
+
+add_library(azzs_software_optimization_catalog_domain INTERFACE)
+add_library(azzs::software_optimization_catalog_domain ALIAS
+  azzs_software_optimization_catalog_domain)
+
+azzs_project_target(
+  TARGET azzs_software_optimization_catalog_domain
+  ROLE domain
+)

@@ -27,10 +27,22 @@ ApplicationSettingsPage::ApplicationSettingsPage() {
 }
 
 void ApplicationSettingsPage::bind(
-    std::shared_ptr<azzs::application::Workbench> workbench) {
+    std::shared_ptr<azzs::application::Workbench> workbench,
+    bool advanced_view, AdvancedViewChangedHandler advanced_view_changed) {
   workbench_ = std::move(workbench);
+  AdvancedViewToggle().IsOn(advanced_view);
+  advanced_view_changed_ = std::move(advanced_view_changed);
   if (workbench_) {
     project(workbench_->snapshot().update);
+  }
+}
+
+void ApplicationSettingsPage::OnAdvancedViewToggled(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (advanced_view_changed_) {
+    AdvancedViewToggle().IsOn(
+        advanced_view_changed_(AdvancedViewToggle().IsOn()));
   }
 }
 

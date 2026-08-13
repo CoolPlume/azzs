@@ -95,6 +95,12 @@
   <data name="SystemSettingsNoRestartRequired" xml:space="preserve"><value>不需要重启。</value></data>
   <data name="SystemSettingsRecoveryAvailable" xml:space="preserve"><value>支持依据已保存原值恢复。</value></data>
   <data name="SystemSettingsRecoveryUnavailable" xml:space="preserve"><value>未声明可恢复方式。</value></data>
+  <data name="SystemSettingsForceAttemptStandardViewNotice" xml:space="preserve"><value>可能不适用。标准视图不会执行此项；具备恢复方式时可在高级视图中确认后仍然尝试。</value></data>
+  <data name="SystemSettingsForceAttemptButtonText" xml:space="preserve"><value>仍然尝试</value></data>
+  <data name="SystemSettingsForceAttemptDialogTitle" xml:space="preserve"><value>确认仍然尝试</value></data>
+  <data name="SystemSettingsForceAttemptDialogBody" xml:space="preserve"><value>“{name}”超出已知适用范围，可能无效或改变未知设置。工作台会保留恢复记录，以便按记录撤销。是否仍然尝试？</value></data>
+  <data name="SystemSettingsForceAttemptDialogPrimaryButtonText" xml:space="preserve"><value>仍然尝试</value></data>
+  <data name="SystemSettingsForceAttemptDialogCloseButtonText" xml:space="preserve"><value>取消</value></data>
   <data name="SystemSettingsSource" xml:space="preserve"><value>说明来源：{source}</value></data>
   <data name="SystemSettingsRecoveryTitle.Text" xml:space="preserve"><value>恢复记录</value></data>
   <data name="SystemSettingsUndoButtonText" xml:space="preserve"><value>撤销</value></data>
@@ -125,6 +131,10 @@
   <data name="SoftwareOptimizationPageTitle.Text" xml:space="preserve"><value>软件优化</value></data>
   <data name="HistoryAndLogsPageTitle.Text" xml:space="preserve"><value>历史与日志</value></data>
   <data name="ApplicationSettingsPageTitle.Text" xml:space="preserve"><value>应用设置</value></data>
+  <data name="ApplicationViewTitle.Text" xml:space="preserve"><value>视图</value></data>
+  <data name="ApplicationAdvancedViewToggle.Header" xml:space="preserve"><value>高级视图</value></data>
+  <data name="ApplicationAdvancedViewToggle.OffContent" xml:space="preserve"><value>标准</value></data>
+  <data name="ApplicationAdvancedViewToggle.OnContent" xml:space="preserve"><value>高级</value></data>
   <data name="VersionRiskTitle" xml:space="preserve"><value>Windows 版本风险</value></data>
   <data name="VersionRiskEarlierMessage" xml:space="preserve"><value>当前版本为 {observed}，早于目标版本 Windows 10 22H2（{target}）。部分功能可能无法正常工作，你仍可继续使用。</value></data>
   <data name="VersionRiskUnavailableMessage" xml:space="preserve"><value>无法读取当前 Windows 版本。部分功能可能无法正常工作，你仍可继续使用。</value></data>
