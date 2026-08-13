@@ -19,6 +19,7 @@ azzs_project_target(
 add_subdirectory(software-catalog)
 add_subdirectory(architecture-selection)
 add_subdirectory(software-selection)
+add_subdirectory(offline-package-cache)
 
 add_library(azzs_software_optimization_catalog_domain STATIC
   src/software_optimization_catalog.cpp

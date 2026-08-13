@@ -121,6 +121,13 @@
   <data name="SoftwareSelectionRestoreFailedBody" xml:space="preserve"><value>无法恢复软件选择状态。</value></data>
   <data name="SoftwareSelectionAdvancedAvailable" xml:space="preserve"><value>标准与高级视图共享相同的软件选择状态。</value></data>
   <data name="SoftwareSelectionAdvancedAbsentCatalog" xml:space="preserve"><value>当前页面不会将内置 draft 目录当作当前有效目录，也不会启动来源解析、浏览器或软件检测。</value></data>
+  <data name="OfflinePackageCacheStatusAccessibleName" xml:space="preserve"><value>离线资源缓存状态</value></data>
+  <data name="OfflinePackageCacheAvailableTitle" xml:space="preserve"><value>离线资源缓存</value></data>
+  <data name="OfflinePackageCacheUnavailableTitle" xml:space="preserve"><value>离线资源缓存不可用</value></data>
+  <data name="OfflinePackageCacheAvailableBodyPrefix" xml:space="preserve"><value>受控缓存位置： </value></data>
+  <data name="OfflinePackageCacheUnavailableBodyPrefix" xml:space="preserve"><value>受控缓存位置不可用： </value></data>
+  <data name="OfflinePackageCacheItemSuffix" xml:space="preserve"><value> 个已缓存资源</value></data>
+  <data name="OfflinePackageCacheNetworkSuffix" xml:space="preserve"><value>；当前无法联网</value></data>
   <data name="SoftwareOptimizationPageTitle.Text" xml:space="preserve"><value>软件优化</value></data>
   <data name="HistoryAndLogsPageTitle.Text" xml:space="preserve"><value>历史与日志</value></data>
   <data name="ApplicationSettingsPageTitle.Text" xml:space="preserve"><value>应用设置</value></data>

@@ -21,6 +21,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="SoftwareInstallationPageTitle"
@@ -32,6 +33,9 @@
             <controls:ReadOnlyPresentationSurface
                 x:Name="SoftwareSelectionStatus"
                 Grid.Row="1" />
+            <controls:ReadOnlyPresentationSurface
+                x:Name="OfflinePackageCacheStatus"
+                Grid.Row="2" />
         </Grid>
     </ScrollViewer>
 </Page>

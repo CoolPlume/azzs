@@ -179,7 +179,8 @@ void MainWindow::navigate_to(PageId page) {
                               .Content()
                               .as<Pages::SoftwareInstallationPage>();
         winrt::get_self<Pages::implementation::SoftwareInstallationPage>(page)
-            ->project(services->software_selection().snapshot());
+            ->project(services->software_selection().snapshot(),
+                      services->offline_package_cache().snapshot());
       }
       break;
     case PageId::software_optimization:
