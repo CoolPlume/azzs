@@ -10,10 +10,22 @@ namespace architecture_selection {
 class ArchitectureSelectionLifecycle;
 }
 
+namespace software_selection {
+class SoftwareSelectionLifecycle;
+}
+
+namespace sogou_optimization {
+class SogouOptimizationService;
+}
+
+class HardwareOverviewService;
+
 class DeviceStateStore;
 class EmergencyWithdrawalService;
 class ExecutionLog;
 class SharedOperationOccupancy;
+class SystemSettingsApplyService;
+class ApplicationUpdateLifecycle;
 
 // The application-facing service bundle assembled exactly once by the host.
 // Concrete filesystem, lock and Win32 types remain behind these typed seams.
@@ -29,8 +41,18 @@ class WorkbenchServices {
   [[nodiscard]] virtual ExecutionLog& execution_log() noexcept = 0;
   [[nodiscard]] virtual SharedOperationOccupancy& operation_occupancy()
       noexcept = 0;
+  [[nodiscard]] virtual sogou_optimization::SogouOptimizationService&
+  sogou_optimizations() noexcept = 0;
+  [[nodiscard]] virtual SystemSettingsApplyService& system_settings_apply()
+      noexcept = 0;
+  [[nodiscard]] virtual ApplicationUpdateLifecycle& application_updates()
+      noexcept = 0;
   [[nodiscard]] virtual architecture_selection::ArchitectureSelectionLifecycle&
   architecture_selection() noexcept = 0;
+  [[nodiscard]] virtual software_selection::SoftwareSelectionLifecycle&
+  software_selection() noexcept = 0;
+  [[nodiscard]] virtual HardwareOverviewService& hardware_overview()
+      noexcept = 0;
 };
 
 }  // namespace azzs::application

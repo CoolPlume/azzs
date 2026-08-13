@@ -1,4 +1,5 @@
 add_library(azzs_domain STATIC
+  src/application_update.cpp
   src/minimum_version_policy.cpp
   src/emergency_withdrawal.cpp
 )
@@ -17,6 +18,7 @@ azzs_project_target(
 
 add_subdirectory(software-catalog)
 add_subdirectory(architecture-selection)
+add_subdirectory(software-selection)
 
 add_library(azzs_software_optimization_catalog_domain STATIC
   src/software_optimization_catalog.cpp

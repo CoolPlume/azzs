@@ -7,29 +7,80 @@
 #include <thread>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "../../adapters/ui/winui/DesignSystem/motion_preferences.hpp"
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
+#include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
+#include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
+#include "azzs/adapters/infrastructure/system_settings_recovery_store.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
+#include "azzs/adapters/windows/windows_application_update_platform.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
+#include "azzs/adapters/windows/windows_external_address_launcher.hpp"
+#include "azzs/adapters/windows/windows_hardware_observer.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
+#include "azzs/adapters/windows/windows_sogou_optimization_adapter.hpp"
+#include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
+#include "azzs/adapters/windows/windows_view_preferences.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
+#include "azzs/application/advanced_view_preferences.hpp"
+#include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
+#include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/operation_occupancy.hpp"
+#include "azzs/application/software_selection.hpp"
+#include "azzs/application/sogou_optimization.hpp"
+#include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
+#include "azzs/settings_catalog/initial_settings_catalog.hpp"
+#include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 
 namespace azzs::composition::windows {
 namespace {
+
+class ProductionSettingsCatalogImportAuthorization final
+    : public application::settings_catalog::SettingsCatalogImportAuthorization {
+ public:
+  [[nodiscard]] bool debug_import_allowed() const noexcept override {
+    return false;
+  }
+};
+
+class UnavailableControlledSourceResolver final
+    : public application::software_selection::ControlledSourceResolver {
+ public:
+  [[nodiscard]] application::software_selection::SourceResolutionResult resolve(
+      std::string_view,
+      domain::software_catalog::CatalogSource const&) override {
+    return {.error = "controlled source resolution is not configured"};
+  }
+};
+
+class OfflineNetworkObserver final
+    : public application::software_selection::NetworkObserver {
+ public:
+  [[nodiscard]] bool available() const noexcept override { return false; }
+};
+
+class UnavailableSoftwarePresenceDetector final
+    : public application::software_selection::SoftwarePresenceDetector {
+ public:
+  [[nodiscard]] application::software_selection::PresenceDetection detect(
+      std::string_view) override {
+    return {.detail = "software presence detection is not configured"};
+  }
+};
 
 class WindowsWorkbenchServices final
     : public application::WorkbenchServices,
@@ -38,6 +89,9 @@ class WindowsWorkbenchServices final
   explicit WindowsWorkbenchServices(
       adapters::windows::DeviceDataEnvironment environment)
       : state_subject_{environment.subject_id},
+        clock_{},
+        hardware_observer_{},
+        hardware_overview_(hardware_observer_, clock_),
         state_files_(environment),
         states_(state_files_, clock_),
         log_storage_(environment.root_utf8, environment.subject_id),
@@ -48,11 +102,40 @@ class WindowsWorkbenchServices final
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_),
+        sogou_optimization_adapter_{},
+        sogou_optimizations_(sogou_optimization_adapter_,
+                             sogou_optimization_adapter_),
+        platform_info_{},
+        settings_catalog_file_(states_),
+        settings_catalog_(settings_catalog_file_, settings_catalog_file_, log_,
+                          occupancy_, settings_import_authorization_,
+                          {.apply = {"windows.classic-context-menu.apply",
+                                     "windows.windows10-explorer.apply"},
+                           .detect = {"windows.classic-context-menu.detect",
+                                      "windows.windows10-explorer.detect"},
+                           .recover = {"windows.classic-context-menu.restore",
+                                       "windows.windows10-explorer.restore"}}),
+        system_settings_recovery_(states_),
+        system_settings_apply_(settings_catalog_, system_settings_adapter_,
+                               system_settings_recovery_, occupancy_, log_),
+        operation_activity_(occupancy_),
+        application_update_health_storage_(states_),
+        application_update_platform_(platform_info_,
+                                     application_update_health_storage_),
+        application_updates_(application_update_platform_, operation_activity_,
+                             log_, clock_),
         architecture_selection_(platform_info_, log_,
                                 application::architecture_selection::
                                     selection_domain::ArchitecturePreference::
-                                        prefer_arm64_prompt_fallback) {
+                                        prefer_arm64_prompt_fallback),
+        software_selection_(states_, clock_, log_, architecture_selection_,
+                            source_resolver_, network_, presence_detector_,
+                            external_launcher_, state_subject_) {
+    static_cast<void>(settings_catalog_.initialize_builtin(
+        application::settings_catalog::initial_settings_catalog()));
+    static_cast<void>(system_settings_apply_.refresh());
     static_cast<void>(architecture_selection_.start());
+    static_cast<void>(software_selection_.restore());
   }
 
   void start_emergency_preflight() {
@@ -94,10 +177,41 @@ class WindowsWorkbenchServices final
     return occupancy_;
   }
 
+  [[nodiscard]] application::sogou_optimization::SogouOptimizationService&
+  sogou_optimizations() noexcept override {
+    return sogou_optimizations_;
+  }
+
+  [[nodiscard]] application::SystemSettingsApplyService& system_settings_apply()
+      noexcept override {
+    return system_settings_apply_;
+  }
+
+  [[nodiscard]] std::shared_ptr<application::SystemSettingsApplyService>
+  system_settings_apply_shared() {
+    return std::shared_ptr<application::SystemSettingsApplyService>(
+        shared_from_this(), &system_settings_apply_);
+  }
+
+  [[nodiscard]] application::ApplicationUpdateLifecycle& application_updates()
+      noexcept override {
+    return application_updates_;
+  }
+
   [[nodiscard]] application::architecture_selection::
       ArchitectureSelectionLifecycle& architecture_selection()
       noexcept override {
     return architecture_selection_;
+  }
+
+  [[nodiscard]] application::software_selection::SoftwareSelectionLifecycle&
+  software_selection() noexcept override {
+    return software_selection_;
+  }
+
+  [[nodiscard]] application::HardwareOverviewService& hardware_overview()
+      noexcept override {
+    return hardware_overview_;
   }
 
   [[nodiscard]] adapters::windows::WindowsPlatformInfo const& platform_info()
@@ -108,6 +222,8 @@ class WindowsWorkbenchServices final
  private:
   domain::StateSubject state_subject_;
   adapters::infrastructure::SystemClock clock_;
+  adapters::windows::WindowsHardwareObserver hardware_observer_;
+  application::HardwareOverviewService hardware_overview_;
   adapters::windows::WindowsStateFileSystem state_files_;
   application::DeviceStateStore states_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;
@@ -119,9 +235,57 @@ class WindowsWorkbenchServices final
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;
+  adapters::windows::WindowsSogouOptimizationAdapter
+      sogou_optimization_adapter_;
+  application::sogou_optimization::SogouOptimizationService
+      sogou_optimizations_;
+  adapters::infrastructure::SettingsCatalogFileAdapter settings_catalog_file_;
+  ProductionSettingsCatalogImportAuthorization settings_import_authorization_;
+  application::settings_catalog::SettingsCatalogLifecycle settings_catalog_;
+  adapters::windows::WindowsSystemSettingsAdapter system_settings_adapter_;
+  adapters::infrastructure::SystemSettingsRecoveryStore
+      system_settings_recovery_;
+  application::SystemSettingsApplyService system_settings_apply_;
   adapters::windows::WindowsPlatformInfo platform_info_;
+  class OperationActivity final
+      : public application::InitializationOperationActivity {
+   public:
+    explicit OperationActivity(application::SharedOperationOccupancy& occupancy)
+        : occupancy_(occupancy) {}
+
+    [[nodiscard]] application::InitializationOperationActivitySnapshot observe()
+        override {
+      auto occupied = occupancy_.inspect();
+      if (occupied.code == application::OccupancyResultCode::observed) {
+        if (!occupied.current.has_value()) {
+          return {};
+        }
+        return {.phase = application::InitializationOperationPhase::active,
+                .operation_id = occupied.current->identity.operation_id,
+                .detail = "another workbench initialization operation is active"};
+      }
+      return {.phase = application::InitializationOperationPhase::
+                         observation_unavailable,
+              .detail = occupied.detail.empty()
+                            ? "initialization operation occupancy is unavailable"
+                            : std::move(occupied.detail)};
+    }
+
+   private:
+    application::SharedOperationOccupancy& occupancy_;
+  } operation_activity_;
+  adapters::infrastructure::StateApplicationUpdateHealthStorage
+      application_update_health_storage_;
+  adapters::windows::WindowsApplicationUpdatePlatform application_update_platform_;
+  application::ApplicationUpdateLifecycle application_updates_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
+  UnavailableControlledSourceResolver source_resolver_;
+  OfflineNetworkObserver network_;
+  UnavailableSoftwarePresenceDetector presence_detector_;
+  adapters::windows::WindowsExternalAddressLauncher external_launcher_;
+  application::software_selection::SoftwareSelectionLifecycle
+      software_selection_;
 };
 
 }  // namespace
@@ -138,10 +302,18 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
       std::move(*environment.environment));
   auto workbench = std::make_shared<application::Workbench>(
       services->platform_info(), services);
+  auto system_settings = services->system_settings_apply_shared();
   services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
-  window->bind(std::move(workbench), std::move(motion_preferences));
+  auto view_preferences =
+      std::make_shared<adapters::windows::WindowsViewPreferences>();
+  auto advanced_view_preferences =
+      std::make_shared<application::AdvancedViewPreferences>(
+          std::move(view_preferences));
+  window->bind(std::move(workbench), std::move(motion_preferences),
+               std::move(system_settings),
+               std::move(advanced_view_preferences));
   return window.as<winrt::Microsoft::UI::Xaml::Window>();
 }
 

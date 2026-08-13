@@ -1,7 +1,9 @@
 add_library(azzs_infrastructure_adapter STATIC
   src/local_file_log_storage.cpp
+  src/state_application_update_health_storage.cpp
   src/state_operation_occupancy_storage.cpp
   src/structured_execution_log.cpp
+  src/system_settings_recovery_store.cpp
 )
 
 add_library(azzs::infrastructure_adapter ALIAS azzs_infrastructure_adapter)
