@@ -98,7 +98,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(AzzsCoreLibraryDirectory);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_settings_catalog_file_adapter.lib;azzs_application.lib;azzs_settings_catalog_lifecycle.lib;azzs_domain.lib;azzs_settings_catalog_domain.lib;azzs_architecture_selection_application.lib;azzs_architecture_selection_domain.lib;azzs_software_catalog_application.lib;azzs_software_catalog_domain.lib;azzs_software_selection_application.lib;azzs_software_selection_domain.lib;azzs_offline_package_cache_application.lib;azzs_offline_package_cache_domain.lib;advapi32.lib;ole32.lib;oleaut32.lib;rpcrt4.lib;shell32.lib;wbemuuid.lib;winhttp.lib;wtsapi32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>azzs_windows_adapter.lib;azzs_infrastructure_adapter.lib;azzs_settings_catalog_file_adapter.lib;azzs_application.lib;azzs_settings_catalog_lifecycle.lib;azzs_domain.lib;azzs_settings_catalog_domain.lib;azzs_architecture_selection_application.lib;azzs_architecture_selection_domain.lib;azzs_software_catalog_application.lib;azzs_software_catalog_domain.lib;azzs_software_selection_application.lib;azzs_software_selection_domain.lib;azzs_offline_package_cache_application.lib;azzs_offline_package_cache_domain.lib;azzs_software_optimization_catalog_application.lib;azzs_software_optimization_catalog_domain.lib;advapi32.lib;ole32.lib;oleaut32.lib;rpcrt4.lib;shell32.lib;wbemuuid.lib;winhttp.lib;wtsapi32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -239,6 +239,8 @@
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_catalog_domain.lib')" Text="The CMake software catalog domain core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_selection_application.lib')" Text="The CMake software selection application core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_selection_domain.lib')" Text="The CMake software selection domain core has not been built for $(Platform)|$(Configuration)." />
+    <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_catalog_application.lib')" Text="The CMake software optimization catalog application core has not been built for $(Platform)|$(Configuration)." />
+    <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_catalog_domain.lib')" Text="The CMake software optimization catalog domain core has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_infrastructure_adapter.lib')" Text="The CMake infrastructure adapter has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_settings_catalog_file_adapter.lib')" Text="The CMake settings catalog file adapter has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_windows_adapter.lib')" Text="The CMake Windows adapter has not been built for $(Platform)|$(Configuration)." />

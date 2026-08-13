@@ -38,6 +38,7 @@ set(AZZS_ARCHITECTURE_ROLE_DIRECTORIES
   "composition|src/composition"
   "test_support|tests/support"
   "test|tests"
+  "platform_runtime|out"
 )
 
 set(AZZS_ARCHITECTURE_COMPOSITION_NODES
@@ -125,6 +126,7 @@ set(AZZS_ARCHITECTURE_ALLOWED_platform_runtime platform_runtime)
 # target-or-library | graph-node | role
 set(AZZS_ARCHITECTURE_EXTERNAL_CMAKE_TARGETS
   "Threads::Threads|external:threads|runtime"
+  "azzs_cppwinrt_headers|external:cppwinrt-projection|platform_runtime"
   "advapi32|external:windows-platform|platform_runtime"
   "ole32|external:windows-platform|platform_runtime"
   "oleaut32|external:windows-platform|platform_runtime"
@@ -172,6 +174,8 @@ set(AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES
   "Azzs.WinUI|azzs_software_selection_domain"
   "Azzs.WinUI|azzs_offline_package_cache_application"
   "Azzs.WinUI|azzs_offline_package_cache_domain"
+  "Azzs.WinUI|azzs_software_optimization_catalog_application"
+  "Azzs.WinUI|azzs_software_optimization_catalog_domain"
   "Azzs.WinUI|external:windows-platform"
 )
 

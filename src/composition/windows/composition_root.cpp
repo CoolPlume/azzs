@@ -30,9 +30,12 @@
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
+#include "azzs/adapters/windows/windows_sogou_optimization_adapter.hpp"
 #include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
+#include "azzs/adapters/windows/windows_view_preferences.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
+#include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
@@ -40,9 +43,11 @@
 #include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/software_selection.hpp"
+#include "azzs/application/sogou_optimization.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
 #include "azzs/application/workbench_services.hpp"
+#include "azzs/settings_catalog/initial_settings_catalog.hpp"
 #include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 
 namespace azzs::composition::windows {
@@ -107,6 +112,10 @@ class WindowsWorkbenchServices final
             {.log = &log_, .correlation = log_.begin_correlation()}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_),
+        sogou_optimization_adapter_{},
+        sogou_optimizations_(sogou_optimization_adapter_,
+                             sogou_optimization_adapter_),
+        platform_info_{},
         settings_catalog_file_(states_),
         settings_catalog_(settings_catalog_file_, settings_catalog_file_, log_,
                           occupancy_, settings_import_authorization_,
@@ -144,6 +153,9 @@ class WindowsWorkbenchServices final
         software_selection_(states_, clock_, log_, architecture_selection_,
                             source_resolver_, network_, presence_detector_,
                             external_launcher_, state_subject_) {
+    static_cast<void>(settings_catalog_.initialize_builtin(
+        application::settings_catalog::initial_settings_catalog()));
+    static_cast<void>(system_settings_apply_.refresh());
     static_cast<void>(architecture_selection_.start());
     static_cast<void>(software_selection_.restore());
     synchronize_offline_package_cache();
@@ -186,6 +198,11 @@ class WindowsWorkbenchServices final
   [[nodiscard]] application::SharedOperationOccupancy& operation_occupancy()
       noexcept override {
     return occupancy_;
+  }
+
+  [[nodiscard]] application::sogou_optimization::SogouOptimizationService&
+  sogou_optimizations() noexcept override {
+    return sogou_optimizations_;
   }
 
   [[nodiscard]] application::SystemSettingsApplyService& system_settings_apply()
@@ -261,6 +278,10 @@ class WindowsWorkbenchServices final
   adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
   adapters::windows::WindowsLeaseTokenSource lease_tokens_;
   application::SharedOperationOccupancy occupancy_;
+  adapters::windows::WindowsSogouOptimizationAdapter
+      sogou_optimization_adapter_;
+  application::sogou_optimization::SogouOptimizationService
+      sogou_optimizations_;
   adapters::infrastructure::SettingsCatalogFileAdapter settings_catalog_file_;
   ProductionSettingsCatalogImportAuthorization settings_import_authorization_;
   application::settings_catalog::SettingsCatalogLifecycle settings_catalog_;
@@ -335,8 +356,14 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
   services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
+  auto view_preferences =
+      std::make_shared<adapters::windows::WindowsViewPreferences>();
+  auto advanced_view_preferences =
+      std::make_shared<application::AdvancedViewPreferences>(
+          std::move(view_preferences));
   window->bind(std::move(workbench), std::move(motion_preferences),
-               std::move(system_settings));
+               std::move(system_settings),
+               std::move(advanced_view_preferences));
   auto result = window.as<winrt::Microsoft::UI::Xaml::Window>();
   result.Closed([services](auto&&, auto&&) {
     services->offline_package_cache().shutdown();
