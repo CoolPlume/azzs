@@ -154,6 +154,16 @@ try {
     $buildPreset = "$configurePreset-release"
     $coreLibraryDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/lib/Release"
 
+    Write-Log "Restoring the locked C++/WinRT and XAML host packages."
+    Invoke-NativeCommand -FilePath $msbuildPath -Arguments @(
+        (Join-Path $repositoryRoot "Azzs.Windows.sln"),
+        "/m",
+        "/t:Restore",
+        "/p:Configuration=Release",
+        "/p:Platform=$Architecture",
+        "/p:ContinuousIntegrationBuild=true"
+    )
+
     Write-Log "Building $Architecture Release core and Windows adapter."
     Invoke-NativeCommand -FilePath $cmakePath -Arguments @(
         "--preset", $configurePreset,
@@ -175,7 +185,6 @@ try {
     Write-Log "Building the C++/WinRT and XAML host."
     Invoke-NativeCommand -FilePath $msbuildPath -Arguments @(
         (Join-Path $repositoryRoot "Azzs.Windows.sln"),
-        "/restore",
         "/m",
         "/t:Build",
         "/p:Configuration=Release",
