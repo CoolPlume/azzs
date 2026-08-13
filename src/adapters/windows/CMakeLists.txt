@@ -11,6 +11,48 @@ if("${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}" STREQUAL "" OR
 endif()
 
 if(WIN32)
+  set(AZZS_CPPWINRT_VERSION "3.0.260715.1")
+  if(DEFINED ENV{NUGET_PACKAGES})
+    set(azzs_nuget_packages "$ENV{NUGET_PACKAGES}")
+  else()
+    set(azzs_nuget_packages "$ENV{USERPROFILE}/.nuget/packages")
+  endif()
+
+  set(azzs_cppwinrt_executable
+    "${azzs_nuget_packages}/microsoft.windows.cppwinrt/${AZZS_CPPWINRT_VERSION}/bin/cppwinrt.exe")
+  get_filename_component(azzs_windows_kits_root
+    "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots;KitsRoot10]"
+    ABSOLUTE)
+  set(azzs_windows_metadata
+    "${azzs_windows_kits_root}/UnionMetadata/${CMAKE_SYSTEM_VERSION}/Windows.winmd")
+  set(azzs_cppwinrt_generated_directory
+    "${CMAKE_CURRENT_BINARY_DIR}/cppwinrt")
+  set(azzs_cppwinrt_base_header
+    "${azzs_cppwinrt_generated_directory}/winrt/base.h")
+
+  if(NOT EXISTS "${azzs_cppwinrt_executable}")
+    message(FATAL_ERROR
+      "Microsoft.Windows.CppWinRT ${AZZS_CPPWINRT_VERSION} is required at ${azzs_cppwinrt_executable}")
+  endif()
+  if(NOT EXISTS "${azzs_windows_metadata}")
+    message(FATAL_ERROR
+      "Windows metadata is required at ${azzs_windows_metadata}")
+  endif()
+
+  add_custom_command(
+    OUTPUT "${azzs_cppwinrt_base_header}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${azzs_cppwinrt_generated_directory}"
+    COMMAND "${azzs_cppwinrt_executable}" -in "${azzs_windows_metadata}" -out "${azzs_cppwinrt_generated_directory}"
+    DEPENDS "${azzs_cppwinrt_executable}" "${azzs_windows_metadata}"
+    VERBATIM
+  )
+  add_custom_target(azzs_cppwinrt_projection
+    DEPENDS "${azzs_cppwinrt_base_header}")
+  file(MAKE_DIRECTORY "${azzs_cppwinrt_generated_directory}")
+  add_library(azzs_cppwinrt_headers INTERFACE IMPORTED GLOBAL)
+  set_target_properties(azzs_cppwinrt_headers PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${azzs_cppwinrt_generated_directory}")
+
   add_library(azzs_windows_adapter STATIC
     src/windows_application_update_platform.cpp
     src/windows_device_data_environment.cpp
@@ -22,6 +64,7 @@ if(WIN32)
     src/windows_state_file_system.cpp
     src/windows_sogou_optimization_adapter.cpp
     src/windows_system_settings_adapter.cpp
+    src/windows_view_preferences.cpp
   )
 
   add_library(azzs::windows_adapter ALIAS azzs_windows_adapter)
@@ -30,6 +73,7 @@ if(WIN32)
     PUBLIC
       include
   )
+  add_dependencies(azzs_windows_adapter azzs_cppwinrt_projection)
 
   target_compile_definitions(azzs_windows_adapter
     PRIVATE
@@ -47,6 +91,7 @@ azzs_project_target(
     azzs::software_selection_application
     azzs::software_optimization_catalog_application
   PRIVATE_LINKS
+    azzs_cppwinrt_headers
     advapi32
     ole32
     oleaut32

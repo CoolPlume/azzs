@@ -29,8 +29,10 @@
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
 #include "azzs/adapters/windows/windows_sogou_optimization_adapter.hpp"
 #include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
+#include "azzs/adapters/windows/windows_view_preferences.hpp"
 #include "azzs/application/clock.hpp"
 #include "azzs/application/architecture_selection.hpp"
+#include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
@@ -304,8 +306,14 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
   services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
+  auto view_preferences =
+      std::make_shared<adapters::windows::WindowsViewPreferences>();
+  auto advanced_view_preferences =
+      std::make_shared<application::AdvancedViewPreferences>(
+          std::move(view_preferences));
   window->bind(std::move(workbench), std::move(motion_preferences),
-               std::move(system_settings));
+               std::move(system_settings),
+               std::move(advanced_view_preferences));
   return window.as<winrt::Microsoft::UI::Xaml::Window>();
 }
 
