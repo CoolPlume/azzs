@@ -724,6 +724,36 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     require("Click=" not in fixture_xaml and "Command=" not in fixture_xaml,
             "the fixture may show commands but must not execute business work")
 
+    settings_xaml = read(root / (
+        "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml"
+    ))
+    settings_cpp = read(root / (
+        "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.cpp"
+    ))
+    main_window_cpp = read(root / "src/adapters/ui/winui/MainWindow.xaml.cpp")
+    composition_root_cpp = read(root / "src/composition/windows/composition_root.cpp")
+    view_preferences_cpp = read(root / (
+        "src/adapters/windows/src/windows_view_preferences.cpp"
+    ))
+    system_optimization_cpp = read(root / (
+        "src/adapters/ui/winui/Pages/SystemOptimizationPage.xaml.cpp"
+    ))
+    require("AzzsApplicationAdvancedView" in settings_xaml and
+            "OnAdvancedViewToggled" in settings_cpp,
+            "application settings must own the advanced-view toggle")
+    require("AdvancedViewPreferences" in main_window_cpp and
+            "WindowsViewPreferences" in composition_root_cpp and
+            "AzzsAdvancedView" in view_preferences_cpp and
+            "LocalSettings" in view_preferences_cpp and
+            "bind(system_settings_, advanced_view_)" in main_window_cpp,
+            "the platform adapter must persist and the shell must pass one advanced-view preference")
+    require("force_attempt_confirmed = true" in system_optimization_cpp and
+            "SystemSettingsForceAttemptDialogBody" in system_optimization_cpp,
+            "the force attempt must submit the existing typed intent after risk confirmation")
+    require("advanced_view_" in system_optimization_cpp and
+            "SystemSettingsForceAttemptButtonText" in system_optimization_cpp,
+            "only the system-optimization advanced projection may expose force attempt")
+
 
 def main() -> int:
     if len(sys.argv) != 2:

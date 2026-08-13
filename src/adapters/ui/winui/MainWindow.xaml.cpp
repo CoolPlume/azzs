@@ -14,6 +14,7 @@
 #include "Pages/SoftwareInstallationPage.xaml.h"
 #include "Pages/SoftwareOptimizationPage.xaml.h"
 #include "Pages/SystemOptimizationPage.xaml.h"
+#include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench_services.hpp"
@@ -58,10 +59,16 @@ void MainWindow::bind(
     std::shared_ptr<azzs::application::Workbench> workbench,
     std::shared_ptr<azzs::ui::winui::MotionPreferences> motion_preferences,
     std::shared_ptr<azzs::application::SystemSettingsApplyService>
-        system_settings) {
+        system_settings,
+    std::shared_ptr<azzs::application::AdvancedViewPreferences>
+        advanced_view_preferences) {
   workbench_ = std::move(workbench);
   motion_preferences_ = std::move(motion_preferences);
   system_settings_ = std::move(system_settings);
+  advanced_view_preferences_ = std::move(advanced_view_preferences);
+  advanced_view_ = advanced_view_preferences_
+                       ? advanced_view_preferences_->enabled()
+                       : false;
   auto snapshot = workbench_->snapshot();
   if (snapshot.update.state ==
           azzs::application::UpdateState::candidate_pending_start_health ||
@@ -161,7 +168,7 @@ void MainWindow::navigate_to(PageId page) {
               ContentFrame().Content().try_as<Pages::SystemOptimizationPage>();
           page && system_settings_) {
         winrt::get_self<Pages::implementation::SystemOptimizationPage>(page)
-            ->bind(system_settings_);
+            ->bind(system_settings_, advanced_view_);
       }
       break;
     case PageId::software_installation:
@@ -190,10 +197,23 @@ void MainWindow::navigate_to(PageId page) {
               Pages::ApplicationSettingsPage>()) {
         winrt::get_self<Pages::implementation::ApplicationSettingsPage>(
             settings)
-            ->bind(workbench_);
+            ->bind(workbench_, advanced_view_, [weak_this = get_weak()](
+                                              bool enabled) {
+              if (auto self = weak_this.get()) {
+                return self->set_advanced_view(enabled);
+              }
+              return false;
+            });
       }
       break;
   }
+}
+
+bool MainWindow::set_advanced_view(bool enabled) {
+  if (advanced_view_preferences_) {
+    advanced_view_ = advanced_view_preferences_->set_enabled(enabled);
+  }
+  return advanced_view_;
 }
 
 void MainWindow::refresh_drivers_page() {
