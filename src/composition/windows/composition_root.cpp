@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <filesystem>
+#include <algorithm>
 #include <thread>
 #include <stdexcept>
 #include <string>
@@ -45,6 +46,7 @@
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/debug_log_policy/debug_log_policy.hpp"
 #include "azzs/application/driver_acquisition.hpp"
+#include "azzs/application/guided_initialization.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/history_and_logs.hpp"
@@ -150,6 +152,355 @@ class UnavailableSoftwarePresenceDetector final
       std::string_view) override {
     return {.detail = "software presence detection is not configured"};
   }
+};
+
+class WindowsGuidedInitializationEvidenceSource final
+    : public application::guided_initialization::EvidenceSource {
+ public:
+  WindowsGuidedInitializationEvidenceSource(
+      application::driver_acquisition::DriverAcquisitionService& drivers,
+      application::SystemSettingsApplyService& system_settings,
+      application::installation_batch::InstallationBatchService& installations,
+      application::software_optimization_discovery::
+          SoftwareOptimizationDiscoveryService& discovery,
+      application::software_optimization_batch::SoftwareOptimizationBatchService&
+          optimization_batches,
+      application::software_selection::SoftwareSelectionLifecycle& selection,
+      application::software_catalog::SoftwareCatalogLifecycle& software_catalog,
+      application::SoftwareOptimizationCatalogLifecycle& optimization_catalog,
+      application::restart_resume::RestartResumeService& restart_resume)
+      : drivers_(drivers),
+        system_settings_(system_settings),
+        installations_(installations),
+        discovery_(discovery),
+        optimization_batches_(optimization_batches),
+        selection_(selection),
+        software_catalog_(software_catalog),
+        optimization_catalog_(optimization_catalog),
+        restart_resume_(restart_resume) {}
+
+  [[nodiscard]] application::guided_initialization::Evidence observe() override {
+    using namespace application::guided_initialization;
+
+    Evidence result;
+    result.drivers = observe_drivers(drivers_.snapshot());
+    result.system_optimization = observe_system_settings(system_settings_.snapshot());
+
+    auto const selection = selection_.snapshot();
+    result.external_handoffs.reserve(selection.handoffs.size());
+    for (auto const& handoff : selection.handoffs) {
+      ExternalHandoffState state{};
+      switch (handoff.status) {
+        case domain::software_selection::ExternalHandoffStatus::externally_recognized:
+        case domain::software_selection::ExternalHandoffStatus::awaiting_user_confirmation:
+          state = ExternalHandoffState::externally_recognized;
+          break;
+        case domain::software_selection::ExternalHandoffStatus::waiting_for_external_install:
+          state = ExternalHandoffState::waiting_for_external_install;
+          break;
+        case domain::software_selection::ExternalHandoffStatus::skipped:
+        case domain::software_selection::ExternalHandoffStatus::completed:
+          state = ExternalHandoffState::skipped;
+          break;
+        case domain::software_selection::ExternalHandoffStatus::none:
+          continue;
+      }
+      result.external_handoffs.push_back({.software_id = handoff.software_id,
+                                          .state = state});
+    }
+
+    result.software_installation =
+        observe_installation(installations_.snapshot(), result.external_handoffs,
+                             selection);
+    result.software_optimization =
+        observe_software_optimization(optimization_batches_.snapshot(),
+                                      discovery_.snapshot());
+
+    result.restart_gate = observe_restart_gate(restart_resume_.snapshot());
+    auto const catalog = software_catalog_.snapshot();
+    auto const optimization_catalog = optimization_catalog_.snapshot();
+    result.local_trial_software_catalog =
+        (catalog.current.has_value() &&
+         catalog.current->identity ==
+             application::software_catalog::EffectiveCatalogIdentity::local_trial) ||
+        (optimization_catalog.current_provenance.has_value() &&
+         optimization_catalog.current_provenance->local_trial);
+    return result;
+  }
+
+  [[nodiscard]] bool continue_external_handoff(std::string_view software_id,
+                                                std::string& error) override {
+    auto result = selection_.continue_external_handoff(software_id);
+    if (!result.succeeded()) {
+      error = result.message.empty() ? "software selection rejected handoff continuation"
+                                      : result.message;
+      return false;
+    }
+    return true;
+  }
+
+  [[nodiscard]] bool continue_after_restart(std::string& error) override {
+    auto result = restart_resume_.confirm_continue();
+    if (!result.succeeded()) {
+      error = result.message.empty() ? "restart resume rejected continuation"
+                                      : result.message;
+      return false;
+    }
+    return true;
+  }
+
+ private:
+  using GuidedStageEvidence = application::guided_initialization::StageEvidence;
+  using GuidedStageState = application::guided_initialization::StageState;
+
+  [[nodiscard]] static GuidedStageEvidence observe_drivers(
+      application::driver_acquisition::DriverAcquisitionSnapshot const& source) {
+    switch (source.state) {
+      case application::driver_acquisition::DriverAcquisitionState::handoff_in_progress:
+        return {.state = GuidedStageState::external_handoff,
+                .detail = source.detail.empty()
+                              ? "driver handoff is in progress"
+                              : source.detail};
+      case application::driver_acquisition::DriverAcquisitionState::awaiting_user_decision:
+        return {.state = GuidedStageState::result_confirmation_pending,
+                .detail = source.detail.empty()
+                              ? "driver handoff needs an explicit result"
+                              : source.detail};
+      case application::driver_acquisition::DriverAcquisitionState::waiting_for_restart:
+        return {.state = GuidedStageState::waiting_for_restart,
+                .detail = source.detail.empty() ? "driver handoff is waiting for restart"
+                                                : source.detail};
+      case application::driver_acquisition::DriverAcquisitionState::read_only:
+        return {.state = GuidedStageState::not_executed,
+                .detail = source.detail.empty() ? "driver handoff is read-only"
+                                                : source.detail};
+      case application::driver_acquisition::DriverAcquisitionState::not_restored:
+        return {.state = GuidedStageState::pending,
+                .detail = source.detail.empty() ? "driver handoff is not restored"
+                                                : source.detail};
+      case application::driver_acquisition::DriverAcquisitionState::ready:
+        return {.state = GuidedStageState::pending,
+                .detail = source.detail.empty() ? "driver handoff is available"
+                                                : source.detail};
+    }
+    return {};
+  }
+
+  [[nodiscard]] static GuidedStageEvidence observe_system_settings(
+      application::SystemSettingsApplySnapshot const& source) {
+    using State = application::SystemSettingApplyState;
+    if (source.waiting_for_explorer_restart) {
+      return {.state = GuidedStageState::waiting_explorer_restart,
+              .detail = source.detail.empty()
+                            ? "system settings are waiting for Explorer restart"
+                            : source.detail};
+    }
+    bool any_failed = false;
+    bool all_not_applicable = !source.settings.empty();
+    bool all_effective = !source.settings.empty();
+    for (auto const& setting : source.settings) {
+      any_failed = any_failed || setting.state == State::failed;
+      all_not_applicable =
+          all_not_applicable && setting.state == State::not_applicable;
+      all_effective =
+          all_effective &&
+          (setting.state == State::already_effective ||
+           setting.state == State::applied);
+    }
+    if (any_failed || source.status == application::SystemSettingsSnapshotStatus::failed) {
+      return {.state = GuidedStageState::failed,
+              .detail = source.detail.empty() ? "system settings reported a failure"
+                                               : source.detail};
+    }
+    if (all_not_applicable) {
+      return {.state = GuidedStageState::no_applicable_items,
+              .detail = source.detail.empty() ? "no system settings apply here"
+                                               : source.detail};
+    }
+    if (all_effective && source.status == application::SystemSettingsSnapshotStatus::completed) {
+      return {.state = GuidedStageState::completed,
+              .detail = source.detail.empty() ? "system settings are effective"
+                                               : source.detail};
+    }
+    switch (source.status) {
+      case application::SystemSettingsSnapshotStatus::applying:
+        return {.state = GuidedStageState::active,
+                .detail = source.detail.empty() ? "system settings are applying"
+                                                 : source.detail};
+      case application::SystemSettingsSnapshotStatus::completed:
+        return {.state = GuidedStageState::completed,
+                .detail = source.detail.empty() ? "system settings completed"
+                                                 : source.detail};
+      case application::SystemSettingsSnapshotStatus::unavailable:
+      case application::SystemSettingsSnapshotStatus::ready:
+        return {.state = GuidedStageState::pending,
+                .detail = source.detail.empty() ? "system settings are ready for review"
+                                                 : source.detail};
+      case application::SystemSettingsSnapshotStatus::failed:
+        return {.state = GuidedStageState::failed,
+                .detail = source.detail.empty() ? "system settings reported a failure"
+                                                 : source.detail};
+    }
+    return {};
+  }
+
+  [[nodiscard]] static GuidedStageEvidence observe_installation(
+      domain::installation_batch::InstallationBatchSnapshot const& source,
+      std::vector<application::guided_initialization::ExternalHandoffEvidence> const& handoffs,
+      application::software_selection::SoftwareSelectionSnapshot const& selection) {
+    using BatchState = domain::installation_batch::InstallationBatchState;
+    using Stage = GuidedStageState;
+    auto from_batch_state = [](BatchState state) -> GuidedStageEvidence {
+      switch (state) {
+        case BatchState::completed:
+          return {.state = Stage::completed, .detail = "installation batch completed"};
+        case BatchState::stopped:
+          return {.state = Stage::partial, .detail = "installation batch was stopped"};
+        case BatchState::waiting_restart:
+          return {.state = Stage::waiting_for_restart,
+                  .detail = "installation batch is waiting for restart"};
+        case BatchState::recovery_required:
+        case BatchState::failed_closed:
+          return {.state = Stage::failed,
+                  .detail = "installation batch needs explicit recovery"};
+        case BatchState::ready:
+        case BatchState::running:
+        case BatchState::download_paused:
+        case BatchState::stopping:
+        case BatchState::awaiting_user:
+        case BatchState::closing:
+          return {.state = Stage::active, .detail = "installation batch is active"};
+      }
+      return {};
+    };
+    if (source.active.has_value()) {
+      return from_batch_state(source.active->state);
+    }
+    auto const unresolved = std::ranges::find_if(
+        handoffs, [](auto const& handoff) {
+          return handoff.state ==
+                     application::guided_initialization::ExternalHandoffState::
+                         waiting_for_external_install ||
+                 handoff.state ==
+                     application::guided_initialization::ExternalHandoffState::
+                         externally_recognized;
+        });
+    if (unresolved != handoffs.end()) {
+      return {.state = Stage::external_handoff,
+              .detail = "software installation needs an external handoff"};
+    }
+    if (!source.history.empty()) {
+      return from_batch_state(source.history.back().final_state);
+    }
+    if (selection.active_catalog.has_value() && selection.items.empty()) {
+      return {.state = Stage::no_applicable_items,
+              .detail = "no software is available in the current catalog"};
+    }
+    return {.state = Stage::pending,
+            .detail = "software installation is ready for selection"};
+  }
+
+  [[nodiscard]] static GuidedStageEvidence observe_software_optimization(
+      domain::software_optimization_batch::OptimizationBatchSnapshot const& batch,
+      application::software_optimization_discovery::SoftwareOptimizationDiscoverySnapshot const& discovery) {
+    using BatchState = domain::software_optimization_batch::OptimizationBatchState;
+    auto from_batch_state = [](BatchState state) -> GuidedStageEvidence {
+      switch (state) {
+        case BatchState::completed:
+          return {.state = GuidedStageState::completed,
+                  .detail = "software optimization batch completed"};
+        case BatchState::stopped:
+          return {.state = GuidedStageState::partial,
+                  .detail = "software optimization batch was stopped"};
+        case BatchState::waiting_restart:
+          return {.state = GuidedStageState::waiting_for_restart,
+                  .detail = "software optimization is waiting for restart"};
+        case BatchState::recovery_required:
+        case BatchState::failed_closed:
+          return {.state = GuidedStageState::failed,
+                  .detail = "software optimization needs explicit recovery"};
+        case BatchState::ready:
+        case BatchState::running:
+        case BatchState::stopping:
+        case BatchState::awaiting_user:
+        case BatchState::closing:
+          return {.state = GuidedStageState::active,
+                  .detail = "software optimization batch is active"};
+      }
+      return {};
+    };
+    if (batch.active.has_value()) {
+      return from_batch_state(batch.active->state);
+    }
+    if (!batch.history.empty()) {
+      return from_batch_state(batch.history.back().final_state);
+    }
+    if (!discovery.has_current_catalog || discovery.discovery.targets.empty()) {
+      return {.state = GuidedStageState::no_applicable_items,
+              .detail = "no software optimization is currently available"};
+    }
+    bool has_error = false;
+    bool has_action = false;
+    bool has_optimization = false;
+    for (auto const& target : discovery.discovery.targets) {
+      has_error = has_error || target.first_release_implementation_error;
+      for (auto const& scheme : target.schemes) {
+        has_optimization = true;
+        has_action = has_action ||
+                     scheme.state ==
+                         domain::software_optimization_discovery::SchemeState::
+                             can_optimize ||
+                     scheme.state ==
+                         domain::software_optimization_discovery::SchemeState::
+                             needs_attention;
+      }
+    }
+    if (has_error) {
+      return {.state = GuidedStageState::failed,
+              .detail = discovery.error.empty()
+                            ? "software optimization catalog is incomplete"
+                            : discovery.error};
+    }
+    if (!has_optimization || !has_action) {
+      return {.state = GuidedStageState::no_applicable_items,
+              .detail = "no executable software optimization is available"};
+    }
+    return {.state = GuidedStageState::pending,
+            .detail = "software optimization recommendations are ready"};
+  }
+
+  [[nodiscard]] static application::guided_initialization::RestartGateState
+  observe_restart_gate(application::restart_resume::RestartResumeSnapshot const& source) {
+    using State = application::restart_resume::RestartResumeState;
+    switch (source.state) {
+      case State::idle:
+        return application::guided_initialization::RestartGateState::none;
+      case State::waiting_for_windows_restart:
+        return application::guided_initialization::RestartGateState::
+            waiting_for_windows_restart;
+      case State::awaiting_read_only_verification:
+        return application::guided_initialization::RestartGateState::
+            awaiting_read_only_verification;
+      case State::awaiting_user_decision:
+        return application::guided_initialization::RestartGateState::
+            awaiting_user_continue;
+      case State::read_only:
+        return application::guided_initialization::RestartGateState::read_only;
+    }
+    return application::guided_initialization::RestartGateState::none;
+  }
+
+  application::driver_acquisition::DriverAcquisitionService& drivers_;
+  application::SystemSettingsApplyService& system_settings_;
+  application::installation_batch::InstallationBatchService& installations_;
+  application::software_optimization_discovery::
+      SoftwareOptimizationDiscoveryService& discovery_;
+  application::software_optimization_batch::SoftwareOptimizationBatchService&
+      optimization_batches_;
+  application::software_selection::SoftwareSelectionLifecycle& selection_;
+  application::software_catalog::SoftwareCatalogLifecycle& software_catalog_;
+  application::SoftwareOptimizationCatalogLifecycle& optimization_catalog_;
+  application::restart_resume::RestartResumeService& restart_resume_;
 };
 
 class WindowsWorkbenchServices final
@@ -260,6 +611,7 @@ class WindowsWorkbenchServices final
     static_cast<void>(driver_acquisition_.restore());
     static_cast<void>(installation_batches_.restore());
     static_cast<void>(software_optimization_batches_.restore());
+    static_cast<void>(guided_initialization_.restore());
     if (adapters::windows::is_restart_resume_login_launch()) {
       auto resumed = restart_resume_.resume_after_login();
       if (resumed.succeeded() && resumed.snapshot.checkpoint.has_value()) {
@@ -407,6 +759,11 @@ class WindowsWorkbenchServices final
   [[nodiscard]] application::restart_resume::RestartResumeService&
   restart_resume() noexcept override {
     return restart_resume_;
+  }
+
+  [[nodiscard]] application::guided_initialization::GuidedInitializationService&
+  guided_initialization() noexcept override {
+    return guided_initialization_;
   }
 
   [[nodiscard]] application::HardwareOverviewService& hardware_overview()
@@ -591,6 +948,13 @@ class WindowsWorkbenchServices final
       software_catalog_, log_, installation_batches_,
       software_optimization_batches_, system_settings_apply_,
       software_selection_, &debug_log_policy_, &restart_resume_};
+  WindowsGuidedInitializationEvidenceSource guided_evidence_source_{
+      driver_acquisition_, system_settings_apply_, installation_batches_,
+      software_optimization_discovery_, software_optimization_batches_,
+      software_selection_, software_catalog_, software_optimization_catalog_,
+      restart_resume_};
+  application::guided_initialization::GuidedInitializationService
+      guided_initialization_{states_, clock_, guided_evidence_source_};
 };
 
 }  // namespace
