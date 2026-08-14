@@ -145,6 +145,18 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::overview:
       ContentFrame().Navigate(xaml_typename<Pages::OverviewPage>(), nullptr,
                               transition);
+      if (auto const services = workbench_->services()) {
+        auto const page = ContentFrame().Content().as<Pages::OverviewPage>();
+        winrt::get_self<Pages::implementation::OverviewPage>(page)->bind(
+            services, advanced_view_, [weak_this = get_weak()](PageId target) {
+              if (auto self = weak_this.get(); self && self->workbench_) {
+                self->workbench_->navigate(target);
+                auto const snapshot = self->workbench_->snapshot();
+                self->project(snapshot);
+                self->navigate_to(snapshot.current_page);
+              }
+            });
+      }
       break;
     case PageId::drivers:
       ContentFrame().Navigate(xaml_typename<Pages::DriversPage>(), nullptr,
