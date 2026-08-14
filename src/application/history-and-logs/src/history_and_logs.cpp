@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/clock.hpp"
@@ -25,25 +26,6 @@
 
 namespace azzs::application {
 namespace {
-
-[[nodiscard]] char const* recovery_status_name(
-    RecoveryRecordStatus status) noexcept {
-  switch (status) {
-    case RecoveryRecordStatus::pending:
-      return "pending";
-    case RecoveryRecordStatus::applied:
-      return "applied";
-    case RecoveryRecordStatus::restored:
-      return "restored";
-    case RecoveryRecordStatus::waiting_explorer_restart:
-      return "waiting-explorer-restart";
-    case RecoveryRecordStatus::restoring:
-      return "restoring";
-    case RecoveryRecordStatus::restore_failed:
-      return "restore-failed";
-  }
-  return "unknown";
-}
 
 [[nodiscard]] char const* architecture_name(
     domain::SystemArchitecture architecture) noexcept {
@@ -896,38 +878,57 @@ void append_diagnostic_batch_plan(
                         .disposition = DiagnosticValueDisposition::retain};
 }
 
-[[nodiscard]] char const* system_setting_state_name(
-    SystemSettingApplyState state) noexcept {
-  switch (state) {
-    case SystemSettingApplyState::not_selected:
-      return "not-selected";
-    case SystemSettingApplyState::already_effective:
-      return "already-effective";
-    case SystemSettingApplyState::applied:
-      return "applied";
-    case SystemSettingApplyState::waiting_explorer_restart:
-      return "waiting-explorer-restart";
-    case SystemSettingApplyState::not_applicable:
-      return "not-applicable";
-    case SystemSettingApplyState::force_confirmation_required:
-      return "force-confirmation-required";
-    case SystemSettingApplyState::blocked_by_dependency:
-      return "blocked-by-dependency";
-    case SystemSettingApplyState::failed:
-      return "failed";
+[[nodiscard]] char const* system_settings_operation_name(
+    SystemSettingsOperationKind operation) noexcept {
+  switch (operation) {
+    case SystemSettingsOperationKind::apply:
+      return "apply";
+    case SystemSettingsOperationKind::restore:
+      return "restore";
+    case SystemSettingsOperationKind::windows11_default:
+      return "windows11-default";
+    case SystemSettingsOperationKind::restart_explorer:
+      return "restart-explorer";
   }
   return "unknown";
 }
 
-[[nodiscard]] char const* recovery_operation_name(
-    RecoveryRecordOperation operation) noexcept {
-  switch (operation) {
-    case RecoveryRecordOperation::apply:
-      return "apply";
-    case RecoveryRecordOperation::restore:
-      return "restore";
-    case RecoveryRecordOperation::windows11_default:
-      return "windows11-default";
+[[nodiscard]] char const* system_settings_operation_status_name(
+    SystemSettingsOperationStatus status) noexcept {
+  switch (status) {
+    case SystemSettingsOperationStatus::completed:
+      return "completed";
+    case SystemSettingsOperationStatus::failed:
+      return "failed";
+    case SystemSettingsOperationStatus::waiting_explorer_restart:
+      return "waiting-explorer-restart";
+    case SystemSettingsOperationStatus::restored:
+      return "restored";
+    case SystemSettingsOperationStatus::skipped:
+      return "skipped";
+    case SystemSettingsOperationStatus::not_applicable:
+      return "not-applicable";
+    case SystemSettingsOperationStatus::confirmation_required:
+      return "confirmation-required";
+    case SystemSettingsOperationStatus::blocked:
+      return "blocked";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] char const* explorer_restart_result_name(
+    SystemSettingsExplorerRestartResult result) noexcept {
+  switch (result) {
+    case SystemSettingsExplorerRestartResult::not_required:
+      return "not-required";
+    case SystemSettingsExplorerRestartResult::deferred:
+      return "deferred";
+    case SystemSettingsExplorerRestartResult::succeeded:
+      return "succeeded";
+    case SystemSettingsExplorerRestartResult::failed:
+      return "failed";
+    case SystemSettingsExplorerRestartResult::verification_failed:
+      return "verification-failed";
   }
   return "unknown";
 }
@@ -967,91 +968,219 @@ void append_diagnostic_batch_plan(
   return minimum + ".." + maximum;
 }
 
+[[nodiscard]] char const* system_setting_value_name(
+    WindowsSystemSettingValue const& value) noexcept {
+  if (auto const* mode = std::get_if<ClassicContextMenuMode>(&value)) {
+    return *mode == ClassicContextMenuMode::classic ? "classic" : "windows11";
+  }
+  if (auto const* mode = std::get_if<ExplorerPresentationMode>(&value)) {
+    return *mode == ExplorerPresentationMode::windows10 ? "windows10"
+                                                         : "windows11";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] std::string unavailable_operation_fact_reason(
+    std::string const& reason, std::string_view fallback) {
+  return reason.empty() ? std::string{fallback} : reason;
+}
+
+void append_optional_system_setting_value(
+    std::vector<HistoryFactProjection>& target, std::string key,
+    std::optional<WindowsSystemSettingValue> const& value,
+    std::string_view value_name) {
+  if (value.has_value()) {
+    append_fact(target, std::move(key), system_setting_value_name(*value));
+    return;
+  }
+  append_unavailable_fact(
+      target, std::move(key),
+      "NOT_OBTAINED: immutable operation did not capture the " +
+          std::string{value_name} + " setting value");
+}
+
 void append_system_settings_history(
     std::vector<HistoryEntryProjection>& target,
-    SystemSettingsApplyService& service, ExecutionLogSnapshot const& log,
-    std::optional<std::string> const& observed_windows_version) {
-  auto const snapshot = service.snapshot();
-  for (auto const& setting : snapshot.settings) {
+    SystemSettingsApplyService& service) {
+  auto const history = service.operation_history();
+  for (auto const& fact : history.facts) {
     HistoryEntryProjection entry{
         .kind = HistoryEntryKind::system_setting_apply,
-        .stable_id = setting.id.value,
-        .state = system_setting_state_name(setting.state),
-        .detail = setting.detail,
+        .stable_id = "system-settings-operation/" +
+                     std::to_string(fact.fact_id),
+        .state = system_settings_operation_status_name(fact.status),
+        .detail = fact.reason,
     };
-    append_fact(entry.facts, "settings.catalog_revision",
-                std::to_string(snapshot.catalog_revision));
-    append_fact(entry.facts, "settings.selected",
-                setting.selected ? "true" : "false");
-    append_fact(entry.facts, "settings.applicable",
-                setting.applicable ? "true" : "false");
-    append_fact(entry.facts, "settings.can_force_attempt",
-                setting.can_force_attempt ? "true" : "false");
-    append_fact(entry.facts, "settings.recovery_available",
-                setting.recovery_available ? "true" : "false");
-    append_fact(entry.facts, "settings.known_windows_range",
-                windows_range_name(setting.known_windows_range));
-    append_fact(entry.facts, "settings.restart_requirement",
-                restart_requirement_name(setting.restart_requirement));
-    append_fact(entry.facts, "settings.explorer_restart_pending",
-                snapshot.waiting_for_explorer_restart ? "true" : "false");
-    if (observed_windows_version.has_value()) {
-      append_fact(entry.facts, "settings.observed_windows_version",
-                  *observed_windows_version);
+    append_fact(entry.facts, "settings.operation_fact_id",
+                std::to_string(fact.fact_id));
+    append_fact(entry.facts, "settings.operation",
+                system_settings_operation_name(fact.operation));
+    append_fact(entry.facts, "settings.operation_status", entry.state);
+    if (fact.reason.empty()) {
+      append_unavailable_fact(
+          entry.facts, "settings.operation_reason",
+          "NOT_OBTAINED: immutable operation did not retain an operation reason");
     } else {
+      append_fact(entry.facts, "settings.operation_reason", fact.reason);
+    }
+    append_fact(entry.facts, "settings.selection_source",
+                fact.selected_plan_id.has_value() ? "recommended-overall"
+                                                   : "individual");
+    if (fact.selected_plan_id.has_value()) {
+      append_fact(entry.facts, "settings.selected_plan_id",
+                  fact.selected_plan_id->value);
+      if (fact.selected_plan_name.empty()) {
+        append_unavailable_fact(
+            entry.facts, "settings.selected_plan_name",
+            "NOT_OBTAINED: immutable operation did not capture the selected plan name");
+      } else {
+        append_fact(entry.facts, "settings.selected_plan_name",
+                    fact.selected_plan_name);
+      }
+    }
+    if (fact.catalog_availability == SystemSettingsFactAvailability::obtained) {
+      append_fact(entry.facts, "settings.catalog_identity", fact.catalog_identity);
+      append_fact(entry.facts, "settings.catalog_revision",
+                  std::to_string(fact.catalog_revision));
+    } else {
+      auto const reason = unavailable_operation_fact_reason(
+          fact.catalog_reason,
+          "NOT_OBTAINED: immutable operation did not capture catalog identity and revision");
+      append_unavailable_fact(entry.facts, "settings.catalog_identity", reason);
+      append_unavailable_fact(entry.facts, "settings.catalog_revision", reason);
+    }
+    if (fact.windows_environment.availability ==
+            SystemSettingsFactAvailability::obtained &&
+        !fact.windows_environment.display_version.empty()) {
+      append_fact(entry.facts, "settings.windows_display_version",
+                  fact.windows_environment.display_version);
+      append_fact(entry.facts, "settings.observed_windows_version",
+                  fact.windows_environment.display_version);
+    } else {
+      auto const reason = unavailable_operation_fact_reason(
+          fact.windows_environment.reason,
+          "NOT_OBTAINED: immutable operation did not capture the Windows display version");
+      append_unavailable_fact(entry.facts, "settings.windows_display_version",
+                              reason);
       append_unavailable_fact(entry.facts, "settings.observed_windows_version",
-                              "platform owner could not read the Windows build");
+                              reason);
     }
-    if (snapshot.recommended_plan.has_value()) {
-      append_fact(entry.facts, "settings.recommended_plan",
-                  snapshot.recommended_plan->value);
+    if (fact.windows_environment.availability ==
+            SystemSettingsFactAvailability::obtained &&
+        fact.windows_environment.internal_build != 0) {
+      auto const build = std::to_string(fact.windows_environment.internal_build);
+      append_fact(entry.facts, "settings.windows_internal_build", build);
+      append_fact(entry.facts, "settings.observed_windows_build", build);
+    } else {
+      auto const reason = unavailable_operation_fact_reason(
+          fact.windows_environment.reason,
+          "NOT_OBTAINED: immutable operation did not capture the Windows internal build");
+      append_unavailable_fact(entry.facts, "settings.windows_internal_build",
+                              reason);
+      append_unavailable_fact(entry.facts, "settings.observed_windows_build",
+                              reason);
     }
-    if (snapshot.selected_plan.has_value()) {
-      append_fact(entry.facts, "settings.selected_plan",
-                  snapshot.selected_plan->value);
-    }
-    append_unavailable_fact(
-        entry.facts, "settings.force_attempt_confirmation",
-        "the current settings snapshot does not retain an operation-specific confirmation fact");
-    HistoryTimelineProjection timeline{
-        .kind = HistoryTimelineKind::snapshot,
-        .state = entry.state,
-        .detail = entry.detail,
-        .facts = entry.facts,
-    };
-    entry.timeline.push_back(std::move(timeline));
-    append_id_timeline(entry, log, setting.id.value);
-    canonicalize_history_entry(entry);
-    target.push_back(std::move(entry));
-  }
+    append_fact(entry.facts, "settings.explorer_restart_requested",
+                fact.explorer_restart_requested ? "true" : "false");
+    append_fact(entry.facts, "settings.explorer_restart_result",
+                explorer_restart_result_name(fact.explorer_restart_result));
+    append_fact(entry.facts, "settings.windows_restart_barrier",
+                fact.windows_restart_barrier ? "true" : "false");
+    append_fact(entry.facts, "settings.setting_count",
+                std::to_string(fact.settings.size()));
 
-  for (auto const& record : service.recovery_records()) {
-    HistoryEntryProjection entry{
-        .kind = HistoryEntryKind::system_setting_recovery,
-        .stable_id = record.setting_id.value + "/recovery/" +
-                     std::to_string(record.record_id),
-        .state = recovery_status_name(record.status),
-        .detail = record.display_name,
-    };
-    append_fact(entry.facts, "recovery.record_id",
-                std::to_string(record.record_id));
-    append_fact(entry.facts, "recovery.setting_id", record.setting_id.value);
-    append_fact(entry.facts, "recovery.catalog_revision",
-                std::to_string(record.catalog_revision));
-    append_fact(entry.facts, "recovery.operation",
-                recovery_operation_name(record.operation));
-    append_fact(entry.facts, "recovery.restart_requirement",
-                restart_requirement_name(record.restart_requirement));
-    append_fact(entry.facts, "recovery.original_value_recorded", "true");
-    HistoryTimelineProjection timeline{
-        .kind = HistoryTimelineKind::recovery,
-        .state = entry.state,
-        .detail = entry.detail,
-        .facts = entry.facts,
-    };
-    entry.timeline.push_back(std::move(timeline));
-    append_id_timeline(entry, log, record.setting_id.value);
-    canonicalize_history_entry(entry);
+    for (auto const& setting : fact.settings) {
+      HistoryTimelineProjection timeline{
+          .kind = HistoryTimelineKind::snapshot,
+          .state = system_settings_operation_status_name(setting.status),
+          .detail = setting.display_name,
+      };
+      if (setting.setting_id.value.empty()) {
+        append_unavailable_fact(
+            timeline.facts, "settings.setting_id",
+            "NOT_OBTAINED: immutable operation did not capture a setting identifier");
+      } else {
+        append_fact(timeline.facts, "settings.setting_id", setting.setting_id.value);
+      }
+      if (setting.display_name.empty()) {
+        append_unavailable_fact(
+            timeline.facts, "settings.display_name",
+            "NOT_OBTAINED: immutable operation did not capture a setting display name");
+      } else {
+        append_fact(timeline.facts, "settings.display_name", setting.display_name);
+      }
+      if (setting.controlled_identity.empty() ||
+          setting.controlled_identity == "NOT_OBTAINED") {
+        append_unavailable_fact(
+            timeline.facts, "settings.controlled_identity",
+            "NOT_OBTAINED: immutable operation did not capture a controlled setting identity");
+      } else {
+        append_fact(timeline.facts, "settings.controlled_identity",
+                    setting.controlled_identity);
+      }
+      if (setting.declared_range_availability ==
+          SystemSettingsFactAvailability::obtained) {
+        append_fact(timeline.facts, "settings.declared_windows_range",
+                    windows_range_name(setting.declared_windows_range));
+      } else {
+        append_unavailable_fact(
+            timeline.facts, "settings.declared_windows_range",
+            unavailable_operation_fact_reason(
+                setting.declared_range_reason,
+                "NOT_OBTAINED: immutable operation did not capture the declared Windows range"));
+      }
+      append_fact(timeline.facts, "settings.catalog_revision",
+                  std::to_string(setting.catalog_revision));
+      append_fact(timeline.facts, "settings.restart_requirement",
+                  restart_requirement_name(setting.restart_requirement));
+      append_fact(timeline.facts, "settings.force_attempt_confirmed",
+                  setting.force_attempt_confirmed ? "true" : "false");
+      append_fact(timeline.facts, "settings.status", timeline.state);
+      append_optional_system_setting_value(timeline.facts, "settings.original_value",
+                                           setting.original_value, "original");
+      append_optional_system_setting_value(timeline.facts, "settings.target_value",
+                                           setting.target_value, "target");
+      if (fact.operation == SystemSettingsOperationKind::restore) {
+        append_fact(timeline.facts, "settings.undo", "true");
+        append_optional_system_setting_value(timeline.facts,
+                                             "settings.restore_value",
+                                             setting.target_value, "restore");
+      }
+      if (setting.recovery_record_id.has_value()) {
+        append_fact(timeline.facts, "settings.recovery_record_id",
+                    std::to_string(*setting.recovery_record_id));
+      }
+      if (setting.reason.empty()) {
+        append_unavailable_fact(
+            timeline.facts, "settings.reason",
+            "NOT_OBTAINED: immutable operation did not retain a setting result reason");
+      } else {
+        append_fact(timeline.facts, "settings.reason", setting.reason);
+      }
+      entry.timeline.push_back(std::move(timeline));
+    }
+    for (auto const& stage : fact.timeline) {
+      HistoryTimelineProjection timeline{
+          .kind = HistoryTimelineKind::state_transition,
+          .state = system_settings_operation_status_name(stage.status),
+          .detail = stage.stage,
+      };
+      append_fact(timeline.facts, "settings.operation_timeline.ordinal",
+                  std::to_string(stage.ordinal));
+      append_fact(timeline.facts, "settings.operation_timeline.stage",
+                  stage.stage);
+      append_fact(timeline.facts, "settings.operation_timeline.status",
+                  timeline.state);
+      if (stage.reason.empty()) {
+        append_unavailable_fact(
+            timeline.facts, "settings.operation_timeline.reason",
+            "NOT_OBTAINED: immutable operation timeline did not retain a reason");
+      } else {
+        append_fact(timeline.facts, "settings.operation_timeline.reason",
+                    stage.reason);
+      }
+      entry.timeline.push_back(std::move(timeline));
+    }
     target.push_back(std::move(entry));
   }
 }
@@ -1396,17 +1525,10 @@ HistoryAndLogsSnapshot HistoryAndLogsService::refresh(
   HistoryAndLogsSnapshot result;
   result.applied_filter = filter;
   result.log = log_.snapshot();
-  std::optional<std::string> observed_windows_version;
-  if (auto const version = platform_info_.windows_version()) {
-    observed_windows_version = std::to_string(version->major) + "." +
-                               std::to_string(version->minor) + "." +
-                               std::to_string(version->build);
-  }
   append_installation_history(result.history, installation_batches_, result.log);
   append_optimization_history(result.history, software_optimization_batches_,
                               result.log);
-  append_system_settings_history(result.history, system_settings_, result.log,
-                                 observed_windows_version);
+  append_system_settings_history(result.history, system_settings_);
   append_external_handoff_history(result.history, software_selection_, result.log);
   append_restart_resume_history(result.history, restart_resume_, result.log);
   append_update_history(result.history, application_updates_);
