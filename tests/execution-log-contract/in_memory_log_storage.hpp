@@ -33,14 +33,24 @@ class InMemoryLogStorage final
 
       [[nodiscard]] adapters::infrastructure::LogStorageWriteResult replace(
           std::string bytes) override {
+        if (owner_.capacity_exhausted_) {
+          return {
+              .failure =
+                  adapters::infrastructure::LogStorageWriteFailure::capacity_exhausted,
+              .error = owner_.capacity_error_,
+          };
+        }
         if (owner_.next_failure_.has_value()) {
           if (owner_.failure_occurrence_ > 1) {
             --owner_.failure_occurrence_;
           } else {
             auto error = std::move(*owner_.next_failure_);
             owner_.next_failure_.reset();
+            auto const failure = owner_.next_failure_kind_.value_or(
+                adapters::infrastructure::LogStorageWriteFailure::none);
+            owner_.next_failure_kind_.reset();
             owner_.failure_occurrence_ = 1;
-            return {.error = std::move(error)};
+            return {.failure = failure, .error = std::move(error)};
           }
         }
         owner_.bytes_ = std::move(bytes);
@@ -109,12 +119,29 @@ class InMemoryLogStorage final
   void fail_next_replace(std::string error) {
     std::scoped_lock lock{mutex_};
     next_failure_ = std::move(error);
+    next_failure_kind_.reset();
     failure_occurrence_ = 1;
+  }
+
+  void fail_next_replace_due_to_capacity(std::string error) {
+    std::scoped_lock lock{mutex_};
+    next_failure_ = std::move(error);
+    next_failure_kind_ =
+        adapters::infrastructure::LogStorageWriteFailure::capacity_exhausted;
+    failure_occurrence_ = 1;
+  }
+
+  void set_capacity_exhausted(
+      bool exhausted, std::string error = "simulated capacity exhausted") {
+    std::scoped_lock lock{mutex_};
+    capacity_exhausted_ = exhausted;
+    capacity_error_ = std::move(error);
   }
 
   void fail_replace_on(std::size_t occurrence, std::string error) {
     std::scoped_lock lock{mutex_};
     next_failure_ = std::move(error);
+    next_failure_kind_.reset();
     failure_occurrence_ = occurrence == 0 ? 1 : occurrence;
   }
 
@@ -151,6 +178,10 @@ class InMemoryLogStorage final
   std::string unrelated_aggregate_;
   std::string read_error_;
   std::optional<std::string> next_failure_;
+  std::optional<adapters::infrastructure::LogStorageWriteFailure>
+      next_failure_kind_;
+  bool capacity_exhausted_{false};
+  std::string capacity_error_{"simulated capacity exhausted"};
   std::size_t failure_occurrence_{1};
   std::optional<std::string> next_export_failure_;
   std::optional<std::string> next_unverified_replace_;
