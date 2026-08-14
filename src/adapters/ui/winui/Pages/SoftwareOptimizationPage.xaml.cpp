@@ -9,6 +9,7 @@
 
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
+#include <winrt/Microsoft.Windows.ApplicationModel.Resources.h>
 
 #if __has_include("Pages/SoftwareOptimizationPage.g.cpp")
 #include "Pages/SoftwareOptimizationPage.g.cpp"
@@ -32,10 +33,23 @@ using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
 using winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity;
 using winrt::Microsoft::UI::Xaml::Controls::StackPanel;
 using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
+using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+
+[[nodiscard]] winrt::hstring resource_string(wchar_t const* key) {
+  return ResourceLoader{}.GetString(key);
+}
+
+void replace_token(std::wstring& value, std::wstring_view token,
+                   std::wstring_view replacement) {
+  auto const position = value.find(token);
+  if (position != std::wstring::npos) {
+    value.replace(position, token.size(), replacement);
+  }
+}
 
 [[nodiscard]] winrt::hstring display_name(SchemeDiscovery const& scheme) {
   if (scheme.scheme.id.value == "sogou-input-recommended-v1") {
-    return L"搜狗输入法推荐优化";
+    return resource_string(L"SoftwareOptimizationSogouRecommendedTitle");
   }
   return winrt::to_hstring(scheme.scheme.id.value);
 }
@@ -104,16 +118,17 @@ void SoftwareOptimizationPage::OnPrepareSelected(
   auto result = service_->prepare_submission();
   project(result.snapshot);
   if (result.code == DiscoveryActionCode::no_executable_selection) {
-    set_status(L"没有可提交的已选优化项。", InfoBarSeverity::Warning);
+    set_status(resource_string(L"SoftwareOptimizationNoExecutableSelection"),
+               InfoBarSeverity::Warning);
     return;
   }
   auto const count = result.submission.has_value()
                          ? result.submission->selected_options.size()
                          : 0;
-  set_status(
-      winrt::hstring{L"已准备 " + std::to_wstring(count) +
-                     L" 个所选优化项；尚未创建优化批次。"},
-      InfoBarSeverity::Informational);
+  auto message = std::wstring{
+      resource_string(L"SoftwareOptimizationPreparedMessage")};
+  replace_token(message, L"{count}", std::to_wstring(count));
+  set_status(winrt::hstring{message}, InfoBarSeverity::Informational);
 }
 
 winrt::fire_and_forget SoftwareOptimizationPage::OnOptionSelectionChanged(
@@ -142,10 +157,14 @@ winrt::fire_and_forget SoftwareOptimizationPage::OnOptionSelectionChanged(
   if (result.code == DiscoveryActionCode::adjustment_confirmation_required) {
     ContentDialog dialog;
     dialog.XamlRoot(XamlRoot());
-    dialog.Title(winrt::box_value(L"确认选择调整"));
-    dialog.Content(winrt::box_value(L"此选择会补选必需项或取消冲突项。确认后才会更新选择。"));
-    dialog.PrimaryButtonText(L"确认调整");
-    dialog.CloseButtonText(L"取消");
+    dialog.Title(winrt::box_value(
+        resource_string(L"SoftwareOptimizationSelectionAdjustmentTitle")));
+    dialog.Content(winrt::box_value(
+        resource_string(L"SoftwareOptimizationSelectionAdjustmentContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"SoftwareOptimizationSelectionAdjustmentConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"SoftwareOptimizationSelectionAdjustmentCancel"));
     if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
       mutation.accept_adjustments = true;
       result = service_->change_selection(std::move(mutation));
@@ -164,8 +183,9 @@ void SoftwareOptimizationPage::project(
   OptimizedItems().Children().Clear();
   NoAvailableItems().Children().Clear();
   if (!snapshot.has_current_catalog) {
-    set_status(snapshot.error.empty() ? L"当前没有可用的软件优化目录。"
-                                      : winrt::to_hstring(snapshot.error),
+    set_status(snapshot.error.empty()
+                   ? resource_string(L"SoftwareOptimizationCatalogUnavailable")
+                                       : winrt::to_hstring(snapshot.error),
                InfoBarSeverity::Error);
     PrepareSelectedButton().IsEnabled(false);
     return;
@@ -196,11 +216,21 @@ void SoftwareOptimizationPage::project(
         auto details = TextBlock{};
         auto version = scheme.installed_version.has_value()
                            ? winrt::to_hstring(*scheme.installed_version)
-                           : winrt::hstring{L"未识别"};
-        details.Text(L"版本：" + version + L"；适用范围：" +
-                     winrt::to_hstring(scheme.scheme.supported_versions.minimum) +
-                     L" - " +
-                     winrt::to_hstring(scheme.scheme.supported_versions.maximum));
+                           : resource_string(
+                                 L"SoftwareOptimizationUnrecognizedVersion");
+        auto detail = std::wstring{
+            resource_string(L"SoftwareOptimizationVersionDetails")};
+        auto const minimum =
+            winrt::to_hstring(scheme.scheme.supported_versions.minimum);
+        auto const maximum =
+            winrt::to_hstring(scheme.scheme.supported_versions.maximum);
+        replace_token(detail, L"{version}",
+                      std::wstring_view{version.c_str(), version.size()});
+        replace_token(detail, L"{minimum}",
+                      std::wstring_view{minimum.c_str(), minimum.size()});
+        replace_token(detail, L"{maximum}",
+                      std::wstring_view{maximum.c_str(), maximum.size()});
+        details.Text(winrt::hstring{detail});
         details.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
         content.Children().Append(details);
       }
@@ -208,7 +238,7 @@ void SoftwareOptimizationPage::project(
         auto check_box = CheckBox{};
         auto label = winrt::to_hstring(option.option.impact);
         if (option.option.required) {
-          label = label + L"（必需）";
+          label = label + resource_string(L"SoftwareOptimizationRequiredSuffix");
         }
         check_box.Content(winrt::box_value(label));
         check_box.IsChecked(option.selected);
@@ -225,7 +255,7 @@ void SoftwareOptimizationPage::project(
           (scheme.state == SchemeState::version_not_applicable ||
            scheme.state == SchemeState::needs_attention)) {
         auto force = TextBlock{};
-        force.Text(L"高级视图会在执行前单独披露强制执行或强制关闭的不可撤销风险。当前页面不会创建批次。\n");
+        force.Text(resource_string(L"SoftwareOptimizationAdvancedForceNotice"));
         force.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
         content.Children().Append(force);
       }
