@@ -23,8 +23,11 @@ constexpr std::array<std::byte, 8> k_machine_magic{
     std::byte{'A'}, std::byte{'Z'}, std::byte{'S'}, std::byte{'E'},
     std::byte{'L'}, std::byte{'H'}, std::byte{'0'}, std::byte{'1'},
 };
-constexpr std::uint32_t k_payload_version = 1;
+constexpr std::uint32_t k_subject_payload_version = 1;
+constexpr std::uint32_t k_machine_payload_version = 2;
+constexpr std::uint32_t k_legacy_machine_payload_version = 1;
 constexpr std::size_t k_max_payload_text = 4U * 1024U * 1024U;
+constexpr std::uint32_t k_max_handoff_facts = 4096;
 
 class ByteWriter final {
  public:
@@ -235,6 +238,10 @@ decode_architecture(std::uint8_t value) {
       return 3;
     case selection_domain::ExternalHandoffStatus::skipped:
       return 4;
+    case selection_domain::ExternalHandoffStatus::awaiting_user_confirmation:
+      return 5;
+    case selection_domain::ExternalHandoffStatus::completed:
+      return 6;
   }
   return std::nullopt;
 }
@@ -250,6 +257,123 @@ decode_handoff_status(std::uint8_t value) {
       return selection_domain::ExternalHandoffStatus::externally_recognized;
     case 4:
       return selection_domain::ExternalHandoffStatus::skipped;
+    case 5:
+      return selection_domain::ExternalHandoffStatus::awaiting_user_confirmation;
+    case 6:
+      return selection_domain::ExternalHandoffStatus::completed;
+    default:
+      return std::nullopt;
+  }
+}
+
+[[nodiscard]] std::optional<std::uint8_t> encode_handoff_fact_kind(
+    selection_domain::ExternalHandoffFactKind kind) {
+  using FactKind = selection_domain::ExternalHandoffFactKind;
+  switch (kind) {
+    case FactKind::source_resolution_failed:
+      return 1;
+    case FactKind::declared_address_opened:
+      return 2;
+    case FactKind::returned_for_recheck:
+      return 3;
+    case FactKind::skipped:
+      return 4;
+    case FactKind::continued:
+      return 5;
+    case FactKind::awaiting_user_confirmation:
+      return 6;
+    case FactKind::user_confirmed:
+      return 7;
+    case FactKind::completed:
+      return 8;
+    case FactKind::legacy_record_imported:
+      return 9;
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<selection_domain::ExternalHandoffFactKind>
+decode_handoff_fact_kind(std::uint8_t value) {
+  using FactKind = selection_domain::ExternalHandoffFactKind;
+  switch (value) {
+    case 1:
+      return FactKind::source_resolution_failed;
+    case 2:
+      return FactKind::declared_address_opened;
+    case 3:
+      return FactKind::returned_for_recheck;
+    case 4:
+      return FactKind::skipped;
+    case 5:
+      return FactKind::continued;
+    case 6:
+      return FactKind::awaiting_user_confirmation;
+    case 7:
+      return FactKind::user_confirmed;
+    case 8:
+      return FactKind::completed;
+    case 9:
+      return FactKind::legacy_record_imported;
+    default:
+      return std::nullopt;
+  }
+}
+
+[[nodiscard]] std::optional<std::uint8_t> encode_fact_availability(
+    selection_domain::ExternalHandoffFactAvailability value) {
+  switch (value) {
+    case selection_domain::ExternalHandoffFactAvailability::obtained:
+      return 1;
+    case selection_domain::ExternalHandoffFactAvailability::not_obtained:
+      return 2;
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<selection_domain::ExternalHandoffFactAvailability>
+decode_fact_availability(std::uint8_t value) {
+  switch (value) {
+    case 1:
+      return selection_domain::ExternalHandoffFactAvailability::obtained;
+    case 2:
+      return selection_domain::ExternalHandoffFactAvailability::not_obtained;
+    default:
+      return std::nullopt;
+  }
+}
+
+[[nodiscard]] std::optional<std::uint8_t> encode_not_obtained_reason(
+    selection_domain::ExternalHandoffNotObtainedReason reason) {
+  using Reason = selection_domain::ExternalHandoffNotObtainedReason;
+  switch (reason) {
+    case Reason::none:
+      return 1;
+    case Reason::resolution_failed:
+      return 2;
+    case Reason::no_persisted_resolved_source:
+      return 3;
+    case Reason::not_captured_for_this_fact:
+      return 4;
+    case Reason::legacy_record_has_no_historical_detail:
+      return 5;
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<selection_domain::ExternalHandoffNotObtainedReason>
+decode_not_obtained_reason(std::uint8_t value) {
+  using Reason = selection_domain::ExternalHandoffNotObtainedReason;
+  switch (value) {
+    case 1:
+      return Reason::none;
+    case 2:
+      return Reason::resolution_failed;
+    case 3:
+      return Reason::no_persisted_resolved_source;
+    case 4:
+      return Reason::not_captured_for_this_fact;
+    case 5:
+      return Reason::legacy_record_has_no_historical_detail;
     default:
       return std::nullopt;
   }
@@ -339,7 +463,7 @@ void write_snapshot(ByteWriter& writer,
     std::vector<selection_domain::ResolvedSourceSnapshot> const& sources) {
   ByteWriter writer;
   writer.raw(k_subject_magic);
-  writer.u32(k_payload_version);
+  writer.u32(k_subject_payload_version);
   writer.u8(selection.initialized ? 1 : 0);
   writer.u32(static_cast<std::uint32_t>(selection.selected_software_ids.size()));
   for (auto const& id : selection.selected_software_ids) {
@@ -362,7 +486,8 @@ void write_snapshot(ByteWriter& writer,
   std::uint32_t selected_count{};
   std::uint32_t source_count{};
   if (!reader.raw(magic) || magic != k_subject_magic || !reader.u32(version) ||
-      version != k_payload_version || !reader.u8(initialized) || initialized > 1 ||
+      version != k_subject_payload_version || !reader.u8(initialized) ||
+      initialized > 1 ||
       !reader.u32(selected_count) || selected_count > 4096) {
     return false;
   }
@@ -395,30 +520,113 @@ void write_snapshot(ByteWriter& writer,
   return reader.complete();
 }
 
+void write_source_fact(
+    ByteWriter& writer,
+    selection_domain::ExternalHandoffResolvedSourceFact const& source) {
+  writer.u8(*encode_fact_availability(source.availability));
+  writer.u8(*encode_not_obtained_reason(source.not_obtained_reason));
+  writer.text(source.resolved_address);
+  writer.text(source.resolved_version);
+  writer.text(source.resolver_capability_version);
+  writer.u64(static_cast<std::uint64_t>(source.resolved_at_milliseconds));
+}
+
+[[nodiscard]] bool read_source_fact(
+    ByteReader& reader,
+    selection_domain::ExternalHandoffResolvedSourceFact& source) {
+  std::uint8_t availability{};
+  std::uint8_t not_obtained_reason{};
+  std::uint64_t resolved_at{};
+  if (!reader.u8(availability) || !reader.u8(not_obtained_reason) ||
+      !reader.text(source.resolved_address) ||
+      !reader.text(source.resolved_version) ||
+      !reader.text(source.resolver_capability_version) || !reader.u64(resolved_at) ||
+      resolved_at >
+          static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+    return false;
+  }
+  auto const decoded_availability = decode_fact_availability(availability);
+  auto const decoded_reason = decode_not_obtained_reason(not_obtained_reason);
+  if (!decoded_availability.has_value() || !decoded_reason.has_value()) {
+    return false;
+  }
+  source.availability = *decoded_availability;
+  source.not_obtained_reason = *decoded_reason;
+  source.resolved_at_milliseconds = static_cast<std::int64_t>(resolved_at);
+  return true;
+}
+
+void write_handoff_fact(ByteWriter& writer,
+                        selection_domain::ExternalHandoffFact const& fact) {
+  writer.u8(*encode_handoff_fact_kind(fact.kind));
+  writer.u8(*encode_handoff_status(fact.status));
+  writer.u8(*encode_fact_availability(fact.timestamp_availability));
+  writer.u8(*encode_not_obtained_reason(fact.timestamp_not_obtained_reason));
+  writer.u64(static_cast<std::uint64_t>(fact.occurred_at_milliseconds));
+  writer.text(fact.correlation_id);
+  writer.text(fact.declared_address);
+  write_source_fact(writer, fact.resolved_source);
+  writer.text(fact.detail);
+}
+
+[[nodiscard]] bool read_handoff_fact(ByteReader& reader,
+                                     selection_domain::ExternalHandoffFact& fact) {
+  std::uint8_t kind{};
+  std::uint8_t status{};
+  std::uint8_t timestamp_availability{};
+  std::uint8_t timestamp_not_obtained_reason{};
+  std::uint64_t occurred_at{};
+  if (!reader.u8(kind) || !reader.u8(status) || !reader.u8(timestamp_availability) ||
+      !reader.u8(timestamp_not_obtained_reason) || !reader.u64(occurred_at) ||
+      occurred_at >
+          static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
+      !reader.text(fact.correlation_id) || !reader.text(fact.declared_address) ||
+      !read_source_fact(reader, fact.resolved_source) || !reader.text(fact.detail)) {
+    return false;
+  }
+  auto const decoded_kind = decode_handoff_fact_kind(kind);
+  auto const decoded_status = decode_handoff_status(status);
+  auto const decoded_timestamp_availability =
+      decode_fact_availability(timestamp_availability);
+  auto const decoded_timestamp_reason =
+      decode_not_obtained_reason(timestamp_not_obtained_reason);
+  if (!decoded_kind.has_value() || !decoded_status.has_value() ||
+      !decoded_timestamp_availability.has_value() ||
+      !decoded_timestamp_reason.has_value()) {
+    return false;
+  }
+  fact.kind = *decoded_kind;
+  fact.status = *decoded_status;
+  fact.timestamp_availability = *decoded_timestamp_availability;
+  fact.timestamp_not_obtained_reason = *decoded_timestamp_reason;
+  fact.occurred_at_milliseconds = static_cast<std::int64_t>(occurred_at);
+  return fact.valid();
+}
+
 [[nodiscard]] domain::StateBytes encode_machine(
     std::vector<selection_domain::ExternalHandoffRecord> const& handoffs) {
   ByteWriter writer;
   writer.raw(k_machine_magic);
-  writer.u32(k_payload_version);
+  writer.u32(k_machine_payload_version);
   writer.u32(static_cast<std::uint32_t>(handoffs.size()));
   for (auto const& handoff : handoffs) {
     writer.text(handoff.software_id);
     writer.text(handoff.declared_address);
     writer.u8(*encode_handoff_status(handoff.status));
     writer.text(handoff.detail);
+    writer.u32(static_cast<std::uint32_t>(handoff.timeline.facts.size()));
+    for (auto const& fact : handoff.timeline.facts) {
+      write_handoff_fact(writer, fact);
+    }
   }
   return std::move(writer).finish();
 }
 
-[[nodiscard]] bool decode_machine(
-    std::span<std::byte const> bytes,
+[[nodiscard]] bool decode_legacy_machine(
+    ByteReader& reader,
     std::vector<selection_domain::ExternalHandoffRecord>& handoffs) {
-  ByteReader reader{bytes};
-  std::array<std::byte, k_machine_magic.size()> magic{};
-  std::uint32_t version{};
   std::uint32_t count{};
-  if (!reader.raw(magic) || magic != k_machine_magic || !reader.u32(version) ||
-      version != k_payload_version || !reader.u32(count) || count > 4096) {
+  if (!reader.u32(count) || count > 4096) {
     return false;
   }
   handoffs.clear();
@@ -437,9 +645,88 @@ void write_snapshot(ByteWriter& writer,
       return false;
     }
     handoff.status = *status;
+    handoff.timeline.facts.push_back({
+        .kind = selection_domain::ExternalHandoffFactKind::legacy_record_imported,
+        .status = handoff.status,
+        .timestamp_availability =
+            selection_domain::ExternalHandoffFactAvailability::not_obtained,
+        .timestamp_not_obtained_reason =
+            selection_domain::ExternalHandoffNotObtainedReason::
+                legacy_record_has_no_historical_detail,
+        .correlation_id = "legacy-software-source-handoff",
+        .declared_address = handoff.declared_address,
+        .resolved_source = {
+            .availability =
+                selection_domain::ExternalHandoffFactAvailability::not_obtained,
+            .not_obtained_reason =
+                selection_domain::ExternalHandoffNotObtainedReason::
+                    legacy_record_has_no_historical_detail,
+        },
+        .detail = handoff.detail,
+    });
+    if (!handoff.valid()) {
+      return false;
+    }
     handoffs.push_back(std::move(handoff));
   }
   return reader.complete();
+}
+
+[[nodiscard]] bool decode_current_machine(
+    ByteReader& reader,
+    std::vector<selection_domain::ExternalHandoffRecord>& handoffs) {
+  std::uint32_t count{};
+  if (!reader.u32(count) || count > 4096) {
+    return false;
+  }
+  handoffs.clear();
+  handoffs.reserve(count);
+  for (std::uint32_t index = 0; index < count; ++index) {
+    selection_domain::ExternalHandoffRecord handoff;
+    std::uint8_t encoded_status{};
+    std::uint32_t fact_count{};
+    if (!reader.text(handoff.software_id) ||
+        !reader.text(handoff.declared_address) || !reader.u8(encoded_status) ||
+        !reader.text(handoff.detail) || !reader.u32(fact_count) ||
+        handoff.software_id.empty() || handoff.declared_address.empty() ||
+        fact_count == 0 || fact_count > k_max_handoff_facts) {
+      return false;
+    }
+    auto const status = decode_handoff_status(encoded_status);
+    if (!status.has_value()) {
+      return false;
+    }
+    handoff.status = *status;
+    handoff.timeline.facts.reserve(fact_count);
+    for (std::uint32_t fact_index = 0; fact_index < fact_count; ++fact_index) {
+      selection_domain::ExternalHandoffFact fact;
+      if (!read_handoff_fact(reader, fact)) {
+        return false;
+      }
+      handoff.timeline.facts.push_back(std::move(fact));
+    }
+    if (!handoff.valid()) {
+      return false;
+    }
+    handoffs.push_back(std::move(handoff));
+  }
+  return reader.complete();
+}
+
+[[nodiscard]] bool decode_machine(
+    std::span<std::byte const> bytes,
+    std::vector<selection_domain::ExternalHandoffRecord>& handoffs) {
+  ByteReader reader{bytes};
+  std::array<std::byte, k_machine_magic.size()> magic{};
+  std::uint32_t version{};
+  if (!reader.raw(magic) || magic != k_machine_magic || !reader.u32(version)) {
+    return false;
+  }
+  if (version == k_legacy_machine_payload_version) {
+    return decode_legacy_machine(reader, handoffs);
+  }
+  return version == k_machine_payload_version &&
+         decode_current_machine(reader, handoffs);
 }
 
 [[nodiscard]] bool writable(StateReadMode mode) noexcept {
@@ -671,18 +958,71 @@ SelectionActionResult SoftwareSelectionLifecycle::resolve_declared_source(
   }
   auto resolved = resolver_.resolve(software_id, declared_source);
   if (!resolved.resolved || !resolved.snapshot.has_value()) {
-    log_event("source-resolution", ExecutionResult::failed, software_id,
-              resolved.error);
+    auto correlation = log_.begin_correlation();
+    auto const detail = resolved.error.empty() ? "controlled resolver failed"
+                                               : std::move(resolved.error);
+    auto const existing = std::ranges::find(
+        handoffs_, software_id,
+        &selection_domain::ExternalHandoffRecord::software_id);
+    auto recorded = append_handoff_fact(
+        software_id,
+        {.kind = selection_domain::ExternalHandoffFactKind::source_resolution_failed,
+         .status = existing == handoffs_.end()
+                       ? selection_domain::ExternalHandoffStatus::none
+                       : existing->status,
+         .occurred_at_milliseconds = now_milliseconds(),
+         .correlation_id = correlation.value,
+         .declared_address = declared_source.address,
+         .resolved_source = {
+             .availability =
+                 selection_domain::ExternalHandoffFactAvailability::not_obtained,
+             .not_obtained_reason =
+                 selection_domain::ExternalHandoffNotObtainedReason::resolution_failed,
+         },
+         .detail = detail});
+    if (!is_successful_persistence(recorded)) {
+      return recorded;
+    }
+    log_event(correlation, "source-resolution", ExecutionResult::failed,
+              software_id, detail);
     return {.code = SelectionActionCode::resolver_failed,
-            .message = resolved.error.empty() ? "controlled resolver failed"
-                                              : std::move(resolved.error)};
+            .state_changed = true,
+            .message = detail,
+            .handoff = std::move(recorded.handoff)};
   }
   if (!resolved.snapshot->valid() ||
       !source_matches_catalog(*resolved.snapshot, declared_source)) {
-    log_event("source-resolution", ExecutionResult::failed, software_id,
-              "resolver returned a snapshot outside the declared source");
+    auto correlation = log_.begin_correlation();
+    auto const detail = std::string{
+        "resolver returned a snapshot outside the declared source"};
+    auto const existing = std::ranges::find(
+        handoffs_, software_id,
+        &selection_domain::ExternalHandoffRecord::software_id);
+    auto recorded = append_handoff_fact(
+        software_id,
+        {.kind = selection_domain::ExternalHandoffFactKind::source_resolution_failed,
+         .status = existing == handoffs_.end()
+                       ? selection_domain::ExternalHandoffStatus::none
+                       : existing->status,
+         .occurred_at_milliseconds = now_milliseconds(),
+         .correlation_id = correlation.value,
+         .declared_address = declared_source.address,
+         .resolved_source = {
+             .availability =
+                 selection_domain::ExternalHandoffFactAvailability::not_obtained,
+             .not_obtained_reason =
+                 selection_domain::ExternalHandoffNotObtainedReason::resolution_failed,
+         },
+         .detail = detail});
+    if (!is_successful_persistence(recorded)) {
+      return recorded;
+    }
+    log_event(correlation, "source-resolution", ExecutionResult::failed,
+              software_id, detail);
     return {.code = SelectionActionCode::invalid_resolution,
-            .message = "resolver returned an invalid declared-source snapshot"};
+            .state_changed = true,
+            .message = "resolver returned an invalid declared-source snapshot",
+            .handoff = std::move(recorded.handoff)};
   }
   if (resolved.snapshot->resolved_at_milliseconds >
       std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -803,31 +1143,23 @@ SelectionActionResult SoftwareSelectionLifecycle::begin_external_handoff(
             .message = launcher_error.empty() ? "could not open declared address"
                                               : std::move(launcher_error)};
   }
-  auto const old_handoffs = handoffs_;
-  auto record = selection_domain::ExternalHandoffRecord{
-      .software_id = std::string{software_id},
-      .declared_address = declared_source.address,
-      .status = selection_domain::ExternalHandoffStatus::
-          waiting_for_external_install,
-      .detail = "external installation has not been detected",
-  };
-  auto existing = std::ranges::find(
-      handoffs_, software_id, &selection_domain::ExternalHandoffRecord::software_id);
-  if (existing == handoffs_.end()) {
-    handoffs_.push_back(record);
-  } else {
-    *existing = record;
+  auto correlation = log_.begin_correlation();
+  auto recorded = append_handoff_fact(
+      software_id,
+      {.kind = selection_domain::ExternalHandoffFactKind::declared_address_opened,
+       .status = selection_domain::ExternalHandoffStatus::
+           waiting_for_external_install,
+       .occurred_at_milliseconds = now_milliseconds(),
+       .correlation_id = correlation.value,
+       .declared_address = declared_source.address,
+       .resolved_source = source_fact_for(software_id, declared_source),
+       .detail = "declared address opened; installation remains external"});
+  if (!is_successful_persistence(recorded)) {
+    return recorded;
   }
-  auto persisted = persist_machine();
-  if (!is_successful_persistence(persisted)) {
-    handoffs_ = old_handoffs;
-    return persisted;
-  }
-  log_event("external-handoff", ExecutionResult::started, software_id,
-            "declared address opened; installation remains external");
-  return {.code = SelectionActionCode::succeeded,
-          .state_changed = true,
-          .handoff = std::move(record)};
+  log_event(correlation, "external-handoff", ExecutionResult::started,
+            software_id, "declared address opened; installation remains external");
+  return recorded;
 }
 
 SelectionActionResult SoftwareSelectionLifecycle::detect_external_install(
@@ -841,41 +1173,85 @@ SelectionActionResult SoftwareSelectionLifecycle::detect_external_install(
   auto existing = std::ranges::find(
       handoffs_, software_id, &selection_domain::ExternalHandoffRecord::software_id);
   if (existing == handoffs_.end() ||
-      existing->status != selection_domain::ExternalHandoffStatus::
-                              waiting_for_external_install) {
+      (existing->status != selection_domain::ExternalHandoffStatus::
+                              waiting_for_external_install &&
+       existing->status != selection_domain::ExternalHandoffStatus::skipped &&
+       existing->status !=
+           selection_domain::ExternalHandoffStatus::externally_recognized)) {
     return {.code = SelectionActionCode::rejected,
-            .message = "no matching external handoff is waiting for detection"};
+            .message = "no matching external handoff can be rechecked"};
   }
+  auto const current_status = existing->status;
+  auto const declared_address = existing->declared_address;
   auto detection = detector_.detect(software_id);
+  auto correlation = log_.begin_correlation();
   if (!detection.completed) {
-    log_event("external-detection", ExecutionResult::failed, software_id,
-              detection.detail);
+    auto const detail = detection.detail.empty() ? "presence detection failed"
+                                                  : std::move(detection.detail);
+    auto recorded = append_handoff_fact(
+        software_id,
+        {.kind = selection_domain::ExternalHandoffFactKind::returned_for_recheck,
+         .status = current_status,
+         .occurred_at_milliseconds = now_milliseconds(),
+         .correlation_id = correlation.value,
+         .declared_address = declared_address,
+         .resolved_source = {
+             .availability =
+                 selection_domain::ExternalHandoffFactAvailability::not_obtained,
+             .not_obtained_reason =
+                 selection_domain::ExternalHandoffNotObtainedReason::
+                     not_captured_for_this_fact,
+         },
+         .detail = detail});
+    if (!is_successful_persistence(recorded)) {
+      return recorded;
+    }
+    log_event(correlation, "external-detection", ExecutionResult::failed,
+              software_id, detail);
     return {.code = SelectionActionCode::detector_failed,
-            .message = detection.detail.empty() ? "presence detection failed"
-                                                : std::move(detection.detail)};
+            .state_changed = true,
+            .message = detail,
+            .handoff = std::move(recorded.handoff)};
   }
-  if (!detection.present) {
-    log_event("external-detection", ExecutionResult::unknown, software_id,
-              detection.detail);
-    return {.code = SelectionActionCode::succeeded,
-            .message = "software was not detected; external handoff remains pending",
-            .handoff = *existing};
+  auto const next_status =
+      detection.present
+          ? selection_domain::ExternalHandoffStatus::externally_recognized
+          : (current_status == selection_domain::ExternalHandoffStatus::skipped
+                 ? selection_domain::ExternalHandoffStatus::skipped
+                 : selection_domain::ExternalHandoffStatus::
+                       waiting_for_external_install);
+  auto const detail = detection.detail.empty()
+                          ? (detection.present
+                                 ? "external installation was recognized"
+                                 : "software was not detected")
+                          : std::move(detection.detail);
+  auto recorded = append_handoff_fact(
+      software_id,
+      {.kind = selection_domain::ExternalHandoffFactKind::returned_for_recheck,
+       .status = next_status,
+       .occurred_at_milliseconds = now_milliseconds(),
+       .correlation_id = correlation.value,
+       .declared_address = declared_address,
+       .resolved_source = {
+           .availability =
+               selection_domain::ExternalHandoffFactAvailability::not_obtained,
+           .not_obtained_reason =
+               selection_domain::ExternalHandoffNotObtainedReason::
+                   not_captured_for_this_fact,
+       },
+       .detail = detail});
+  if (!is_successful_persistence(recorded)) {
+    return recorded;
   }
-  auto const old_handoffs = handoffs_;
-  existing->status = selection_domain::ExternalHandoffStatus::externally_recognized;
-  existing->detail = detection.detail.empty()
-                         ? "external installation was recognized"
-                         : std::move(detection.detail);
-  auto persisted = persist_machine();
-  if (!is_successful_persistence(persisted)) {
-    handoffs_ = old_handoffs;
-    return persisted;
-  }
-  log_event("external-detection", ExecutionResult::succeeded, software_id,
-            "externally recognized; this is not an in-app installation result");
+  log_event(correlation, "external-detection",
+            detection.present ? ExecutionResult::succeeded : ExecutionResult::unknown,
+            software_id, detail);
   return {.code = SelectionActionCode::succeeded,
           .state_changed = true,
-          .handoff = *existing};
+          .message = detection.present
+                         ? "software was externally recognized"
+                         : "software was not detected; external handoff remains pending",
+          .handoff = std::move(recorded.handoff)};
 }
 
 SelectionActionResult SoftwareSelectionLifecycle::skip_external_handoff(
@@ -892,18 +1268,68 @@ SelectionActionResult SoftwareSelectionLifecycle::skip_external_handoff(
     return {.code = SelectionActionCode::rejected,
             .message = "no matching external handoff exists"};
   }
-  auto const old_handoffs = handoffs_;
-  existing->status = selection_domain::ExternalHandoffStatus::skipped;
-  existing->detail = "skipped by the user";
-  auto persisted = persist_machine();
-  if (!is_successful_persistence(persisted)) {
-    handoffs_ = old_handoffs;
-    return persisted;
+  auto correlation = log_.begin_correlation();
+  auto recorded = append_handoff_fact(
+      software_id,
+      {.kind = selection_domain::ExternalHandoffFactKind::skipped,
+       .status = selection_domain::ExternalHandoffStatus::skipped,
+       .occurred_at_milliseconds = now_milliseconds(),
+       .correlation_id = correlation.value,
+       .declared_address = existing->declared_address,
+       .resolved_source = {
+           .availability =
+               selection_domain::ExternalHandoffFactAvailability::not_obtained,
+           .not_obtained_reason =
+               selection_domain::ExternalHandoffNotObtainedReason::
+                   not_captured_for_this_fact,
+       },
+       .detail = "skipped by the user"});
+  if (!is_successful_persistence(recorded)) {
+    return recorded;
   }
-  log_event("external-handoff-skipped", ExecutionResult::cancelled, software_id);
-  return {.code = SelectionActionCode::succeeded,
-          .state_changed = true,
-          .handoff = *existing};
+  log_event(correlation, "external-handoff-skipped", ExecutionResult::cancelled,
+            software_id, "skipped by the user");
+  return recorded;
+}
+
+SelectionActionResult SoftwareSelectionLifecycle::continue_external_handoff(
+    std::string_view software_id) {
+  if (mode_ != SelectionLifecycleMode::ready) {
+    return {.code = mode_ == SelectionLifecycleMode::read_only
+                        ? SelectionActionCode::read_only
+                        : SelectionActionCode::not_restored,
+            .message = error_};
+  }
+  auto const existing = std::ranges::find(
+      handoffs_, software_id, &selection_domain::ExternalHandoffRecord::software_id);
+  if (existing == handoffs_.end() ||
+      existing->status !=
+          selection_domain::ExternalHandoffStatus::externally_recognized) {
+    return {.code = SelectionActionCode::rejected,
+            .message = "only an externally recognized handoff can continue"};
+  }
+  auto correlation = log_.begin_correlation();
+  auto recorded = append_handoff_fact(
+      software_id,
+      {.kind = selection_domain::ExternalHandoffFactKind::continued,
+       .status = selection_domain::ExternalHandoffStatus::externally_recognized,
+       .occurred_at_milliseconds = now_milliseconds(),
+       .correlation_id = correlation.value,
+       .declared_address = existing->declared_address,
+       .resolved_source = {
+           .availability =
+               selection_domain::ExternalHandoffFactAvailability::not_obtained,
+           .not_obtained_reason =
+               selection_domain::ExternalHandoffNotObtainedReason::
+                   not_captured_for_this_fact,
+       },
+       .detail = "user continued after external recognition"});
+  if (!is_successful_persistence(recorded)) {
+    return recorded;
+  }
+  log_event(correlation, "external-handoff-continued", ExecutionResult::succeeded,
+            software_id, "user continued after external recognition");
+  return recorded;
 }
 
 SelectionActionResult SoftwareSelectionLifecycle::persist_subject() {
@@ -970,6 +1396,91 @@ SelectionActionResult SoftwareSelectionLifecycle::persist_machine() {
   return {.code = SelectionActionCode::succeeded};
 }
 
+SelectionActionResult SoftwareSelectionLifecycle::append_handoff_fact(
+    std::string_view software_id, selection_domain::ExternalHandoffFact fact) {
+  if (!machine_writable_) {
+    return {.code = SelectionActionCode::read_only,
+            .message = "software handoff state is read-only"};
+  }
+  if (software_id.empty() || !fact.valid()) {
+    return {.code = SelectionActionCode::rejected,
+            .message = "external handoff fact is incomplete or invalid"};
+  }
+
+  auto const old_handoffs = handoffs_;
+  auto existing = std::ranges::find(
+      handoffs_, software_id, &selection_domain::ExternalHandoffRecord::software_id);
+  if (existing == handoffs_.end()) {
+    handoffs_.push_back({
+        .software_id = std::string{software_id},
+        .declared_address = fact.declared_address,
+        .status = fact.status,
+        .detail = fact.detail,
+        .timeline = {.facts = {std::move(fact)}},
+    });
+    existing = std::prev(handoffs_.end());
+  } else {
+    // These fields are only a current projection.  The append below is the
+    // history write; previously persisted facts remain bit-for-bit intact.
+    existing->timeline.facts.push_back(std::move(fact));
+    auto const& latest = existing->timeline.facts.back();
+    existing->declared_address = latest.declared_address;
+    existing->status = latest.status;
+    existing->detail = latest.detail;
+  }
+  if (!existing->valid()) {
+    handoffs_ = old_handoffs;
+    return {.code = SelectionActionCode::rejected,
+            .message = "external handoff fact would violate its timeline"};
+  }
+  auto persisted = persist_machine();
+  if (!is_successful_persistence(persisted)) {
+    handoffs_ = old_handoffs;
+    return persisted;
+  }
+  return {.code = SelectionActionCode::succeeded,
+          .state_changed = true,
+          .handoff = *existing};
+}
+
+selection_domain::ExternalHandoffResolvedSourceFact
+SoftwareSelectionLifecycle::source_fact_for(
+    std::string_view software_id,
+    catalog_domain::CatalogSource const& declared_source) const {
+  auto const source = std::ranges::find_if(
+      sources_, [&](selection_domain::ResolvedSourceSnapshot const& candidate) {
+        return declared_source.purpose.has_value() &&
+               candidate.software_id == software_id &&
+               candidate.declared_purpose == *declared_source.purpose &&
+               candidate.declared_address == declared_source.address;
+      });
+  if (source == sources_.end()) {
+    return {
+        .availability =
+            selection_domain::ExternalHandoffFactAvailability::not_obtained,
+        .not_obtained_reason =
+            selection_domain::ExternalHandoffNotObtainedReason::
+                no_persisted_resolved_source,
+    };
+  }
+  return {
+      .availability = selection_domain::ExternalHandoffFactAvailability::obtained,
+      .not_obtained_reason =
+          selection_domain::ExternalHandoffNotObtainedReason::none,
+      .resolved_address = source->actual_address,
+      .resolved_version = source->version,
+      .resolver_capability_version = source->capability_version,
+      .resolved_at_milliseconds = source->resolved_at_milliseconds,
+  };
+}
+
+std::int64_t SoftwareSelectionLifecycle::now_milliseconds() const noexcept {
+  auto const milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                clock_.now().time_since_epoch())
+                                .count();
+  return milliseconds > 0 ? milliseconds : 1;
+}
+
 bool SoftwareSelectionLifecycle::source_matches_catalog(
     selection_domain::ResolvedSourceSnapshot const& source,
     catalog_domain::CatalogSource const& declared_source) const noexcept {
@@ -1024,7 +1535,8 @@ std::vector<std::string> SoftwareSelectionLifecycle::impact_ids(
   return ids;
 }
 
-void SoftwareSelectionLifecycle::log_event(std::string_view stage,
+void SoftwareSelectionLifecycle::log_event(CorrelationId const& correlation,
+                                           std::string_view stage,
                                            ExecutionResult result,
                                            std::string_view software_id,
                                            std::string_view detail) {
@@ -1040,12 +1552,19 @@ void SoftwareSelectionLifecycle::log_event(std::string_view stage,
                       .disposition = DiagnosticValueDisposition::sensitive});
   }
   static_cast<void>(log_.append(
-      log_.begin_correlation(),
+      correlation,
       {.kind = ExecutionEventKind::state_transition,
        .component = "software-selection",
        .stage = std::string{stage},
        .result = result,
        .fields = std::move(fields)}));
+}
+
+void SoftwareSelectionLifecycle::log_event(std::string_view stage,
+                                           ExecutionResult result,
+                                           std::string_view software_id,
+                                           std::string_view detail) {
+  log_event(log_.begin_correlation(), stage, result, software_id, detail);
 }
 
 char const* to_string(SelectionLifecycleMode mode) noexcept {
