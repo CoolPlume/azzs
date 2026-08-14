@@ -43,6 +43,7 @@ Evidence freshness: 绑定功能提交 `5202ecb4c9e21fac07c7c50e8e6f807f7009c43a
 ## Answer
 
 - 功能分支 `codex/issue-18-application-settings` 的实现提交为 `5202ecb4c9e21fac07c7c50e8e6f807f7009c43a`；它新增类型化应用设置协调服务、Windows 偏好持久化、设置页和唯一组合根绑定，并覆盖目录、缓存、架构、日志、恢复记录与调试状态投影。PR [#51](https://github.com/CoolPlume/azzs/pull/51) 已从 Draft 转为 Ready，以普通合并提交 `65c97affd4c8a21ee08d010b0b093df8529c2d3f` 合入 `codex/v1-integration`；最终 feature head 为 `cb8c06933d1f68c6a7d59e8ddf2a9e7c9e4adf89`。
+- x64 验证环境为 Windows 11 25H2（Windows NT `10.0.26200.0`，`AMD64`）、Visual Studio `18.8.3`、MSVC `14.51.36231` 与 Windows SDK `10.0.28000.2526`。
 - 本机 Windows 11 25H2 原生 x64 在合并提交 `108e8d611afce7edfa0eb92e4da7b3d8c1d0b7d1` 上通过 `eng\build.ps1 -Architecture x64 -SkipCoreSmoke`，生成 WinUI Release 与 manifest；`application-settings.contract`、`offline-package-cache.contract`、`guided-initialization.contract`、`ui.presentation.contract` 与 `ui.design.contract` 均通过。构建仅有 4 条不阻断的 `C4457` 警告，无错误。
 - 同一 x64 环境运行 `cmake --workflow --preset host-guardrails` 得到 31/33 通过；`execution-log.contract` 因缺少 ACL 根、`windows-device-data.contract` 因缺少隔离设备根和目录符号链接而未通过，均为本机前置条件，未改动或归因于本事项。GitHub Actions [run 31844452897](https://github.com/CoolPlume/azzs/actions/runs/31844452897) 的 [x64 Release job 94907946830](https://github.com/CoolPlume/azzs/actions/runs/31844452897/job/94907946830) 绑定最终 feature head 并为 `success`。
 - 本会话未主动执行 ARM64 合同、构建或实机验收，ARM64 仍延期；同一 GitHub run 的自动 ARM64 job `94907947529` 成功仅作信息性记录。未执行真实 Windows UIA、DPI/多显示器或安装生命周期验收，也未将这些边界或自动 ARM64 结果冒充为本机通过。
