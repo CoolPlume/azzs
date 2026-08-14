@@ -34,6 +34,10 @@ namespace software_optimization_discovery {
 class SoftwareOptimizationDiscoveryService;
 }
 
+namespace driver_acquisition {
+class DriverAcquisitionService;
+}
+
 class HardwareOverviewService;
 class HistoryAndLogsService;
 
@@ -77,6 +81,8 @@ class WorkbenchServices {
   software_selection() noexcept = 0;
   [[nodiscard]] virtual HardwareOverviewService& hardware_overview()
       noexcept = 0;
+  [[nodiscard]] virtual driver_acquisition::DriverAcquisitionService&
+  driver_acquisition() noexcept = 0;
   [[nodiscard]] virtual offline_package_cache::OfflinePackageCacheService&
   offline_package_cache() noexcept = 0;
   // Batch state remains application-owned. Hosts and WinUI can only observe

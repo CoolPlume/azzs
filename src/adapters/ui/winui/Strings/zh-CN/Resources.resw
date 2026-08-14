@@ -70,8 +70,43 @@
   <data name="HardwareNetworkLabel.Text" xml:space="preserve"><value>网卡</value></data>
   <data name="HardwareOemLabel.Text" xml:space="preserve"><value>整机 OEM 型号</value></data>
   <data name="FixedDriverEntrypointsTitle.Text" xml:space="preserve"><value>固定驱动入口</value></data>
-  <data name="FixedDriverEntrypointsDescription.Text" xml:space="preserve"><value>硬件识别失败时，这些入口仍会保留。</value></data>
-  <data name="FixedDriverEntrypointsItems.Text" xml:space="preserve"><value>AMD 驱动助手 · Intel 官方驱动页 · NVIDIA 官方驱动页</value></data>
+  <data name="FixedDriverEntrypointsDescription.Text" xml:space="preserve"><value>这些入口只会交接到官方页面；硬件未识别时仍可使用。</value></data>
+  <data name="DriverAssistantTitle.Text" xml:space="preserve"><value>精选驱动助手</value></data>
+  <data name="DriverAssistantDescription.Text" xml:space="preserve"><value>AMD Software 由其官方页面或本机已安装程序接手。工作台不下载、匹配或安装驱动包。</value></data>
+  <data name="DriverAssistantInstallButton" xml:space="preserve"><value>打开 AMD Software 安装页面</value></data>
+  <data name="DriverAssistantLaunchButton" xml:space="preserve"><value>启动 AMD Software</value></data>
+  <data name="DriverAssistantNotInstalled" xml:space="preserve"><value>未检测到本机 AMD Software；可打开其官方安装页面。</value></data>
+  <data name="DriverAssistantInstalled" xml:space="preserve"><value>已检测到本机 AMD Software；可将流程交接给该程序。</value></data>
+  <data name="DriverRecommendationTitle" xml:space="preserve"><value>基于当前硬件的推荐入口</value></data>
+  <data name="DriverEntrypointAmd" xml:space="preserve"><value>AMD Software</value></data>
+  <data name="DriverEntrypointIntel" xml:space="preserve"><value>Intel 驱动助手</value></data>
+  <data name="DriverEntrypointNvidia" xml:space="preserve"><value>NVIDIA 驱动页</value></data>
+  <data name="DriverEntrypointDell" xml:space="preserve"><value>Dell 支持</value></data>
+  <data name="DriverEntrypointHp" xml:space="preserve"><value>HP 支持</value></data>
+  <data name="DriverEntrypointLenovo" xml:space="preserve"><value>Lenovo 支持</value></data>
+  <data name="DriverEntrypointAsus" xml:space="preserve"><value>ASUS 支持</value></data>
+  <data name="DriverIntelButton.Text" xml:space="preserve"><value>打开 Intel 驱动助手页面</value></data>
+  <data name="DriverNvidiaButton.Text" xml:space="preserve"><value>打开 NVIDIA 驱动页面</value></data>
+  <data name="DriverDellButton.Text" xml:space="preserve"><value>打开 Dell 支持页面</value></data>
+  <data name="DriverHpButton.Text" xml:space="preserve"><value>打开 HP 支持页面</value></data>
+  <data name="DriverLenovoButton.Text" xml:space="preserve"><value>打开 Lenovo 支持页面</value></data>
+  <data name="DriverAsusButton.Text" xml:space="preserve"><value>打开 ASUS 支持页面</value></data>
+  <data name="DriverHandoffInProgressTitle" xml:space="preserve"><value>驱动交接中</value></data>
+  <data name="DriverHandoffInProgressBody" xml:space="preserve"><value>外部程序或官方页面正在接手。返回后请由你选择结果，工作台不会自动判定驱动已完成。</value></data>
+  <data name="DriverExternalFlowReturnedButton.Text" xml:space="preserve"><value>我已从外部流程返回</value></data>
+  <data name="DriverHandoffDecisionTitle" xml:space="preserve"><value>记录外部流程结果</value></data>
+  <data name="DriverHandoffDecisionBody" xml:space="preserve"><value>请选择实际结果。选择“已完成”只会重新观测硬件和网络，不会验证或宣称驱动安装成功。</value></data>
+  <data name="DriverCompletedButton.Text" xml:space="preserve"><value>外部流程已完成</value></data>
+  <data name="DriverRestartRequiredButton.Text" xml:space="preserve"><value>外部流程提示需要重启</value></data>
+  <data name="DriverSkipButton.Text" xml:space="preserve"><value>暂时跳过</value></data>
+  <data name="DriverHandoffRestartTitle" xml:space="preserve"><value>等待 Windows 重启</value></data>
+  <data name="DriverHandoffRestartBody" xml:space="preserve"><value>已建立重启屏障。重启并完成只读恢复后，仍需要你明确选择结果。</value></data>
+  <data name="DriverHandoffUnavailableTitle" xml:space="preserve"><value>驱动交接状态不可写</value></data>
+  <data name="DriverHandoffUnavailableBody" xml:space="preserve"><value>无法安全保存外部交接进度，因此不会启动新的外部流程。</value></data>
+  <data name="DriverHandoffLaunchFailedTitle" xml:space="preserve"><value>外部驱动入口未启动</value></data>
+  <data name="DriverObservationTitle" xml:space="preserve"><value>已记录外部返回后的观测</value></data>
+  <data name="DriverObservationNetworkAvailableBody" xml:space="preserve"><value>已重新读取硬件和网络状态；网络当前可用。该记录不表示驱动已验证成功。</value></data>
+  <data name="DriverObservationNetworkUnavailableBody" xml:space="preserve"><value>已重新读取硬件和网络状态；网络当前不可用。该记录不表示驱动已验证成功。</value></data>
   <data name="SystemOptimizationPageTitle.Text" xml:space="preserve"><value>系统优化</value></data>
   <data name="SystemSettingsRecommendedTitle.Text" xml:space="preserve"><value>推荐总体优化</value></data>
   <data name="SystemSettingsSelectRecommendedButtonText.Text" xml:space="preserve"><value>选择推荐项</value></data>

@@ -89,7 +89,7 @@ struct Registration final : LoginResumeRegistration {
   return passed;
 }
 
-[[nodiscard]] bool registration_failure_keeps_the_durable_gate() {
+[[nodiscard]] bool registration_failure_rolls_back_the_durable_gate() {
   InMemoryStateFileSystem files;
   FixedClock clock{azzs::application::WallClockTime{}};
   DeviceStateStore states{files, clock};
@@ -103,9 +103,9 @@ struct Registration final : LoginResumeRegistration {
   RestartResumeService reopened{states, registration};
   auto restored = reopened.restore();
   return passed && expect(restored.succeeded() &&
-                              restored.snapshot.state ==
-                                  RestartResumeState::waiting_for_windows_restart,
-                          "registration failure must retain the durable restart gate");
+                              restored.snapshot.state == RestartResumeState::idle &&
+                              registration.clear_calls == 1,
+                          "registration failure must clear its durable restart gate");
 }
 
 [[nodiscard]] bool cancellation_requires_the_same_explicit_recovery_boundary() {
@@ -154,7 +154,7 @@ struct Registration final : LoginResumeRegistration {
 
 int main() {
   return persists_a_barrier_and_requires_explicit_decision() &&
-                 registration_failure_keeps_the_durable_gate() &&
+                 registration_failure_rolls_back_the_durable_gate() &&
                  cancellation_requires_the_same_explicit_recovery_boundary() &&
                  unverified_recovery_keeps_the_restart_gate_closed()
              ? EXIT_SUCCESS

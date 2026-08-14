@@ -56,6 +56,7 @@ if(WIN32)
   add_library(azzs_windows_adapter STATIC
     src/windows_application_update_platform.cpp
     src/windows_device_data_environment.cpp
+    src/windows_driver_acquisition.cpp
     src/windows_emergency_withdrawal_notice_source.cpp
     src/windows_external_address_launcher.cpp
     src/windows_hardware_observer.cpp
