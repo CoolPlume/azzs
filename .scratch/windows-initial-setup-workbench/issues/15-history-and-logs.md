@@ -2,12 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 02, 08, 11, 12, 24, 27, 28
 Owner: issue-15
 Consumers: 16, 18, 21, 32
 Verification: 历史投影、不可变重试、日志分段、脱敏与单文件诊断 golden 和故障注入测试。
-Evidence freshness: 绑定当前提交、事件与导出模式和输入日志；实机日志只证明其记录的构建与环境。
+Evidence freshness: 绑定功能提交 `f91fd9684f99d3080ef49b50e8098c2e8039cb8b`、合入提交 `a3c5f837afd8f1674026a62a05bd1cd43039d8df`、事件与导出模式和输入日志；产品、目录、事件模式或诊断导出格式改变后须重验。实机日志只证明其记录的构建与环境。
 
 ## Goal
 
@@ -41,4 +41,14 @@ Evidence freshness: 绑定当前提交、事件与导出模式和输入日志；
 
 `HIST-01` 至 `HIST-07`、`LOG-01` 至 `LOG-13`、`DBG-01` 至 `DBG-03`、`DBG-07`、`OPT-51`、`OPT-56`、`OPT-57`、规格第 15.3 节
 
+## Answer
+
+- 功能分支 `codex/issue-15-history-and-log-completion` 的功能提交 `f91fd9684f99d3080ef49b50e8098c2e8039cb8b` 已由 PR [#48](https://github.com/CoolPlume/azzs/pull/48) 普通合入 `codex/v1-integration`，产品合入提交为 `a3c5f837afd8f1674026a62a05bd1cd43039d8df`。本票据证据提交不重复执行已绑定到该功能提交的构建、合同或 CI。
+- Windows x64 focused `history-and-logs.contract` 已在功能候选通过。GitHub Actions run [31830571268](https://github.com/CoolPlume/azzs/actions/runs/31830571268) 的 [x64 Release job 94865001202](https://github.com/CoolPlume/azzs/actions/runs/31830571268/job/94865001202) 为 `success`，绑定同一功能提交。
+- 既有 Windows host guardrails 记录为环境边界，未为本证据提交重跑：完整性 ACL root 夹具缺失使 `execution-log.contract` 不能在该主机完成；目录符号链接 root 夹具缺失使 `windows-device-data.contract` 不能在该主机完成。这两项不是历史/日志产品通过的声明，也没有通过修改产品或夹具掩盖该环境前置条件。
+- ARM64 未在本机执行，按当前 x64 优先策略延期；本票不把自动 CI 的 ARM64 job、未执行的本机 ARM64 合同或八制品发布标准写作通过。
+- 以下消费接入仍由下游 owner 延期，未作为本事项已完成能力或验证结论：推荐流程显示与继续时间由事项 16 负责；设置页日志入口由事项 18 负责；软件优化页最近结果跳转由事项 27 负责；真实调试状态 provider 由事项 32 负责。本事项仅保留已合入的只读历史/日志投影、定位、脱敏诊断导出、日志分段和清空边界。
+
 ## Comments
+
+- 2026-08-15：依据已合入的功能树、同一功能 SHA 的 x64 focused 合同和 GitHub x64 CI 完成结票；host ACL/symlink 夹具边界、ARM64 本机延期及四个下游消费接入均明确保留为未验证或延期，未扩大为产品或发布通过。
