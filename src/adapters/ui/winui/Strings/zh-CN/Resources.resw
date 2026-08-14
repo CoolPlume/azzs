@@ -295,6 +295,76 @@
   <data name="ApplicationUpdateReadOnlyDetail" xml:space="preserve"><value>恢复记录（旧版本 / 失败版本 / UTC 毫秒时间）：</value></data>
   <data name="ApplicationUpdateManualButton" xml:space="preserve"><value>打开 GitHub 下载</value></data>
   <data name="ApplicationUpdateDiagnosticButton" xml:space="preserve"><value>导出诊断资料</value></data>
+  <data name="ApplicationSettingsOperationTitle" xml:space="preserve"><value>设置操作</value></data>
+  <data name="ApplicationSettingsCacheTitle.Text" xml:space="preserve"><value>缓存</value></data>
+  <data name="ApplicationSettingsCacheRetention.Header" xml:space="preserve"><value>保留期限</value></data>
+  <data name="ApplicationSettingsCacheRetentionImmediate.Content" xml:space="preserve"><value>立即删除已完成缓存</value></data>
+  <data name="ApplicationSettingsCacheRetentionSevenDays.Content" xml:space="preserve"><value>保留 7 天</value></data>
+  <data name="ApplicationSettingsCacheRetentionThirtyDays.Content" xml:space="preserve"><value>保留 30 天</value></data>
+  <data name="ApplicationSettingsCacheRetentionIndefinitely.Content" xml:space="preserve"><value>不自动删除</value></data>
+  <data name="ApplicationSettingsClearCacheButton.Content" xml:space="preserve"><value>清理已完成缓存</value></data>
+  <data name="ApplicationSettingsCacheLocationSummary" xml:space="preserve"><value>当前缓存位置：{location}</value></data>
+  <data name="ApplicationSettingsCacheLocationSystem" xml:space="preserve"><value>系统目录</value></data>
+  <data name="ApplicationSettingsCacheLocationLocal" xml:space="preserve"><value>本机受控位置</value></data>
+  <data name="ApplicationSettingsCacheLocationNetwork" xml:space="preserve"><value>网络共享受控位置</value></data>
+  <data name="ApplicationSettingsCacheLocationRemovable" xml:space="preserve"><value>可移动介质受控位置</value></data>
+  <data name="ApplicationSettingsCacheLocationUnavailable" xml:space="preserve"><value>不可用的受控位置</value></data>
+  <data name="ApplicationSettingsArchitectureTitle.Text" xml:space="preserve"><value>软件包架构</value></data>
+  <data name="ApplicationSettingsArchitecturePreference.Header" xml:space="preserve"><value>ARM64 软件包偏好</value></data>
+  <data name="ApplicationSettingsArchitecturePrompt.Content" xml:space="preserve"><value>优先 ARM64，x64 回退前询问</value></data>
+  <data name="ApplicationSettingsArchitectureAutoFallback.Content" xml:space="preserve"><value>优先 ARM64，自动回退 x64</value></data>
+  <data name="ApplicationSettingsArchitecturePreferX64.Content" xml:space="preserve"><value>优先 x64 兼容包</value></data>
+  <data name="ApplicationSettingsCatalogHeading.Text" xml:space="preserve"><value>目录</value></data>
+  <data name="ApplicationSettingsCatalogTitle" xml:space="preserve"><value>目录状态</value></data>
+  <data name="ApplicationSettingsCatalogReady" xml:space="preserve"><value>三类目录各自维护更新和回退；更改前会再次确认。</value></data>
+  <data name="ApplicationSettingsCatalogUnavailable" xml:space="preserve"><value>至少一类目录当前不可用，更新和回退会保留各自的失败原因。</value></data>
+  <data name="ApplicationSettingsSoftwareCatalogTitle.Text" xml:space="preserve"><value>软件与驱动目录</value></data>
+  <data name="ApplicationSettingsSystemCatalogTitle.Text" xml:space="preserve"><value>系统设置目录</value></data>
+  <data name="ApplicationSettingsOptimizationCatalogTitle.Text" xml:space="preserve"><value>软件优化目录</value></data>
+  <data name="ApplicationSettingsCatalogUpdateButton.Content" xml:space="preserve"><value>检查更新</value></data>
+  <data name="ApplicationSettingsCatalogRollbackButton.Content" xml:space="preserve"><value>回退上一版</value></data>
+  <data name="ApplicationSettingsLogsTitle.Text" xml:space="preserve"><value>日志与诊断</value></data>
+  <data name="ApplicationSettingsLogsAvailable" xml:space="preserve"><value>详细日志当前可读取；导出会使用已执行的集中脱敏。</value></data>
+  <data name="ApplicationSettingsLogsUnavailable" xml:space="preserve"><value>详细日志当前不可读取；不会据此伪造诊断资料。</value></data>
+  <data name="ApplicationSettingsExportDiagnosticButton.Content" xml:space="preserve"><value>导出诊断资料</value></data>
+  <data name="ApplicationSettingsClearLogsButton.Content" xml:space="preserve"><value>立即清空日志</value></data>
+  <data name="ApplicationSettingsRecoveryTitle.Text" xml:space="preserve"><value>恢复记录</value></data>
+  <data name="ApplicationSettingsRecoveryRecordCount" xml:space="preserve"><value>可查看 {count} 条恢复记录。</value></data>
+  <data name="ApplicationSettingsRecoveryRecordEntry" xml:space="preserve"><value>恢复记录 #{id}</value></data>
+  <data name="ApplicationSettingsRecoveryNoSelection" xml:space="preserve"><value>尚未选择恢复记录。</value></data>
+  <data name="ApplicationSettingsRecoveryDeleteAvailable" xml:space="preserve"><value>删除前会说明影响并要求再次确认。</value></data>
+  <data name="ApplicationSettingsRecoveryDeleteBlocked" xml:space="preserve"><value>此恢复记录正在等待恢复或验证，暂时不能删除。</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryButton.Content" xml:space="preserve"><value>删除恢复记录</value></data>
+  <data name="ApplicationSettingsDebugTitle.Text" xml:space="preserve"><value>调试工具</value></data>
+  <data name="ApplicationSettingsDebugToggle.Header" xml:space="preserve"><value>调试模式</value></data>
+  <data name="ApplicationSettingsDebugToggle.OffContent" xml:space="preserve"><value>关闭</value></data>
+  <data name="ApplicationSettingsDebugToggle.OnContent" xml:space="preserve"><value>开启</value></data>
+  <data name="ApplicationSettingsDebugUnavailable" xml:space="preserve"><value>当前主机尚未提供调试模式状态；目录编辑和手动导入保持隐藏。</value></data>
+  <data name="ApplicationSettingsDebugEnabled" xml:space="preserve"><value>调试模式已开启；仅由已注入的受控工具提供编辑和导入入口。</value></data>
+  <data name="ApplicationSettingsDebugDisabled" xml:space="preserve"><value>调试模式已关闭；现有目录、日志和业务状态不会因此删除。</value></data>
+  <data name="ApplicationSettingsActionCompleted" xml:space="preserve"><value>设置已更新。</value></data>
+  <data name="ApplicationSettingsActionConfirmationRequired" xml:space="preserve"><value>此操作需要明确确认。</value></data>
+  <data name="ApplicationSettingsActionNoChange" xml:space="preserve"><value>当前没有需要变更的内容。</value></data>
+  <data name="ApplicationSettingsActionUnavailable" xml:space="preserve"><value>当前主机无法提供此操作。</value></data>
+  <data name="ApplicationSettingsActionProtected" xml:space="preserve"><value>当前状态受保护，此操作不能执行。</value></data>
+  <data name="ApplicationSettingsActionRejected" xml:space="preserve"><value>该操作未被当前状态接受。</value></data>
+  <data name="ApplicationSettingsActionFailed" xml:space="preserve"><value>操作未完成；现有状态已保留。</value></data>
+  <data name="ApplicationSettingsClearCacheDialogTitle" xml:space="preserve"><value>清理已完成缓存</value></data>
+  <data name="ApplicationSettingsClearCacheDialogContent" xml:space="preserve"><value>这会删除当前受控缓存位置中的已完成工作台下载，不会删除内置离线资源或正在进行的传输。</value></data>
+  <data name="ApplicationSettingsClearCacheDialogConfirm" xml:space="preserve"><value>清理缓存</value></data>
+  <data name="ApplicationSettingsClearCacheDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="ApplicationSettingsClearLogsDialogTitle" xml:space="preserve"><value>立即清空日志</value></data>
+  <data name="ApplicationSettingsClearLogsDialogContent" xml:space="preserve"><value>这会切换到新的日志段；执行历史、恢复记录和已经生效的状态不会删除。</value></data>
+  <data name="ApplicationSettingsClearLogsDialogConfirm" xml:space="preserve"><value>清空日志</value></data>
+  <data name="ApplicationSettingsClearLogsDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogTitle" xml:space="preserve"><value>删除恢复记录</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogContent" xml:space="preserve"><value>删除后将无法再依据这条记录恢复此前的设置值。当前生效的设置不会被更改。</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogConfirm" xml:space="preserve"><value>删除记录</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="ApplicationSettingsCatalogDialogTitle" xml:space="preserve"><value>确认目录变更</value></data>
+  <data name="ApplicationSettingsCatalogDialogContent" xml:space="preserve"><value>目录变更会在提交前再次校验。失败时当前有效目录保持不变。</value></data>
+  <data name="ApplicationSettingsCatalogDialogConfirm" xml:space="preserve"><value>确认变更</value></data>
+  <data name="ApplicationSettingsCatalogDialogCancel" xml:space="preserve"><value>取消</value></data>
   <data name="OverviewGuidedInitializationStages.AutomationProperties.Name" xml:space="preserve"><value>推荐初始化阶段</value></data>
   <data name="OverviewGuidedStagesTitle.Text" xml:space="preserve"><value>推荐初始化阶段</value></data>
   <data name="OverviewGuidedIndependenceNotice.Text" xml:space="preserve"><value>每个一级页面均可独立使用，推荐流程不会锁定其他操作。</value></data>
