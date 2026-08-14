@@ -9,6 +9,7 @@
 #include "DesignSystem/Controls/ReadOnlyPresentationSurface.xaml.h"
 #include "DesignSystem/presentation_contract.hpp"
 #include "DesignSystem/software_selection_presentation.hpp"
+#include "azzs/application/restart_resume.hpp"
 
 #if __has_include("Pages/SoftwareInstallationPage.g.cpp")
 #include "Pages/SoftwareInstallationPage.g.cpp"
@@ -311,12 +312,17 @@ void SoftwareInstallationPage::handle_installation_batch_intent(
     return;
   }
   auto& batches = services_->installation_batches();
+  auto& restart_resume = services_->restart_resume();
   if (intent.command_id == "pause-download") {
     static_cast<void>(batches.pause_current_download());
   } else if (intent.command_id == "resume-download") {
     static_cast<void>(batches.resume_current_download());
   } else if (intent.command_id == "stop-batch") {
-    static_cast<void>(batches.stop_current());
+    if (restart_resume.snapshot().state !=
+            azzs::application::restart_resume::RestartResumeState::awaiting_user_decision ||
+        restart_resume.cancel().succeeded()) {
+      static_cast<void>(batches.stop_current());
+    }
   } else if (intent.command_id == "request-force-termination") {
     static_cast<void>(batches.request_force_termination());
   } else if (intent.command_id == "confirm-force-termination") {
@@ -328,7 +334,11 @@ void SoftwareInstallationPage::handle_installation_batch_intent(
   } else if (intent.command_id == "recover-read-only") {
     static_cast<void>(batches.recover_read_only());
   } else if (intent.command_id == "continue-after-recovery") {
-    static_cast<void>(batches.continue_after_recovery());
+    if (restart_resume.snapshot().state !=
+            azzs::application::restart_resume::RestartResumeState::awaiting_user_decision ||
+        restart_resume.confirm_continue().succeeded()) {
+      static_cast<void>(batches.continue_after_recovery());
+    }
   }
   refresh();
 }

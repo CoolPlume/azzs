@@ -948,9 +948,11 @@ class SoftwareOptimizationBatchService::Impl final {
   Impl(DeviceStateStore& states, SharedOperationOccupancy& occupancy,
        ExecutionLog& log, SoftwareOptimizationBatchPlanSource& plans,
        SoftwareOptimizationStepExecutor& executor,
-       SoftwareOptimizationWithdrawalAuthorization& withdrawals)
+      SoftwareOptimizationWithdrawalAuthorization& withdrawals,
+      restart_resume::RestartResumeService* restart_resume)
       : states_(states), occupancy_(occupancy), log_(log), plans_(plans),
-        executor_(executor), withdrawals_(withdrawals) {}
+        executor_(executor), withdrawals_(withdrawals),
+        restart_resume_(restart_resume) {}
 
   [[nodiscard]] OptimizationBatchActionResult restore() {
     std::scoped_lock lock{mutex_};
@@ -1822,6 +1824,25 @@ class SoftwareOptimizationBatchService::Impl final {
       return result_locked(OptimizationBatchActionCode::outcome_unknown,
                            "optimization record logging failed after a state transition");
     }
+    if (active_->state == batch_domain::OptimizationBatchState::waiting_restart &&
+        restart_resume_ != nullptr &&
+        restart_resume_->snapshot().state ==
+            restart_resume::RestartResumeState::idle) {
+      auto checkpoint = restart_resume_->arm({
+          .correlation_id = active_->plan.correlation_id,
+          .participants = {{
+              .operation = restart_resume::RestartResumeOperation::
+                  software_optimization_batch,
+              .operation_id = active_->plan.batch_id,
+          }},
+      });
+      if (!checkpoint.succeeded()) {
+        error_ = checkpoint.message.empty()
+                     ? "restart resume registration failed after optimization state was persisted"
+                     : checkpoint.message;
+        return result_locked(OptimizationBatchActionCode::blocked, error_);
+      }
+    }
     if (!terminal_batch_state(active_->state)) {
       return result_locked(OptimizationBatchActionCode::succeeded);
     }
@@ -1966,6 +1987,7 @@ class SoftwareOptimizationBatchService::Impl final {
   std::vector<batch_domain::OptimizationBatchHistory> history_;
   bool writable_{false};
   std::string error_;
+  restart_resume::RestartResumeService* restart_resume_{nullptr};
   OccupancyResultCode last_lease_code_{OccupancyResultCode::storage_error};
   mutable std::mutex mutex_;
 };
@@ -1974,9 +1996,10 @@ SoftwareOptimizationBatchService::SoftwareOptimizationBatchService(
     DeviceStateStore& states, SharedOperationOccupancy& occupancy,
     ExecutionLog& log, SoftwareOptimizationBatchPlanSource& plans,
     SoftwareOptimizationStepExecutor& executor,
-    SoftwareOptimizationWithdrawalAuthorization& withdrawals)
+      SoftwareOptimizationWithdrawalAuthorization& withdrawals,
+      restart_resume::RestartResumeService* restart_resume)
     : impl_(std::make_unique<Impl>(states, occupancy, log, plans, executor,
-                                   withdrawals)) {}
+                                   withdrawals, restart_resume)) {}
 
 SoftwareOptimizationBatchService::~SoftwareOptimizationBatchService() = default;
 

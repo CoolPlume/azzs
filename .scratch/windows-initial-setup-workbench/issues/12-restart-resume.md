@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 02, 05, 08, 10, 11, 27
 Owner: issue-12
+Claimed by: issue-12-x64
 Consumers: 14, 15, 16, 21
 Verification: 无界面恢复状态机与 Windows 登录恢复集成测试，覆盖只读重检、取消、屏障、异常退出和紧急撤回。
 Evidence freshness: 绑定当前提交、检查点与存储模式和具体 Windows build；新修改前重新检测当前状态。

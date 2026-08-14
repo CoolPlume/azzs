@@ -719,20 +719,23 @@ class InstallationBatchService::Impl final {
        ControlledProfileReadinessPort& readiness,
        InstallResultVerifier& verifier, InstallationFactSink& facts,
        catalog_app::SoftwareCatalogLifecycle const& catalogs,
-       selection_app::SoftwareSelectionLifecycle const& selections)
+       selection_app::SoftwareSelectionLifecycle const& selections,
+       restart_resume::RestartResumeService* restart_resume)
       : states_(states), occupancy_(occupancy), log_(log), download_(download),
         executor_(executor), readiness_(readiness), verifier_(verifier), facts_(facts),
-        catalogs_(&catalogs), selections_(&selections) {}
+        catalogs_(&catalogs), selections_(&selections),
+        restart_resume_(restart_resume) {}
 
   Impl(DeviceStateStore& states, SharedOperationOccupancy& occupancy,
        ExecutionLog& log, InstallationDownloadPort& download,
        ControlledInstallerExecutor& executor,
        ControlledProfileReadinessPort& readiness,
        InstallResultVerifier& verifier, InstallationFactSink& facts,
-       FrozenBatchPlanAdmissionPort const& admission)
+       FrozenBatchPlanAdmissionPort const& admission,
+       restart_resume::RestartResumeService* restart_resume)
       : states_(states), occupancy_(occupancy), log_(log), download_(download),
         executor_(executor), readiness_(readiness), verifier_(verifier), facts_(facts),
-        admission_(&admission) {}
+        admission_(&admission), restart_resume_(restart_resume) {}
 
   [[nodiscard]] InstallationBatchActionResult restore() {
     auto const read = states_.inspect(key_);
@@ -758,12 +761,16 @@ class InstallationBatchService::Impl final {
     revision_ = read.snapshot->revision;
     writable_ = true;
     error_.clear();
+    auto const was_waiting_restart =
+        active_.has_value() &&
+        active_->state == batch_domain::InstallationBatchState::waiting_restart;
     if (active_.has_value() && active_->state != batch_domain::InstallationBatchState::completed &&
         active_->state != batch_domain::InstallationBatchState::stopped) {
       // A restored batch may contain a launcher effect whose durable receipt
       // was interrupted. It can only take the explicit read-only recovery
       // path; advance() must never repeat that effect.
       active_->state = batch_domain::InstallationBatchState::recovery_required;
+      if (was_waiting_restart) active_->close_requested = true;
     }
     // Restore is intentionally local-only. A caller must explicitly request
     // recovery, which uses only the verifier and cannot launch another item.
@@ -2043,6 +2050,24 @@ class InstallationBatchService::Impl final {
                     .item_id = progress.item_id,
                     .item_state = progress.state,
                     .result = execution_result(progress.state)});
+    if (active_->state == batch_domain::InstallationBatchState::waiting_restart &&
+        restart_resume_ != nullptr &&
+        restart_resume_->snapshot().state ==
+            restart_resume::RestartResumeState::idle) {
+      auto checkpoint = restart_resume_->arm({
+          .correlation_id = active_->plan.correlation_id,
+          .participants = {{
+              .operation = restart_resume::RestartResumeOperation::installation_batch,
+              .operation_id = active_->plan.batch_id,
+          }},
+      });
+      if (!checkpoint.succeeded()) {
+        error_ = checkpoint.message.empty()
+                     ? "restart resume registration failed after installation state was persisted"
+                     : checkpoint.message;
+        return result(InstallationBatchActionCode::blocked, error_);
+      }
+    }
     if (!releases_occupancy()) {
       return result(InstallationBatchActionCode::succeeded);
     }
@@ -2195,6 +2220,7 @@ class InstallationBatchService::Impl final {
   catalog_app::SoftwareCatalogLifecycle const* catalogs_{nullptr};
   selection_app::SoftwareSelectionLifecycle const* selections_{nullptr};
   FrozenBatchPlanAdmissionPort const* admission_{nullptr};
+  restart_resume::RestartResumeService* restart_resume_{nullptr};
   domain::StateKey key_ = domain::StateKey::machine(
       domain::AggregateId{"installation-batch"});
   std::optional<domain::RevisionToken> revision_;
@@ -2212,9 +2238,11 @@ InstallationBatchService::InstallationBatchService(
     ControlledProfileReadinessPort& readiness,
     InstallResultVerifier& verifier, InstallationFactSink& facts,
     software_catalog::SoftwareCatalogLifecycle const& catalogs,
-    software_selection::SoftwareSelectionLifecycle const& selections)
+    software_selection::SoftwareSelectionLifecycle const& selections,
+    restart_resume::RestartResumeService* restart_resume)
     : impl_(std::make_unique<Impl>(states, occupancy, log, download, executor,
-                                   readiness, verifier, facts, catalogs, selections)) {}
+                                   readiness, verifier, facts, catalogs, selections,
+                                   restart_resume)) {}
 
 InstallationBatchService::InstallationBatchService(
     DeviceStateStore& states, SharedOperationOccupancy& occupancy,
@@ -2222,9 +2250,11 @@ InstallationBatchService::InstallationBatchService(
     ControlledInstallerExecutor& executor,
     ControlledProfileReadinessPort& readiness,
     InstallResultVerifier& verifier, InstallationFactSink& facts,
-    FrozenBatchPlanAdmissionPort const& admission)
+    FrozenBatchPlanAdmissionPort const& admission,
+    restart_resume::RestartResumeService* restart_resume)
     : impl_(std::make_unique<Impl>(states, occupancy, log, download, executor,
-                                   readiness, verifier, facts, admission)) {}
+                                   readiness, verifier, facts, admission,
+                                   restart_resume)) {}
 
 InstallationBatchService::~InstallationBatchService() = default;
 

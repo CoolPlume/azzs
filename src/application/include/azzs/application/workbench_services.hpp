@@ -42,6 +42,9 @@ class ExecutionLog;
 class SharedOperationOccupancy;
 class SystemSettingsApplyService;
 class ApplicationUpdateLifecycle;
+namespace restart_resume {
+class RestartResumeService;
+}
 
 // The application-facing service bundle assembled exactly once by the host.
 // Concrete filesystem, lock and Win32 types remain behind these typed seams.
@@ -80,6 +83,8 @@ class WorkbenchServices {
   installation_batches() noexcept = 0;
   [[nodiscard]] virtual software_optimization_batch::SoftwareOptimizationBatchService&
   software_optimization_batches() noexcept = 0;
+  [[nodiscard]] virtual restart_resume::RestartResumeService&
+  restart_resume() noexcept = 0;
 };
 
 }  // namespace azzs::application

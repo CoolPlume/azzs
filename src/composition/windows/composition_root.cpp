@@ -32,6 +32,7 @@
 #include "azzs/adapters/windows/windows_installation_batch_adapters.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
+#include "azzs/adapters/windows/windows_restart_resume_registration.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
 #include "azzs/adapters/windows/windows_sogou_optimization_adapter.hpp"
 #include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
@@ -46,6 +47,7 @@
 #include "azzs/application/installation_batch.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/operation_occupancy.hpp"
+#include "azzs/application/restart_resume.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
 #include "azzs/application/software_optimization_catalog_lifecycle.hpp"
@@ -148,6 +150,8 @@ class WindowsWorkbenchServices final
         hardware_overview_(hardware_observer_, clock_),
         state_files_(environment),
         states_(state_files_, clock_),
+        restart_resume_registration_(),
+        restart_resume_(states_, restart_resume_registration_),
         log_storage_(environment.root_utf8, environment.subject_id),
         log_(log_storage_, clock_),
         emergency_notice_source_(),
@@ -216,7 +220,7 @@ class WindowsWorkbenchServices final
         software_optimization_batches_(
             states_, occupancy_, log_, software_optimization_batch_plans_,
             software_optimization_batch_executor_,
-            software_optimization_batch_withdrawals_) {
+            software_optimization_batch_withdrawals_, &restart_resume_) {
     static_cast<void>(settings_catalog_.initialize_builtin(
         application::settings_catalog::initial_settings_catalog()));
     static_cast<void>(system_settings_apply_.refresh());
@@ -231,8 +235,34 @@ class WindowsWorkbenchServices final
           optimization_catalog.source, "embedded-software-optimization-catalog"));
     }
     synchronize_live_offline_package_cache();
+    static_cast<void>(restart_resume_.restore());
     static_cast<void>(installation_batches_.restore());
     static_cast<void>(software_optimization_batches_.restore());
+    if (adapters::windows::is_restart_resume_login_launch()) {
+      auto resumed = restart_resume_.resume_after_login();
+      if (resumed.succeeded() && resumed.snapshot.checkpoint.has_value()) {
+        bool read_only_verified = true;
+        for (auto const& participant : resumed.snapshot.checkpoint->participants) {
+          switch (participant.operation) {
+            case application::restart_resume::RestartResumeOperation::installation_batch:
+              read_only_verified =
+                  installation_batches_.recover_read_only().succeeded() && read_only_verified;
+              break;
+            case application::restart_resume::RestartResumeOperation::software_optimization_batch:
+              read_only_verified = software_optimization_batches_.recover_read_only().succeeded() &&
+                                   read_only_verified;
+              break;
+            case application::restart_resume::RestartResumeOperation::system_settings:
+              // There is no system-settings read-only participant recovery yet.
+              read_only_verified = false;
+              break;
+          }
+        }
+        if (read_only_verified) {
+          static_cast<void>(restart_resume_.complete_read_only_verification());
+        }
+      }
+    }
   }
 
   void start_emergency_preflight() {
@@ -343,6 +373,11 @@ class WindowsWorkbenchServices final
     return software_optimization_batches_;
   }
 
+  [[nodiscard]] application::restart_resume::RestartResumeService&
+  restart_resume() noexcept override {
+    return restart_resume_;
+  }
+
   [[nodiscard]] application::HardwareOverviewService& hardware_overview()
       noexcept override {
     return hardware_overview_;
@@ -393,6 +428,9 @@ class WindowsWorkbenchServices final
   application::HardwareOverviewService hardware_overview_;
   adapters::windows::WindowsStateFileSystem state_files_;
   application::DeviceStateStore states_;
+  adapters::windows::WindowsLoginResumeRegistration
+      restart_resume_registration_;
+  application::restart_resume::RestartResumeService restart_resume_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;
   adapters::infrastructure::StructuredExecutionLog log_;
   std::once_flag emergency_preflight_started_;
@@ -504,7 +542,8 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsInstallationFactSink batch_facts_{log_};
   application::installation_batch::InstallationBatchService installation_batches_{
       states_, occupancy_, log_, batch_download_, batch_executor_, batch_readiness_,
-      batch_verifier_, batch_facts_, software_catalog_, software_selection_};
+      batch_verifier_, batch_facts_, software_catalog_, software_selection_,
+      &restart_resume_};
 };
 
 }  // namespace
