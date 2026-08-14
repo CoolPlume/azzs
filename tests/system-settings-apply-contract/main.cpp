@@ -46,12 +46,17 @@ using azzs::application::SystemSettingsAdapterStatus;
 using azzs::application::SystemSettingsApplyRequest;
 using azzs::application::SystemSettingsApplyService;
 using azzs::application::SystemSettingsCatalogSnapshotSource;
+using azzs::application::SystemSettingsFactAvailability;
+using azzs::application::SystemSettingsOperationHistory;
+using azzs::application::SystemSettingsOperationKind;
+using azzs::application::SystemSettingsOperationStatus;
 using azzs::application::SystemSettingsPlatformAdapter;
 using azzs::application::SystemSettingsRead;
 using azzs::application::SystemSettingsRecoveryRecord;
 using azzs::application::SystemSettingsRecoveryStore;
 using azzs::application::SystemSettingsSnapshotStatus;
 using azzs::application::SystemSettingsUndoStatus;
+using azzs::application::SystemSettingsWindowsVersionFact;
 using azzs::application::WindowsSystemSettingValue;
 using InfrastructureRecoveryStore =
     azzs::adapters::infrastructure::SystemSettingsRecoveryStore;
@@ -158,13 +163,17 @@ using azzs::testing::SequenceLeaseTokenSource;
 class MemoryCatalogSource final : public SystemSettingsCatalogSnapshotSource {
  public:
   explicit MemoryCatalogSource(catalog::SettingsCatalog input) {
-    auto validation = catalog::validate(std::move(input), capabilities());
-    catalog_ = std::move(validation.validated);
+    replace(std::move(input));
   }
 
   [[nodiscard]] std::optional<catalog::ValidatedSettingsCatalog>
   current_settings_catalog() override {
     return catalog_;
+  }
+
+  void replace(catalog::SettingsCatalog input) {
+    auto validation = catalog::validate(std::move(input), capabilities());
+    catalog_ = std::move(validation.validated);
   }
 
  private:
@@ -204,7 +213,9 @@ class MemoryRecoveryStore final : public SystemSettingsRecoveryStore {
       : records(std::move(initial_records)), events_(events) {}
 
   [[nodiscard]] RecoveryStorageRead read() override {
-    return {.status = RecoveryStorageStatus::loaded, .records = records};
+    return {.status = RecoveryStorageStatus::loaded,
+            .records = records,
+            .operation_history = operation_history};
   }
 
   [[nodiscard]] RecoveryStorageWrite save(
@@ -217,6 +228,12 @@ class MemoryRecoveryStore final : public SystemSettingsRecoveryStore {
     } else {
       *found = std::move(record);
     }
+    return {.status = RecoveryStorageStatus::committed};
+  }
+
+  [[nodiscard]] RecoveryStorageWrite append_operation_fact(
+      azzs::application::SystemSettingsOperationFact fact) override {
+    operation_history.facts.push_back(std::move(fact));
     return {.status = RecoveryStorageStatus::committed};
   }
 
@@ -233,6 +250,7 @@ class MemoryRecoveryStore final : public SystemSettingsRecoveryStore {
   }
 
   std::vector<SystemSettingsRecoveryRecord> records;
+  SystemSettingsOperationHistory operation_history;
 
  private:
   std::vector<std::string>& events_;
@@ -250,6 +268,11 @@ class MemoryPlatform final : public SystemSettingsPlatformAdapter {
   [[nodiscard]] std::optional<catalog::WindowsVersion> windows_version()
       const override {
     return version;
+  }
+
+  [[nodiscard]] std::optional<SystemSettingsWindowsVersionFact>
+  windows_version_fact() const override {
+    return windows_environment;
   }
 
   [[nodiscard]] SystemSettingsRead read(
@@ -305,6 +328,9 @@ class MemoryPlatform final : public SystemSettingsPlatformAdapter {
   }
 
   std::optional<catalog::WindowsVersion> version{windows11_25h2()};
+  std::optional<SystemSettingsWindowsVersionFact> windows_environment{
+      SystemSettingsWindowsVersionFact{.display_version = "Windows 11 25H2",
+                                       .internal_build = 26'200}};
   std::optional<ControlledSystemSetting> fail_apply;
   std::optional<ControlledSystemSetting> fail_restore;
   bool restarted{false};
@@ -552,6 +578,188 @@ class Harness final {
   return passed;
 }
 
+[[nodiscard]] bool verify_operation_history_is_immutable_and_append_only() {
+  auto input = make_catalog(false);
+  input.plans[0].members[0].default_selected = true;
+  Harness harness{std::move(input)};
+  bool passed = true;
+  passed &= expect(harness.service.select_recommended_plan(
+                       catalog::StableId{"plan.recommended"}),
+                   "operation history test must select a frozen plan");
+  auto applied = harness.service.apply_selected();
+  auto initial_history = harness.service.operation_history();
+  passed &= expect(applied.waiting_for_explorer_restart &&
+                       initial_history.facts.size() == 1,
+                   "apply must append one immutable operation fact");
+  if (initial_history.facts.empty()) {
+    return false;
+  }
+  auto const& fact = initial_history.facts.front();
+  passed &= expect(fact.operation == SystemSettingsOperationKind::apply &&
+                       fact.catalog_availability ==
+                           SystemSettingsFactAvailability::obtained &&
+                       fact.catalog_identity == "system-settings-catalog" &&
+                       fact.catalog_revision == 42 &&
+                       fact.selected_plan_id.has_value() &&
+                       fact.selected_plan_id->value == "plan.recommended",
+                   "apply history must freeze catalog identity, revision and plan");
+  passed &= expect(
+      fact.windows_environment.availability ==
+          SystemSettingsFactAvailability::obtained &&
+          fact.windows_environment.display_version == "Windows 11 25H2" &&
+          fact.windows_environment.internal_build == 26'200 &&
+          fact.settings.size() == 1 &&
+          fact.settings.front().declared_range_availability ==
+              SystemSettingsFactAvailability::obtained &&
+          fact.settings.front().original_value ==
+              WindowsSystemSettingValue{ClassicContextMenuMode::windows11} &&
+          fact.settings.front().target_value ==
+              WindowsSystemSettingValue{ClassicContextMenuMode::classic},
+      "apply history must freeze Windows, declared range, original and target facts");
+  passed &= expect(
+      fact.explorer_restart_result ==
+          azzs::application::SystemSettingsExplorerRestartResult::deferred &&
+          fact.status ==
+              SystemSettingsOperationStatus::waiting_explorer_restart &&
+          fact.timeline.size() == 2,
+      "deferred Explorer restart must be part of the immutable operation fact");
+
+  auto changed_catalog = make_catalog(false);
+  changed_catalog.revision = 99;
+  changed_catalog.settings.front().display_name = "更新后的设置名称";
+  changed_catalog.settings.front().known_windows_range.minimum = windows11_26h1();
+  harness.catalog_source.replace(std::move(changed_catalog));
+  harness.platform.version = windows11_26h1();
+  harness.platform.windows_environment = SystemSettingsWindowsVersionFact{
+      .display_version = "Windows 11 26H1", .internal_build = 27'000};
+  static_cast<void>(harness.service.refresh());
+  passed &= expect(harness.service.operation_history() == initial_history,
+                   "later catalog and Windows changes must not backfill old facts");
+
+  auto restarted = harness.service.restart_explorer_now();
+  auto after_restart = harness.service.operation_history();
+  passed &= expect(restarted.status == SystemSettingsSnapshotStatus::completed &&
+                       after_restart.facts.size() == 2 &&
+                       after_restart.facts[1].operation ==
+                           SystemSettingsOperationKind::restart_explorer &&
+                       after_restart.facts[1].explorer_restart_result ==
+                           azzs::application::SystemSettingsExplorerRestartResult::
+                               succeeded,
+                   "Explorer restart verification must append its own result fact");
+  passed &= expect(after_restart.facts.front() == initial_history.facts.front(),
+                   "restart verification must not rewrite the apply fact");
+
+  harness.platform.fail_restore = ControlledSystemSetting::classic_context_menu;
+  auto failed_undo = harness.service.undo(
+      catalog::StableId{"setting.classic-context-menu"});
+  auto after_failed_undo = harness.service.operation_history();
+  passed &= expect(failed_undo.status == SystemSettingsUndoStatus::failed &&
+                       after_failed_undo.facts.size() == 3 &&
+                       after_failed_undo.facts.back().operation ==
+                           SystemSettingsOperationKind::restore &&
+                       after_failed_undo.facts.back().status ==
+                           SystemSettingsOperationStatus::failed,
+                   "failed restore must append an immutable failure fact");
+
+  harness.platform.fail_restore.reset();
+  auto retried_undo = harness.service.undo(
+      catalog::StableId{"setting.classic-context-menu"});
+  auto after_retry = harness.service.operation_history();
+  passed &= expect(
+      retried_undo.status == SystemSettingsUndoStatus::waiting_explorer_restart &&
+          after_retry.facts.size() == 4 &&
+          after_retry.facts.back().status ==
+              SystemSettingsOperationStatus::waiting_explorer_restart &&
+          after_retry.facts[2] == after_failed_undo.facts.back(),
+      "restore retry must append a new fact without changing the failed one");
+  return passed;
+}
+
+[[nodiscard]] bool verify_legacy_recovery_projects_not_obtained_facts() {
+  SystemSettingsRecoveryRecord record{
+      .record_id = 77,
+      .setting_id = catalog::StableId{"retired.classic-context-menu"},
+      .display_name = "旧恢复记录",
+      .catalog_revision = 7,
+      .setting = ControlledSystemSetting::classic_context_menu,
+      .original_value = ClassicContextMenuMode::windows11,
+      .restart_requirement = catalog::RestartRequirement::none,
+      .status = RecoveryRecordStatus::applied,
+  };
+  Harness harness{make_catalog(false), {record}};
+  auto history = harness.service.operation_history();
+  bool passed = true;
+  passed &= expect(history.facts.size() == 1 &&
+                       history.facts.front().fact_id != 0 &&
+                       history.facts.front().catalog_availability ==
+                           SystemSettingsFactAvailability::not_obtained &&
+                       history.facts.front().catalog_identity == "NOT_OBTAINED" &&
+                       history.facts.front().windows_environment.availability ==
+                           SystemSettingsFactAvailability::not_obtained &&
+                       history.facts.front().settings.size() == 1 &&
+                       history.facts.front().settings.front().recovery_record_id ==
+                           record.record_id,
+                   "legacy recovery records must project missing history fields as NOT_OBTAINED");
+  passed &= expect(
+      history.facts.front().catalog_reason ==
+          "NOT_OBTAINED: legacy recovery record predates immutable operation history" &&
+          history.facts.front().settings.front().declared_range_reason ==
+              "NOT_OBTAINED: legacy recovery record predates immutable operation history",
+      "legacy NOT_OBTAINED facts must carry stable reasons");
+  return passed;
+}
+
+[[nodiscard]] bool
+verify_legacy_history_survives_new_operation_and_restart() {
+  SystemSettingsRecoveryRecord legacy{
+      .record_id = 77,
+      .setting_id = catalog::StableId{"retired.classic-context-menu"},
+      .display_name = "旧恢复记录",
+      .catalog_revision = 7,
+      .setting = ControlledSystemSetting::classic_context_menu,
+      .original_value = ClassicContextMenuMode::windows11,
+      .restart_requirement = catalog::RestartRequirement::none,
+      .status = RecoveryRecordStatus::applied,
+  };
+  Harness harness{make_catalog(false), {legacy}};
+  bool passed = true;
+  passed &= expect(harness.service.set_selected(
+                       catalog::StableId{"setting.classic-context-menu"}, true),
+                   "legacy migration test must select a new operation");
+  auto applied = harness.service.apply_selected();
+  auto const persisted_history = harness.recovery.operation_history;
+  auto const legacy_fact = std::ranges::find_if(
+      persisted_history.facts,
+      [&legacy](azzs::application::SystemSettingsOperationFact const& fact) {
+        return std::ranges::any_of(
+            fact.settings,
+            [&legacy](azzs::application::SystemSettingsOperationSettingFact const&
+                          setting) {
+              return setting.recovery_record_id == legacy.record_id;
+            });
+      });
+  passed &= expect(
+      applied.status == SystemSettingsSnapshotStatus::completed &&
+          persisted_history.facts.size() == 2 &&
+          legacy_fact != persisted_history.facts.end() &&
+          legacy_fact->catalog_availability ==
+              SystemSettingsFactAvailability::not_obtained,
+      "new operations must persist the projected legacy fact before appending their own fact");
+
+  InMemoryOperationOccupancyStorage restarted_storage;
+  SequenceLeaseTokenSource restarted_tokens{"restarted-lease-"};
+  azzs::application::SharedOperationOccupancy restarted_occupancy{
+      restarted_storage, restarted_tokens};
+  RecordingLog restarted_log;
+  SystemSettingsApplyService restarted{harness.catalog_source, harness.platform,
+                                       harness.recovery, restarted_occupancy,
+                                       restarted_log};
+  passed &= expect(
+      restarted.operation_history() == persisted_history,
+      "restart must retain both the legacy projection and the later operation fact");
+  return passed;
+}
+
 [[nodiscard]] bool verify_reopened_explorer_wait_state() {
   SystemSettingsRecoveryRecord record{
       .record_id = 7,
@@ -755,6 +963,47 @@ class Harness final {
   bool passed = true;
   passed &= expect(first.save(record).status == RecoveryStorageStatus::committed,
                    "infrastructure recovery store must save an undo snapshot");
+  azzs::application::SystemSettingsOperationFact fact{
+      .fact_id = 88,
+      .operation = SystemSettingsOperationKind::restore,
+      .catalog_availability = SystemSettingsFactAvailability::not_obtained,
+      .catalog_identity = "NOT_OBTAINED",
+      .catalog_revision = record.catalog_revision,
+      .catalog_reason = "NOT_OBTAINED: frozen recovery record has no catalog identity",
+      .windows_environment = {
+          .availability = SystemSettingsFactAvailability::obtained,
+          .display_version = "Windows 11 25H2",
+          .internal_build = 26'200,
+          .reason = {}},
+      .explorer_restart_requested = true,
+      .explorer_restart_result =
+          azzs::application::SystemSettingsExplorerRestartResult::deferred,
+      .status = SystemSettingsOperationStatus::waiting_explorer_restart,
+      .reason = "等待资源管理器重启后重新验证",
+      .settings = {{
+          .setting_id = record.setting_id,
+          .display_name = record.display_name,
+          .controlled_identity = "NOT_OBTAINED",
+          .catalog_revision = record.catalog_revision,
+          .declared_range_availability =
+              SystemSettingsFactAvailability::not_obtained,
+          .declared_range_reason =
+              "NOT_OBTAINED: frozen recovery record has no declared Windows range",
+          .original_value = record.original_value,
+          .target_value = record.original_value,
+          .recovery_record_id = record.record_id,
+          .restart_requirement = record.restart_requirement,
+          .status = SystemSettingsOperationStatus::waiting_explorer_restart,
+          .reason = "等待资源管理器重启后重新验证"}},
+      .timeline = {{
+          .ordinal = 1,
+          .stage = "restore-finished",
+          .status = SystemSettingsOperationStatus::waiting_explorer_restart,
+          .reason = "等待资源管理器重启后重新验证"}},
+  };
+  passed &= expect(first.append_operation_fact(fact).status ==
+                       RecoveryStorageStatus::committed,
+                   "infrastructure recovery store must append immutable facts");
   DeviceStateStore restarted_states{files, clock};
   InfrastructureRecoveryStore restarted{restarted_states};
   auto loaded = restarted.read();
@@ -762,8 +1011,10 @@ class Harness final {
                        loaded.records.size() == 1 &&
                        loaded.records[0].display_name == record.display_name &&
                        loaded.records[0].operation ==
-                           RecoveryRecordOperation::restore,
-                   "restart must retain frozen undo display and operation data");
+                           RecoveryRecordOperation::restore &&
+                       loaded.operation_history.facts.size() == 1 &&
+                       loaded.operation_history.facts.front() == fact,
+                   "restart must retain frozen recovery and operation-history facts");
   passed &= expect(restarted.erase(record.record_id).status ==
                        RecoveryStorageStatus::committed,
                    "infrastructure recovery store must erase a confirmed record");
@@ -771,8 +1022,9 @@ class Harness final {
   InfrastructureRecoveryStore erased{erased_states};
   auto empty = erased.read();
   passed &= expect(empty.status == RecoveryStorageStatus::loaded &&
-                       empty.records.empty(),
-                   "erased recovery records must stay absent after restart");
+                       empty.records.empty() &&
+                       empty.operation_history.facts.size() == 1,
+                   "recovery deletion must not remove immutable operation history");
   return passed;
 }
 
@@ -787,6 +1039,9 @@ int main() {
   passed &= verify_failure_only_blocks_dependencies();
   passed &= verify_applicability_and_force_attempt();
   passed &= verify_explorer_restart_validation();
+  passed &= verify_operation_history_is_immutable_and_append_only();
+  passed &= verify_legacy_recovery_projects_not_obtained_facts();
+  passed &= verify_legacy_history_survives_new_operation_and_restart();
   passed &= verify_reopened_explorer_wait_state();
   passed &= verify_undo_restores_most_recent_original_value();
   passed &= verify_undo_survives_retired_catalog_item();
