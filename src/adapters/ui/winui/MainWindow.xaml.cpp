@@ -211,6 +211,12 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::history_and_logs:
       ContentFrame().Navigate(xaml_typename<Pages::HistoryAndLogsPage>(), nullptr,
                               transition);
+      if (auto const services = workbench_->services()) {
+        auto const history_page =
+            ContentFrame().Content().as<Pages::HistoryAndLogsPage>();
+        winrt::get_self<Pages::implementation::HistoryAndLogsPage>(history_page)
+            ->bind(services->history_and_logs());
+      }
       break;
     case PageId::application_settings:
       ContentFrame().Navigate(xaml_typename<Pages::ApplicationSettingsPage>(),

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cctype>
 #include <cstdint>
 #include <initializer_list>
@@ -11,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace azzs::adapters::infrastructure {
 namespace {
@@ -327,6 +329,42 @@ struct ParsedLog final {
   return encoded;
 }
 
+[[nodiscard]] std::optional<unsigned char> hex_value(char value) noexcept {
+  if (value >= '0' && value <= '9') {
+    return static_cast<unsigned char>(value - '0');
+  }
+  if (value >= 'A' && value <= 'F') {
+    return static_cast<unsigned char>(value - 'A' + 10);
+  }
+  if (value >= 'a' && value <= 'f') {
+    return static_cast<unsigned char>(value - 'a' + 10);
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<std::string> percent_decode(
+    std::string_view value) noexcept {
+  std::string decoded;
+  decoded.reserve(value.size());
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    if (value[index] != '%') {
+      decoded.push_back(value[index]);
+      continue;
+    }
+    if (index + 2 >= value.size()) {
+      return std::nullopt;
+    }
+    auto const high = hex_value(value[index + 1]);
+    auto const low = hex_value(value[index + 2]);
+    if (!high.has_value() || !low.has_value()) {
+      return std::nullopt;
+    }
+    decoded.push_back(static_cast<char>((*high << 4U) | *low));
+    index += 2;
+  }
+  return decoded;
+}
+
 void replace_all(std::string& text, std::string_view needle,
                  std::string_view replacement) {
   if (needle.empty()) {
@@ -398,6 +436,9 @@ void replace_all(std::string& text, std::string_view needle,
   static std::regex const credential{
       R"((password|passcode|token|cookie|authorization|bearer)(\s*[:=]\s*)[^\s,;]+)",
       std::regex_constants::icase | std::regex_constants::optimize};
+  static std::regex const identity_assignment{
+      R"((\b(?:computer(?:[_ -]?name)?|host(?:[_ -]?name)?|user(?:[_ -]?name)?|username|login(?:[_ -]?name)?|ssid|bssid|device(?:[_ -]?(?:id|identifier|unique(?:[_ -]?(?:id|identifier))?))?|machine(?:[_ -]?(?:guid|id))?|hardware(?:[_ -]?(?:id|identifier))?|serial(?:[_ -]?(?:number|id)?)?)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^,;\r\n]+))",
+      std::regex_constants::icase | std::regex_constants::optimize};
 
   sanitized = std::regex_replace(sanitized, windows_user_path,
                                  "%USERPROFILE%/");
@@ -412,6 +453,8 @@ void replace_all(std::string& text, std::string_view needle,
   sanitized = std::regex_replace(sanitized, bearer, "$1[redacted]");
   sanitized = std::regex_replace(sanitized, credential,
                                  "$1$2[redacted]");
+  sanitized = std::regex_replace(sanitized, identity_assignment,
+                                 "$1[redacted]");
   return sanitized;
 }
 
@@ -421,6 +464,206 @@ void replace_all(std::string& text, std::string_view needle,
   auto sanitized = redact(value, sensitive_values);
   return valid_event_token(sanitized) ? std::move(sanitized)
                                       : std::string{"redacted"};
+}
+
+[[nodiscard]] std::optional<application::ExecutionEventKind> event_kind_from(
+    std::string_view value) noexcept {
+  if (value == "user_command") {
+    return application::ExecutionEventKind::user_command;
+  }
+  if (value == "state_transition") {
+    return application::ExecutionEventKind::state_transition;
+  }
+  if (value == "adapter_result") {
+    return application::ExecutionEventKind::adapter_result;
+  }
+  if (value == "coverage_gap") {
+    return application::ExecutionEventKind::coverage_gap;
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<application::ExecutionResult> execution_result_from(
+    std::string_view value) noexcept {
+  if (value == "started") {
+    return application::ExecutionResult::started;
+  }
+  if (value == "succeeded") {
+    return application::ExecutionResult::succeeded;
+  }
+  if (value == "failed") {
+    return application::ExecutionResult::failed;
+  }
+  if (value == "cancelled") {
+    return application::ExecutionResult::cancelled;
+  }
+  if (value == "unknown") {
+    return application::ExecutionResult::unknown;
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<application::CoverageGapKind> coverage_gap_from(
+    std::string_view value) noexcept {
+  if (value == "dropped") {
+    return application::CoverageGapKind::dropped;
+  }
+  if (value == "truncated") {
+    return application::CoverageGapKind::truncated;
+  }
+  if (value == "abnormal_exit") {
+    return application::CoverageGapKind::abnormal_exit;
+  }
+  if (value == "platform_unavailable") {
+    return application::CoverageGapKind::platform_unavailable;
+  }
+  if (value == "flush_failed") {
+    return application::CoverageGapKind::flush_failed;
+  }
+  if (value == "permission_denied") {
+    return application::CoverageGapKind::permission_denied;
+  }
+  if (value == "redaction_gap") {
+    return application::CoverageGapKind::redaction_gap;
+  }
+  if (value == "unknown_after_last_persisted") {
+    return application::CoverageGapKind::unknown_after_last_persisted;
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<std::vector<application::ExecutionLogFieldProjection>>
+parse_field_projection(std::string_view encoded_fields) {
+  std::vector<application::ExecutionLogFieldProjection> fields;
+  while (!encoded_fields.empty()) {
+    auto const separator = encoded_fields.find(';');
+    if (separator == std::string_view::npos) {
+      return std::nullopt;
+    }
+    auto const field = encoded_fields.substr(0, separator);
+    encoded_fields.remove_prefix(separator + 1);
+    if (field.empty()) {
+      continue;
+    }
+    auto const equals = field.find('=');
+    if (equals == std::string_view::npos) {
+      return std::nullopt;
+    }
+    auto key = percent_decode(field.substr(0, equals));
+    auto value = percent_decode(field.substr(equals + 1));
+    if (!key.has_value() || !value.has_value()) {
+      return std::nullopt;
+    }
+    fields.push_back({.key = redact(*key, {}), .value = redact(*value, {})});
+  }
+  return fields;
+}
+
+[[nodiscard]] std::optional<application::ExecutionLogEventProjection>
+parse_event_projection(std::string_view line) {
+  application::ExecutionLogEventProjection event;
+  std::int64_t timestamp{};
+  if (!parse_uint64(field_at(line, 1), event.segment) ||
+      !parse_uint64(field_at(line, 2), event.sequence) ||
+      !parse_int64(field_at(line, 4), timestamp)) {
+    return std::nullopt;
+  }
+  auto correlation = percent_decode(field_at(line, 3));
+  auto kind = event_kind_from(field_at(line, 5));
+  auto result = execution_result_from(field_at(line, 8));
+  auto component = percent_decode(field_at(line, 6));
+  auto stage = percent_decode(field_at(line, 7));
+  auto fields = parse_field_projection(field_at(line, 18));
+  if (!correlation.has_value() || !kind.has_value() || !result.has_value() ||
+      !component.has_value() || !stage.has_value() || !fields.has_value()) {
+    return std::nullopt;
+  }
+  event.correlation.value = redact(*correlation, {});
+  event.recorded_at_milliseconds = timestamp;
+  event.kind = *kind;
+  event.component = redact_event_token(*component, {});
+  event.stage = redact_event_token(*stage, {});
+  event.result = *result;
+  event.fields = std::move(*fields);
+
+  auto error_source = percent_decode(field_at(line, 9));
+  auto error_message = percent_decode(field_at(line, 11));
+  std::int64_t error_code{};
+  if (!error_source.has_value() || !error_message.has_value() ||
+      (!field_at(line, 10).empty() &&
+       !parse_int64(field_at(line, 10), error_code))) {
+    return std::nullopt;
+  }
+  if (!error_source->empty() || !error_message->empty() ||
+      !field_at(line, 10).empty()) {
+    event.error = application::ExecutionError{
+        .source = redact(*error_source, {}),
+        .code = error_code,
+        .message = redact(*error_message, {}),
+    };
+  }
+
+  std::uint64_t generation{};
+  auto trusted_summary = percent_decode(field_at(line, 13));
+  if (!trusted_summary.has_value() ||
+      (!field_at(line, 12).empty() &&
+       !parse_uint64(field_at(line, 12), generation))) {
+    return std::nullopt;
+  }
+  if (!field_at(line, 12).empty() || !trusted_summary->empty()) {
+    event.last_trusted_state = application::LastTrustedState{
+        .generation = generation,
+        .summary = redact(*trusted_summary, {}),
+    };
+  }
+
+  auto gap_reason = percent_decode(field_at(line, 17));
+  if (!gap_reason.has_value()) {
+    return std::nullopt;
+  }
+  if (!field_at(line, 14).empty()) {
+    auto gap_kind = coverage_gap_from(field_at(line, 14));
+    std::uint64_t first{};
+    std::uint64_t last{};
+    if (!gap_kind.has_value() ||
+        (!field_at(line, 15).empty() &&
+         !parse_uint64(field_at(line, 15), first)) ||
+        (!field_at(line, 16).empty() &&
+         !parse_uint64(field_at(line, 16), last))) {
+      return std::nullopt;
+    }
+    event.coverage_gap = application::CoverageGap{
+        .kind = *gap_kind,
+        .first_missing_sequence = field_at(line, 15).empty()
+                                      ? std::nullopt
+                                      : std::optional{first},
+        .last_missing_sequence = field_at(line, 16).empty()
+                                     ? std::nullopt
+                                     : std::optional{last},
+        .reason = redact(*gap_reason, {}),
+    };
+  }
+  return event;
+}
+
+[[nodiscard]] std::size_t coverage_gap_count(ParsedLog const& parsed) {
+  std::size_t count{};
+  auto records = parsed.records;
+  while (!records.empty()) {
+    auto const line_end = records.find('\n');
+    if (line_end == std::string_view::npos) {
+      return count;
+    }
+    auto const line = records.substr(0, line_end);
+    if (line.starts_with("EVENT\t")) {
+      auto const event = parse_event_projection(line);
+      if (event.has_value() && event->coverage_gap.has_value()) {
+        ++count;
+      }
+    }
+    records.remove_prefix(line_end + 1);
+  }
+  return count;
 }
 
 [[nodiscard]] std::string serialize_fields(
@@ -450,9 +693,13 @@ void replace_all(std::string& text, std::string_view needle,
 }
 
 [[nodiscard]] std::string diagnostic_status(std::string_view error) {
+  // Storage failures can include host-provided details. The compact status is
+  // written to the diagnostic file, so it must take the same redaction path as
+  // every other exported value.
+  auto const sanitized = redact(error, {});
   std::string status;
-  status.reserve(error.size());
-  for (unsigned char const byte : error) {
+  status.reserve(sanitized.size());
+  for (unsigned char const byte : sanitized) {
     if ((byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9')) {
       status.push_back(static_cast<char>(byte));
     } else if (status.empty() || status.back() != '_') {
@@ -550,6 +797,9 @@ StructuredExecutionLog::StructuredExecutionLog(LogStorage& storage,
 
 application::CorrelationId StructuredExecutionLog::begin_correlation() {
   auto transaction = storage_.begin_transaction();
+  if (!transaction->read_error().empty()) {
+    return {};
+  }
   auto parsed = parse_log(transaction->bytes());
   if (!parsed.error.empty()) {
     return {};
@@ -586,6 +836,9 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
     return {.error = "execution event component or stage is invalid"};
   }
   auto transaction = storage_.begin_transaction();
+  if (auto const error = transaction->read_error(); !error.empty()) {
+    return {.error = std::string{error}};
+  }
   auto parsed = parse_log(transaction->bytes());
   if (!parsed.error.empty()) {
     return {.error = parsed.error};
@@ -677,8 +930,66 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
   };
 }
 
+application::ExecutionLogSnapshot StructuredExecutionLog::snapshot() {
+  auto transaction = storage_.begin_transaction();
+  if (auto const error = transaction->read_error(); !error.empty()) {
+    return {.error = std::string{error}};
+  }
+  auto const bytes = transaction->bytes();
+  auto const parsed = parse_log(bytes);
+  if (!parsed.error.empty()) {
+    return {.error = parsed.error};
+  }
+  if (auto const pending = pending_clear(parsed)) {
+    return {
+        .available = true,
+        .durable_bytes = bytes.size(),
+        .pending_clear = application::ExecutionLogPendingClearProjection{
+            .cutoff_segment = pending->segment,
+            .cutoff_sequence = pending->sequence,
+        },
+    };
+  }
+
+  application::ExecutionLogSnapshot result{
+      .available = true,
+      .active_segment = parsed.counters.segment,
+      .last_sequence = parsed.counters.sequence,
+      .durable_bytes = bytes.size(),
+  };
+  auto records = parsed.records;
+  while (!records.empty()) {
+    auto const line_end = records.find('\n');
+    if (line_end == std::string_view::npos) {
+      return {.error = "corrupt execution log projection"};
+    }
+    auto const line = records.substr(0, line_end);
+    if (line.starts_with("EVENT\t")) {
+      auto event = parse_event_projection(line);
+      if (!event.has_value()) {
+        return {.error = "corrupt execution log projection"};
+      }
+      auto const recorded_at = application::WallClockTime{
+          std::chrono::milliseconds{event->recorded_at_milliseconds}};
+      if (!result.coverage_started_at.has_value()) {
+        result.coverage_started_at = recorded_at;
+      }
+      result.coverage_ended_at = recorded_at;
+      if (event->coverage_gap.has_value()) {
+        ++result.coverage_gap_count;
+      }
+      result.events.push_back(std::move(*event));
+    }
+    records.remove_prefix(line_end + 1);
+  }
+  return result;
+}
+
 application::ExecutionLogClearReceipt StructuredExecutionLog::clear() {
   auto transaction = storage_.begin_transaction();
+  if (auto const error = transaction->read_error(); !error.empty()) {
+    return {.error = std::string{error}};
+  }
   auto const parsed = parse_log(transaction->bytes());
   if (!parsed.error.empty()) {
     return {.error = parsed.error};
@@ -730,8 +1041,13 @@ application::DiagnosticExportReceipt
 StructuredExecutionLog::export_diagnostic(
     application::DiagnosticContext const& context) {
   auto transaction = storage_.begin_transaction();
-  auto const source_bytes = std::string{transaction->bytes()};
-  auto const parsed = parse_log(source_bytes);
+  auto const storage_error = std::string{transaction->read_error()};
+  auto const source_bytes = storage_error.empty()
+                                ? std::string{transaction->bytes()}
+                                : std::string{};
+  auto const parsed = storage_error.empty()
+                          ? parse_log(source_bytes)
+                          : ParsedLog{.error = storage_error};
   auto source_status = parsed.error.empty()
                            ? std::string{"ok"}
                            : diagnostic_status(parsed.error);
@@ -756,35 +1072,96 @@ StructuredExecutionLog::export_diagnostic(
   };
 
   std::string file{"AZZS-DIAGNOSTIC\t1\n"};
+  std::vector<std::string> missing_fact_names;
+  std::size_t missing_fact_count{};
+  auto const context_marks_missing = [&](std::string_view fact) {
+    return std::ranges::any_of(
+        context.missing_facts,
+        [&](application::MissingDiagnosticFact const& value) {
+          return value.fact == fact;
+        });
+  };
+  auto append_not_obtained = [&](std::string_view fact,
+                                 std::string_view reason) {
+    if (std::ranges::any_of(missing_fact_names,
+                            [&](std::string const& value) {
+                              return value == fact;
+                            })) {
+      return;
+    }
+    missing_fact_names.emplace_back(fact);
+    ++missing_fact_count;
+    file += "NOT_OBTAINED\t" + sanitize_context(fact) + "\t" +
+            sanitize_context(reason) + "\n";
+  };
+  auto append_context_value = [&](std::string_view label,
+                                  std::string_view fact,
+                                  std::string const& value) {
+    if (value.empty()) {
+      if (!context_marks_missing(fact)) {
+        append_not_obtained(fact, "the diagnostic caller did not provide it");
+      }
+      return;
+    }
+    file += std::string{label} + "\t" + sanitize_context(value) + "\n";
+  };
   file += "FORMAT_VERSION\t1\n";
   file += "SOURCE_LOG_STATUS\t" + source_status + "\n";
-  file += "SOURCE_LOG_BYTES\t" + std::to_string(source_bytes.size()) + "\n";
+  file += "SOURCE_LOG_BYTES\t" +
+          (storage_error.empty() ? std::to_string(source_bytes.size())
+                                 : std::string{"NOT_OBTAINED"}) +
+          "\n";
   file += "SOURCE_LOG_FINGERPRINT_FNV1A64\t" +
-          fnv1a64_hex(source_bytes) + "\n";
-  file += "WORKBENCH_BUILD\t" + sanitize_context(context.workbench_build) +
+          (storage_error.empty() ? fnv1a64_hex(source_bytes)
+                                 : std::string{"NOT_OBTAINED"}) +
           "\n";
-  file += "RELEASE_FORM\t" + sanitize_context(context.release_form) + "\n";
-  file += "PROCESS_ARCHITECTURE\t" +
-          sanitize_context(context.process_architecture) + "\n";
-  file += "PACKAGE_ARCHITECTURE\t" +
-          sanitize_context(context.package_architecture) + "\n";
-  file += "WINDOWS_VERSION\t" + sanitize_context(context.windows_version) +
-          "\n";
-  file += "LANGUAGE\t" + sanitize_context(context.language) + "\n";
-  file += "TIMEZONE\t" + sanitize_context(context.timezone) + "\n";
-  file += "COVERAGE_START_UTC_MS\t" +
-          std::to_string(
-              context.coverage_started_at.time_since_epoch().count()) +
-          "\n";
-  file += "COVERAGE_END_UTC_MS\t" +
-          std::to_string(context.coverage_ended_at.time_since_epoch().count()) +
-          "\n";
+  append_context_value("WORKBENCH_BUILD", "workbench_build",
+                       context.workbench_build);
+  append_context_value("RELEASE_FORM", "release_form", context.release_form);
+  append_context_value("PROCESS_ARCHITECTURE", "process_architecture",
+                       context.process_architecture);
+  append_context_value("PACKAGE_ARCHITECTURE", "package_architecture",
+                       context.package_architecture);
+  append_context_value("WINDOWS_VERSION", "windows_version",
+                       context.windows_version);
+  append_context_value("LANGUAGE", "language", context.language);
+  append_context_value("TIMEZONE", "timezone", context.timezone);
+  if (context.coverage_started_at.has_value()) {
+    file += "COVERAGE_START_UTC_MS\t" +
+            std::to_string(
+                context.coverage_started_at->time_since_epoch().count()) +
+            "\n";
+  } else if (!context_marks_missing("coverage_start")) {
+    append_not_obtained("coverage_start",
+                        "the diagnostic caller did not provide it");
+  }
+  if (context.coverage_ended_at.has_value()) {
+    file += "COVERAGE_END_UTC_MS\t" +
+            std::to_string(context.coverage_ended_at->time_since_epoch().count()) +
+            "\n";
+  } else if (!context_marks_missing("coverage_end")) {
+    append_not_obtained("coverage_end",
+                        "the diagnostic caller did not provide it");
+  }
   if (parsed.error.empty()) {
     auto const counters = parsed.counters;
     file += "LAST_PERSISTED_POINT\t" + std::to_string(counters.segment) +
             "\t" + std::to_string(counters.sequence) + "\n";
   } else {
-    file += "NOT_OBTAINED\texecution_log\t" + source_status + "\n";
+    append_not_obtained("execution_log",
+                        storage_error.empty() ? parsed.error : storage_error);
+  }
+  if (parsed.error.empty()) {
+    if (pending_clear(parsed).has_value()) {
+      append_not_obtained(
+          "active_log_segment",
+          "clear was committed but new segment completion is unconfirmed");
+    }
+    if (auto const gaps = coverage_gap_count(parsed); gaps != 0) {
+      append_not_obtained(
+          "execution_log_coverage",
+          std::to_string(gaps) + " recorded coverage gap events are present");
+    }
   }
 
   for (auto const& field : context.fields) {
@@ -798,8 +1175,7 @@ StructuredExecutionLog::export_diagnostic(
             percent_encode(value) + "\n";
   }
   for (auto const& missing : context.missing_facts) {
-    file += "NOT_OBTAINED\t" + sanitize_context(missing.fact) + "\t" +
-            sanitize_context(missing.reason) + "\n";
+    append_not_obtained(missing.fact, missing.reason);
   }
 
   file += "LOG_BEGIN\n";
@@ -811,7 +1187,9 @@ StructuredExecutionLog::export_diagnostic(
   auto exported = transaction->write_diagnostic(file);
   return {
       .produced = exported.verified,
+      .complete = exported.verified && missing_fact_count == 0,
       .file_count = exported.verified ? 1U : 0U,
+      .missing_fact_count = exported.verified ? missing_fact_count : 0U,
       .file_name = exported.verified ? std::move(exported.file_name)
                                      : std::string{},
       .file_bytes = exported.verified ? std::move(file) : std::string{},
