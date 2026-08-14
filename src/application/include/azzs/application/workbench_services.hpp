@@ -40,6 +40,7 @@ class DriverAcquisitionService;
 
 class HardwareOverviewService;
 class HistoryAndLogsService;
+class ApplicationSettingsService;
 
 class DeviceStateStore;
 class EmergencyWithdrawalService;
@@ -68,6 +69,8 @@ class WorkbenchServices {
       noexcept = 0;
   [[nodiscard]] virtual ExecutionLog& execution_log() noexcept = 0;
   [[nodiscard]] virtual HistoryAndLogsService& history_and_logs() noexcept = 0;
+  [[nodiscard]] virtual ApplicationSettingsService& application_settings()
+      noexcept = 0;
   [[nodiscard]] virtual SharedOperationOccupancy& operation_occupancy()
       noexcept = 0;
   [[nodiscard]] virtual sogou_optimization::SogouOptimizationService&

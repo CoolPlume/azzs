@@ -234,14 +234,15 @@ void MainWindow::navigate_to(PageId page) {
       ContentFrame().Navigate(xaml_typename<Pages::ApplicationSettingsPage>(),
                               nullptr, transition);
       if (auto settings = ContentFrame().Content().try_as<
-              Pages::ApplicationSettingsPage>()) {
+              Pages::ApplicationSettingsPage>();
+          settings && workbench_->services()) {
         winrt::get_self<Pages::implementation::ApplicationSettingsPage>(
             settings)
-            ->bind(workbench_, advanced_view_, [weak_this = get_weak()](
-                                              bool enabled) {
-              if (auto self = weak_this.get()) {
-                return self->set_advanced_view(enabled);
-              }
+            ->bind(workbench_, workbench_->services()->application_settings(),
+                   advanced_view_, [weak_this = get_weak()](bool enabled) {
+               if (auto self = weak_this.get()) {
+                 return self->set_advanced_view(enabled);
+               }
               return false;
             });
       }
