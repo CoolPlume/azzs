@@ -4,7 +4,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <condition_variable>
 #include <mutex>
 #include <ranges>
 #include <span>
@@ -409,8 +408,6 @@ void write_progress(Writer& writer,
   writer.u8(value.target_exit_confirmed ? 1 : 0);
   writer.u8(value.force_close_confirmation_requested ? 1 : 0);
   writer.u8(value.force_close_completed ? 1 : 0);
-  writer.u8(value.force_termination_confirmation_requested ? 1 : 0);
-  writer.u8(value.force_termination_completed ? 1 : 0);
   writer.u64(value.emergency_notice_revision);
   writer.text(value.detail);
 }
@@ -421,16 +418,12 @@ void write_progress(Writer& writer,
   std::uint8_t target_exit_confirmed{};
   std::uint8_t close_requested{};
   std::uint8_t close_completed{};
-  std::uint8_t termination_requested{};
-  std::uint8_t termination_completed{};
   if (!reader.text(value.scheme_id, 256) || !reader.text(value.option_id, 256) ||
       !read_enum(reader, value.state) || !reader.u32(value.attempt) ||
       !reader.u8(started) || started > 1 ||
       !reader.u8(target_exit_confirmed) || target_exit_confirmed > 1 ||
       !reader.u8(close_requested) ||
       close_requested > 1 || !reader.u8(close_completed) || close_completed > 1 ||
-      !reader.u8(termination_requested) || termination_requested > 1 ||
-      !reader.u8(termination_completed) || termination_completed > 1 ||
       !reader.u64(value.emergency_notice_revision) || !reader.text(value.detail, 4096)) {
     return false;
   }
@@ -438,8 +431,6 @@ void write_progress(Writer& writer,
   value.target_exit_confirmed = target_exit_confirmed != 0;
   value.force_close_confirmation_requested = close_requested != 0;
   value.force_close_completed = close_completed != 0;
-  value.force_termination_confirmation_requested = termination_requested != 0;
-  value.force_termination_completed = termination_completed != 0;
   return value.valid();
 }
 
@@ -1044,7 +1035,7 @@ class SoftwareOptimizationBatchService::Impl final {
   }
 
   [[nodiscard]] OptimizationBatchActionResult advance() {
-    std::unique_lock lock{mutex_};
+    std::scoped_lock lock{mutex_};
     if (!ready_for_command_locked()) {
       return result_locked(active_.has_value() ? OptimizationBatchActionCode::recovery_required
                                                : OptimizationBatchActionCode::no_active_batch);
@@ -1144,39 +1135,12 @@ class SoftwareOptimizationBatchService::Impl final {
     auto prepared = commit_transition_locked(*lease, progress, "execution-requested");
     if (!prepared.succeeded()) return prepared;
 
-    auto scheme_copy = *step.scheme;
-    auto option_copy = *step.option;
-    auto const batch_id = active_->plan.batch_id;
-    auto const step_index = *index;
-    execution_in_flight_ = true;
-    lock.unlock();
-    auto executed = execute_locked(option_copy);
-    lock.lock();
-    execution_in_flight_ = false;
-    execution_finished_.notify_all();
-
-    // A close or confirmed force termination may have established a more
-    // conservative result boundary while the controlled effect was running.
-    // Never overwrite that durable fact with a late executor observation.
-    if (!active_.has_value() ||
-        active_->state == batch_domain::OptimizationBatchState::failed_closed ||
-        active_->plan.batch_id != batch_id ||
-        step_index >= active_->steps.size() ||
-        active_->steps[step_index].state !=
-            batch_domain::OptimizationStepState::executing) {
-      return result_locked(
-          active_.has_value() &&
-                  active_->state == batch_domain::OptimizationBatchState::failed_closed
-              ? OptimizationBatchActionCode::outcome_unknown
-              : OptimizationBatchActionCode::confirmation_required,
-          "the optimization result was superseded by an explicit recovery or force boundary");
-    }
-    auto& observed_progress = active_->steps[step_index];
-    apply_execution_locked(observed_progress, scheme_copy, option_copy, executed);
+    auto executed = execute_locked(*step.option);
+    apply_execution_locked(progress, *step.scheme, *step.option, executed);
     if (active_->close_requested) {
       active_->state = batch_domain::OptimizationBatchState::closing;
     }
-    return commit_transition_locked(*lease, observed_progress, "execution-observed");
+    return commit_transition_locked(*lease, progress, "execution-observed");
   }
 
   [[nodiscard]] OptimizationBatchActionResult confirm_current_target_exit() {
@@ -1372,128 +1336,13 @@ class SoftwareOptimizationBatchService::Impl final {
                : lease_failure_result_locked();
   }
 
-  [[nodiscard]] OptimizationBatchActionResult request_force_termination() {
-    std::scoped_lock lock{mutex_};
-    if (!ready_for_command_locked()) {
-      return result_locked(OptimizationBatchActionCode::no_active_batch);
-    }
-    auto index = current_index_locked();
-    if (!index.has_value() || active_->steps[*index].state !=
-                             batch_domain::OptimizationStepState::executing) {
-      return result_locked(OptimizationBatchActionCode::rejected,
-                           "force termination is not available at the current safe boundary");
-    }
-    active_->steps[*index].force_termination_confirmation_requested = true;
-    active_->state = batch_domain::OptimizationBatchState::awaiting_user;
-    auto lease = acquire_and_bind_locked();
-    if (!lease.has_value()) return lease_failure_result_locked();
-    auto persisted = commit_transition_locked(
-        *lease, active_->steps[*index], "force-termination-confirmation-requested");
-    if (!persisted.succeeded()) return persisted;
-    return result_locked(OptimizationBatchActionCode::confirmation_required,
-                         "force termination requires explicit confirmation");
-  }
-
-  [[nodiscard]] OptimizationBatchActionResult confirm_force_termination() {
-    std::scoped_lock lock{mutex_};
-    if (!ready_for_command_locked()) {
-      return result_locked(OptimizationBatchActionCode::no_active_batch);
-    }
-    auto index = current_index_locked();
-    if (!index.has_value() || active_->steps[*index].state !=
-                              batch_domain::OptimizationStepState::executing ||
-        !active_->steps[*index].force_termination_confirmation_requested) {
-      return result_locked(OptimizationBatchActionCode::rejected,
-                           "there is no pending force-termination confirmation");
-    }
-    auto step = step_at_locked(*index);
-    if (step.scheme == nullptr || step.option == nullptr) {
-      return fail_closed_result_locked(active_->steps[*index],
-                                       "frozen force-termination step cannot be resolved");
-    }
-    TargetTerminationObservation observed;
-    try {
-      observed = executor_.force_terminate(*step.scheme, *step.option);
-    } catch (...) {
-      observed.detail = "the controlled force-termination adapter threw";
-    }
-    auto& progress = active_->steps[*index];
-    progress.detail = observed.detail.empty()
-                          ? "the target force-termination result cannot be verified"
-                          : std::move(observed.detail);
-    if (observed.known && observed.terminated) {
-      progress.force_termination_completed = true;
-      progress.state = batch_domain::OptimizationStepState::result_confirmation_pending;
-      active_->state = batch_domain::OptimizationBatchState::awaiting_user;
-    } else if (!observed.known) {
-      // The target may have changed before its state was lost. Verification is
-      // the only permissible next action; no later optimization may start.
-      progress.state = batch_domain::OptimizationStepState::result_confirmation_pending;
-      active_->state = batch_domain::OptimizationBatchState::awaiting_user;
-    } else {
-      active_->state = active_->stop_requested
-                           ? batch_domain::OptimizationBatchState::stopping
-                           : batch_domain::OptimizationBatchState::running;
-    }
-    auto lease = acquire_and_bind_locked();
-    if (!lease.has_value()) return lease_failure_result_locked();
-    auto persisted = commit_transition_locked(*lease, progress,
-                                              "force-termination-observed");
-    if (!persisted.succeeded()) return persisted;
-    return observed.known && !observed.terminated
-               ? result_locked(OptimizationBatchActionCode::unsupported,
-                               "the target was not confirmed terminated")
-               : result_locked(OptimizationBatchActionCode::confirmation_required,
-                               "the optimization result requires verification");
-  }
-
-  [[nodiscard]] OptimizationBatchActionResult cancel_force_termination() {
-    std::scoped_lock lock{mutex_};
-    if (!ready_for_command_locked()) {
-      return result_locked(OptimizationBatchActionCode::no_active_batch);
-    }
-    auto index = current_index_locked();
-    if (!index.has_value() || active_->steps[*index].state !=
-                              batch_domain::OptimizationStepState::executing ||
-        !active_->steps[*index].force_termination_confirmation_requested) {
-      return result_locked(OptimizationBatchActionCode::rejected,
-                           "there is no pending force-termination confirmation");
-    }
-    auto& progress = active_->steps[*index];
-    progress.force_termination_confirmation_requested = false;
-    progress.detail = "force termination confirmation was cancelled";
-    active_->state = active_->stop_requested
-                         ? batch_domain::OptimizationBatchState::stopping
-                         : batch_domain::OptimizationBatchState::running;
-    auto lease = acquire_and_bind_locked();
-    return lease.has_value()
-               ? commit_transition_locked(*lease, progress,
-                                          "force-termination-confirmation-cancelled")
-               : lease_failure_result_locked();
-  }
-
   [[nodiscard]] OptimizationBatchActionResult request_close() {
-    std::unique_lock lock{mutex_};
+    std::scoped_lock lock{mutex_};
     if (!active_.has_value()) return result_locked(OptimizationBatchActionCode::no_active_batch);
     if (terminal_batch_state(active_->state)) {
       return result_locked(OptimizationBatchActionCode::succeeded);
     }
     active_->close_requested = true;
-    auto index = current_index_locked();
-    if (index.has_value() &&
-        active_->steps[*index].state == batch_domain::OptimizationStepState::executing &&
-        execution_in_flight_) {
-      active_->state = batch_domain::OptimizationBatchState::closing;
-      auto lease = acquire_and_bind_locked();
-      if (!lease.has_value()) return lease_failure_result_locked();
-      auto boundary = commit_transition_locked(*lease, active_->steps[*index],
-                                               "normal-close-requested");
-      execution_finished_.wait(lock, [this] { return !execution_in_flight_; });
-      if (!boundary.succeeded()) {
-        return result_locked(boundary.code, boundary.message);
-      }
-      return result_locked(OptimizationBatchActionCode::succeeded);
-    }
     for (auto& progress : active_->steps) {
       if (progress.state == batch_domain::OptimizationStepState::executing) {
         progress.state = batch_domain::OptimizationStepState::result_confirmation_pending;
@@ -2119,8 +1968,6 @@ class SoftwareOptimizationBatchService::Impl final {
   std::string error_;
   OccupancyResultCode last_lease_code_{OccupancyResultCode::storage_error};
   mutable std::mutex mutex_;
-  std::condition_variable execution_finished_;
-  bool execution_in_flight_{false};
 };
 
 SoftwareOptimizationBatchService::SoftwareOptimizationBatchService(
@@ -2177,21 +2024,6 @@ SoftwareOptimizationBatchService::confirm_force_close() {
 OptimizationBatchActionResult
 SoftwareOptimizationBatchService::cancel_force_close() {
   return impl_->cancel_force_close();
-}
-
-OptimizationBatchActionResult
-SoftwareOptimizationBatchService::request_force_termination() {
-  return impl_->request_force_termination();
-}
-
-OptimizationBatchActionResult
-SoftwareOptimizationBatchService::confirm_force_termination() {
-  return impl_->confirm_force_termination();
-}
-
-OptimizationBatchActionResult
-SoftwareOptimizationBatchService::cancel_force_termination() {
-  return impl_->cancel_force_termination();
 }
 
 OptimizationBatchActionResult SoftwareOptimizationBatchService::request_close() {

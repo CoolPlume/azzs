@@ -82,9 +82,6 @@ enum class OptimizationBatchCommand {
   request_force_close,
   confirm_force_close,
   cancel_force_close,
-  request_force_termination,
-  confirm_force_termination,
-  cancel_force_termination,
   confirm_current_complete,
   request_close,
   recover_read_only,
@@ -102,8 +99,6 @@ struct OptimizationStepProgress final {
   bool target_exit_confirmed{false};
   bool force_close_confirmation_requested{false};
   bool force_close_completed{false};
-  bool force_termination_confirmation_requested{false};
-  bool force_termination_completed{false};
   std::uint64_t emergency_notice_revision{};
   std::string detail;
 

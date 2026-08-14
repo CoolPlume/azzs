@@ -1,14 +1,9 @@
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
-#include <future>
 #include <iostream>
-#include <mutex>
-#include <optional>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -42,9 +37,7 @@ class RecordingLog final : public app::ExecutionLog {
 
   [[nodiscard]] app::ExecutionLogReceipt append(
       app::CorrelationId const&, app::ExecutionEvent const& event) override {
-    std::scoped_lock lock{mutex_};
     events.push_back(event);
-    events_changed_.notify_all();
     if (fail_next_append) {
       fail_next_append = false;
       return {.persisted = false, .error = "injected execution log failure"};
@@ -61,24 +54,8 @@ class RecordingLog final : public app::ExecutionLog {
     return {.produced = true};
   }
 
-  [[nodiscard]] bool wait_for_stage(std::string_view stage) {
-    std::unique_lock lock{mutex_};
-    return events_changed_.wait_for(lock, std::chrono::seconds{5}, [&] {
-      for (auto const& event : events) {
-        if (event.stage == stage) {
-          return true;
-        }
-      }
-      return false;
-    });
-  }
-
   bool fail_next_append{false};
   std::vector<app::ExecutionEvent> events;
-
- private:
-  std::mutex mutex_;
-  std::condition_variable events_changed_;
   std::uint64_t next_{1};
 };
 
@@ -87,12 +64,6 @@ class ScriptedExecutor final : public batch_app::SoftwareOptimizationStepExecuto
   [[nodiscard]] batch_app::StepExecutionObservation execute(
       batch::FrozenOptimizationOption const& option) override {
     executed_ids.push_back(option.option.id.value);
-    if (block_execution) {
-      std::unique_lock lock{execution_mutex};
-      execution_entered = true;
-      execution_condition.notify_all();
-      execution_condition.wait(lock, [&] { return release_execution; });
-    }
     if (executions.empty()) {
       return {.code = batch_app::StepExecutionCode::applied};
     }
@@ -134,48 +105,14 @@ class ScriptedExecutor final : public batch_app::SoftwareOptimizationStepExecuto
     return result;
   }
 
-  [[nodiscard]] batch_app::TargetTerminationObservation force_terminate(
-      batch::FrozenOptimizationScheme const& scheme,
-      batch::FrozenOptimizationOption const& option) override {
-    force_terminated_ids.push_back(scheme.target.id.value + "/" +
-                                   option.option.id.value);
-    if (force_terminations.empty()) {
-      return {.detail = "no scripted force-termination result"};
-    }
-    auto result = std::move(force_terminations.front());
-    force_terminations.erase(force_terminations.begin());
-    return result;
-  }
-
-  [[nodiscard]] bool wait_for_execution() {
-    std::unique_lock lock{execution_mutex};
-    return execution_condition.wait_for(
-        lock, std::chrono::seconds{5}, [&] { return execution_entered; });
-  }
-
-  void release_blocked_execution() {
-    std::scoped_lock lock{execution_mutex};
-    release_execution = true;
-    execution_condition.notify_all();
-  }
-
   std::vector<batch_app::StepExecutionObservation> executions;
   std::vector<batch_app::StepVerificationObservation> verifications;
   std::vector<batch_app::TargetExitObservation> target_exits;
   std::vector<batch_app::TargetExitObservation> force_closes;
-  std::vector<batch_app::TargetTerminationObservation> force_terminations;
   std::vector<std::string> executed_ids;
   std::vector<std::string> verified_ids;
   std::vector<std::string> observed_targets;
   std::vector<std::string> forced_close_targets;
-  std::vector<std::string> force_terminated_ids;
-  bool block_execution{false};
-
- private:
-  std::mutex execution_mutex;
-  std::condition_variable execution_condition;
-  bool execution_entered{false};
-  bool release_execution{false};
 };
 
 class ScriptedWithdrawals final
@@ -507,42 +444,8 @@ struct Fixture final {
 }
 
 [[nodiscard]] bool close_recovery_and_force_controls_contract() {
-  Fixture closing_fixture{make_plan("batch-close-in-flight", 2)};
-  bool passed = expect(closing_fixture.service.restore().succeeded(),
-                       "in-flight close batch must restore");
-  passed &= expect(closing_fixture.service.create(
-                       start_request("batch-close-in-flight"))
-                       .succeeded(),
-                   "in-flight close batch must create");
-  closing_fixture.executor.block_execution = true;
-  std::thread advancing_close{[&] {
-    static_cast<void>(closing_fixture.service.advance());
-  }};
-  passed &= expect(closing_fixture.executor.wait_for_execution(),
-                   "normal close must observe an in-flight controlled effect");
-  auto closing = std::async(std::launch::async, [&] {
-    return closing_fixture.service.request_close();
-  });
-  passed &= expect(closing_fixture.log.wait_for_stage("normal-close-requested"),
-                   "normal close must persist its boundary before waiting");
-  passed &= expect(closing.wait_for(std::chrono::milliseconds{0}) ==
-                       std::future_status::timeout,
-                   "normal close must wait for the in-flight effect to reach a safe boundary");
-  closing_fixture.executor.release_blocked_execution();
-  advancing_close.join();
-  auto close_result = closing.get();
-  auto closed_in_flight = closing_fixture.service.snapshot();
-  passed &= expect(close_result.succeeded() && closed_in_flight.active.has_value() &&
-                       closed_in_flight.active->state ==
-                           batch::OptimizationBatchState::closing &&
-                       closed_in_flight.active->steps.front().state ==
-                           batch::OptimizationStepState::optimized &&
-                       closed_in_flight.active->steps[1].state ==
-                           batch::OptimizationStepState::pending,
-                   "normal close must retain the observed current result and pause later work");
-
   Fixture close_fixture{make_plan("batch-close-continue", 1)};
-  passed &= expect(close_fixture.service.restore().succeeded(),
+  bool passed = expect(close_fixture.service.restore().succeeded(),
                    "close recovery batch must restore");
   passed &= expect(close_fixture.service.create(
                        start_request("batch-close-continue"))
@@ -585,43 +488,6 @@ struct Fixture final {
                        forced_closed.active->steps.front().force_close_completed &&
                        forced_closed.active->steps.front().target_exit_confirmed,
                    "force-close request and verified result must both remain in history");
-
-  Fixture force_termination_fixture{make_plan("batch-force-termination", 1)};
-  passed &= expect(force_termination_fixture.service.restore().succeeded(),
-                   "force-termination batch must restore");
-  passed &= expect(force_termination_fixture.service.create(
-                       start_request("batch-force-termination"))
-                       .succeeded(),
-                   "force-termination batch must create");
-  force_termination_fixture.executor.block_execution = true;
-  std::optional<batch_app::OptimizationBatchActionResult> advance_result;
-  std::thread advancing{[&] {
-    advance_result = force_termination_fixture.service.advance();
-  }};
-  passed &= expect(force_termination_fixture.executor.wait_for_execution(),
-                   "the controlled execution must become observable before termination");
-  passed &= expect(
-      force_termination_fixture.service.request_force_termination().code ==
-          batch_app::OptimizationBatchActionCode::confirmation_required,
-      "force termination must persist its own risk confirmation boundary");
-  force_termination_fixture.executor.force_terminations.push_back(
-      {.known = true, .terminated = true, .detail = "controlled optimization terminated"});
-  passed &= expect(
-      force_termination_fixture.service.confirm_force_termination().code ==
-          batch_app::OptimizationBatchActionCode::confirmation_required,
-      "confirmed force termination must leave the optimization result pending");
-  force_termination_fixture.executor.release_blocked_execution();
-  advancing.join();
-  auto terminated = force_termination_fixture.service.snapshot();
-  passed &= expect(advance_result.has_value() &&
-                       advance_result->code ==
-                           batch_app::OptimizationBatchActionCode::confirmation_required &&
-                       terminated.active.has_value() &&
-                       terminated.active->steps.front().force_termination_confirmation_requested &&
-                       terminated.active->steps.front().force_termination_completed &&
-                       terminated.active->steps.front().state ==
-                           batch::OptimizationStepState::result_confirmation_pending,
-                   "a late executor result must not overwrite the forced-termination boundary");
   return passed;
 }
 

@@ -59,12 +59,6 @@ struct TargetExitObservation final {
   std::string detail;
 };
 
-struct TargetTerminationObservation final {
-  bool known{false};
-  bool terminated{false};
-  std::string detail;
-};
-
 class SoftwareOptimizationStepExecutor {
  public:
   virtual ~SoftwareOptimizationStepExecutor() = default;
@@ -79,11 +73,6 @@ class SoftwareOptimizationStepExecutor {
   [[nodiscard]] virtual TargetExitObservation force_close_target(
       batch_domain::FrozenOptimizationScheme const&) {
     return {.detail = "no verified controlled force-close adapter is registered"};
-  }
-  [[nodiscard]] virtual TargetTerminationObservation force_terminate(
-      batch_domain::FrozenOptimizationScheme const&,
-      batch_domain::FrozenOptimizationOption const&) {
-    return {.detail = "no verified controlled force-termination adapter is registered"};
   }
 };
 
@@ -233,9 +222,6 @@ class SoftwareOptimizationBatchService final {
   [[nodiscard]] OptimizationBatchActionResult request_force_close();
   [[nodiscard]] OptimizationBatchActionResult confirm_force_close();
   [[nodiscard]] OptimizationBatchActionResult cancel_force_close();
-  [[nodiscard]] OptimizationBatchActionResult request_force_termination();
-  [[nodiscard]] OptimizationBatchActionResult confirm_force_termination();
-  [[nodiscard]] OptimizationBatchActionResult cancel_force_termination();
   [[nodiscard]] OptimizationBatchActionResult request_close();
   [[nodiscard]] OptimizationBatchActionResult recover_read_only();
   [[nodiscard]] OptimizationBatchActionResult continue_after_recovery();
