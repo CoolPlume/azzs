@@ -241,19 +241,26 @@ class WindowsWorkbenchServices final
     if (adapters::windows::is_restart_resume_login_launch()) {
       auto resumed = restart_resume_.resume_after_login();
       if (resumed.succeeded() && resumed.snapshot.checkpoint.has_value()) {
+        bool read_only_verified = true;
         for (auto const& participant : resumed.snapshot.checkpoint->participants) {
           switch (participant.operation) {
             case application::restart_resume::RestartResumeOperation::installation_batch:
-              static_cast<void>(installation_batches_.recover_read_only());
+              read_only_verified =
+                  installation_batches_.recover_read_only().succeeded() && read_only_verified;
               break;
             case application::restart_resume::RestartResumeOperation::software_optimization_batch:
-              static_cast<void>(software_optimization_batches_.recover_read_only());
+              read_only_verified = software_optimization_batches_.recover_read_only().succeeded() &&
+                                   read_only_verified;
               break;
             case application::restart_resume::RestartResumeOperation::system_settings:
+              // There is no system-settings read-only participant recovery yet.
+              read_only_verified = false;
               break;
           }
         }
-        static_cast<void>(restart_resume_.complete_read_only_verification());
+        if (read_only_verified) {
+          static_cast<void>(restart_resume_.complete_read_only_verification());
+        }
       }
     }
   }
