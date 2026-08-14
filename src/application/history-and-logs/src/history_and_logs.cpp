@@ -80,6 +80,23 @@ namespace {
   return "unknown";
 }
 
+[[nodiscard]] char const* catalog_origin_name(
+    software_catalog::CatalogCandidateOrigin origin) noexcept {
+  switch (origin) {
+    case software_catalog::CatalogCandidateOrigin::built_in:
+      return "built-in";
+    case software_catalog::CatalogCandidateOrigin::update:
+      return "update";
+    case software_catalog::CatalogCandidateOrigin::manual_import:
+      return "manual-import";
+    case software_catalog::CatalogCandidateOrigin::saved_draft:
+      return "saved-draft";
+    case software_catalog::CatalogCandidateOrigin::rollback:
+      return "rollback";
+  }
+  return "unknown";
+}
+
 [[nodiscard]] char const* catalog_release_state_name(
     domain::software_catalog::ReleaseState state) noexcept {
   switch (state) {
@@ -116,6 +133,133 @@ void append_unavailable_fact(std::vector<HistoryFactProjection>& target,
   target.push_back({.key = std::move(key),
                     .disposition = HistoryFactDisposition::not_obtained,
                     .reason = std::move(reason)});
+}
+
+[[nodiscard]] std::string normalize_history_state_token(
+    std::string_view token) {
+  std::string normalized;
+  normalized.reserve(token.size());
+  for (auto const character : token) {
+    normalized.push_back(
+        character == '-'
+            ? '_'
+            : static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+  }
+  return normalized;
+}
+
+[[nodiscard]] std::string canonical_history_display_state(
+    HistoryEntryKind kind, std::string_view raw_token) {
+  auto const token = normalize_history_state_token(raw_token);
+  switch (kind) {
+    case HistoryEntryKind::installation_batch:
+      if (token == "skipped_installed") {
+        return "已安装";
+      }
+      if (token == "result_confirmation_pending") {
+        return "安装结果待确认";
+      }
+      if (token == "installer_interaction_pending") {
+        return "安装器交互待处理";
+      }
+      if (token == "waiting_network") {
+        return "等待联网";
+      }
+      if (token == "waiting_restart") {
+        return "等待重启";
+      }
+      if (token == "source_invalid") {
+        return "来源失效";
+      }
+      if (token == "failed") {
+        return "安装失败";
+      }
+      if (token == "pending" || token == "dependency_blocked" ||
+          token == "stop_pending") {
+        return "未执行";
+      }
+      break;
+    case HistoryEntryKind::software_optimization_batch:
+      if (token == "optimized") {
+        return "已优化";
+      }
+      if (token == "result_confirmation_pending") {
+        return "优化结果待确认";
+      }
+      if (token == "waiting_restart") {
+        return "等待重启";
+      }
+      if (token == "failed") {
+        return "优化失败";
+      }
+      if (token == "blocked_by_withdrawal") {
+        return "紧急撤回优化方案";
+      }
+      if (token == "not_executed" || token == "pending" ||
+          token == "awaiting_target_exit" ||
+          token == "force_close_confirmation_pending") {
+        return "未执行";
+      }
+      break;
+    case HistoryEntryKind::system_setting_apply:
+      if (token == "already_effective" || token == "applied") {
+        return "已生效";
+      }
+      if (token == "waiting_explorer_restart") {
+        return "等待资源管理器重启";
+      }
+      if (token == "not_applicable" ||
+          token == "force_confirmation_required") {
+        return "可能不适用";
+      }
+      if (token == "not_selected" || token == "blocked_by_dependency") {
+        return "未执行";
+      }
+      break;
+    case HistoryEntryKind::system_setting_recovery:
+      if (token == "restored") {
+        return "已恢复";
+      }
+      break;
+    case HistoryEntryKind::external_install_handoff:
+      if (token == "externally_recognized") {
+        return "外部安装已识别";
+      }
+      if (token == "skipped") {
+        return "暂时跳过";
+      }
+      break;
+    case HistoryEntryKind::restart_resume:
+    case HistoryEntryKind::application_update:
+      break;
+  }
+  return std::string{raw_token};
+}
+
+void canonicalize_history_state(HistoryEntryKind kind, std::string& state,
+                                std::string& detail,
+                                std::vector<HistoryFactProjection>& facts) {
+  auto const raw_token = state;
+  auto display_state = canonical_history_display_state(kind, raw_token);
+  if (display_state == raw_token) {
+    return;
+  }
+  append_fact(facts, "state.raw_token", raw_token);
+  if (!detail.empty()) {
+    append_fact(facts, "state.raw_detail", detail);
+    detail = raw_token + ": " + detail;
+  } else {
+    detail = raw_token;
+  }
+  state = std::move(display_state);
+}
+
+void canonicalize_history_entry(HistoryEntryProjection& entry) {
+  canonicalize_history_state(entry.kind, entry.state, entry.detail, entry.facts);
+  for (auto& timeline : entry.timeline) {
+    canonicalize_history_state(entry.kind, timeline.state, timeline.detail,
+                               timeline.facts);
+  }
 }
 
 [[nodiscard]] char const* execution_result_name(ExecutionResult result) {
@@ -439,6 +583,7 @@ void append_installation_history(
       append_installation_item_timeline(entry, record.plan, progress);
     }
     append_correlation_timeline(entry, log, record.plan.correlation_id);
+    canonicalize_history_entry(entry);
     target.push_back(std::move(entry));
   }
   if (snapshot.active.has_value()) {
@@ -471,6 +616,7 @@ void append_installation_history(
       append_installation_item_timeline(entry, active.plan, progress);
     }
     append_correlation_timeline(entry, log, active.plan.correlation_id);
+    canonicalize_history_entry(entry);
     target.push_back(std::move(entry));
   }
 }
@@ -600,6 +746,7 @@ void append_optimization_history(
       append_optimization_step_timeline(entry, step);
     }
     append_correlation_timeline(entry, log, record.plan.correlation_id);
+    canonicalize_history_entry(entry);
     target.push_back(std::move(entry));
   }
   if (snapshot.active.has_value()) {
@@ -654,8 +801,99 @@ void append_optimization_history(
       append_optimization_step_timeline(entry, step);
     }
     append_correlation_timeline(entry, log, active.plan.correlation_id);
+    canonicalize_history_entry(entry);
     target.push_back(std::move(entry));
   }
+}
+
+void append_sanitized_diagnostic_text(std::string& target,
+                                      std::string_view value) {
+  for (auto const character : value) {
+    target.push_back(
+        std::iscntrl(static_cast<unsigned char>(character)) ? ' ' : character);
+  }
+}
+
+[[nodiscard]] std::string diagnostic_batch_plan_value(
+    std::string_view kind, std::string_view batch_id,
+    std::vector<HistoryFactProjection> const& facts) {
+  std::string value{"kind="};
+  append_sanitized_diagnostic_text(value, kind);
+  value += ";batch.id=";
+  append_sanitized_diagnostic_text(value, batch_id);
+  for (auto const& fact : facts) {
+    if (fact.disposition != HistoryFactDisposition::obtained) {
+      continue;
+    }
+    value += ';';
+    append_sanitized_diagnostic_text(value, fact.key);
+    value += '=';
+    append_sanitized_diagnostic_text(value, fact.value);
+  }
+  return value;
+}
+
+void append_diagnostic_batch_plan(
+    DiagnosticContext& context,
+    installation_batch::InstallationBatchService& installation_batches,
+    software_optimization_batch::SoftwareOptimizationBatchService&
+        optimization_batches) {
+  struct Candidate final {
+    std::int64_t frozen_at_milliseconds{};
+    std::uint8_t priority{};
+    std::string value;
+  };
+  std::optional<Candidate> selected;
+  auto consider = [&](std::string_view kind, std::string_view batch_id,
+                      std::int64_t frozen_at_milliseconds,
+                      std::uint8_t priority,
+                      std::vector<HistoryFactProjection> facts) {
+    auto value = diagnostic_batch_plan_value(kind, batch_id, facts);
+    if (!selected.has_value() ||
+        frozen_at_milliseconds > selected->frozen_at_milliseconds ||
+        (frozen_at_milliseconds == selected->frozen_at_milliseconds &&
+         priority > selected->priority)) {
+      selected = Candidate{.frozen_at_milliseconds = frozen_at_milliseconds,
+                           .priority = priority,
+                           .value = std::move(value)};
+    }
+  };
+  auto consider_installation = [&](auto const& plan, std::uint8_t priority) {
+    std::vector<HistoryFactProjection> facts;
+    append_installation_plan_facts(facts, plan);
+    consider("installation", plan.batch_id, plan.frozen_at_milliseconds,
+             priority, std::move(facts));
+  };
+  auto consider_optimization = [&](auto const& plan, std::uint8_t priority) {
+    std::vector<HistoryFactProjection> facts;
+    append_optimization_plan_facts(facts, plan);
+    consider("software-optimization", plan.batch_id,
+             plan.frozen_at_milliseconds, priority, std::move(facts));
+  };
+
+  auto const installation_snapshot = installation_batches.snapshot();
+  for (auto const& record : installation_snapshot.history) {
+    consider_installation(record.plan, 0);
+  }
+  if (installation_snapshot.active.has_value()) {
+    consider_installation(installation_snapshot.active->plan, 1);
+  }
+
+  auto const optimization_snapshot = optimization_batches.snapshot();
+  for (auto const& record : optimization_snapshot.history) {
+    consider_optimization(record.plan, 0);
+  }
+  if (optimization_snapshot.active.has_value()) {
+    consider_optimization(optimization_snapshot.active->plan, 1);
+  }
+
+  if (!selected.has_value()) {
+    context.batch_plan.unavailable_reason =
+        "no active or retained frozen batch plan is available";
+    return;
+  }
+  context.batch_plan = {.value = std::move(selected->value),
+                        .disposition = DiagnosticValueDisposition::retain};
 }
 
 [[nodiscard]] char const* system_setting_state_name(
@@ -783,6 +1021,7 @@ void append_system_settings_history(
     };
     entry.timeline.push_back(std::move(timeline));
     append_id_timeline(entry, log, setting.id.value);
+    canonicalize_history_entry(entry);
     target.push_back(std::move(entry));
   }
 
@@ -812,6 +1051,7 @@ void append_system_settings_history(
     };
     entry.timeline.push_back(std::move(timeline));
     append_id_timeline(entry, log, record.setting_id.value);
+    canonicalize_history_entry(entry);
     target.push_back(std::move(entry));
   }
 }
@@ -905,6 +1145,7 @@ void append_external_handoff_history(
       }
     }
     append_id_timeline(entry, log, handoff.software_id);
+    canonicalize_history_entry(entry);
     target.push_back(std::move(entry));
   }
 }
@@ -968,6 +1209,7 @@ void append_restart_resume_history(
     append_unavailable_fact(entry.facts, "restart.checkpoint",
                             "restart state has no durable checkpoint");
   }
+  canonicalize_history_entry(entry);
   target.push_back(std::move(entry));
 }
 
@@ -1042,6 +1284,7 @@ void append_update_history(std::vector<HistoryEntryProjection>& target,
       .facts = entry.facts,
   };
   entry.timeline.push_back(std::move(timeline));
+  canonicalize_history_entry(entry);
   target.push_back(std::move(entry));
 }
 
@@ -1295,6 +1538,20 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
   auto const catalog = software_catalog_.snapshot();
   if (catalog.current.has_value()) {
     auto const& current = *catalog.current;
+    std::string frozen_directory_identity{"identity="};
+    frozen_directory_identity += catalog_identity_name(current.identity);
+    frozen_directory_identity += ";content_identity=";
+    frozen_directory_identity += current.content_identity.empty()
+                                     ? "not-provided"
+                                     : current.content_identity;
+    frozen_directory_identity += ";revision=" +
+                                 std::to_string(current.revision);
+    frozen_directory_identity += ";origin=";
+    frozen_directory_identity += catalog_origin_name(current.origin);
+    context.frozen_directory_identity = {
+        .value = std::move(frozen_directory_identity),
+        .disposition = DiagnosticValueDisposition::retain,
+    };
     append_retained(context, "catalog_revision",
                     std::to_string(current.revision));
     append_retained(context, "catalog_identity",
@@ -1305,9 +1562,15 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
     }
     if (!current.application_id.empty()) {
       append_retained(context, "catalog_application_id", current.application_id);
+      context.directory_application_association = {
+          .value = current.application_id,
+          .disposition = DiagnosticValueDisposition::retain,
+      };
     } else {
       append_missing(context, "catalog_application_id",
                      "active catalog has no application association identifier");
+      context.directory_application_association.unavailable_reason =
+          "active catalog has no application association identifier";
     }
     append_retained(context, "catalog_release_issue_count",
                     std::to_string(current.release_issues.size()));
@@ -1317,6 +1580,8 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
     auto const reason = catalog.error.empty()
                             ? std::string{"catalog owner has no active catalog"}
                             : catalog.error;
+    context.frozen_directory_identity.unavailable_reason = reason;
+    context.directory_application_association.unavailable_reason = reason;
     append_missing(context, "catalog_revision", reason);
     append_missing(context, "catalog_identity", reason);
     append_missing(context, "catalog_application_id", reason);
@@ -1324,23 +1589,53 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
   }
   if (catalog.current_document.has_value() &&
       catalog.current_document->release_state.has_value()) {
-    append_retained(context, "catalog_release_state",
-                    catalog_release_state_name(
-                        *catalog.current_document->release_state));
+    auto const release_state =
+        catalog_release_state_name(*catalog.current_document->release_state);
+    append_retained(context, "catalog_release_state", release_state);
     append_retained(context, "catalog_schema",
                     std::to_string(catalog.current_document->schema_version));
+    std::string release_result{"release_state="};
+    release_result += release_state;
+    if (catalog.current.has_value()) {
+      release_result += ";release_gate=";
+      release_result += catalog.current->release_issues.empty() ? "passed"
+                                                                 : "failed";
+    }
+    context.directory_release_result = {
+        .value = std::move(release_result),
+        .disposition = DiagnosticValueDisposition::retain,
+    };
   } else {
     append_missing(context, "catalog_release_state",
                    "catalog owner did not provide an active document release state");
     append_missing(context, "catalog_schema",
                    "catalog owner did not provide an active document schema");
+    if (catalog.current.has_value()) {
+      context.directory_release_result = {
+          .value = std::string{"release_gate="} +
+                   (catalog.current->release_issues.empty() ? "passed"
+                                                            : "failed"),
+          .disposition = DiagnosticValueDisposition::retain,
+      };
+    } else {
+      context.directory_release_result.unavailable_reason =
+          "catalog owner did not provide an active document release state";
+    }
   }
   if (catalog.current_catalog.has_value()) {
     append_retained(context, "catalog_runtime_load", "accepted");
+    context.directory_load_result = {
+        .value = "accepted",
+        .disposition = DiagnosticValueDisposition::retain,
+    };
   } else {
     append_missing(context, "catalog_runtime_load",
                    "catalog owner has no runtime load projection");
+    context.directory_load_result.unavailable_reason =
+        "catalog owner has no runtime load projection";
   }
+  append_diagnostic_batch_plan(context, installation_batches_,
+                               software_optimization_batches_);
 
   if (!snapshot.log.available) {
     append_missing(context, "execution_log",
