@@ -49,6 +49,7 @@
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
 #include "azzs/application/software_optimization_catalog_lifecycle.hpp"
+#include "azzs/application/software_optimization_batch.hpp"
 #include "azzs/application/software_optimization_discovery.hpp"
 #include "azzs/application/sogou_optimization.hpp"
 #include "azzs/application/system_settings_apply.hpp"
@@ -207,7 +208,15 @@ class WindowsWorkbenchServices final
         software_optimization_discovery_(software_optimization_catalog_,
                                          software_selection_,
                                          emergency_withdrawals_,
-                                         software_optimization_observer_) {
+                                         software_optimization_observer_),
+        software_optimization_batch_plans_(software_optimization_catalog_,
+                                           software_optimization_discovery_),
+        software_optimization_batch_executor_(sogou_optimizations_),
+        software_optimization_batch_withdrawals_(emergency_withdrawals_),
+        software_optimization_batches_(
+            states_, occupancy_, log_, software_optimization_batch_plans_,
+            software_optimization_batch_executor_,
+            software_optimization_batch_withdrawals_) {
     static_cast<void>(settings_catalog_.initialize_builtin(
         application::settings_catalog::initial_settings_catalog()));
     static_cast<void>(system_settings_apply_.refresh());
@@ -223,6 +232,7 @@ class WindowsWorkbenchServices final
     }
     synchronize_live_offline_package_cache();
     static_cast<void>(installation_batches_.restore());
+    static_cast<void>(software_optimization_batches_.restore());
   }
 
   void start_emergency_preflight() {
@@ -307,6 +317,11 @@ class WindowsWorkbenchServices final
     // cache session. A later launch can then recover read-only rather than
     // treating a closing batch as safe to continue.
     try {
+      static_cast<void>(software_optimization_batches_.request_close());
+    } catch (...) {
+      // The persisted batch state remains fail-closed for issue 12 recovery.
+    }
+    try {
       static_cast<void>(installation_batches_.request_close());
     } catch (...) {
       // Restore never auto-continues an active batch. If the best-effort
@@ -320,6 +335,12 @@ class WindowsWorkbenchServices final
   [[nodiscard]] application::installation_batch::InstallationBatchService&
   installation_batches() noexcept override {
     return installation_batches_;
+  }
+
+  [[nodiscard]] application::software_optimization_batch::
+      SoftwareOptimizationBatchService&
+  software_optimization_batches() noexcept override {
+    return software_optimization_batches_;
   }
 
   [[nodiscard]] application::HardwareOverviewService& hardware_overview()
@@ -465,6 +486,15 @@ class WindowsWorkbenchServices final
       software_optimization_observer_;
   application::software_optimization_discovery::SoftwareOptimizationDiscoveryService
       software_optimization_discovery_;
+  application::software_optimization_batch::DiscoveryOptimizationBatchPlanSource
+      software_optimization_batch_plans_;
+  application::software_optimization_batch::SogouOptimizationBatchExecutor
+      software_optimization_batch_executor_;
+  application::software_optimization_batch::
+      EmergencyWithdrawalOptimizationAuthorization
+          software_optimization_batch_withdrawals_;
+  application::software_optimization_batch::SoftwareOptimizationBatchService
+      software_optimization_batches_;
   adapters::windows::WindowsInstallationDownloadAdapter batch_download_{
       batch_offline_package_cache_};
   adapters::windows::WindowsControlledProfileReadinessAdapter batch_readiness_;

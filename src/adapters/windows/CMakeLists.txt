@@ -90,6 +90,7 @@ azzs_project_target(
   PUBLIC_LINKS
     azzs::application
     azzs::installation_batch_runner_application
+    azzs::software_optimization_batch_runner_application
     azzs::offline_package_cache_application
     azzs::software_selection_application
     azzs::software_optimization_catalog_application
