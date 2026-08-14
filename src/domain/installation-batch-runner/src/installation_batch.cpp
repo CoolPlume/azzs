@@ -118,14 +118,16 @@ bool FrozenBatchPlan::valid() const noexcept {
 
 bool InstallationItemProgress::valid() const noexcept {
   return nonempty_and_bounded(item_id) && attempt <= 1024 &&
+         (!installer_started || launch_requested) &&
+         (!post_install_completed || installer_started) &&
          (!opaque_installer_handle.has_value() ||
-          nonempty_and_bounded(*opaque_installer_handle));
+           (installer_started && nonempty_and_bounded(*opaque_installer_handle)));
 }
 
 bool DurableLeaseBinding::valid() const noexcept {
   return nonempty_and_bounded(kind) && nonempty_and_bounded(operation_id) &&
-         nonempty_and_bounded(correlation_id) &&
-         nonempty_and_bounded(lease_token) && occupancy_revision > 0;
+          nonempty_and_bounded(correlation_id) &&
+          nonempty_and_bounded(lease_token_fingerprint) && occupancy_revision > 0;
 }
 
 bool LastDurableTransition::valid() const noexcept {
@@ -138,6 +140,10 @@ bool InstallationBatchRecord::valid() const noexcept {
       !unique_by(items, &InstallationItemProgress::item_id) ||
       (active_lease.has_value() && !active_lease->valid()) ||
       !last_transition.valid()) {
+    return false;
+  }
+  if (state != InstallationBatchState::completed &&
+      state != InstallationBatchState::stopped && !active_lease.has_value()) {
     return false;
   }
   for (auto const& item : plan.items) {

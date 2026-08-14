@@ -146,7 +146,13 @@ struct InstallationItemProgress final {
   std::string item_id;
   InstallationItemState state{InstallationItemState::pending};
   std::uint32_t attempt{};
+  // This is durably set before a launch effect. It remains true across an
+  // interrupted launch so recovery can observe rather than issue it again.
+  bool launch_requested{false};
   bool installer_started{false};
+  // A controlled post-install action needs an explicit completion fact before
+  // result detection may establish this item as complete.
+  bool post_install_completed{false};
   std::optional<std::string> opaque_installer_handle;
   std::string detail;
 
@@ -158,7 +164,9 @@ struct DurableLeaseBinding final {
   std::string kind;
   std::string operation_id;
   std::string correlation_id;
-  std::string lease_token;
+  // A durable record needs to recognize its own occupancy lease after a
+  // restart, but must not expose or persist the bearer token itself.
+  std::string lease_token_fingerprint;
   std::uint64_t occupancy_revision{};
 
   [[nodiscard]] bool valid() const noexcept;

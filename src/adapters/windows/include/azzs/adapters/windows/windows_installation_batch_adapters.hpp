@@ -50,6 +50,10 @@ class WindowsOpaqueCacheInstallerLauncher final
   [[nodiscard]] application::installation_batch::ControlledInstallerObservation
   launch(application::installation_batch::ControlledInstallerLaunch const& request)
       override;
+  [[nodiscard]] application::installation_batch::ControlledInstallerCompletionObservation
+  observe_completion(
+      application::installation_batch::ControlledInstallerCompletionRequest const& request)
+      override;
 
  private:
   application::offline_package_cache::OfflinePackageCacheService& cache_;
