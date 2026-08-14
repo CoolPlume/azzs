@@ -8,6 +8,7 @@
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/execution_log.hpp"
 #include "azzs/application/operation_occupancy.hpp"
+#include "azzs/application/restart_resume.hpp"
 #include "azzs/domain/installation_batch.hpp"
 
 namespace azzs::application::software_catalog {
@@ -312,7 +313,8 @@ class InstallationBatchService final {
       ControlledProfileReadinessPort& readiness,
       InstallResultVerifier& verifier, InstallationFactSink& facts,
       software_catalog::SoftwareCatalogLifecycle const& catalogs,
-      software_selection::SoftwareSelectionLifecycle const& selections);
+      software_selection::SoftwareSelectionLifecycle const& selections,
+      restart_resume::RestartResumeService* restart_resume = nullptr);
 
   InstallationBatchService(
       DeviceStateStore& states, SharedOperationOccupancy& occupancy,
@@ -320,7 +322,8 @@ class InstallationBatchService final {
       ControlledInstallerExecutor& executor,
       ControlledProfileReadinessPort& readiness,
       InstallResultVerifier& verifier, InstallationFactSink& facts,
-      FrozenBatchPlanAdmissionPort const& admission);
+      FrozenBatchPlanAdmissionPort const& admission,
+      restart_resume::RestartResumeService* restart_resume = nullptr);
 
   ~InstallationBatchService();
 
