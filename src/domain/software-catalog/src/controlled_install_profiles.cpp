@@ -64,6 +64,16 @@ std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
                             .disposition_order = k_required_disposition_order,
                             .required_for_first_release = true,
                         }},
+        .execution_kind =
+            ControlledWindowsExecutionKind::project_owned_windows_executor,
+        .execution = WindowsExecutionReadiness::declaration_only,
+        .completion_boundary =
+            InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::controlled_preferences,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope =
+            InstallerInteractionScope::non_identity_preferences_only,
     },
 }};
 
@@ -125,7 +135,68 @@ std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
 
 [[nodiscard]] bool valid_execution_readiness(
     WindowsExecutionReadiness value) noexcept {
-  return value == WindowsExecutionReadiness::declaration_only;
+  switch (value) {
+    case WindowsExecutionReadiness::declaration_only:
+    case WindowsExecutionReadiness::project_executor_registered:
+      return true;
+  }
+  return false;
+}
+
+[[nodiscard]] bool valid_execution_kind(
+    ControlledWindowsExecutionKind value) noexcept {
+  return value ==
+         ControlledWindowsExecutionKind::project_owned_windows_executor;
+}
+
+[[nodiscard]] bool valid_completion_boundary(
+    InstallationCompletionBoundary value) noexcept {
+  switch (value) {
+    case InstallationCompletionBoundary::post_install_then_result_detection:
+    case InstallationCompletionBoundary::post_install_then_restart_verification:
+      return true;
+  }
+  return false;
+}
+
+[[nodiscard]] bool valid_post_install_behavior(
+    PostInstallBehavior value) noexcept {
+  switch (value) {
+    case PostInstallBehavior::none:
+    case PostInstallBehavior::controlled_preferences:
+      return true;
+  }
+  return false;
+}
+
+[[nodiscard]] bool valid_restart_verification(
+    RestartVerification value) noexcept {
+  switch (value) {
+    case RestartVerification::not_required:
+    case RestartVerification::required_after_restart:
+      return true;
+  }
+  return false;
+}
+
+[[nodiscard]] bool valid_result_detection(
+    ResultDetectionStrategy value) noexcept {
+  switch (value) {
+    case ResultDetectionStrategy::project_owned_presence_probe:
+    case ResultDetectionStrategy::user_confirmation_only:
+      return true;
+  }
+  return false;
+}
+
+[[nodiscard]] bool valid_interaction_scope(
+    InstallerInteractionScope value) noexcept {
+  switch (value) {
+    case InstallerInteractionScope::non_identity_preferences_only:
+    case InstallerInteractionScope::official_identity_required:
+      return true;
+  }
+  return false;
 }
 
 void add_issue(ControlledInstallProfileValidation& validation,
@@ -290,11 +361,59 @@ ControlledInstallProfileValidation validate_controlled_install_profiles(
       }
     }
 
+    if (!valid_execution_kind(profile.execution_kind)) {
+      add_issue(validation,
+                ControlledInstallProfileIssueCode::invalid_execution_kind,
+                profile.id,
+                "controlled install profiles require a project-owned execution kind");
+    }
     if (!valid_execution_readiness(profile.execution)) {
       add_issue(validation,
                 ControlledInstallProfileIssueCode::invalid_execution_readiness,
                 profile.id,
-                "issue 19 declarations cannot register executable behavior");
+                "controlled install profile execution readiness is unrecognized");
+    }
+    if (!valid_completion_boundary(profile.completion_boundary)) {
+      add_issue(validation,
+                ControlledInstallProfileIssueCode::invalid_completion_boundary,
+                profile.id,
+                "controlled install profile completion boundary is unrecognized");
+    }
+    if (!valid_post_install_behavior(profile.post_install_behavior)) {
+      add_issue(validation,
+                ControlledInstallProfileIssueCode::invalid_post_install_behavior,
+                profile.id,
+                "controlled install profile post-install behavior is unrecognized");
+    }
+    if (!valid_restart_verification(profile.restart_verification)) {
+      add_issue(validation,
+                ControlledInstallProfileIssueCode::invalid_restart_verification,
+                profile.id,
+                "controlled install profile restart verification is unrecognized");
+    }
+    if (!valid_result_detection(profile.result_detection)) {
+      add_issue(validation,
+                ControlledInstallProfileIssueCode::invalid_result_detection_strategy,
+                profile.id,
+                "controlled install profile result detection is unrecognized");
+    }
+    if (!valid_interaction_scope(profile.interaction_scope)) {
+      add_issue(validation,
+                ControlledInstallProfileIssueCode::invalid_interaction_scope,
+                profile.id,
+                "controlled install profile interaction scope is unrecognized");
+    }
+    auto const restart_boundary =
+        profile.completion_boundary ==
+        InstallationCompletionBoundary::post_install_then_restart_verification;
+    auto const restart_required =
+        profile.restart_verification == RestartVerification::required_after_restart;
+    if (restart_boundary != restart_required) {
+      add_issue(
+          validation,
+          ControlledInstallProfileIssueCode::inconsistent_completion_semantics,
+          profile.id,
+          "restart completion boundaries and restart verification must agree");
     }
   }
   return validation;

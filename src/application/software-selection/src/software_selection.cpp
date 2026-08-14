@@ -573,21 +573,34 @@ SoftwareSelectionSnapshot SoftwareSelectionLifecycle::snapshot() const {
                    : std::vector<selection_domain::SelectionItem>{},
       .sources = sources_,
       .handoffs = handoffs_,
+      .active_catalog = active_catalog_,
       .error = error_,
   };
 }
 
 SelectionActionResult SoftwareSelectionLifecycle::on_catalog_replaced(
-    catalog_domain::RuntimeSoftwareCatalog catalog,
-    software_catalog::CatalogSelectionImpact impact) {
+    CatalogSelectionProjection projection) {
   if (mode_ != SelectionLifecycleMode::ready) {
     return {.code = mode_ == SelectionLifecycleMode::read_only
                         ? SelectionActionCode::read_only
                         : SelectionActionCode::not_restored,
             .message = error_};
   }
-  catalog_ = std::move(catalog);
-  impact_ = std::move(impact);
+  if (!projection_is_complete(projection)) {
+    log_event("catalog-projection", ExecutionResult::failed, {},
+              "catalog projection is incomplete or inconsistent");
+    return {.code = SelectionActionCode::invalid_catalog_projection,
+            .message = "catalog projection is incomplete or inconsistent"};
+  }
+  if (projection_is_stale(projection)) {
+    log_event("catalog-projection", ExecutionResult::cancelled, {},
+              "catalog projection is older than the active selection catalog");
+    return {.code = SelectionActionCode::stale_catalog_projection,
+            .message = "catalog projection is stale"};
+  }
+  catalog_ = std::move(projection.runtime);
+  active_catalog_ = std::move(projection.active);
+  impact_ = std::move(projection.impact);
   if (selection_.initialized) {
     return {.code = SelectionActionCode::succeeded};
   }
@@ -977,6 +990,29 @@ bool SoftwareSelectionLifecycle::source_matches_catalog(
          source.branch == software->definition.branch;
 }
 
+bool SoftwareSelectionLifecycle::projection_is_complete(
+    CatalogSelectionProjection const& projection) const noexcept {
+  auto const runtime_item_count =
+      projection.runtime.software.size() + projection.runtime.drivers.size();
+  return projection.runtime.schema_version != 0 &&
+         projection.runtime.revision != 0 &&
+         !projection.runtime.default_locale.empty() &&
+         projection.active.revision == projection.runtime.revision &&
+         projection.active.item_count == runtime_item_count &&
+         !projection.active.content_identity.empty() &&
+         !projection.active.application_id.empty();
+}
+
+bool SoftwareSelectionLifecycle::projection_is_stale(
+    CatalogSelectionProjection const& projection) const noexcept {
+  if (!active_catalog_.has_value()) {
+    return false;
+  }
+  return projection.active.revision < active_catalog_->revision ||
+         (projection.active.revision == active_catalog_->revision &&
+          projection.active.content_identity != active_catalog_->content_identity);
+}
+
 std::vector<std::string> SoftwareSelectionLifecycle::impact_ids(
     software_catalog::CatalogSelectionImpactReason reason) const {
   std::vector<std::string> ids;
@@ -1036,6 +1072,10 @@ char const* to_string(SelectionActionCode code) noexcept {
       return "not-restored";
     case SelectionActionCode::rejected:
       return "rejected";
+    case SelectionActionCode::invalid_catalog_projection:
+      return "invalid-catalog-projection";
+    case SelectionActionCode::stale_catalog_projection:
+      return "stale-catalog-projection";
     case SelectionActionCode::resolver_failed:
       return "resolver-failed";
     case SelectionActionCode::network_unavailable:
