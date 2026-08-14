@@ -45,6 +45,18 @@ namespace cache = application::offline_package_cache;
       return "verification-observed";
     case batch::InstallationFactKind::batch_paused:
       return "batch-paused";
+    case batch::InstallationFactKind::download_paused:
+      return "download-paused";
+    case batch::InstallationFactKind::download_resumed:
+      return "download-resumed";
+    case batch::InstallationFactKind::normal_stop_requested:
+      return "normal-stop-requested";
+    case batch::InstallationFactKind::forced_termination_confirmation_requested:
+      return "forced-termination-confirmation-requested";
+    case batch::InstallationFactKind::forced_termination_observed:
+      return "forced-termination-observed";
+    case batch::InstallationFactKind::recovery_continued:
+      return "recovery-continued";
     case batch::InstallationFactKind::recovery_observed:
       return "recovery-observed";
     case batch::InstallationFactKind::coverage_gap:
@@ -98,6 +110,67 @@ WindowsInstallationDownloadAdapter::advance(
 }
 
 batch::InstallationDownloadObservation
+WindowsInstallationDownloadAdapter::pause(
+    batch::InstallationEffectTarget const& target) {
+  if (!target.valid()) {
+    return download_failure("controlled batch cache target is invalid");
+  }
+  if (!frozen_cache_root_is_selected(cache_, target.cache_root)) {
+    return download_failure("the frozen batch cache root is unavailable");
+  }
+  // A synchronous cache transfer cannot honestly promise to interrupt an
+  // in-flight transport at an arbitrary instant. Retain the existing transfer
+  // state and require a registered downloader pause primitive before claiming
+  // a user-requested pause.
+  return download_failure(
+      "no registered controlled downloader pause operation is available for this batch item");
+}
+
+batch::InstallationDownloadObservation
+WindowsInstallationDownloadAdapter::resume(
+    batch::InstallationEffectTarget const& target) {
+  if (!target.valid()) {
+    return download_failure("controlled batch cache target is invalid");
+  }
+  if (!frozen_cache_root_is_selected(cache_, target.cache_root)) {
+    return download_failure("the frozen batch cache root is unavailable");
+  }
+  auto const result = cache_.resume(target.cache_asset.identity);
+  switch (result.code) {
+    case cache::CacheActionCode::completed:
+    case cache::CacheActionCode::already_available:
+      return {.code = batch::InstallationDownloadCode::cached_ready,
+              .detail = result.detail};
+    case cache::CacheActionCode::paused:
+      return {.code = batch::InstallationDownloadCode::paused,
+              .detail = result.detail};
+    case cache::CacheActionCode::restarted_from_zero:
+      return {.code = batch::InstallationDownloadCode::restart_required,
+              .detail = result.detail.empty()
+                            ? "download continuation is unavailable and must restart from zero"
+                            : result.detail};
+    case cache::CacheActionCode::waiting_for_network:
+      return {.code = batch::InstallationDownloadCode::waiting_network,
+              .detail = result.detail};
+    case cache::CacheActionCode::unsupported:
+    case cache::CacheActionCode::asset_not_current:
+      return {.code = batch::InstallationDownloadCode::source_invalid,
+              .detail = result.detail};
+    case cache::CacheActionCode::interrupted:
+    case cache::CacheActionCode::location_unavailable:
+    case cache::CacheActionCode::insufficient_space:
+    case cache::CacheActionCode::space_unknown:
+    case cache::CacheActionCode::busy:
+    case cache::CacheActionCode::retry_not_available:
+    case cache::CacheActionCode::failed:
+      return download_failure(result.detail.empty()
+                                  ? "the controlled batch download could not be resumed"
+                                  : result.detail);
+  }
+  return download_failure("the controlled batch cache returned an unknown resume result");
+}
+
+batch::InstallationDownloadObservation
 WindowsInstallationDownloadAdapter::stop(
     batch::InstallationEffectTarget const& target) {
   if (!target.valid()) {
@@ -107,10 +180,31 @@ WindowsInstallationDownloadAdapter::stop(
     return download_failure("the frozen batch cache root is unavailable");
   }
 
-  // The current cache contract performs a transfer synchronously and exposes
-  // no per-item cancellation operation. Reporting a pause would be false.
-  return download_failure(
-      "the controlled batch cache has no registered per-item cancellation operation");
+  auto const result = cache_.abandon(target.cache_asset.identity);
+  switch (result.code) {
+    case cache::CacheActionCode::interrupted:
+      return {.code = batch::InstallationDownloadCode::stopped,
+              .detail = "the controlled batch download temporary bytes were discarded"};
+    case cache::CacheActionCode::asset_not_current:
+    case cache::CacheActionCode::unsupported:
+      return {.code = batch::InstallationDownloadCode::source_invalid,
+              .detail = result.detail};
+    case cache::CacheActionCode::completed:
+    case cache::CacheActionCode::already_available:
+    case cache::CacheActionCode::paused:
+    case cache::CacheActionCode::restarted_from_zero:
+    case cache::CacheActionCode::waiting_for_network:
+    case cache::CacheActionCode::location_unavailable:
+    case cache::CacheActionCode::insufficient_space:
+    case cache::CacheActionCode::space_unknown:
+    case cache::CacheActionCode::busy:
+    case cache::CacheActionCode::retry_not_available:
+    case cache::CacheActionCode::failed:
+      return download_failure(result.detail.empty()
+                                  ? "the controlled batch download could not be stopped"
+                                  : result.detail);
+  }
+  return download_failure("the controlled batch cache returned an unknown stop result");
 }
 
 batch::ControlledProfileReadiness
@@ -160,6 +254,25 @@ WindowsOpaqueCacheInstallerLauncher::observe_completion(
   // cache hit, a process handle, or an apparent result.
   return {.code = batch::InstallerCompletionCode::unknown,
           .detail = "no complete production Windows installer completion observer is registered"};
+}
+
+batch::ControlledInstallerTerminationObservation
+WindowsOpaqueCacheInstallerLauncher::force_terminate(
+    batch::ControlledInstallerTerminationRequest const& request) {
+  if (!request.target.valid()) {
+    return {.code = batch::InstallerTerminationCode::failed,
+            .detail = "the controlled installer termination target is invalid"};
+  }
+  if (!request.opaque_operation_handle.has_value() ||
+      request.opaque_operation_handle->empty()) {
+    return {.code = batch::InstallerTerminationCode::unknown,
+            .detail = "the controlled installer operation handle is unavailable"};
+  }
+  // This intentionally does not fall back to a process name, PID, image
+  // path, process tree or cache file. Until a project-owned launcher has an
+  // exact owned-process termination contract, no Windows process is touched.
+  return {.code = batch::InstallerTerminationCode::unavailable,
+          .detail = "no complete production Windows force-termination adapter is registered"};
 }
 
 batch::InstallVerificationObservation

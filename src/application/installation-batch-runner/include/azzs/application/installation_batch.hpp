@@ -29,6 +29,8 @@ enum class InstallationDownloadCode {
   waiting_network,
   source_invalid,
   paused,
+  restart_required,
+  stopped,
   failed,
 };
 
@@ -66,6 +68,10 @@ class InstallationDownloadPort {
  public:
   virtual ~InstallationDownloadPort() = default;
   [[nodiscard]] virtual InstallationDownloadObservation advance(
+      InstallationEffectTarget const& target) = 0;
+  [[nodiscard]] virtual InstallationDownloadObservation pause(
+      InstallationEffectTarget const& target) = 0;
+  [[nodiscard]] virtual InstallationDownloadObservation resume(
       InstallationEffectTarget const& target) = 0;
   [[nodiscard]] virtual InstallationDownloadObservation stop(
       InstallationEffectTarget const& target) = 0;
@@ -123,6 +129,26 @@ struct ControlledInstallerCompletionObservation final {
   std::string detail;
 };
 
+enum class InstallerTerminationCode {
+  terminated,
+  still_running,
+  unavailable,
+  unknown,
+  failed,
+};
+
+// The executor receives only the operation handle it created. In particular,
+// a caller cannot request a PID/name/path-based termination of another process.
+struct ControlledInstallerTerminationRequest final {
+  InstallationEffectTarget target;
+  std::optional<std::string> opaque_operation_handle;
+};
+
+struct ControlledInstallerTerminationObservation final {
+  InstallerTerminationCode code{InstallerTerminationCode::unknown};
+  std::string detail;
+};
+
 class ControlledInstallerExecutor {
  public:
   virtual ~ControlledInstallerExecutor() = default;
@@ -130,6 +156,8 @@ class ControlledInstallerExecutor {
       ControlledInstallerLaunch const& request) = 0;
   [[nodiscard]] virtual ControlledInstallerCompletionObservation observe_completion(
       ControlledInstallerCompletionRequest const& request) = 0;
+  [[nodiscard]] virtual ControlledInstallerTerminationObservation force_terminate(
+      ControlledInstallerTerminationRequest const& request) = 0;
 };
 
 enum class ControlledProfileReadinessCode {
@@ -196,6 +224,12 @@ enum class InstallationFactKind {
   launch_requested,
   verification_observed,
   batch_paused,
+  download_paused,
+  download_resumed,
+  normal_stop_requested,
+  forced_termination_confirmation_requested,
+  forced_termination_observed,
+  recovery_continued,
   recovery_observed,
   coverage_gap,
 };
@@ -247,6 +281,7 @@ enum class InstallationBatchActionCode {
   read_only,
   persistence_failed,
   outcome_unknown,
+  confirmation_required,
   no_active_batch,
   recovery_required,
   blocked,
@@ -296,9 +331,14 @@ class InstallationBatchService final {
       batch_domain::FrozenBatchPlan retry_plan);
   [[nodiscard]] InstallationBatchActionResult complete_current_installer_interaction();
   [[nodiscard]] InstallationBatchActionResult confirm_current_complete();
+  [[nodiscard]] InstallationBatchActionResult pause_current_download();
+  [[nodiscard]] InstallationBatchActionResult resume_current_download();
   [[nodiscard]] InstallationBatchActionResult stop_current();
+  [[nodiscard]] InstallationBatchActionResult request_force_termination();
+  [[nodiscard]] InstallationBatchActionResult confirm_force_termination();
   [[nodiscard]] InstallationBatchActionResult request_close();
   [[nodiscard]] InstallationBatchActionResult recover_read_only();
+  [[nodiscard]] InstallationBatchActionResult continue_after_recovery();
 
  private:
   class Impl;

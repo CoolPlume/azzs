@@ -92,17 +92,35 @@ class ScriptedDownload final : public batch_app::InstallationDownloadPort {
     return take(advances, {.code = batch_app::InstallationDownloadCode::completed});
   }
 
+  [[nodiscard]] batch_app::InstallationDownloadObservation pause(
+      batch_app::InstallationEffectTarget const& target) override {
+    ++pause_calls;
+    targets.push_back(target);
+    return take(pauses, {.code = batch_app::InstallationDownloadCode::paused});
+  }
+
+  [[nodiscard]] batch_app::InstallationDownloadObservation resume(
+      batch_app::InstallationEffectTarget const& target) override {
+    ++resume_calls;
+    targets.push_back(target);
+    return take(resumes, {.code = batch_app::InstallationDownloadCode::downloading});
+  }
+
   [[nodiscard]] batch_app::InstallationDownloadObservation stop(
       batch_app::InstallationEffectTarget const& target) override {
     ++stop_calls;
     targets.push_back(target);
-    return take(stops, {.code = batch_app::InstallationDownloadCode::paused});
+    return take(stops, {.code = batch_app::InstallationDownloadCode::stopped});
   }
 
   std::vector<batch_app::InstallationDownloadObservation> advances;
+  std::vector<batch_app::InstallationDownloadObservation> pauses;
+  std::vector<batch_app::InstallationDownloadObservation> resumes;
   std::vector<batch_app::InstallationDownloadObservation> stops;
   std::vector<batch_app::InstallationEffectTarget> targets;
   std::size_t advance_calls{};
+  std::size_t pause_calls{};
+  std::size_t resume_calls{};
   std::size_t stop_calls{};
 
  private:
@@ -145,12 +163,28 @@ class ScriptedExecutor final : public batch_app::ControlledInstallerExecutor {
     return value;
   }
 
+  [[nodiscard]] batch_app::ControlledInstallerTerminationObservation force_terminate(
+      batch_app::ControlledInstallerTerminationRequest const& request) override {
+    ++termination_calls;
+    termination_requests.push_back(request);
+    if (terminations.empty()) {
+      return {.code = batch_app::InstallerTerminationCode::unavailable,
+              .detail = "no scripted termination capability"};
+    }
+    auto value = std::move(terminations.front());
+    terminations.erase(terminations.begin());
+    return value;
+  }
+
   std::vector<batch_app::ControlledInstallerObservation> launches;
   std::vector<batch_app::ControlledInstallerCompletionObservation> completions;
+  std::vector<batch_app::ControlledInstallerTerminationObservation> terminations;
   std::vector<batch_app::InstallationEffectTarget> targets;
   std::vector<batch_app::ControlledInstallerCompletionRequest> completion_requests;
+  std::vector<batch_app::ControlledInstallerTerminationRequest> termination_requests;
   std::size_t launch_calls{};
   std::size_t completion_calls{};
+  std::size_t termination_calls{};
 };
 
 class ScriptedVerifier final : public batch_app::InstallResultVerifier {
@@ -1129,6 +1163,195 @@ static_assert(!VerifiesFrozenInstallationItem<batch_app::InstallResultVerifier>)
                 "invalid external handoff plans must not reach the admission port");
 }
 
+[[nodiscard]] bool has_logged_action(RecordingLog const& log, std::string_view action) {
+  for (auto const& event : log.events) {
+    for (auto const& field : event.fields) {
+      if (field.key == "action" && field.value == action) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+[[nodiscard]] bool download_pause_resume_stop_are_distinct() {
+  Fixture fixture;
+  fixture.verifier.observations.push_back(
+      {.code = batch_app::InstallVerificationCode::absent,
+       .detail = "the controlled installer target is absent before download"});
+  if (!create(fixture, fixture_plan({fixture_item("editor"), fixture_item("viewer")})) ||
+      !advance(fixture, 1)) {
+    return false;
+  }
+  auto const paused = fixture.service.pause_current_download();
+  fixture.download.resumes.push_back(
+      {.code = batch_app::InstallationDownloadCode::restart_required,
+       .detail = "continuation is unavailable; download restarted from zero"});
+  auto const resumed = fixture.service.resume_current_download();
+  auto const stopped = fixture.service.stop_current();
+  auto const occupancy = fixture.occupancy.inspect();
+  return expect(paused.succeeded() && paused.snapshot.active.has_value() &&
+                    paused.snapshot.active->state == batch::InstallationBatchState::download_paused &&
+                    paused.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::download_paused &&
+                    fixture.download.pause_calls == 1 &&
+                    has_logged_action(fixture.log, "download-paused"),
+                "a download pause must persist independently from batch stop") &&
+         expect(resumed.succeeded() && resumed.snapshot.active.has_value() &&
+                    resumed.snapshot.active->state == batch::InstallationBatchState::running &&
+                    resumed.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::downloading &&
+                    fixture.download.resume_calls == 1 &&
+                    has_logged_action(fixture.log, "download-resumed"),
+                "a non-resumable continuation must explicitly restart instead of becoming stop") &&
+         expect(stopped.succeeded() && stopped.snapshot.active.has_value() &&
+                    stopped.snapshot.active->state == batch::InstallationBatchState::stopped &&
+                    stopped.snapshot.active->items[0].state ==
+                        batch::InstallationItemState::stop_pending &&
+                    stopped.snapshot.active->items[1].state ==
+                        batch::InstallationItemState::stop_pending &&
+                    fixture.download.stop_calls == 1 &&
+                    !stopped.snapshot.active->active_lease.has_value() &&
+                    occupancy.code == app::OccupancyResultCode::observed &&
+                    !occupancy.current.has_value(),
+                "download stop must discard the current temporary transfer and release the batch lease");
+}
+
+[[nodiscard]] bool normal_stop_waits_for_current_installer_and_preserves_results() {
+  Fixture fixture;
+  fixture.verifier.observations.push_back(
+      {.code = batch_app::InstallVerificationCode::absent,
+       .detail = "the controlled installer target is absent before launch"});
+  auto profile = fixture_profile(
+      catalog::InstallationCompletionBoundary::post_install_then_result_detection,
+      catalog::ResultDetectionStrategy::user_confirmation_only);
+  if (!create(fixture, fixture_plan({fixture_item("editor", std::move(profile)),
+                                    fixture_item("viewer")})) ||
+      !advance(fixture, 3)) {
+    return false;
+  }
+  auto const stop_requested = fixture.service.stop_current();
+  auto const observed_completion = fixture.service.advance();
+  auto const confirmed = fixture.service.confirm_current_complete();
+  auto retry = fixture_plan({fixture_item("viewer")}, "retry-stopped-viewer");
+  retry.retry_of_batch_id = "batch-1";
+  auto const retried = fixture.service.retry_current(std::move(retry));
+  return expect(stop_requested.succeeded() && stop_requested.snapshot.active.has_value() &&
+                    stop_requested.snapshot.active->state ==
+                        batch::InstallationBatchState::stopping &&
+                    stop_requested.snapshot.active->stop_requested &&
+                    fixture.executor.termination_calls == 0 &&
+                    has_logged_action(fixture.log, "normal-stop-requested"),
+                "normal stop must not force-terminate a running installer") &&
+         expect(observed_completion.succeeded() &&
+                    observed_completion.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::result_confirmation_pending,
+                "normal stop must wait for the existing installer result boundary") &&
+         expect(confirmed.succeeded() && confirmed.snapshot.active.has_value() &&
+                    confirmed.snapshot.active->state == batch::InstallationBatchState::stopped &&
+                    confirmed.snapshot.active->items[0].state ==
+                        batch::InstallationItemState::succeeded &&
+                    confirmed.snapshot.active->items[1].state ==
+                        batch::InstallationItemState::stop_pending &&
+                    !confirmed.snapshot.active->active_lease.has_value(),
+                "normal stop must retain completed work and prevent every later item") &&
+         expect(retried.succeeded() && retried.snapshot.active.has_value() &&
+                    retried.snapshot.active->plan.items.size() == 1 &&
+                    retried.snapshot.active->plan.items.front().item_id == "viewer",
+                "an unfinished stopped item must retry through a new frozen single-item snapshot");
+}
+
+[[nodiscard]] bool force_termination_requires_confirmation_and_stays_fail_closed() {
+  Fixture fixture;
+  fixture.verifier.observations.push_back(
+      {.code = batch_app::InstallVerificationCode::absent,
+       .detail = "the controlled installer target is absent before launch"});
+  if (!create(fixture, fixture_plan({fixture_item("editor"), fixture_item("viewer")})) ||
+      !advance(fixture, 3)) {
+    return false;
+  }
+  auto const requested = fixture.service.request_force_termination();
+  fixture.executor.terminations.push_back(
+      {.code = batch_app::InstallerTerminationCode::unavailable,
+       .detail = "no controlled terminator is registered"});
+  auto const unavailable = fixture.service.confirm_force_termination();
+  auto const requested_again = fixture.service.request_force_termination();
+  fixture.executor.terminations.push_back(
+      {.code = batch_app::InstallerTerminationCode::terminated,
+       .detail = "the owned installer was terminated"});
+  auto const terminated = fixture.service.confirm_force_termination();
+  auto const blocked = fixture.service.advance();
+  return expect(requested.code == batch_app::InstallationBatchActionCode::confirmation_required &&
+                    requested.snapshot.active.has_value() &&
+                    requested.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::force_termination_confirmation_pending &&
+                    fixture.executor.termination_calls == 2 &&
+                    has_logged_action(fixture.log,
+                                      "forced-termination-confirmation-requested"),
+                "force termination must record a separate explicit confirmation boundary") &&
+         expect(unavailable.code == batch_app::InstallationBatchActionCode::rejected &&
+                    unavailable.snapshot.active.has_value() &&
+                    unavailable.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::installer_running &&
+                    !unavailable.snapshot.active->items.front().force_termination_completed,
+                "an unavailable Windows termination adapter must not claim a process result") &&
+         expect(requested_again.code == batch_app::InstallationBatchActionCode::confirmation_required &&
+                    terminated.succeeded() && terminated.snapshot.active.has_value() &&
+                    terminated.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::result_confirmation_pending &&
+                    terminated.snapshot.active->items.front().force_termination_completed &&
+                    terminated.snapshot.active->items[1].state ==
+                        batch::InstallationItemState::pending &&
+                    has_logged_action(fixture.log, "forced-termination-observed"),
+                "a confirmed termination must require result handling and never roll back completed facts") &&
+         expect(blocked.code == batch_app::InstallationBatchActionCode::blocked &&
+                    fixture.executor.launch_calls == 1,
+                "a force-terminated item must not launch a later installer before verification");
+}
+
+[[nodiscard]] bool close_recovery_requires_verification_then_explicit_continue() {
+  Fixture fixture;
+  fixture.verifier.observations.push_back(
+      {.code = batch_app::InstallVerificationCode::absent,
+       .detail = "the controlled installer target is absent before launch"});
+  if (!create(fixture, fixture_plan({fixture_item("editor"), fixture_item("viewer")})) ||
+      !advance(fixture, 3)) {
+    return false;
+  }
+  auto const closing = fixture.service.request_close();
+  auto const launches_before_reopen = fixture.executor.launch_calls;
+  batch_app::InstallationBatchService reopened{
+      fixture.states, fixture.occupancy, fixture.log, fixture.download, fixture.executor,
+      fixture.readiness, fixture.verifier, fixture.facts, fixture.admission};
+  auto const restored = reopened.restore();
+  fixture.verifier.observations.push_back(
+      {.code = batch_app::InstallVerificationCode::installed,
+       .detail = "the controlled result verifier confirmed installation"});
+  auto const recovered = reopened.recover_read_only();
+  auto const continued = reopened.continue_after_recovery();
+  return expect(closing.succeeded() && closing.snapshot.active.has_value() &&
+                    closing.snapshot.active->state == batch::InstallationBatchState::closing &&
+                    closing.snapshot.active->close_requested,
+                "window close must retain a distinct closing state instead of force termination") &&
+         expect(restored.succeeded() && restored.snapshot.active.has_value() &&
+                    restored.snapshot.active->state ==
+                        batch::InstallationBatchState::recovery_required &&
+                    fixture.executor.launch_calls == launches_before_reopen,
+                "reopen must not launch another item before read-only verification") &&
+         expect(recovered.succeeded() && recovered.snapshot.active.has_value() &&
+                    recovered.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::succeeded &&
+                    recovered.snapshot.active->state ==
+                        batch::InstallationBatchState::recovery_required,
+                "recovery must first verify the owned installer result") &&
+         expect(continued.succeeded() && continued.snapshot.active.has_value() &&
+                    continued.snapshot.active->state == batch::InstallationBatchState::ready &&
+                    !continued.snapshot.active->close_requested &&
+                    fixture.executor.launch_calls == launches_before_reopen &&
+                    has_logged_action(fixture.log, "recovery-continued"),
+                "only an explicit continue may reopen the next batch item after recovery");
+}
+
 }  // namespace
 
 int main() {
@@ -1147,7 +1370,11 @@ int main() {
                   public_and_durable_batch_state_is_redacted() &&
                   frozen_cache_identity_survives_redacted_recovery() &&
                   retry_foreign_occupancy_preserves_terminal_record() &&
-                  external_handoff_is_rejected_before_admission()
+                  external_handoff_is_rejected_before_admission() &&
+                  download_pause_resume_stop_are_distinct() &&
+                  normal_stop_waits_for_current_installer_and_preserves_results() &&
+                  force_termination_requires_confirmation_and_stays_fail_closed() &&
+                  close_recovery_requires_verification_then_explicit_continue()
              ? EXIT_SUCCESS
              : EXIT_FAILURE;
 }

@@ -2,6 +2,7 @@
 
 #include "DesignSystem/Controls/ReadOnlyPresentationSurface.g.h"
 #include "Pages/SoftwareInstallationPage.g.h"
+#include "azzs/application/installation_batch.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/software_selection.hpp"
 
@@ -12,7 +13,8 @@ struct SoftwareInstallationPage
   SoftwareInstallationPage();
   void project(
       azzs::application::software_selection::SoftwareSelectionSnapshot const& selection,
-      azzs::application::offline_package_cache::OfflinePackageCacheSnapshot const& cache);
+      azzs::application::offline_package_cache::OfflinePackageCacheSnapshot const& cache,
+      azzs::domain::installation_batch::InstallationBatchSnapshot const& batch);
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation
