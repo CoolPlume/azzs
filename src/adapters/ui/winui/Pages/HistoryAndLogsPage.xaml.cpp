@@ -381,17 +381,20 @@ void HistoryAndLogsPage::project(HistoryAndLogsSnapshot const& snapshot) {
         }
         detail += event.error->message;
       }
-    } else if (event.coverage_gap.has_value()) {
-      detail = event.coverage_gap->reason;
-    } else if (!event.fields.empty()) {
-      for (auto const& field : event.fields) {
-        if (!detail.empty()) {
-          detail += " | ";
-        }
-        detail += field.key;
-        detail += ": ";
-        detail += field.value;
+    }
+    if (event.coverage_gap.has_value()) {
+      if (!detail.empty()) {
+        detail += " | ";
       }
+      detail += event.coverage_gap->reason;
+    }
+    for (auto const& field : event.fields) {
+      if (!detail.empty()) {
+        detail += " | ";
+      }
+      detail += field.key;
+      detail += ": ";
+      detail += field.value;
     }
     append_row(LogItems(), winrt::hstring{title}, winrt::hstring{state},
                winrt::to_hstring(detail));

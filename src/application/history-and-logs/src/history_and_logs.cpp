@@ -584,16 +584,36 @@ void append_installation_history(
                 active.close_requested ? "true" : "false");
     append_fact(entry.facts, "batch.stop_requested",
                 active.stop_requested ? "true" : "false");
-    append_fact(entry.facts, "last_durable_transition.item_id",
-                active.last_transition.item_id);
-    append_fact(entry.facts, "last_durable_transition.item_state",
-                domain::installation_batch::to_string(
-                    active.last_transition.item_state));
-    append_fact(entry.facts, "last_durable_transition.outcome",
-                installation_durable_outcome_name(
-                    active.last_transition.outcome));
-    append_fact(entry.facts, "last_durable_transition.coverage_gap",
-                active.last_transition.coverage_gap ? "true" : "false");
+    if (active.last_transition.valid()) {
+      append_fact(entry.facts, "last_durable_transition.generation",
+                  std::to_string(active.last_transition.generation));
+      append_fact(entry.facts, "last_durable_transition.item_id",
+                  active.last_transition.item_id);
+      append_fact(entry.facts, "last_durable_transition.item_state",
+                  domain::installation_batch::to_string(
+                      active.last_transition.item_state));
+      append_fact(entry.facts, "last_durable_transition.outcome",
+                  installation_durable_outcome_name(
+                      active.last_transition.outcome));
+      append_fact(entry.facts, "last_durable_transition.coverage_gap",
+                  active.last_transition.coverage_gap ? "true" : "false");
+    } else {
+      constexpr std::string_view reason{
+          "the active installation record has no valid durable transition"};
+      append_unavailable_fact(entry.facts,
+                              "last_durable_transition.generation",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts, "last_durable_transition.item_id",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts,
+                              "last_durable_transition.item_state",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts, "last_durable_transition.outcome",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts,
+                              "last_durable_transition.coverage_gap",
+                              std::string{reason});
+    }
     for (auto const& progress : active.items) {
       append_installation_item_timeline(entry, active.plan, progress);
     }

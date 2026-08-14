@@ -31,6 +31,7 @@ namespace {
 namespace app = azzs::application;
 namespace architecture = azzs::domain::architecture_selection;
 namespace catalog = azzs::domain::software_catalog;
+namespace installation = azzs::domain::installation_batch;
 namespace optimization = azzs::domain::software_optimization_catalog;
 namespace optimization_batch = azzs::domain::software_optimization_batch;
 namespace selection = azzs::domain::software_selection;
@@ -476,8 +477,12 @@ class NoopReadiness final
  public:
   [[nodiscard]] app::installation_batch::ControlledProfileReadiness observe(
       azzs::domain::installation_batch::FrozenExecutionProfile const&) override {
-    return {};
+    return {.code = registered
+                        ? app::installation_batch::ControlledProfileReadinessCode::registered
+                        : app::installation_batch::ControlledProfileReadinessCode::unavailable};
   }
+
+  bool registered{false};
 };
 
 class NoopVerifier final : public app::installation_batch::InstallResultVerifier {
@@ -1036,6 +1041,102 @@ struct HistoryFixture final {
   return passed;
 }
 
+[[nodiscard]] bool installation_durable_transition_generation_is_projected() {
+  HistoryFixture fixture;
+  fixture.readiness.registered = true;
+  auto const restored = fixture.installation_batches.restore();
+  installation::LastDurableTransition const invalid_transition;
+  if (!expect(restored.succeeded(),
+              "the installation batch owner must restore before creation") ||
+      !expect(!invalid_transition.valid(),
+              "a default durable transition must remain invalid")) {
+    return false;
+  }
+
+  auto const created = fixture.installation_batches.create({
+      .batch_id = "installation-history-batch",
+      .correlation_id = "installation-history-correlation",
+      .catalog = {.raw_catalog_bytes = "[installation-history-catalog]",
+                  .content_identity = "installation-history-catalog",
+                  .application_id = "installation-history-app",
+                  .schema_version = 1,
+                  .revision = 1,
+                  .release_state = catalog::ReleaseState::draft,
+                  .local_trial = true},
+      .items = {{
+          .item_id = "installation-history-item",
+          .source = {.software_id = "installation-history-item",
+                     .declared_purpose = catalog::SourcePurpose::primary,
+                     .declared_address = "https://example.test/installation-history-item",
+                     .version = "1.0.0",
+                     .actual_address =
+                         "https://download.example.test/installation-history-item.msi",
+                     .hosting_mechanism = "controlled-release",
+                     .branch = "stable",
+                     .packages = {{
+                         .candidate = {.software_id = "installation-history-item",
+                                       .architecture =
+                                           architecture::PackageArchitecture::x64,
+                                       .version = "1.0.0",
+                                       .identity = "installation-history-item-1.0.0-x64"},
+                         .package_type = selection::PackageType::full_package,
+                         .complete_package = true,
+                     }},
+                     .resolved_at_milliseconds = 1,
+                     .capability_version = "history-resolver-v1"},
+          .selected_package = {.candidate = {
+                                   .software_id = "installation-history-item",
+                                   .architecture = architecture::PackageArchitecture::x64,
+                                   .version = "1.0.0",
+                                   .identity = "installation-history-item-1.0.0-x64"},
+                               .package_type = selection::PackageType::full_package,
+                               .complete_package = true},
+          .execution_profile = {
+              .profile_id = "installation-history-profile",
+              .baseline = {.id = "installation-history-baseline", .version = "1"},
+              .executor = catalog::ControlledWindowsExecutionKind::
+                  project_owned_windows_executor,
+              .execution = catalog::WindowsExecutionReadiness::
+                  project_executor_registered,
+              .completion_boundary = catalog::InstallationCompletionBoundary::
+                  post_install_then_result_detection,
+              .post_install = catalog::PostInstallBehavior::none,
+              .restart = catalog::RestartVerification::not_required,
+              .result_detection = catalog::ResultDetectionStrategy::
+                  project_owned_presence_probe,
+              .interaction_scope = catalog::InstallerInteractionScope::
+                  non_identity_preferences_only,
+              .interaction_disposition = catalog::InteractionDisposition::
+                  controlled_automatic},
+          .resource_kind = installation::FrozenResourceKind::controlled_download,
+          .cache_asset = {.identity = {
+                              .software_id = "installation-history-item",
+                              .version = "1.0.0",
+                              .architecture = azzs::domain::offline_package_cache::
+                                  CacheArchitecture::x64,
+                              .source_identity = "installation-history-source"},
+                          .kind = azzs::domain::offline_package_cache::
+                              CacheAssetKind::full_package},
+          .cache_root = {.kind = azzs::domain::offline_package_cache::
+                             CacheLocationKind::system_directory,
+                         .id = "installation-history-cache"},
+      }},
+      .frozen_at_milliseconds = 1,
+  });
+  if (!expect(created.succeeded(),
+              "the installation batch owner must create the frozen batch")) {
+    return false;
+  }
+
+  auto const snapshot = fixture.history.refresh();
+  auto const* entry = find_entry(snapshot, app::HistoryEntryKind::installation_batch,
+                                 "installation-history-batch");
+  return expect(
+      entry != nullptr &&
+          has_fact(entry->facts, "last_durable_transition.generation", "2"),
+      "a valid installation durable transition must retain its generation");
+}
+
 [[nodiscard]] bool debug_policy_is_read_only_and_missing_sources_fail_closed() {
   HistoryFixture fixture;
   if (!expect(fixture.prepare(), "fake owners must prepare debug policy history")) {
@@ -1116,6 +1217,7 @@ int main() {
                       immutable_owner_timeline_and_missing_facts_are_projected() &&
                       immutable_system_settings_facts_are_projected() &&
                       frozen_correlation_generation_and_value_shape_are_preserved() &&
+                      installation_durable_transition_generation_is_projected() &&
                       debug_policy_is_read_only_and_missing_sources_fail_closed() &&
                       diagnostic_context_projects_owned_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
