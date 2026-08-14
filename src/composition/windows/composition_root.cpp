@@ -16,6 +16,7 @@
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
 #include "azzs/adapters/infrastructure/local_package_cache_storage.hpp"
+#include "azzs/adapters/infrastructure/local_software_optimization_catalog_file.hpp"
 #include "azzs/adapters/infrastructure/software_catalog_file.hpp"
 #include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
 #include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
@@ -47,6 +48,8 @@
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
+#include "azzs/application/software_optimization_catalog_lifecycle.hpp"
+#include "azzs/application/software_optimization_discovery.hpp"
 #include "azzs/application/sogou_optimization.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
@@ -71,6 +74,14 @@ class ProductionCatalogMaintenanceAccess final
   [[nodiscard]] application::software_catalog::CatalogEditorAccess
   editor_access() const noexcept override {
     return application::software_catalog::CatalogEditorAccess::unavailable;
+  }
+};
+
+class ProductionSoftwareOptimizationCatalogDebugAuthorization final
+    : public application::SoftwareOptimizationCatalogDebugAuthorization {
+ public:
+  [[nodiscard]] bool local_import_allowed() const noexcept override {
+    return false;
   }
 };
 
@@ -107,6 +118,12 @@ class OfflineNetworkObserver final
   auto const source = std::filesystem::path{__FILE__};
   return source.parent_path().parent_path().parent_path().parent_path() /
          "catalog" / "software-catalog.toml";
+}
+
+[[nodiscard]] std::filesystem::path repository_optimization_catalog_path() {
+  auto const source = std::filesystem::path{__FILE__};
+  return source.parent_path().parent_path().parent_path().parent_path() /
+         "catalog" / "software-optimization-catalog.toml";
 }
 
 class UnavailableSoftwarePresenceDetector final
@@ -180,7 +197,17 @@ class WindowsWorkbenchServices final
                                      clock_, cache_root_),
         software_selection_(states_, clock_, log_, architecture_selection_,
                             source_resolver_, network_, presence_detector_,
-                            external_launcher_, state_subject_) {
+                            external_launcher_, state_subject_),
+        software_optimization_catalog_(
+            states_, log_, occupancy_, optimization_catalog_file_,
+            optimization_catalog_debug_authorization_,
+            application::sogou_optimization::built_in_rule_definitions(),
+            optimization_installer_baselines_),
+        software_optimization_observer_(sogou_optimizations_),
+        software_optimization_discovery_(software_optimization_catalog_,
+                                         software_selection_,
+                                         emergency_withdrawals_,
+                                         software_optimization_observer_) {
     static_cast<void>(settings_catalog_.initialize_builtin(
         application::settings_catalog::initial_settings_catalog()));
     static_cast<void>(system_settings_apply_.refresh());
@@ -188,6 +215,12 @@ class WindowsWorkbenchServices final
     static_cast<void>(software_catalog_.restore());
     static_cast<void>(software_selection_.restore());
     synchronize_catalog_selection_projection();
+    auto const optimization_catalog = optimization_catalog_file_.read(
+        utf8_from_path(repository_optimization_catalog_path()));
+    if (optimization_catalog.succeeded) {
+      static_cast<void>(software_optimization_catalog_.ensure_builtin(
+          optimization_catalog.source, "embedded-software-optimization-catalog"));
+    }
     synchronize_live_offline_package_cache();
     static_cast<void>(installation_batches_.restore());
   }
@@ -234,6 +267,12 @@ class WindowsWorkbenchServices final
   [[nodiscard]] application::sogou_optimization::SogouOptimizationService&
   sogou_optimizations() noexcept override {
     return sogou_optimizations_;
+  }
+
+  [[nodiscard]] application::software_optimization_discovery::
+      SoftwareOptimizationDiscoveryService&
+  software_optimization_discovery() noexcept override {
+    return software_optimization_discovery_;
   }
 
   [[nodiscard]] application::SystemSettingsApplyService& system_settings_apply()
@@ -410,6 +449,22 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsExternalAddressLauncher external_launcher_;
   application::software_selection::SoftwareSelectionLifecycle
       software_selection_;
+  adapters::infrastructure::LocalSoftwareOptimizationCatalogFile
+      optimization_catalog_file_;
+  ProductionSoftwareOptimizationCatalogDebugAuthorization
+      optimization_catalog_debug_authorization_;
+  std::vector<domain::software_optimization_catalog::SoftwareCatalogInstallerBaseline>
+      optimization_installer_baselines_{{
+          .software_item_id = {"sogou-input"},
+          .installer_baseline_id = {"sogou-input-windows-16.7"},
+          .installed_versions = {"16.7", "16.7"},
+      }};
+  application::SoftwareOptimizationCatalogLifecycle
+      software_optimization_catalog_;
+  application::software_optimization_discovery::SogouOptimizationDiscoveryObserver
+      software_optimization_observer_;
+  application::software_optimization_discovery::SoftwareOptimizationDiscoveryService
+      software_optimization_discovery_;
   adapters::windows::WindowsInstallationDownloadAdapter batch_download_{
       batch_offline_package_cache_};
   adapters::windows::WindowsControlledProfileReadinessAdapter batch_readiness_;

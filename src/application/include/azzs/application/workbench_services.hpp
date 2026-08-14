@@ -26,6 +26,10 @@ namespace sogou_optimization {
 class SogouOptimizationService;
 }
 
+namespace software_optimization_discovery {
+class SoftwareOptimizationDiscoveryService;
+}
+
 class HardwareOverviewService;
 
 class DeviceStateStore;
@@ -51,6 +55,9 @@ class WorkbenchServices {
       noexcept = 0;
   [[nodiscard]] virtual sogou_optimization::SogouOptimizationService&
   sogou_optimizations() noexcept = 0;
+  [[nodiscard]] virtual software_optimization_discovery::
+      SoftwareOptimizationDiscoveryService&
+  software_optimization_discovery() noexcept = 0;
   [[nodiscard]] virtual SystemSettingsApplyService& system_settings_apply()
       noexcept = 0;
   [[nodiscard]] virtual ApplicationUpdateLifecycle& application_updates()

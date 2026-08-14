@@ -327,6 +327,12 @@ def verify_app_and_pages(root: Path) -> None:
             "FontSize", "CornerRadius", "Padding", "Margin", "Spacing",
             "RowSpacing", "ColumnSpacing", "MinHeight", "MinWidth",
         }
+
+        def is_semantic_metric(value: str) -> bool:
+            return all(component == "0" or
+                       component.startswith("{StaticResource Azzs")
+                       for component in value.split(","))
+
         for element in xaml_root.iter():
             for attribute, value in element.attrib.items():
                 attribute_name = local_name(attribute)
@@ -337,8 +343,7 @@ def verify_app_and_pages(root: Path) -> None:
                             f"to {value}")
                 if attribute_name not in tokenized_metrics:
                     continue
-                require(value == "0" or
-                        value.startswith("{StaticResource Azzs"),
+                require(is_semantic_metric(value),
                         f"{xaml_path.name} must use a semantic resource for "
                         f"{attribute_name}={value}")
             if local_name(element.tag) != "Setter":
@@ -349,7 +354,7 @@ def verify_app_and_pages(root: Path) -> None:
             if property_name not in tokenized_metrics:
                 continue
             value = element.attrib.get("Value", "")
-            require(value == "0" or value.startswith("{StaticResource Azzs"),
+            require(is_semantic_metric(value),
                     f"{xaml_path.name} setter {target} must use a semantic "
                     "resource")
         for automation_id in re.findall(

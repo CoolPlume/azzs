@@ -24,6 +24,7 @@ add_subdirectory(installation-batch-runner)
 
 add_library(azzs_software_optimization_catalog_domain STATIC
   src/software_optimization_catalog.cpp
+  src/software_optimization_discovery.cpp
 )
 
 add_library(
