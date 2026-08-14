@@ -527,6 +527,7 @@ void replace_once(std::string& bytes, std::string_view original,
   storage.fail_replace_on(2, "injected segment transition failure");
   auto const interrupted = log.clear();
   auto const cutoff_bytes = storage.bytes();
+  auto const pending_projection = log.snapshot();
   auto const recovered = log.append(
       correlation,
       ExecutionEvent{
@@ -544,6 +545,12 @@ void replace_once(std::string& bytes, std::string_view original,
          expect(cutoff_bytes.find("CLEAR_CUTOFF\t1\t2") !=
                     std::string_view::npos,
                 "the clear cutoff must survive a failed segment switch") &&
+         expect(pending_projection.available &&
+                    pending_projection.pending_clear.has_value() &&
+                    pending_projection.pending_clear->cutoff_segment == 1 &&
+                    pending_projection.pending_clear->cutoff_sequence == 2 &&
+                    pending_projection.events.empty(),
+                "a committed cutoff with an unconfirmed replacement must project as pending clear") &&
          expect(recovered.persisted && recovered.segment == 2 &&
                     recovered.sequence == 1,
                 "the next operation must finish the pending clear before append") &&
@@ -652,6 +659,115 @@ void replace_once(std::string& bytes, std::string_view original,
                 "an allowed network state must remain usable") &&
          expect(bytes.find("TEMP") != std::string_view::npos,
                 "an allowed normalized path must remain usable");
+}
+
+[[nodiscard]] bool verify_raw_identity_labels_are_redacted() {
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'404'125}}};
+  InMemoryLogStorage storage;
+  StructuredExecutionLog log{storage, clock};
+  auto const correlation = log.begin_correlation();
+  std::vector<std::string> const forbidden{
+      "Private Wifi With Spaces",
+      "a1b2c3d4e5f6",
+      "HOST-PRIVATE-42",
+      "Alice Smith",
+      "device-unique-987654",
+  };
+
+  auto const receipt = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "network-adapter",
+          .stage = "raw-identity-error",
+          .result = ExecutionResult::failed,
+          .error = ExecutionError{
+              .source = "win32",
+              .code = 5,
+              .message =
+                  "SSID = Private Wifi With Spaces; BSSID: a1b2c3d4e5f6; "
+                  "Computer Name=HOST-PRIVATE-42; User Name = Alice Smith; "
+                  "Device Unique Identifier: device-unique-987654; "
+                  "ordinary-detail-kept",
+          },
+      });
+  auto const projection = log.snapshot();
+  auto const exported = log.export_diagnostic(DiagnosticContext{
+      .workbench_build = "1.0.0",
+      .release_form = "portable",
+      .process_architecture = "x64",
+      .package_architecture = "x64",
+      .windows_version = "10.0.26200",
+      .language = "zh-CN",
+      .timezone = "Asia/Shanghai",
+      .coverage_started_at = clock.now(),
+      .coverage_ended_at = clock.now(),
+  });
+
+  bool leaked = false;
+  for (auto const& value : forbidden) {
+    leaked |= storage.bytes().find(value) != std::string::npos;
+    leaked |= !projection.events.empty() &&
+              projection.events.front().error.has_value() &&
+              projection.events.front().error->message.find(value) !=
+                  std::string::npos;
+    leaked |= exported.file_bytes.find(value) != std::string::npos;
+  }
+  return expect(receipt.persisted && projection.available &&
+                    exported.produced && exported.complete,
+                "a complete diagnostic with raw identity labels must export") &&
+         expect(!leaked,
+                "central redaction must remove SSID, BSSID, computer name, username, and device identifiers from raw errors") &&
+         expect(exported.file_bytes.find("ordinary-detail-kept") !=
+                    std::string_view::npos,
+                "redaction must retain non-identifying error context");
+}
+
+[[nodiscard]] bool verify_read_errors_fail_closed_and_export_gaps() {
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'404'175}}};
+  InMemoryLogStorage storage;
+  std::vector<std::string> const forbidden{
+      "Private Wifi With Spaces",
+      "HOST-PRIVATE-42",
+  };
+  storage.set_read_error(
+      "log directory security validation failed: SSID=Private Wifi With "
+      "Spaces; Computer Name=HOST-PRIVATE-42");
+  StructuredExecutionLog log{storage, clock};
+
+  auto const projection = log.snapshot();
+  auto const exported = log.export_diagnostic(DiagnosticContext{
+      .workbench_build = "1.0.0",
+      .release_form = "portable",
+      .process_architecture = "x64",
+      .package_architecture = "x64",
+      .windows_version = "10.0.26200",
+      .language = "zh-CN",
+      .timezone = "Asia/Shanghai",
+      .coverage_started_at = clock.now(),
+      .coverage_ended_at = clock.now(),
+  });
+
+  bool leaked = false;
+  for (auto const& value : forbidden) {
+    leaked |= exported.file_bytes.find(value) != std::string::npos;
+  }
+  return expect(!projection.available &&
+                    projection.error.starts_with(
+                        "log directory security validation failed:"),
+                "storage read and security failures must make the snapshot unavailable") &&
+         expect(exported.produced && !exported.complete &&
+                    exported.missing_fact_count >= 1,
+                "an export with an unreadable source must remain explicitly incomplete") &&
+         expect(exported.file_bytes.find("SOURCE_LOG_BYTES\tNOT_OBTAINED") !=
+                    std::string_view::npos &&
+                    exported.file_bytes.find("NOT_OBTAINED\texecution_log\t") !=
+                        std::string_view::npos,
+                "an unreadable log must be represented as NOT_OBTAINED in its export") &&
+         expect(!leaked &&
+                    exported.file_bytes.find("SOURCE_LOG_STATUS\t") !=
+                        std::string_view::npos,
+                "read-error status and missing-fact records must retain centralized redaction");
 }
 
 [[nodiscard]] bool verify_user_paths_with_spaces_are_redacted() {
@@ -1183,6 +1299,80 @@ void replace_once(std::string& bytes, std::string_view original,
                 "coverage gap");
 }
 
+[[nodiscard]] bool verify_read_projection_is_redacted_and_segmented() {
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'399'000}}};
+  InMemoryLogStorage storage;
+  StructuredExecutionLog log{storage, clock};
+  auto const initial_correlation = log.begin_correlation();
+  auto const initial = log.append(
+      initial_correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "installer",
+          .stage = "completion",
+          .result = ExecutionResult::failed,
+          .error = ExecutionError{
+              .source = "executor",
+              .code = 23,
+              .message = "Authorization: Bearer projection-secret",
+          },
+          .fields = {
+              DiagnosticField{"safe_context", "controlled-profile",
+                              DiagnosticValueDisposition::retain},
+              DiagnosticField{"password", "projection-secret",
+                              DiagnosticValueDisposition::retain},
+          },
+          .sensitive_values = {"projection-secret"},
+      });
+  auto const code_only = log.append(
+      initial_correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "installer",
+          .stage = "error-code-only",
+          .result = ExecutionResult::failed,
+          .error = ExecutionError{
+              .code = -2'147'024'891,
+          },
+      });
+  auto const before_clear = log.snapshot();
+  auto const clear = log.clear();
+  auto const next_correlation = log.begin_correlation();
+  auto const next = log.append(
+      next_correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::state_transition,
+          .component = "batch",
+          .stage = "new-segment",
+          .result = ExecutionResult::started,
+      });
+  auto const after_clear = log.snapshot();
+
+  return expect(initial.persisted && before_clear.available &&
+                    before_clear.active_segment == 1 &&
+                    before_clear.events.size() == 2,
+                "the read projection must expose the active durable event") &&
+         expect(before_clear.events.front().error.has_value() &&
+                    before_clear.events.front().error->source == "executor" &&
+                    before_clear.events.front().error->code == 23 &&
+                    before_clear.events.front().error->message.find(
+                        "projection-secret") == std::string::npos &&
+                    before_clear.events.front().fields.size() == 2 &&
+                    before_clear.events.front().fields[1].value == "[redacted]",
+                "the read projection must retain redacted source, code, and fields") &&
+         expect(code_only.persisted && before_clear.events[1].error.has_value() &&
+                    before_clear.events[1].error->source.empty() &&
+                    before_clear.events[1].error->code == -2'147'024'891 &&
+                    before_clear.events[1].error->message.empty(),
+                "the read projection must preserve an error code even without text") &&
+         expect(clear.cleared && next.persisted && after_clear.available &&
+                    after_clear.active_segment == 2 &&
+                    after_clear.events.size() == 1 &&
+                    after_clear.events.front().sequence == 1 &&
+                    after_clear.events.front().stage == "new-segment",
+                "clearing must expose only the new log segment to readers");
+}
+
 }  // namespace
 
 int main() {
@@ -1195,6 +1385,8 @@ int main() {
       !verify_clear_commits_cutoff_before_new_segment() ||
       !verify_interrupted_clear_recovers_before_next_event() ||
       !verify_sensitive_values_never_reach_persistent_bytes() ||
+      !verify_raw_identity_labels_are_redacted() ||
+      !verify_read_errors_fail_closed_and_export_gaps() ||
       !verify_user_paths_with_spaces_are_redacted() ||
       !verify_central_redaction_and_correlation_validation() ||
       !verify_redaction_defaults_and_stable_event_tokens() ||
@@ -1203,7 +1395,8 @@ int main() {
       !verify_local_file_storage_and_single_file_export() ||
       !verify_concurrent_instances_share_a_stable_total_order() ||
       !verify_unverified_publication_is_never_reported_as_durable() ||
-      !verify_storage_failure_is_explicit_and_non_destructive()) {
+      !verify_storage_failure_is_explicit_and_non_destructive() ||
+      !verify_read_projection_is_redacted_and_segmented()) {
     return EXIT_FAILURE;
   }
 

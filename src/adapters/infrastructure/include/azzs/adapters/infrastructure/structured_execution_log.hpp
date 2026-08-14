@@ -30,6 +30,12 @@ class LogStorageTransaction {
   virtual ~LogStorageTransaction() = default;
 
   [[nodiscard]] virtual std::string_view bytes() const noexcept = 0;
+  // A transaction may hold an empty byte view because the log is genuinely
+  // empty or because opening, securing, or reading it failed. The latter must
+  // stay observable to read-only consumers so they fail closed.
+  [[nodiscard]] virtual std::string_view read_error() const noexcept {
+    return {};
+  }
   [[nodiscard]] virtual LogStorageWriteResult replace(
       std::string bytes) = 0;
   [[nodiscard]] virtual LogStorageExportResult write_diagnostic(
@@ -53,6 +59,7 @@ class StructuredExecutionLog final : public application::ExecutionLog {
   [[nodiscard]] application::ExecutionLogReceipt append(
       application::CorrelationId const& correlation,
       application::ExecutionEvent const& event) override;
+  [[nodiscard]] application::ExecutionLogSnapshot snapshot() override;
   [[nodiscard]] application::ExecutionLogClearReceipt clear() override;
   [[nodiscard]] application::DiagnosticExportReceipt export_diagnostic(
       application::DiagnosticContext const& context) override;

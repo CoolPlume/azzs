@@ -176,6 +176,51 @@
   <data name="SoftwareOptimizationFirstReleaseSchemeMissingStatus" xml:space="preserve"><value>软件优化目录缺少首版必达方案，当前状态不能通过发布验收。</value></data>
   <data name="SoftwareOptimizationOptionVersionNotApplicable" xml:space="preserve"><value>此选项不适用于当前软件版本，不能提交。</value></data>
   <data name="HistoryAndLogsPageTitle.Text" xml:space="preserve"><value>历史与日志</value></data>
+  <data name="HistoryAndLogsRefreshButton.Label" xml:space="preserve"><value>刷新</value></data>
+  <data name="HistoryAndLogsRefreshButton.AutomationProperties.Name" xml:space="preserve"><value>刷新历史与日志</value></data>
+  <data name="HistoryAndLogsExportDiagnosticButton.Label" xml:space="preserve"><value>导出诊断资料</value></data>
+  <data name="HistoryAndLogsExportDiagnosticButton.AutomationProperties.Name" xml:space="preserve"><value>导出脱敏诊断资料</value></data>
+  <data name="HistoryAndLogsClearLogsButton.Label" xml:space="preserve"><value>清空日志</value></data>
+  <data name="HistoryAndLogsClearLogsButton.AutomationProperties.Name" xml:space="preserve"><value>清空详细日志</value></data>
+  <data name="HistoryAndLogsHistoryTitle.Text" xml:space="preserve"><value>执行历史</value></data>
+  <data name="HistoryAndLogsHistoryEmpty.Text" xml:space="preserve"><value>尚无可显示的执行历史。</value></data>
+  <data name="HistoryAndLogsLogTitle.Text" xml:space="preserve"><value>详细日志</value></data>
+  <data name="HistoryAndLogsLogEmpty.Text" xml:space="preserve"><value>当前日志段尚无事件。</value></data>
+  <data name="HistoryAndLogsClearConfirmationTitle" xml:space="preserve"><value>清空详细日志</value></data>
+  <data name="HistoryAndLogsClearConfirmationContent" xml:space="preserve"><value>将切换到新的日志段。执行历史、恢复记录和已生效状态不会被删除。</value></data>
+  <data name="HistoryAndLogsClearConfirmationConfirm" xml:space="preserve"><value>清空日志</value></data>
+  <data name="HistoryAndLogsClearConfirmationCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="HistoryAndLogsClearSucceeded" xml:space="preserve"><value>已清空详细日志并开始新的日志段。</value></data>
+  <data name="HistoryAndLogsClearFailed" xml:space="preserve"><value>无法清空详细日志；现有记录保持不变。</value></data>
+  <data name="HistoryAndLogsExportSucceeded" xml:space="preserve"><value>已导出一个脱敏诊断文件：{file}</value></data>
+  <data name="HistoryAndLogsExportIncomplete" xml:space="preserve"><value>已导出脱敏诊断文件：{file}。其中有 {count} 项未取得事实，文件已明确标注，不能视为完整诊断。</value></data>
+  <data name="HistoryAndLogsExportFailed" xml:space="preserve"><value>无法导出诊断资料；现有日志没有被删除。</value></data>
+  <data name="HistoryAndLogsLogUnavailable" xml:space="preserve"><value>详细日志当前不可读取；执行历史仍可查看。</value></data>
+  <data name="HistoryAndLogsLogSummary" xml:space="preserve"><value>当前日志段 {segment}，最后事件序号 {sequence}。</value></data>
+  <data name="HistoryAndLogsClearPendingSummary" xml:space="preserve"><value>详细日志清空已提交（截止段 {segment}，事件 {sequence}），新日志段完成尚未确认。</value></data>
+  <data name="HistoryAndLogsClearCompletionPending" xml:space="preserve"><value>详细日志清空已提交，但新日志段完成尚未确认；此前记录不会显示为仍未清空。</value></data>
+  <data name="HistoryAndLogsNotObtained" xml:space="preserve"><value>未取得</value></data>
+  <data name="HistoryAndLogsDiagnosticPreview" xml:space="preserve"><value>导出范围：{start} 至 {end}（UTC 毫秒）；当前日志大小：{bytes} 字节；将执行集中脱敏；已记录采集缺口：{gaps}。未取得事实会在文件中明确标注。</value></data>
+  <data name="HistoryAndLogsHistoryKindInstallationBatch" xml:space="preserve"><value>软件安装批次</value></data>
+  <data name="HistoryAndLogsHistoryKindSoftwareOptimizationBatch" xml:space="preserve"><value>软件优化批次</value></data>
+  <data name="HistoryAndLogsHistoryKindSystemSettingRecovery" xml:space="preserve"><value>系统设置恢复记录</value></data>
+  <data name="HistoryAndLogsHistoryKindExternalInstallHandoff" xml:space="preserve"><value>来源手动交接</value></data>
+  <data name="HistoryAndLogsHistoryKindUnknown" xml:space="preserve"><value>历史记录</value></data>
+  <data name="HistoryAndLogsEventKindUserCommand" xml:space="preserve"><value>用户命令</value></data>
+  <data name="HistoryAndLogsEventKindStateTransition" xml:space="preserve"><value>状态变化</value></data>
+  <data name="HistoryAndLogsEventKindAdapterResult" xml:space="preserve"><value>适配器结果</value></data>
+  <data name="HistoryAndLogsEventKindCoverageGap" xml:space="preserve"><value>采集缺口</value></data>
+  <data name="HistoryAndLogsEventKindUnknown" xml:space="preserve"><value>日志事件</value></data>
+  <data name="HistoryAndLogsResultStarted" xml:space="preserve"><value>已开始</value></data>
+  <data name="HistoryAndLogsResultSucceeded" xml:space="preserve"><value>已成功</value></data>
+  <data name="HistoryAndLogsResultFailed" xml:space="preserve"><value>已失败</value></data>
+  <data name="HistoryAndLogsResultCancelled" xml:space="preserve"><value>已取消</value></data>
+  <data name="HistoryAndLogsResultUnknown" xml:space="preserve"><value>结果待确认</value></data>
+  <data name="HistoryAndLogsResultFallback" xml:space="preserve"><value>未知</value></data>
+  <data name="HistoryAndLogsStatePrefix" xml:space="preserve"><value>状态：</value></data>
+  <data name="HistoryAndLogsRetrySuffix" xml:space="preserve"><value>新尝试</value></data>
+  <data name="HistoryAndLogsSegmentLabel" xml:space="preserve"><value>段</value></data>
+  <data name="HistoryAndLogsEventLabel" xml:space="preserve"><value>事件</value></data>
   <data name="ApplicationSettingsPageTitle.Text" xml:space="preserve"><value>应用设置</value></data>
   <data name="ApplicationViewTitle.Text" xml:space="preserve"><value>视图</value></data>
   <data name="ApplicationAdvancedViewToggle.Header" xml:space="preserve"><value>高级视图</value></data>
