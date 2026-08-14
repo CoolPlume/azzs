@@ -62,6 +62,7 @@ if(WIN32)
     src/windows_installation_batch_adapters.cpp
     src/windows_lease_token_source.cpp
     src/windows_platform_info.cpp
+    src/windows_restart_resume_registration.cpp
     src/windows_state_file_system.cpp
     src/windows_sogou_optimization_adapter.cpp
     src/windows_system_settings_adapter.cpp
