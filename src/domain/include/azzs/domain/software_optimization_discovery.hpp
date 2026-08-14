@@ -27,6 +27,7 @@ enum class TargetPresence {
 enum class OptionState {
   needs_optimization,
   optimized,
+  version_not_applicable,
   unknown,
 };
 
@@ -160,6 +161,11 @@ struct DiscoverySnapshot final {
 // required options.  It never creates a batch or causes an effect.
 [[nodiscard]] SelectionState default_selection(
     catalog::SoftwareOptimizationCatalog const& catalog);
+
+// Filters the current intent through the freshly discovered executable
+// projection. This is the only selection set that may cross into issue 27.
+[[nodiscard]] std::vector<SelectedOption> executable_selected_options(
+    DiscoverySnapshot const& snapshot, SelectionState const& selection);
 
 // Applies one checkbox intent.  Required and conflicting relationships are
 // proposed first and become state only after the caller confirms them.

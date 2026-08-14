@@ -106,6 +106,44 @@ namespace discovery = azzs::domain::software_optimization_discovery;
                            discovery::SchemeState::can_optimize,
                    "external recognition must participate in normal discovery without a workbench install record");
 
+  auto all_optimized = options;
+  for (auto& option : all_optimized) {
+    option.state = discovery::OptionState::optimized;
+  }
+  auto optimized = discovery::discover({
+      .catalog = catalog_value,
+      .targets = targets,
+      .options = all_optimized,
+      .withdrawn_operations = {},
+      .selection = defaults,
+  });
+  passed &= expect(
+      optimized.targets.front().schemes.front().state ==
+          discovery::SchemeState::optimized &&
+          !optimized.targets.front().first_release_implementation_error,
+      "an implemented first-release scheme remains valid when every option is already optimized");
+
+  auto option_version_catalog = catalog_value;
+  for (auto& option : option_version_catalog.schemes.front().options) {
+    option.supported_versions = {"18.0", "19.0"};
+  }
+  auto option_version = discovery::discover({
+      .catalog = option_version_catalog,
+      .targets = targets,
+      .options = options,
+      .withdrawn_operations = {},
+      .selection = defaults,
+  });
+  auto const executable = discovery::executable_selected_options(
+      option_version, defaults);
+  passed &= expect(
+      option_version.targets.front().schemes.front().state ==
+          discovery::SchemeState::version_not_applicable &&
+          option_version.targets.front().schemes.front().options.front().state ==
+              discovery::OptionState::version_not_applicable &&
+          executable.empty(),
+      "option version ranges must remove incompatible selections from submission");
+
   targets.front().installed_version.reset();
   auto version_unknown = discovery::discover({
       .catalog = catalog_value,

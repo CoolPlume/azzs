@@ -184,6 +184,18 @@ DiscoverySnapshot discover(DiscoveryInput const& input) {
           .target_presence = presence,
           .installed_version = target_view.installed_version,
       };
+      auto const supported_version =
+          target_view.installed_version.has_value() &&
+          version_matches(target.supported_versions,
+                          *target_view.installed_version) &&
+          version_matches(scheme.supported_versions,
+                          *target_view.installed_version);
+      has_supported_first_release_scheme =
+          has_supported_first_release_scheme ||
+          (scheme.required_first_release &&
+           scheme.automation == catalog::AutomationSupport::controlled &&
+           scheme.availability == catalog::SchemeAvailability::available &&
+           supported_version);
 
       if (scheme.availability == catalog::SchemeAvailability::configuration_error) {
         scheme_view.state = SchemeState::configuration_error;
@@ -193,11 +205,7 @@ DiscoverySnapshot discover(DiscoveryInput const& input) {
                  scheme_withdrawal != nullptr) {
         scheme_view.state = SchemeState::emergency_withdrawn;
         scheme_view.detail = scheme_withdrawal->reason;
-      } else if (!target_view.installed_version.has_value() ||
-                 !version_matches(target.supported_versions,
-                                  *target_view.installed_version) ||
-                 !version_matches(scheme.supported_versions,
-                                  *target_view.installed_version)) {
+      } else if (!supported_version) {
         scheme_view.state = SchemeState::version_not_applicable;
         scheme_view.detail = "installed version is outside the declared support range";
       } else if (scheme.automation == catalog::AutomationSupport::manual_only ||
@@ -206,7 +214,8 @@ DiscoverySnapshot discover(DiscoveryInput const& input) {
         scheme_view.detail = "automatic handling is not supported";
       } else {
         bool any_unknown = false;
-        bool all_optimized = !scheme.options.empty();
+        bool any_applicable_option = false;
+        bool all_applicable_options_optimized = true;
         bool withdrawn_option = false;
         for (auto const& option : scheme.options) {
           OptionDiscovery option_view{.option = option,
@@ -219,12 +228,19 @@ DiscoverySnapshot discover(DiscoveryInput const& input) {
             withdrawn_option = true;
             option_view.state = OptionState::unknown;
             option_view.detail = option_withdrawal->reason;
+          } else if (!version_matches(option.supported_versions,
+                                      *target_view.installed_version)) {
+            option_view.state = OptionState::version_not_applicable;
+            option_view.detail =
+                "installed version is outside this option's declared support range";
           } else {
+            any_applicable_option = true;
             option_view.state = option_state_for(input.options, option,
                                                   option_view.detail);
             any_unknown = any_unknown || option_view.state == OptionState::unknown;
-            all_optimized = all_optimized &&
-                            option_view.state == OptionState::optimized;
+            all_applicable_options_optimized =
+                all_applicable_options_optimized &&
+                option_view.state == OptionState::optimized;
           }
           scheme_view.options.push_back(std::move(option_view));
         }
@@ -234,15 +250,17 @@ DiscoverySnapshot discover(DiscoveryInput const& input) {
         } else if (any_unknown) {
           scheme_view.state = SchemeState::needs_attention;
           scheme_view.detail = "one or more option states need confirmation";
-        } else if (all_optimized) {
+        } else if (!any_applicable_option) {
+          scheme_view.state = SchemeState::version_not_applicable;
+          scheme_view.detail =
+              "no option applies to the installed version within this scheme";
+        } else if (all_applicable_options_optimized) {
           scheme_view.state = SchemeState::optimized;
           scheme_view.detail = "all options already match their targets";
         } else {
           scheme_view.state = SchemeState::can_optimize;
           scheme_view.detail = "selected options can be submitted for confirmation";
           has_usable_scheme = true;
-          has_supported_first_release_scheme =
-              has_supported_first_release_scheme || scheme.required_first_release;
         }
       }
       target_view.schemes.push_back(std::move(scheme_view));
@@ -277,6 +295,33 @@ SelectionState default_selection(catalog::SoftwareOptimizationCatalog const& cat
     }
   }
   return state;
+}
+
+std::vector<SelectedOption> executable_selected_options(
+    DiscoverySnapshot const& snapshot, SelectionState const& selection) {
+  std::vector<SelectedOption> result;
+  for (auto const& target : snapshot.targets) {
+    for (auto const& scheme : target.schemes) {
+      if (scheme.state != SchemeState::can_optimize) {
+        continue;
+      }
+      for (auto const& option : scheme.options) {
+        if (!option.selected ||
+            option.state != OptionState::needs_optimization) {
+          continue;
+        }
+        auto const selected_entry = std::ranges::find_if(
+            selection.options, [&](SelectedOption const& entry) {
+              return entry.scheme_id == scheme.scheme.id &&
+                     entry.option_id == option.option.id;
+            });
+        if (selected_entry != selection.options.end()) {
+          result.push_back(*selected_entry);
+        }
+      }
+    }
+  }
+  return result;
 }
 
 SelectionChange change_selection(catalog::SoftwareOptimizationCatalog const& catalog_value,
@@ -364,6 +409,7 @@ char const* to_string(OptionState value) noexcept {
   switch (value) {
     case OptionState::needs_optimization: return "needs-optimization";
     case OptionState::optimized: return "optimized";
+    case OptionState::version_not_applicable: return "version-not-applicable";
     case OptionState::unknown: return "unknown";
   }
   return "unknown";
