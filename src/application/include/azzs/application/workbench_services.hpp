@@ -35,6 +35,7 @@ class SoftwareOptimizationDiscoveryService;
 }
 
 class HardwareOverviewService;
+class HistoryAndLogsService;
 
 class DeviceStateStore;
 class EmergencyWithdrawalService;
@@ -58,6 +59,7 @@ class WorkbenchServices {
   [[nodiscard]] virtual EmergencyWithdrawalService& emergency_withdrawals()
       noexcept = 0;
   [[nodiscard]] virtual ExecutionLog& execution_log() noexcept = 0;
+  [[nodiscard]] virtual HistoryAndLogsService& history_and_logs() noexcept = 0;
   [[nodiscard]] virtual SharedOperationOccupancy& operation_occupancy()
       noexcept = 0;
   [[nodiscard]] virtual sogou_optimization::SogouOptimizationService&

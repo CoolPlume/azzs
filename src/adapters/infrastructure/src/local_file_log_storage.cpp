@@ -673,6 +673,10 @@ class LocalFileLogTransaction final : public LogStorageTransaction {
     return bytes_;
   }
 
+  [[nodiscard]] std::string_view read_error() const noexcept override {
+    return error_;
+  }
+
   [[nodiscard]] LogStorageWriteResult replace(std::string bytes) override {
     if (!error_.empty()) {
       return {.error = error_};

@@ -27,6 +27,10 @@ class InMemoryLogStorage final
         return owner_.bytes_;
       }
 
+      [[nodiscard]] std::string_view read_error() const noexcept override {
+        return owner_.read_error_;
+      }
+
       [[nodiscard]] adapters::infrastructure::LogStorageWriteResult replace(
           std::string bytes) override {
         if (owner_.next_failure_.has_value()) {
@@ -119,6 +123,11 @@ class InMemoryLogStorage final
     next_export_failure_ = std::move(error);
   }
 
+  void set_read_error(std::string error) {
+    std::scoped_lock lock{mutex_};
+    read_error_ = std::move(error);
+  }
+
   void publish_unverified_on_next_replace(std::string error) {
     std::scoped_lock lock{mutex_};
     next_unverified_replace_ = std::move(error);
@@ -140,6 +149,7 @@ class InMemoryLogStorage final
   std::vector<std::string> revisions_;
   std::vector<std::string> exports_;
   std::string unrelated_aggregate_;
+  std::string read_error_;
   std::optional<std::string> next_failure_;
   std::size_t failure_occurrence_{1};
   std::optional<std::string> next_export_failure_;
