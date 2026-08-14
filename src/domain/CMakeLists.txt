@@ -42,4 +42,6 @@ azzs_project_target(
   ROLE domain
 )
 
+add_subdirectory(software-optimization-batch-runner)
+
 add_subdirectory(settings_catalog)

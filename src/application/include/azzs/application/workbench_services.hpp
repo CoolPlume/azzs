@@ -22,6 +22,10 @@ namespace installation_batch {
 class InstallationBatchService;
 }
 
+namespace software_optimization_batch {
+class SoftwareOptimizationBatchService;
+}
+
 namespace sogou_optimization {
 class SogouOptimizationService;
 }
@@ -74,6 +78,8 @@ class WorkbenchServices {
   // its snapshot or submit typed commands through this service.
   [[nodiscard]] virtual installation_batch::InstallationBatchService&
   installation_batches() noexcept = 0;
+  [[nodiscard]] virtual software_optimization_batch::SoftwareOptimizationBatchService&
+  software_optimization_batches() noexcept = 0;
 };
 
 }  // namespace azzs::application

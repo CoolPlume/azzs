@@ -59,4 +59,6 @@ azzs_project_target(
     azzs::software_optimization_catalog_domain
 )
 
+add_subdirectory(software-optimization-batch-runner)
+
 add_subdirectory(settings_catalog)
