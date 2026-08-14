@@ -259,6 +259,11 @@ class EmptySettingsPlatform final : public app::SystemSettingsPlatformAdapter {
     return std::nullopt;
   }
 
+  [[nodiscard]] std::optional<app::SystemSettingsWindowsVersionFact>
+  windows_version_fact() const override {
+    return std::nullopt;
+  }
+
   [[nodiscard]] app::SystemSettingsRead read(app::ControlledSystemSetting)
       override {
     return {};
@@ -279,10 +284,127 @@ class EmptySettingsPlatform final : public app::SystemSettingsPlatformAdapter {
   }
 };
 
+[[nodiscard]] app::SystemSettingsOperationHistory
+immutable_system_settings_history() {
+  auto const windows11_25h2 = app::settings_domain::WindowsVersion{
+      .generation = app::settings_domain::WindowsGeneration::windows_11,
+      .feature_update_year = 25,
+      .feature_update_half = 2,
+  };
+  auto const declared_range = app::settings_domain::WindowsVersionRange{
+      .minimum = windows11_25h2,
+      .maximum = windows11_25h2,
+  };
+  app::SystemSettingsOperationFact applied{
+      .fact_id = 41,
+      .operation = app::SystemSettingsOperationKind::apply,
+      .catalog_availability = app::SystemSettingsFactAvailability::obtained,
+      .catalog_identity = "system-settings-catalog",
+      .catalog_revision = 42,
+      .selected_plan_id = app::settings_domain::StableId{"plan.recommended"},
+      .selected_plan_name = "Recommended overall",
+      .windows_environment = {
+          .availability = app::SystemSettingsFactAvailability::obtained,
+          .display_version = "Windows 11 25H2",
+          .internal_build = 26'200,
+      },
+      .explorer_restart_requested = true,
+      .explorer_restart_result =
+          app::SystemSettingsExplorerRestartResult::deferred,
+      .status = app::SystemSettingsOperationStatus::waiting_explorer_restart,
+      .reason = "waiting for Explorer restart",
+      .settings = {{
+          .setting_id = app::settings_domain::StableId{
+              "setting.classic-context-menu"},
+          .display_name = "Classic context menu",
+          .controlled_identity = "windows11.classic-context-menu",
+          .catalog_revision = 42,
+          .declared_range_availability =
+              app::SystemSettingsFactAvailability::obtained,
+          .declared_windows_range = declared_range,
+          .original_value = app::WindowsSystemSettingValue{
+              app::ClassicContextMenuMode::windows11},
+          .target_value = app::WindowsSystemSettingValue{
+              app::ClassicContextMenuMode::classic},
+          .recovery_record_id = 7,
+          .restart_requirement = app::settings_domain::RestartRequirement::explorer,
+          .force_attempt_confirmed = true,
+          .status =
+              app::SystemSettingsOperationStatus::waiting_explorer_restart,
+          .reason = "waiting for Explorer restart",
+      }},
+      .timeline = {{
+                       .ordinal = 1,
+                       .stage = "selection-frozen",
+                       .status = app::SystemSettingsOperationStatus::completed,
+                       .reason = "frozen recommended plan",
+                   },
+                   {
+                       .ordinal = 2,
+                       .stage = "operation-finished",
+                       .status = app::SystemSettingsOperationStatus::
+                           waiting_explorer_restart,
+                       .reason = "waiting for Explorer restart",
+                   }},
+  };
+  app::SystemSettingsOperationFact restored{
+      .fact_id = 42,
+      .operation = app::SystemSettingsOperationKind::restore,
+      .catalog_availability = app::SystemSettingsFactAvailability::not_obtained,
+      .catalog_identity = "NOT_OBTAINED",
+      .catalog_revision = 42,
+      .catalog_reason =
+          "NOT_OBTAINED: restore uses frozen recovery record, not current catalog",
+      .windows_environment = {
+          .availability = app::SystemSettingsFactAvailability::not_obtained,
+          .display_version = "NOT_OBTAINED",
+          .reason = "NOT_OBTAINED: Windows environment was not captured",
+      },
+      .explorer_restart_requested = true,
+      .explorer_restart_result =
+          app::SystemSettingsExplorerRestartResult::succeeded,
+      .status = app::SystemSettingsOperationStatus::restored,
+      .reason = "restored frozen original value",
+      .settings = {{
+          .setting_id = app::settings_domain::StableId{
+              "setting.classic-context-menu"},
+          .display_name = "Classic context menu",
+          .controlled_identity = "NOT_OBTAINED",
+          .catalog_revision = 42,
+          .declared_range_availability =
+              app::SystemSettingsFactAvailability::not_obtained,
+          .declared_range_reason =
+              "NOT_OBTAINED: recovery record did not retain declared Windows range",
+          .original_value = app::WindowsSystemSettingValue{
+              app::ClassicContextMenuMode::windows11},
+          .target_value = app::WindowsSystemSettingValue{
+              app::ClassicContextMenuMode::windows11},
+          .recovery_record_id = 7,
+          .restart_requirement = app::settings_domain::RestartRequirement::explorer,
+          .status = app::SystemSettingsOperationStatus::restored,
+          .reason = "restored frozen original value",
+      }},
+      .timeline = {{
+                       .ordinal = 1,
+                       .stage = "restore-frozen-recovery",
+                       .status = app::SystemSettingsOperationStatus::completed,
+                       .reason = "recovery record frozen",
+                   },
+                   {
+                       .ordinal = 2,
+                       .stage = "restore-finished",
+                       .status = app::SystemSettingsOperationStatus::restored,
+                       .reason = "restored frozen original value",
+                   }},
+  };
+  return {.facts = {std::move(applied), std::move(restored)}};
+}
+
 class EmptyRecoveryStore final : public app::SystemSettingsRecoveryStore {
  public:
   [[nodiscard]] app::RecoveryStorageRead read() override {
-    return {.status = app::RecoveryStorageStatus::loaded};
+    return {.status = app::RecoveryStorageStatus::loaded,
+            .operation_history = operation_history};
   }
 
   [[nodiscard]] app::RecoveryStorageWrite save(
@@ -290,9 +412,18 @@ class EmptyRecoveryStore final : public app::SystemSettingsRecoveryStore {
     return {.status = app::RecoveryStorageStatus::committed};
   }
 
+  [[nodiscard]] app::RecoveryStorageWrite append_operation_fact(
+      app::SystemSettingsOperationFact fact) override {
+    operation_history.facts.push_back(std::move(fact));
+    return {.status = app::RecoveryStorageStatus::committed};
+  }
+
   [[nodiscard]] app::RecoveryStorageWrite erase(std::uint64_t) override {
     return {.status = app::RecoveryStorageStatus::committed};
   }
+
+  app::SystemSettingsOperationHistory operation_history{
+      immutable_system_settings_history()};
 };
 
 class NoopDownload final : public app::installation_batch::InstallationDownloadPort {
@@ -382,7 +513,7 @@ make_optimization_plan() {
       .id = {"history-target"},
       .identity_anchor = {"vendor.history.target"},
       .support_mode = optimization::SupportMode::supported,
-      .supported_versions = {"1.0"},
+      .supported_versions = {"1.0", "2.0"},
       .install_detection = {optimization::RuleKind::built_in_definition,
                             {"history-detect-install"}},
       .version_detection = {optimization::RuleKind::built_in_definition,
@@ -393,7 +524,7 @@ make_optimization_plan() {
       .id = {"history-scheme"},
       .target_id = target.id,
       .automation = optimization::AutomationSupport::controlled,
-      .supported_versions = {"1.0"},
+      .supported_versions = {"1.0", "2.0"},
       .impact = "history contract scheme",
       .risk = optimization::RiskLevel::low,
       .exit_requirement = optimization::ExitRequirement::none,
@@ -404,7 +535,7 @@ make_optimization_plan() {
   optimization::SoftwareOptimizationOption option{
       .id = {"history-option"},
       .scheme_id = scheme.id,
-      .supported_versions = {"1.0"},
+      .supported_versions = {"1.0", "2.0"},
       .impact = "history contract option",
       .automation = optimization::AutomationSupport::controlled,
       .execution = {optimization::RuleKind::built_in_definition,
@@ -786,6 +917,83 @@ struct HistoryFixture final {
   return passed;
 }
 
+[[nodiscard]] bool immutable_system_settings_facts_are_projected() {
+  HistoryFixture fixture;
+  if (!expect(fixture.prepare(),
+              "fake owners must prepare immutable settings operation facts")) {
+    return false;
+  }
+  auto const snapshot = fixture.history.refresh();
+  auto const* applied = find_entry(snapshot,
+                                   app::HistoryEntryKind::system_setting_apply,
+                                   "system-settings-operation/41");
+  auto const* restored = find_entry(snapshot,
+                                    app::HistoryEntryKind::system_setting_apply,
+                                    "system-settings-operation/42");
+  if (!expect(applied != nullptr && restored != nullptr,
+              "each immutable system settings operation fact must have a projection")) {
+    return false;
+  }
+
+  auto const* applied_setting = find_timeline(*applied, "Classic context menu");
+  auto const* restored_setting =
+      find_timeline(*restored, "Classic context menu");
+  bool passed = true;
+  passed &= expect(
+      has_fact(applied->facts, "settings.operation", "apply") &&
+          has_fact(applied->facts, "settings.selection_source",
+                   "recommended-overall") &&
+          has_fact(applied->facts, "settings.selected_plan_id",
+                   "plan.recommended") &&
+          has_fact(applied->facts, "settings.windows_display_version",
+                   "Windows 11 25H2") &&
+          has_fact(applied->facts, "settings.windows_internal_build", "26200") &&
+          has_fact(applied->facts, "settings.explorer_restart_requested", "true") &&
+          has_fact(applied->facts, "settings.explorer_restart_result",
+                   "deferred"),
+      "apply history must retain its frozen source, Windows version/build, and Explorer result");
+  passed &= expect(
+      applied_setting != nullptr &&
+          has_fact(applied_setting->facts, "settings.declared_windows_range",
+                   "windows-11-25H2..windows-11-25H2") &&
+          has_fact(applied_setting->facts, "settings.force_attempt_confirmed",
+                   "true") &&
+          has_fact(applied_setting->facts, "settings.original_value", "windows11") &&
+          has_fact(applied_setting->facts, "settings.target_value", "classic") &&
+          has_fact(applied_setting->facts, "settings.recovery_record_id", "7"),
+      "apply history must retain declared scope, force confirmation, original and target values");
+  passed &= expect(
+      has_fact(restored->facts, "settings.operation", "restore") &&
+          has_fact(restored->facts, "settings.selection_source", "individual") &&
+          has_fact(restored->facts, "settings.explorer_restart_result",
+                   "succeeded") &&
+          has_missing_fact(
+              restored->facts, "settings.catalog_identity",
+              "NOT_OBTAINED: restore uses frozen recovery record, not current catalog") &&
+          has_missing_fact(
+              restored->facts, "settings.windows_display_version",
+              "NOT_OBTAINED: Windows environment was not captured"),
+      "restore history must retain its own result and mark unavailable operation facts");
+  passed &= expect(
+      restored_setting != nullptr &&
+          has_fact(restored_setting->facts, "settings.undo", "true") &&
+          has_fact(restored_setting->facts, "settings.restore_value", "windows11") &&
+          has_missing_fact(
+              restored_setting->facts, "settings.controlled_identity",
+              "NOT_OBTAINED: immutable operation did not capture a controlled setting identity") &&
+          has_missing_fact(
+              restored_setting->facts, "settings.declared_windows_range",
+              "NOT_OBTAINED: recovery record did not retain declared Windows range"),
+      "undo history must retain frozen restore values without inventing missing scope");
+  passed &= expect(
+      std::none_of(snapshot.history.begin(), snapshot.history.end(),
+                   [](auto const& entry) {
+                     return entry.kind == app::HistoryEntryKind::system_setting_recovery;
+                   }),
+      "current recovery records must not be projected as immutable settings history");
+  return passed;
+}
+
 [[nodiscard]] bool frozen_correlation_generation_and_value_shape_are_preserved() {
   HistoryFixture fixture;
   if (!expect(fixture.prepare(), "fake owners must prepare optimization history")) {
@@ -801,7 +1009,7 @@ struct HistoryFixture final {
   }
   bool passed = true;
   passed &= expect(
-      has_fact(entry->facts, "last_durable_transition.generation", "1"),
+      has_fact(entry->facts, "last_durable_transition.generation", "4"),
       "a valid durable transition must retain its generation");
   passed &= expect(
       has_fact(entry->facts,
@@ -861,6 +1069,7 @@ struct HistoryFixture final {
 int main() {
   auto const passed = stable_history_taxonomy_is_available() &&
                       immutable_owner_timeline_and_missing_facts_are_projected() &&
+                      immutable_system_settings_facts_are_projected() &&
                       frozen_correlation_generation_and_value_shape_are_preserved() &&
                       debug_policy_is_read_only_and_missing_sources_fail_closed();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
