@@ -1269,15 +1269,24 @@ class InstallationBatchService::Impl final {
       }
     }
     for (auto const& item : plan.items) {
-      if (item.execution_profile.execution !=
-          catalog::WindowsExecutionReadiness::project_executor_registered) {
-        return "the frozen controlled profile is declaration-only";
+      auto const readiness = validate_controlled_item_readiness(item);
+      if (!readiness.empty()) {
+        return readiness;
       }
-      auto const readiness = readiness_.observe(item.execution_profile);
-      if (readiness.code != ControlledProfileReadinessCode::registered) {
-        return readiness.detail.empty() ? "the controlled executor is not registered"
-                                        : readiness.detail;
-      }
+    }
+    return {};
+  }
+
+  [[nodiscard]] std::string validate_controlled_item_readiness(
+      batch_domain::FrozenInstallationItem const& item) const {
+    if (item.execution_profile.execution !=
+        catalog::WindowsExecutionReadiness::project_executor_registered) {
+      return "the frozen controlled profile is declaration-only";
+    }
+    auto const readiness = readiness_.observe(item.execution_profile);
+    if (readiness.code != ControlledProfileReadinessCode::registered) {
+      return readiness.detail.empty() ? "the controlled executor is not registered"
+                                      : readiness.detail;
     }
     return {};
   }
@@ -1320,42 +1329,50 @@ class InstallationBatchService::Impl final {
           *runtime->definition.install_profile != item.execution_profile.profile_id) {
         return "the frozen profile does not match current catalog software";
       }
-      auto const profiles = catalog::initial_controlled_install_profiles();
-      auto const profile = std::ranges::find(profiles, item.execution_profile.profile_id,
-                                             &catalog::ControlledInstallProfile::id);
-      if (profile == profiles.end() || profile->software_id != item.item_id ||
-          profile->execution_kind != item.execution_profile.executor ||
-          profile->execution != item.execution_profile.execution ||
-          profile->completion_boundary != item.execution_profile.completion_boundary ||
-          profile->post_install_behavior != item.execution_profile.post_install ||
-          profile->restart_verification != item.execution_profile.restart ||
-          profile->result_detection != item.execution_profile.result_detection ||
-          profile->interaction_scope != item.execution_profile.interaction_scope ||
-          std::ranges::find(profile->baselines, item.execution_profile.baseline) ==
-              profile->baselines.end()) {
-        return "the frozen profile is not a registered project-owned profile";
+      auto const provenance = validate_controlled_item_provenance(item);
+      if (!provenance.empty()) {
+        return provenance;
       }
-      for (auto const& choice : item.execution_profile.choices) {
-        if (std::ranges::find(profile->preferences, choice.preference_id,
-                              &catalog::ControlledInstallPreference::id) ==
-            profile->preferences.end()) {
-          return "a frozen installation choice is not owned by the profile";
-        }
+    }
+    return {};
+  }
+
+  [[nodiscard]] static std::string validate_controlled_item_provenance(
+      batch_domain::FrozenInstallationItem const& item) {
+    auto const profiles = catalog::initial_controlled_install_profiles();
+    auto const profile = std::ranges::find(profiles, item.execution_profile.profile_id,
+                                           &catalog::ControlledInstallProfile::id);
+    if (profile == profiles.end() || profile->software_id != item.item_id ||
+        profile->execution_kind != item.execution_profile.executor ||
+        profile->execution != item.execution_profile.execution ||
+        profile->completion_boundary != item.execution_profile.completion_boundary ||
+        profile->post_install_behavior != item.execution_profile.post_install ||
+        profile->restart_verification != item.execution_profile.restart ||
+        profile->result_detection != item.execution_profile.result_detection ||
+        profile->interaction_scope != item.execution_profile.interaction_scope ||
+        std::ranges::find(profile->baselines, item.execution_profile.baseline) ==
+            profile->baselines.end()) {
+      return "the frozen profile is not a registered project-owned profile";
+    }
+    for (auto const& choice : item.execution_profile.choices) {
+      if (std::ranges::find(profile->preferences, choice.preference_id,
+                            &catalog::ControlledInstallPreference::id) ==
+          profile->preferences.end()) {
+        return "a frozen installation choice is not owned by the profile";
       }
-      auto const disposition_known = std::ranges::any_of(
-          profile->preferences, [&item](catalog::ControlledInstallPreference const& preference) {
-            return std::ranges::find(preference.disposition_order,
-                                     item.execution_profile.interaction_disposition) !=
-                   preference.disposition_order.end();
-          });
-      if (!disposition_known) {
-        return "the frozen interaction disposition is not permitted by the profile";
-      }
-      auto expected = offline_package_cache::make_cache_asset(item.source,
-                                                                item.selected_package);
-      if (!expected.has_value() || *expected != item.cache_asset) {
-        return "the frozen cache asset does not match its controlled source and package";
-      }
+    }
+    auto const disposition_known = std::ranges::any_of(
+        profile->preferences, [&item](catalog::ControlledInstallPreference const& preference) {
+          return std::ranges::find(preference.disposition_order,
+                                   item.execution_profile.interaction_disposition) !=
+                 preference.disposition_order.end();
+        });
+    if (!disposition_known) {
+      return "the frozen interaction disposition is not permitted by the profile";
+    }
+    auto expected = offline_package_cache::make_cache_asset(item.source, item.selected_package);
+    if (!expected.has_value() || *expected != item.cache_asset) {
+      return "the frozen cache asset does not match its controlled source and package";
     }
     return {};
   }
@@ -1411,7 +1428,18 @@ class InstallationBatchService::Impl final {
     if (retry_plan.items.front().item_id != old.plan.items[index].item_id) {
       return "retry plan must contain the failed item only";
     }
-    return {};
+    if (admission_ != nullptr) {
+      auto const admitted = admission_->admit_retry(retry_plan);
+      if (admitted.code != FrozenBatchPlanAdmissionCode::accepted) {
+        return admitted.detail.empty() ? "the frozen retry plan was rejected" : admitted.detail;
+      }
+    } else {
+      auto const provenance = validate_controlled_item_provenance(retry_plan.items.front());
+      if (!provenance.empty()) {
+        return provenance;
+      }
+    }
+    return validate_controlled_item_readiness(retry_plan.items.front());
   }
 
   [[nodiscard]] std::optional<std::size_t> current_started_or_pending_index() const noexcept {
