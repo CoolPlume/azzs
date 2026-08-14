@@ -12,6 +12,7 @@
 #include "Pages/HistoryAndLogsPage.xaml.h"
 #include "Pages/OverviewPage.xaml.h"
 #include "Pages/SoftwareInstallationPage.xaml.h"
+#include "azzs/application/installation_batch.hpp"
 #include "Pages/SoftwareOptimizationPage.xaml.h"
 #include "Pages/SystemOptimizationPage.xaml.h"
 #include "azzs/application/advanced_view_preferences.hpp"
@@ -179,8 +180,7 @@ void MainWindow::navigate_to(PageId page) {
                               .Content()
                               .as<Pages::SoftwareInstallationPage>();
         winrt::get_self<Pages::implementation::SoftwareInstallationPage>(page)
-            ->project(services->software_selection().snapshot(),
-                      services->offline_package_cache().snapshot());
+            ->bind(services);
       }
       break;
     case PageId::software_optimization:

@@ -119,6 +119,8 @@ bool FrozenBatchPlan::valid() const noexcept {
 bool InstallationItemProgress::valid() const noexcept {
   return nonempty_and_bounded(item_id) && attempt <= 1024 &&
          (!installer_started || launch_requested) &&
+         (!force_termination_confirmation_requested || installer_started) &&
+         (!force_termination_completed || force_termination_confirmation_requested) &&
          (!post_install_completed || installer_started) &&
          (!opaque_installer_handle.has_value() ||
            (installer_started && nonempty_and_bounded(*opaque_installer_handle)));
@@ -172,14 +174,17 @@ bool is_terminal(InstallationItemState state) noexcept {
 }
 
 bool blocks_batch(InstallationItemState state) noexcept {
-  return state == InstallationItemState::installer_interaction_pending ||
+  return state == InstallationItemState::download_paused ||
+         state == InstallationItemState::force_termination_confirmation_pending ||
+         state == InstallationItemState::installer_interaction_pending ||
          state == InstallationItemState::result_confirmation_pending ||
          state == InstallationItemState::waiting_restart;
 }
 
 bool requires_fresh_retry_snapshot(InstallationItemState state) noexcept {
   return state == InstallationItemState::source_invalid ||
-         state == InstallationItemState::failed;
+         state == InstallationItemState::failed ||
+         state == InstallationItemState::stop_pending;
 }
 
 bool command_allowed(InstallationItemState state,
@@ -191,8 +196,18 @@ bool command_allowed(InstallationItemState state,
              command == InstallationItemCommand::stop;
     case InstallationItemState::source_invalid:
     case InstallationItemState::failed:
+    case InstallationItemState::stop_pending:
       return command == InstallationItemCommand::retry ||
              command == InstallationItemCommand::stop;
+    case InstallationItemState::download_paused:
+      return command == InstallationItemCommand::resume_download ||
+             command == InstallationItemCommand::stop ||
+             command == InstallationItemCommand::read_only_verify;
+    case InstallationItemState::force_termination_confirmation_pending:
+      return command == InstallationItemCommand::confirm_force_termination ||
+             command == InstallationItemCommand::cancel_force_termination ||
+             command == InstallationItemCommand::stop ||
+             command == InstallationItemCommand::read_only_verify;
     case InstallationItemState::installer_interaction_pending:
       return command == InstallationItemCommand::user_complete_installer_interaction ||
              command == InstallationItemCommand::stop ||
@@ -203,14 +218,16 @@ bool command_allowed(InstallationItemState state,
     case InstallationItemState::waiting_restart:
       return command == InstallationItemCommand::read_only_verify;
     case InstallationItemState::downloading:
-      return command == InstallationItemCommand::stop ||
+      return command == InstallationItemCommand::pause_download ||
+             command == InstallationItemCommand::stop ||
              command == InstallationItemCommand::read_only_verify;
     case InstallationItemState::installer_running:
-      return command == InstallationItemCommand::read_only_verify;
+      return command == InstallationItemCommand::stop ||
+             command == InstallationItemCommand::request_force_termination ||
+             command == InstallationItemCommand::read_only_verify;
     case InstallationItemState::skipped_installed:
     case InstallationItemState::dependency_blocked:
     case InstallationItemState::succeeded:
-    case InstallationItemState::stop_pending:
       return false;
   }
   return false;
@@ -234,8 +251,12 @@ char const* to_string(InstallationItemState value) noexcept {
       return "pending";
     case InstallationItemState::downloading:
       return "downloading";
+    case InstallationItemState::download_paused:
+      return "download_paused";
     case InstallationItemState::installer_running:
       return "installer_running";
+    case InstallationItemState::force_termination_confirmation_pending:
+      return "force_termination_confirmation_pending";
     case InstallationItemState::waiting_network:
       return "waiting_network";
     case InstallationItemState::source_invalid:
@@ -266,6 +287,10 @@ char const* to_string(InstallationBatchState value) noexcept {
       return "ready";
     case InstallationBatchState::running:
       return "running";
+    case InstallationBatchState::download_paused:
+      return "download_paused";
+    case InstallationBatchState::stopping:
+      return "stopping";
     case InstallationBatchState::awaiting_user:
       return "awaiting_user";
     case InstallationBatchState::waiting_restart:
