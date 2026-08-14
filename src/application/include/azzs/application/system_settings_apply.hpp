@@ -55,12 +55,21 @@ struct SystemSettingsAdapterResult final {
   std::string detail;
 };
 
+// Captured at the operation boundary so a later Windows update cannot change
+// what history reports for an already-completed system-settings operation.
+struct SystemSettingsWindowsVersionFact final {
+  std::string display_version;
+  std::uint32_t internal_build{0};
+};
+
 class SystemSettingsPlatformAdapter {
  public:
   virtual ~SystemSettingsPlatformAdapter() = default;
 
   [[nodiscard]] virtual std::optional<settings_domain::WindowsVersion>
   windows_version() const = 0;
+  [[nodiscard]] virtual std::optional<SystemSettingsWindowsVersionFact>
+  windows_version_fact() const = 0;
   [[nodiscard]] virtual SystemSettingsRead read(
       ControlledSystemSetting setting) = 0;
   [[nodiscard]] virtual SystemSettingsAdapterResult apply(
@@ -83,6 +92,115 @@ enum class RecoveryRecordOperation : std::uint8_t {
   apply = 0,
   restore = 1,
   windows11_default = 2,
+};
+
+enum class SystemSettingsFactAvailability : std::uint8_t {
+  obtained = 0,
+  not_obtained = 1,
+};
+
+enum class SystemSettingsOperationKind : std::uint8_t {
+  apply = 0,
+  restore = 1,
+  windows11_default = 2,
+  restart_explorer = 3,
+};
+
+enum class SystemSettingsOperationStatus : std::uint8_t {
+  completed = 0,
+  failed = 1,
+  waiting_explorer_restart = 2,
+  restored = 3,
+  skipped = 4,
+  not_applicable = 5,
+  confirmation_required = 6,
+  blocked = 7,
+};
+
+enum class SystemSettingsExplorerRestartResult : std::uint8_t {
+  not_required = 0,
+  deferred = 1,
+  succeeded = 2,
+  failed = 3,
+  verification_failed = 4,
+};
+
+struct SystemSettingsWindowsEnvironmentFact final {
+  SystemSettingsFactAvailability availability{
+      SystemSettingsFactAvailability::not_obtained};
+  std::string display_version{"NOT_OBTAINED"};
+  std::uint32_t internal_build{0};
+  std::string reason{"NOT_OBTAINED: Windows environment was not captured"};
+
+  friend bool operator==(SystemSettingsWindowsEnvironmentFact const&,
+                         SystemSettingsWindowsEnvironmentFact const&) = default;
+};
+
+struct SystemSettingsOperationSettingFact final {
+  settings_domain::StableId setting_id;
+  std::string display_name;
+  std::string controlled_identity;
+  std::uint64_t catalog_revision{0};
+  SystemSettingsFactAvailability declared_range_availability{
+      SystemSettingsFactAvailability::not_obtained};
+  settings_domain::WindowsVersionRange declared_windows_range;
+  std::string declared_range_reason{
+      "NOT_OBTAINED: declared Windows range was not captured"};
+  std::optional<WindowsSystemSettingValue> original_value;
+  std::optional<WindowsSystemSettingValue> target_value;
+  std::optional<std::uint64_t> recovery_record_id;
+  settings_domain::RestartRequirement restart_requirement{
+      settings_domain::RestartRequirement::none};
+  bool force_attempt_confirmed{false};
+  SystemSettingsOperationStatus status{SystemSettingsOperationStatus::failed};
+  std::string reason;
+
+  friend bool operator==(SystemSettingsOperationSettingFact const&,
+                         SystemSettingsOperationSettingFact const&) = default;
+};
+
+struct SystemSettingsOperationTimelineEntry final {
+  std::uint32_t ordinal{0};
+  std::string stage;
+  SystemSettingsOperationStatus status{SystemSettingsOperationStatus::failed};
+  std::string reason;
+
+  friend bool operator==(SystemSettingsOperationTimelineEntry const&,
+                         SystemSettingsOperationTimelineEntry const&) = default;
+};
+
+// Append-only history fact. It contains only operation-time inputs and
+// results, never a value projected from a later catalog or Windows state.
+struct SystemSettingsOperationFact final {
+  std::uint64_t fact_id{0};
+  SystemSettingsOperationKind operation{SystemSettingsOperationKind::apply};
+  SystemSettingsFactAvailability catalog_availability{
+      SystemSettingsFactAvailability::not_obtained};
+  std::string catalog_identity{"NOT_OBTAINED"};
+  std::uint64_t catalog_revision{0};
+  std::string catalog_reason{
+      "NOT_OBTAINED: catalog identity and revision were not captured"};
+  std::optional<settings_domain::StableId> selected_plan_id;
+  std::string selected_plan_name;
+  SystemSettingsWindowsEnvironmentFact windows_environment;
+  bool explorer_restart_requested{false};
+  SystemSettingsExplorerRestartResult explorer_restart_result{
+      SystemSettingsExplorerRestartResult::not_required};
+  bool windows_restart_barrier{false};
+  SystemSettingsOperationStatus status{SystemSettingsOperationStatus::failed};
+  std::string reason;
+  std::vector<SystemSettingsOperationSettingFact> settings;
+  std::vector<SystemSettingsOperationTimelineEntry> timeline;
+
+  friend bool operator==(SystemSettingsOperationFact const&,
+                         SystemSettingsOperationFact const&) = default;
+};
+
+struct SystemSettingsOperationHistory final {
+  std::vector<SystemSettingsOperationFact> facts;
+
+  friend bool operator==(SystemSettingsOperationHistory const&,
+                         SystemSettingsOperationHistory const&) = default;
 };
 
 struct SystemSettingsRecoveryRecord final {
@@ -110,6 +228,7 @@ enum class RecoveryStorageStatus : std::uint8_t {
 struct RecoveryStorageRead final {
   RecoveryStorageStatus status{RecoveryStorageStatus::failed};
   std::vector<SystemSettingsRecoveryRecord> records;
+  SystemSettingsOperationHistory operation_history;
   std::string detail;
 };
 
@@ -125,6 +244,8 @@ class SystemSettingsRecoveryStore {
   [[nodiscard]] virtual RecoveryStorageRead read() = 0;
   [[nodiscard]] virtual RecoveryStorageWrite save(
       SystemSettingsRecoveryRecord record) = 0;
+  [[nodiscard]] virtual RecoveryStorageWrite append_operation_fact(
+      SystemSettingsOperationFact fact) = 0;
   [[nodiscard]] virtual RecoveryStorageWrite erase(std::uint64_t record_id) = 0;
 };
 
@@ -272,6 +393,7 @@ class SystemSettingsApplyService final {
   // This is the read-only recovery contract consumed by the undo workflow.
   [[nodiscard]] std::vector<SystemSettingsRecoveryRecord> recovery_records()
       const;
+  [[nodiscard]] SystemSettingsOperationHistory operation_history() const;
 
  private:
   struct FrozenSelection final {
@@ -297,6 +419,10 @@ class SystemSettingsApplyService final {
   expected_value_for_recovery(SystemSettingsRecoveryRecord const& record) const;
   [[nodiscard]] bool recovery_is_protected(
       RecoveryRecordStatus status) const noexcept;
+  [[nodiscard]] bool persist_pending_legacy_operation_facts(
+      std::string& detail);
+  [[nodiscard]] bool append_operation_fact(SystemSettingsOperationFact fact,
+                                           std::string& detail);
   void append_log(CorrelationId const& correlation, std::string stage,
                   ExecutionResult result, std::string setting_id,
                   std::string detail = {});
@@ -308,7 +434,10 @@ class SystemSettingsApplyService final {
   ExecutionLog& log_;
   SystemSettingsApplySnapshot snapshot_;
   std::vector<SystemSettingsRecoveryRecord> recovery_records_;
+  SystemSettingsOperationHistory operation_history_;
+  std::vector<SystemSettingsOperationFact> pending_legacy_operation_facts_;
   std::uint64_t next_recovery_record_id_{1};
+  std::uint64_t next_operation_fact_id_{1};
   std::uint64_t next_correlation_id_{1};
 };
 

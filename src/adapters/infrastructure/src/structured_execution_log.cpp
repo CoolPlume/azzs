@@ -666,6 +666,45 @@ parse_event_projection(std::string_view line) {
   return count;
 }
 
+[[nodiscard]] std::uint64_t saturated_add(std::uint64_t left,
+                                          std::uint64_t right) noexcept {
+  return right > std::numeric_limits<std::uint64_t>::max() - left
+             ? std::numeric_limits<std::uint64_t>::max()
+             : left + right;
+}
+
+[[nodiscard]] std::uint64_t persisted_noncritical_drop_count(
+    ParsedLog const& parsed) {
+  std::uint64_t count{};
+  auto records = parsed.records;
+  while (!records.empty()) {
+    auto const line_end = records.find('\n');
+    if (line_end == std::string_view::npos) {
+      return count;
+    }
+    auto const line = records.substr(0, line_end);
+    if (line.starts_with("EVENT\t")) {
+      auto const event = parse_event_projection(line);
+      if (event.has_value() && event->coverage_gap.has_value() &&
+          event->coverage_gap->kind == application::CoverageGapKind::dropped &&
+          event->stage == "capacity-recovery") {
+        for (auto const& field : event->fields) {
+          if (field.key != "noncritical_dropped_count") {
+            continue;
+          }
+          std::uint64_t dropped{};
+          if (parse_uint64(field.value, dropped)) {
+            count = saturated_add(count, dropped);
+          }
+          break;
+        }
+      }
+    }
+    records.remove_prefix(line_end + 1);
+  }
+  return count;
+}
+
 [[nodiscard]] std::string serialize_fields(
     application::ExecutionEvent const& event) {
   std::string fields;
@@ -680,6 +719,91 @@ parse_event_projection(std::string_view line) {
     fields += percent_encode(key) + "=" + percent_encode(value) + ";";
   }
   return fields;
+}
+
+[[nodiscard]] bool is_critical(application::ExecutionEvent const& event) {
+  return event.criticality == application::ExecutionLogCriticality::critical ||
+         event.kind == application::ExecutionEventKind::state_transition ||
+         event.kind == application::ExecutionEventKind::coverage_gap;
+}
+
+[[nodiscard]] std::string serialize_event(
+    Counters const& counters, application::CorrelationId const& correlation,
+    application::ExecutionEvent const& event,
+    application::Clock const& clock) {
+  auto const& sensitive = event.sensitive_values;
+  return "EVENT\t" + std::to_string(counters.segment) + "\t" +
+         std::to_string(counters.sequence) + "\t" +
+         percent_encode(correlation.value) + "\t" +
+         std::to_string(clock.now().time_since_epoch().count()) + "\t" +
+         std::string{event_kind_name(event.kind)} + "\t" +
+         redact_event_token(event.component, sensitive) + "\t" +
+         redact_event_token(event.stage, sensitive) + "\t" +
+         std::string{execution_result_name(event.result)} + "\t" +
+         percent_encode(redact(event.error.has_value()
+                                   ? event.error->source
+                                   : std::string_view{},
+                               sensitive)) +
+         "\t" +
+         (event.error.has_value() ? std::to_string(event.error->code)
+                                  : std::string{}) +
+         "\t" +
+         percent_encode(redact(event.error.has_value()
+                                   ? event.error->message
+                                   : std::string_view{},
+                               sensitive)) +
+         "\t" +
+         (event.last_trusted_state.has_value()
+              ? std::to_string(event.last_trusted_state->generation)
+              : std::string{}) +
+         "\t" +
+         percent_encode(redact(event.last_trusted_state.has_value()
+                                   ? event.last_trusted_state->summary
+                                   : std::string_view{},
+                               sensitive)) +
+         "\t" +
+         (event.coverage_gap.has_value()
+              ? std::string{coverage_gap_kind_name(event.coverage_gap->kind)}
+              : std::string{}) +
+         "\t" +
+         (event.coverage_gap.has_value() &&
+                  event.coverage_gap->first_missing_sequence.has_value()
+              ? std::to_string(*event.coverage_gap->first_missing_sequence)
+              : std::string{}) +
+         "\t" +
+         (event.coverage_gap.has_value() &&
+                  event.coverage_gap->last_missing_sequence.has_value()
+              ? std::to_string(*event.coverage_gap->last_missing_sequence)
+              : std::string{}) +
+         "\t" +
+         percent_encode(redact(event.coverage_gap.has_value()
+                                   ? event.coverage_gap->reason
+                                   : std::string_view{},
+                               sensitive)) +
+         "\t" + serialize_fields(event) + "\n";
+}
+
+[[nodiscard]] application::ExecutionEvent capacity_recovery_event(
+    std::uint64_t dropped_count) {
+  return {
+      .kind = application::ExecutionEventKind::coverage_gap,
+      .component = "execution-log",
+      .stage = "capacity-recovery",
+      .result = application::ExecutionResult::failed,
+      .coverage_gap = application::CoverageGap{
+          .kind = application::CoverageGapKind::dropped,
+          .reason =
+              "noncritical diagnostic events were suppressed while log storage capacity was exhausted",
+      },
+      .criticality = application::ExecutionLogCriticality::critical,
+      .fields = {
+          application::DiagnosticField{
+              .key = "noncritical_dropped_count",
+              .value = std::to_string(dropped_count),
+              .disposition = application::DiagnosticValueDisposition::retain,
+          },
+      },
+  };
 }
 
 [[nodiscard]] std::string serialize(Counters const& counters,
@@ -835,6 +959,7 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
   if (!valid_event_token(event.component) || !valid_event_token(event.stage)) {
     return {.error = "execution event component or stage is invalid"};
   }
+  std::scoped_lock state_lock{state_mutex_};
   auto transaction = storage_.begin_transaction();
   if (auto const error = transaction->read_error(); !error.empty()) {
     return {.error = std::string{error}};
@@ -860,77 +985,86 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
     return {.error = "correlation identifier is invalid"};
   }
   auto counters = parsed.counters;
+  auto const recovered_dropped_count = pending_noncritical_dropped_count_;
+  auto const event_is_critical = is_critical(event);
   if (counters.sequence == std::numeric_limits<std::uint64_t>::max()) {
     return {.error = "execution log sequence is exhausted"};
   }
-  ++counters.sequence;
+  auto include_recovery_gap =
+      recovered_dropped_count != 0 &&
+      counters.sequence < std::numeric_limits<std::uint64_t>::max() - 1;
+  if (recovered_dropped_count != 0 && !include_recovery_gap &&
+      !event_is_critical) {
+    return {.error = "execution log sequence is exhausted"};
+  }
 
   std::string records{parsed.records};
-  auto const& sensitive = event.sensitive_values;
-  records += "EVENT\t" + std::to_string(counters.segment) + "\t" +
-             std::to_string(counters.sequence) + "\t" +
-             percent_encode(correlation.value) + "\t" +
-             std::to_string(clock_.now().time_since_epoch().count()) + "\t" +
-             std::string{event_kind_name(event.kind)} + "\t" +
-             redact_event_token(event.component, sensitive) + "\t" +
-             redact_event_token(event.stage, sensitive) + "\t" +
-             std::string{execution_result_name(event.result)} + "\t" +
-             percent_encode(redact(event.error.has_value()
-                                       ? event.error->source
-                                       : std::string_view{},
-                                   sensitive)) +
-             "\t" +
-             (event.error.has_value() ? std::to_string(event.error->code)
-                                      : std::string{}) +
-             "\t" +
-             percent_encode(redact(event.error.has_value()
-                                       ? event.error->message
-                                       : std::string_view{},
-                                   sensitive)) +
-             "\t" +
-             (event.last_trusted_state.has_value()
-                  ? std::to_string(event.last_trusted_state->generation)
-                  : std::string{}) +
-             "\t" +
-             percent_encode(redact(event.last_trusted_state.has_value()
-                                       ? event.last_trusted_state->summary
-                                       : std::string_view{},
-                                   sensitive)) +
-             "\t" +
-             (event.coverage_gap.has_value()
-                  ? std::string{
-                        coverage_gap_kind_name(event.coverage_gap->kind)}
-                  : std::string{}) +
-             "\t" +
-             (event.coverage_gap.has_value() &&
-                      event.coverage_gap->first_missing_sequence.has_value()
-                  ? std::to_string(
-                        *event.coverage_gap->first_missing_sequence)
-                  : std::string{}) +
-             "\t" +
-             (event.coverage_gap.has_value() &&
-                      event.coverage_gap->last_missing_sequence.has_value()
-                  ? std::to_string(*event.coverage_gap->last_missing_sequence)
-                  : std::string{}) +
-             "\t" +
-             percent_encode(redact(event.coverage_gap.has_value()
-                                       ? event.coverage_gap->reason
-                                       : std::string_view{},
-                                   sensitive)) +
-             "\t" + serialize_fields(event) +
-             "\n";
+  if (include_recovery_gap) {
+    ++counters.sequence;
+    records += serialize_event(counters, correlation,
+                               capacity_recovery_event(recovered_dropped_count),
+                               clock_);
+  }
+  ++counters.sequence;
+  records += serialize_event(counters, correlation, event, clock_);
 
-  auto const result = transaction->replace(serialize(counters, records));
+  auto result = transaction->replace(serialize(counters, records));
+  std::string recovery_annotation_error;
+  if (!result.verified &&
+      result.failure == LogStorageWriteFailure::capacity_exhausted &&
+      include_recovery_gap && event_is_critical) {
+    // A durable transition is more valuable than a recovery annotation. Keep
+    // the annotation pending and retry the transition without it.
+    recovery_annotation_error = result.error;
+    counters = parsed.counters;
+    records = std::string{parsed.records};
+    ++counters.sequence;
+    records += serialize_event(counters, correlation, event, clock_);
+    include_recovery_gap = false;
+    result = transaction->replace(serialize(counters, records));
+  }
+  if (result.verified) {
+    if (recovered_dropped_count == 0 || include_recovery_gap) {
+      capacity_state_ = application::ExecutionLogCapacityState::available;
+      pending_noncritical_dropped_count_ = 0;
+    } else {
+      capacity_state_ = application::ExecutionLogCapacityState::space_exhausted;
+    }
+    return {
+        .persisted = true,
+        .segment = counters.segment,
+        .sequence = counters.sequence,
+        .capacity_state = capacity_state_,
+        .noncritical_dropped_count = recovered_dropped_count,
+        .error = !recovery_annotation_error.empty()
+                     ? std::move(recovery_annotation_error)
+                     : (result.error.empty() ? std::move(recovery_warning)
+                                             : result.error),
+    };
+  }
+  if (result.failure == LogStorageWriteFailure::capacity_exhausted) {
+    capacity_state_ = application::ExecutionLogCapacityState::space_exhausted;
+    if (!is_critical(event)) {
+      pending_noncritical_dropped_count_ =
+          saturated_add(pending_noncritical_dropped_count_, 1);
+      return {
+          .suppressed = true,
+          .capacity_state = capacity_state_,
+          .noncritical_dropped_count = pending_noncritical_dropped_count_,
+          .error = result.error,
+      };
+    }
+  }
   return {
-      .persisted = result.verified,
-      .segment = result.verified ? counters.segment : 0,
-      .sequence = result.verified ? counters.sequence : 0,
+      .capacity_state = capacity_state_,
+      .noncritical_dropped_count = pending_noncritical_dropped_count_,
       .error = result.error.empty() ? std::move(recovery_warning)
                                     : result.error,
   };
 }
 
 application::ExecutionLogSnapshot StructuredExecutionLog::snapshot() {
+  std::scoped_lock state_lock{state_mutex_};
   auto transaction = storage_.begin_transaction();
   if (auto const error = transaction->read_error(); !error.empty()) {
     return {.error = std::string{error}};
@@ -944,6 +1078,8 @@ application::ExecutionLogSnapshot StructuredExecutionLog::snapshot() {
     return {
         .available = true,
         .durable_bytes = bytes.size(),
+        .capacity_state = capacity_state_,
+        .noncritical_dropped_count = pending_noncritical_dropped_count_,
         .pending_clear = application::ExecutionLogPendingClearProjection{
             .cutoff_segment = pending->segment,
             .cutoff_sequence = pending->sequence,
@@ -956,6 +1092,10 @@ application::ExecutionLogSnapshot StructuredExecutionLog::snapshot() {
       .active_segment = parsed.counters.segment,
       .last_sequence = parsed.counters.sequence,
       .durable_bytes = bytes.size(),
+      .capacity_state = capacity_state_,
+      .noncritical_dropped_count = saturated_add(
+          persisted_noncritical_drop_count(parsed),
+          pending_noncritical_dropped_count_),
   };
   auto records = parsed.records;
   while (!records.empty()) {
@@ -986,6 +1126,7 @@ application::ExecutionLogSnapshot StructuredExecutionLog::snapshot() {
 }
 
 application::ExecutionLogClearReceipt StructuredExecutionLog::clear() {
+  std::scoped_lock state_lock{state_mutex_};
   auto transaction = storage_.begin_transaction();
   if (auto const error = transaction->read_error(); !error.empty()) {
     return {.error = std::string{error}};
@@ -1012,6 +1153,9 @@ application::ExecutionLogClearReceipt StructuredExecutionLog::clear() {
              std::to_string(cutoff_sequence) + "\t" + timestamp + "\n";
   auto result = transaction->replace(serialize(counters, records));
   if (!result.verified) {
+    if (result.failure == LogStorageWriteFailure::capacity_exhausted) {
+      capacity_state_ = application::ExecutionLogCapacityState::space_exhausted;
+    }
     return {.error = std::move(result.error)};
   }
   auto first_phase_warning = std::move(result.error);
@@ -1027,6 +1171,13 @@ application::ExecutionLogClearReceipt StructuredExecutionLog::clear() {
       "SEGMENT_START\t" + std::to_string(next.segment) + "\t" + timestamp +
       "\n";
   result = transaction->replace(serialize(next, boundary));
+  if (!result.verified &&
+      result.failure == LogStorageWriteFailure::capacity_exhausted) {
+    capacity_state_ = application::ExecutionLogCapacityState::space_exhausted;
+  }
+  if (result.verified && pending_noncritical_dropped_count_ == 0) {
+    capacity_state_ = application::ExecutionLogCapacityState::available;
+  }
   return {
       .cleared = result.verified,
       .cutoff_segment = cutoff_segment,
@@ -1040,6 +1191,7 @@ application::ExecutionLogClearReceipt StructuredExecutionLog::clear() {
 application::DiagnosticExportReceipt
 StructuredExecutionLog::export_diagnostic(
     application::DiagnosticContext const& context) {
+  std::scoped_lock state_lock{state_mutex_};
   auto transaction = storage_.begin_transaction();
   auto const storage_error = std::string{transaction->read_error()};
   auto const source_bytes = storage_error.empty()
@@ -1074,12 +1226,14 @@ StructuredExecutionLog::export_diagnostic(
   std::string file{"AZZS-DIAGNOSTIC\t1\n"};
   std::vector<std::string> missing_fact_names;
   std::size_t missing_fact_count{};
-  auto const context_marks_missing = [&](std::string_view fact) {
-    return std::ranges::any_of(
-        context.missing_facts,
-        [&](application::MissingDiagnosticFact const& value) {
-          return value.fact == fact;
-        });
+  auto const missing_reason = [&](std::string_view fact,
+                                  std::string_view fallback) {
+    for (auto const& missing : context.missing_facts) {
+      if (missing.fact == fact && !missing.reason.empty()) {
+        return std::string_view{missing.reason};
+      }
+    }
+    return fallback;
   };
   auto append_not_obtained = [&](std::string_view fact,
                                  std::string_view reason) {
@@ -1098,12 +1252,29 @@ StructuredExecutionLog::export_diagnostic(
                                   std::string_view fact,
                                   std::string const& value) {
     if (value.empty()) {
-      if (!context_marks_missing(fact)) {
-        append_not_obtained(fact, "the diagnostic caller did not provide it");
-      }
+      append_not_obtained(
+          fact, missing_reason(fact, "the diagnostic caller did not provide it"));
       return;
     }
     file += std::string{label} + "\t" + sanitize_context(value) + "\n";
+  };
+  auto append_diagnostic_fact = [&](std::string_view label,
+                                    std::string_view fact_name,
+                                    application::DiagnosticFact const& fact,
+                                    std::string_view default_reason) {
+    if (fact.value.empty()) {
+      auto const fallback = fact.unavailable_reason.empty()
+                                ? default_reason
+                                : std::string_view{fact.unavailable_reason};
+      append_not_obtained(fact_name, missing_reason(fact_name, fallback));
+      return;
+    }
+    auto const value =
+        fact.disposition == application::DiagnosticValueDisposition::sensitive ||
+                is_sensitive_key(fact_name)
+            ? std::string{"[redacted]"}
+            : redact(fact.value, context.sensitive_values);
+    file += std::string{label} + "\t" + percent_encode(value) + "\n";
   };
   file += "FORMAT_VERSION\t1\n";
   file += "SOURCE_LOG_STATUS\t" + source_status + "\n";
@@ -1115,6 +1286,19 @@ StructuredExecutionLog::export_diagnostic(
           (storage_error.empty() ? fnv1a64_hex(source_bytes)
                                  : std::string{"NOT_OBTAINED"}) +
           "\n";
+  file += "LOG_CAPACITY_STATE\t" +
+          std::string{capacity_state_ ==
+                              application::ExecutionLogCapacityState::available
+                          ? "available"
+                          : "space_exhausted"} +
+          "\n";
+  auto const durable_dropped_count = parsed.error.empty()
+                                         ? persisted_noncritical_drop_count(parsed)
+                                         : 0;
+  auto const noncritical_dropped_count =
+      saturated_add(durable_dropped_count, pending_noncritical_dropped_count_);
+  file += "NONCRITICAL_DROPPED_COUNT\t" +
+          std::to_string(noncritical_dropped_count) + "\n";
   append_context_value("WORKBENCH_BUILD", "workbench_build",
                        context.workbench_build);
   append_context_value("RELEASE_FORM", "release_form", context.release_form);
@@ -1126,22 +1310,44 @@ StructuredExecutionLog::export_diagnostic(
                        context.windows_version);
   append_context_value("LANGUAGE", "language", context.language);
   append_context_value("TIMEZONE", "timezone", context.timezone);
+  append_diagnostic_fact(
+      "FROZEN_DIRECTORY_IDENTITY", "frozen_directory_identity",
+      context.frozen_directory_identity,
+      "the frozen directory owner did not provide it");
+  append_diagnostic_fact(
+      "DIRECTORY_APPLICATION_ASSOCIATION", "directory_application_association",
+      context.directory_application_association,
+      "the directory application association owner did not provide it");
+  append_diagnostic_fact("DIRECTORY_LOAD_RESULT", "directory_load_result",
+                         context.directory_load_result,
+                         "the directory load result owner did not provide it");
+  append_diagnostic_fact(
+      "DIRECTORY_RELEASE_RESULT", "directory_release_result",
+      context.directory_release_result,
+      "the directory release result owner did not provide it");
+  append_diagnostic_fact("BATCH_PLAN", "batch_plan", context.batch_plan,
+                         "the batch plan owner did not provide it");
+  append_diagnostic_fact(
+      "DEBUG_LOG_COVERAGE", "debug_log_coverage", context.debug_log_coverage,
+      "the debug coverage owner did not provide it");
   if (context.coverage_started_at.has_value()) {
     file += "COVERAGE_START_UTC_MS\t" +
             std::to_string(
                 context.coverage_started_at->time_since_epoch().count()) +
             "\n";
-  } else if (!context_marks_missing("coverage_start")) {
-    append_not_obtained("coverage_start",
-                        "the diagnostic caller did not provide it");
+  } else {
+    append_not_obtained(
+        "coverage_start",
+        missing_reason("coverage_start", "the diagnostic caller did not provide it"));
   }
   if (context.coverage_ended_at.has_value()) {
     file += "COVERAGE_END_UTC_MS\t" +
             std::to_string(context.coverage_ended_at->time_since_epoch().count()) +
             "\n";
-  } else if (!context_marks_missing("coverage_end")) {
-    append_not_obtained("coverage_end",
-                        "the diagnostic caller did not provide it");
+  } else {
+    append_not_obtained(
+        "coverage_end",
+        missing_reason("coverage_end", "the diagnostic caller did not provide it"));
   }
   if (parsed.error.empty()) {
     auto const counters = parsed.counters;
@@ -1162,6 +1368,12 @@ StructuredExecutionLog::export_diagnostic(
           "execution_log_coverage",
           std::to_string(gaps) + " recorded coverage gap events are present");
     }
+  }
+  if (pending_noncritical_dropped_count_ != 0) {
+    append_not_obtained(
+        "execution_log_coverage",
+        std::to_string(pending_noncritical_dropped_count_) +
+            " noncritical events were suppressed while storage capacity was exhausted");
   }
 
   for (auto const& field : context.fields) {

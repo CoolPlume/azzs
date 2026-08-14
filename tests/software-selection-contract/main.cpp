@@ -96,25 +96,30 @@ class FixtureResolver final : public app_selection::ControlledSourceResolver {
             .software_id = std::string{software_id},
             .declared_purpose = *declared_source.purpose,
             .declared_address = declared_source.address,
-            .version = "2.3.4",
-            .actual_address = "https://downloads.example.test/editor-2.3.4.msi",
+            .version = version,
+            .actual_address = actual_address,
             .hosting_mechanism = "controlled-release-asset",
             .branch = "stable",
             .packages = {{
                 .candidate = {.software_id = std::string{software_id},
                               .architecture = architecture::PackageArchitecture::x64,
-                              .version = "2.3.4",
-                              .identity = "editor-2.3.4-x64"},
+                              .version = version,
+                              .identity = identity},
                 .package_type = selection::PackageType::full_package,
                 .complete_package = true,
             }},
-            .resolved_at_milliseconds = 1'000,
-            .capability_version = "resolver-v1",
+            .resolved_at_milliseconds = resolved_at_milliseconds,
+            .capability_version = capability_version,
         }};
   }
 
   std::size_t calls{};
   bool fail{false};
+  std::string version{"2.3.4"};
+  std::string actual_address{"https://downloads.example.test/editor-2.3.4.msi"};
+  std::string identity{"editor-2.3.4-x64"};
+  std::int64_t resolved_at_milliseconds{1'000};
+  std::string capability_version{"resolver-v1"};
 };
 
 class FixtureNetwork final : public app_selection::NetworkObserver {
@@ -374,6 +379,117 @@ struct Fixture final {
   return passed;
 }
 
+[[nodiscard]] bool external_handoff_timeline_is_append_only() {
+  auto runtime = fixture_catalog();
+  Fixture fixture;
+  bool passed = expect(fixture.lifecycle.restore().succeeded(),
+                       "timeline fixture must restore");
+  passed &= expect(
+      fixture.lifecycle
+          .on_catalog_replaced(catalog_projection(runtime, "timeline-v3"))
+          .succeeded(),
+      "timeline fixture must accept the current catalog");
+
+  fixture.resolver.fail = true;
+  auto const resolution_failed =
+      fixture.lifecycle.resolve_declared_source("editor", primary(runtime, "editor"));
+  auto const failed_snapshot = fixture.lifecycle.snapshot();
+  auto const failed_handoff = std::ranges::find(
+      failed_snapshot.handoffs, "editor", &selection::ExternalHandoffRecord::software_id);
+  passed &= expect(
+      resolution_failed.code == app_selection::SelectionActionCode::resolver_failed &&
+          failed_handoff != failed_snapshot.handoffs.end() &&
+          failed_handoff->timeline.facts.size() == 1 &&
+          failed_handoff->timeline.facts.front().kind ==
+              selection::ExternalHandoffFactKind::source_resolution_failed &&
+          failed_handoff->timeline.facts.front().resolved_source.availability ==
+              selection::ExternalHandoffFactAvailability::not_obtained &&
+          failed_handoff->timeline.facts.front()
+                  .resolved_source.not_obtained_reason ==
+              selection::ExternalHandoffNotObtainedReason::resolution_failed,
+      "a failed resolution must append an explicit NOT_OBTAINED fact");
+
+  fixture.resolver.fail = false;
+  auto const initially_resolved =
+      fixture.lifecycle.resolve_declared_source("editor", primary(runtime, "editor"));
+  auto const opened =
+      fixture.lifecycle.begin_external_handoff("editor", primary(runtime, "editor"));
+  fixture.detector.result = {.completed = true, .present = false, .detail = "absent"};
+  auto const pending = fixture.lifecycle.detect_external_install("editor");
+  auto const pending_snapshot = fixture.lifecycle.snapshot();
+  auto const pending_handoff = std::ranges::find(
+      pending_snapshot.handoffs, "editor",
+      &selection::ExternalHandoffRecord::software_id);
+  passed &= expect(
+      initially_resolved.succeeded() && opened.succeeded() && pending.succeeded() &&
+          pending_handoff != pending_snapshot.handoffs.end() &&
+          pending_handoff->status ==
+              selection::ExternalHandoffStatus::waiting_for_external_install &&
+          pending_handoff->timeline.facts.size() == 3 &&
+          pending_handoff->timeline.facts.back().kind ==
+              selection::ExternalHandoffFactKind::returned_for_recheck &&
+          pending_handoff->timeline.facts.back().status ==
+              selection::ExternalHandoffStatus::waiting_for_external_install,
+      "a negative recheck must append a fact while leaving the handoff unfinished");
+
+  auto const skipped = fixture.lifecycle.skip_external_handoff("editor");
+  fixture.detector.result = {.completed = true, .present = true, .detail = "present"};
+  auto const recognized = fixture.lifecycle.detect_external_install("editor");
+  auto const continued = fixture.lifecycle.continue_external_handoff("editor");
+
+  fixture.resolver.version = "2.4.0";
+  fixture.resolver.actual_address =
+      "https://downloads.example.test/editor-2.4.0.msi";
+  fixture.resolver.identity = "editor-2.4.0-x64";
+  fixture.resolver.resolved_at_milliseconds = 1'500;
+  fixture.resolver.capability_version = "resolver-v2";
+  auto const refreshed =
+      fixture.lifecycle.resolve_declared_source("editor", primary(runtime, "editor"));
+  auto const current = fixture.lifecycle.snapshot();
+  auto const handoff = std::ranges::find(
+      current.handoffs, "editor", &selection::ExternalHandoffRecord::software_id);
+  auto const source = std::ranges::find(
+      current.sources, "editor", &selection::ResolvedSourceSnapshot::software_id);
+  passed &= expect(
+      skipped.succeeded() && recognized.succeeded() && continued.succeeded() &&
+          refreshed.succeeded() && handoff != current.handoffs.end() &&
+          handoff->status == selection::ExternalHandoffStatus::externally_recognized &&
+          handoff->timeline.facts.size() == 6 &&
+          handoff->timeline.facts[1].resolved_source.availability ==
+              selection::ExternalHandoffFactAvailability::obtained &&
+          handoff->timeline.facts[1].resolved_source.resolved_version == "2.3.4" &&
+          handoff->timeline.facts[1].resolved_source.resolved_address ==
+              "https://downloads.example.test/editor-2.3.4.msi" &&
+          handoff->timeline.facts[1].resolved_source.resolver_capability_version ==
+              "resolver-v1" &&
+          handoff->timeline.facts[3].kind ==
+              selection::ExternalHandoffFactKind::skipped &&
+          handoff->timeline.facts[5].kind ==
+              selection::ExternalHandoffFactKind::continued &&
+          source != current.sources.end() && source->version == "2.4.0" &&
+          source->actual_address == "https://downloads.example.test/editor-2.4.0.msi",
+      "new current snapshots must not backfill or overwrite prior handoff facts");
+
+  app_selection::SoftwareSelectionLifecycle restored{
+      fixture.states, fixture.clock, fixture.log, fixture.architectures,
+      fixture.resolver, fixture.network, fixture.detector, fixture.launcher,
+      StateSubject{"contract-user"}};
+  auto const restored_result = restored.restore();
+  auto const restored_snapshot = restored.snapshot();
+  auto const restored_handoff = std::ranges::find(
+      restored_snapshot.handoffs, "editor",
+      &selection::ExternalHandoffRecord::software_id);
+  passed &= expect(
+      restored_result.succeeded() && restored_handoff != restored_snapshot.handoffs.end() &&
+          handoff != current.handoffs.end() &&
+          restored_handoff->timeline == handoff->timeline &&
+          restored_handoff->timeline.facts[1].resolved_source.resolved_version ==
+              "2.3.4",
+      "the append-only timeline must survive machine-state recovery unchanged");
+
+  return passed;
+}
+
 [[nodiscard]] bool catalog_projection_identity_is_memory_only_and_stale_is_rejected() {
   Fixture fixture;
   auto current = fixture_catalog();
@@ -429,6 +545,7 @@ int main() {
                       declared_source_and_snapshot_are_fail_closed() &&
                       lifecycle_persists_and_restore_is_local_only() &&
                       resolver_failure_never_switches_source_and_detection_is_explicit() &&
+                      external_handoff_timeline_is_append_only() &&
                       catalog_projection_identity_is_memory_only_and_stale_is_rejected() &&
                       catalog_changes_retain_but_block_selection();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
