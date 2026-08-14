@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Claimed by: issue-27
 Blocked by: 02, 09, 25, 26, 28
 Owner: issue-27
@@ -34,8 +34,8 @@ Evidence freshness: 绑定当前提交、批次快照、软件版本、目录和
 - [x] 中途失败保留已完成修改，逐项区分已优化、优化失败和未执行，不提供自动恢复。
 - [x] 重试按当前目录、目标软件版本与状态、选项关系和紧急撤回信息创建新批次；下架或撤回方案不能重试。
 - [x] 需要重启时产出并持久化“等待重启”状态，交接给事项 12 建立统一重启屏障；本事项不实现重开后的恢复、重检或取消流程。
-- [x] “停止优化”等待当前步骤安全结束后停止后续内容。
-- [ ] 高级视图的“强制终止优化”披露不完整配置风险，并与“停止优化”和“强制关闭目标软件”保持不同的命令、确认和日志结果。
+- [x] “停止优化”等待当前步骤安全结束后停止后续内容；自动结果未知时保留“优化结果待确认”，不能被自动结果覆盖；用户通过 `user-result-confirmation` 确认后可写入“已优化”或“等待重启”并记录日志。
+- [ ] 高级视图的“强制终止优化”等扩展未纳入本 PR。
 - [x] 正常关闭先等待当前步骤到达安全结束点，并把后续步骤保持为待处理而不是“未执行”；异常退出导致结果未知时留下可供事项 12 恢复为“优化结果待确认”的状态，不直接重跑。
 - [x] 持久化结果足以让事项 12 在重新打开后保持暂停，并按“取消只放弃未执行步骤、已完成修改不恢复、原批次保留只读历史”的规则处理；本事项不实现重开或取消入口。
 - [x] 执行记录保存方案和选项快照、逐项结果、强制操作、确认方式、停止、正常关闭暂停、异常退出、最后已持久化步骤及重启交接状态；取消和恢复后的重新检测结果由事项 12 补充。
@@ -46,7 +46,7 @@ Evidence freshness: 绑定当前提交、批次快照、软件版本、目录和
 
 ## Answer
 
-- 功能提交为 `57dbea6b7e3ca4572988d6580303161b33f65e5d`；最终候选为 `009a93ff5f6ec85dbdb6ee050cec24b29c0d2006`，已经由 PR [#41](https://github.com/CoolPlume/azzs/pull/41) 合入 `codex/v1-integration`，merge SHA 为 `673d778cede8a42d8569869a87061a48d633d9a2`。已接入可移植批次领域模型、应用批次服务、冻结方案桥接、共享设备占用、执行/验证/撤回、停止/重试、重启交接、正常关闭与只读恢复及强制关闭确认。
+- 功能提交为 `57dbea6b7e3ca4572988d6580303161b33f65e5d`；最终候选为 `009a93ff5f6ec85dbdb6ee050cec24b29c0d2006`，已经由 PR [#41](https://github.com/CoolPlume/azzs/pull/41) 合入 `codex/v1-integration`，merge SHA 为 `673d778cede8a42d8569869a87061a48d633d9a2`。已接入可移植批次领域模型、应用批次服务、冻结方案桥接、共享设备占用、执行/验证/撤回、停止/重试、重启交接、正常关闭与只读恢复及强制关闭确认；保留的 `user-result-confirmation` 可写入 `optimized`/`waiting_restart` 并记录日志，自动未知结果不能覆盖；强制终止等生命周期、API、持久化和测试扩展未纳入本 PR。
 - Windows x64 Debug 定向构建目标 `azzs_software_optimization_batch_runner_contract` 通过；`software-optimization-discovery.contract` 与 `software-optimization-batch-runner.contract` 为 2/2 通过。x64 Release `eng/build.ps1 -Architecture x64 -SkipCoreSmoke` 通过，核心、Windows 适配器和 WinUI 主机 0 error；Release 下 `software-optimization-catalog.contract`、`software-optimization-discovery.contract`、`software-optimization-batch-runner.contract` 与 `emergency-withdrawal.contract` 为 4/4 通过。
 - `cmake --workflow --preset host-guardrails` 完成配置和 83/83 x64 Debug 构建，27 项测试中 25 项通过；`execution-log.contract` 与 `windows-device-data.contract` 仅因当前中完整性 Windows 宿主未具备 ACL 根目录及目录符号链接创建前置失败，不涉及事项 27 变更文件或执行路径。未修改相关适配器或测试来掩盖环境限制。
 - GitHub Actions run `31792628755` 的 x64 Release 在最终候选 `009a93f` 上成功。该 run 的 ARM64 Release 也成功，但不构成 ARM64 本机验证，ARM64 仍延期；未执行真实软件目标、Windows 进程/配置实际修改、重启后事项 12 恢复、WinUI 实机交互、DPI/辅助功能、签名/WiX 或发布验收。上述边界不外推为通过。
@@ -54,4 +54,4 @@ Evidence freshness: 绑定当前提交、批次快照、软件版本、目录和
 
 ## Comments
 
-- 2026-08-14：事项 27 的批次执行器已随 PR #41 合入 `codex/v1-integration`，merge SHA 为 `673d778cede8a42d8569869a87061a48d633d9a2`；x64 Release CI 成功。候选 `009a93f` 移除了未获受控适配器支撑的强制终止扩展，而 `CONTEXT.md` 和设计规范仍要求该独立高风险命令，故本事项恢复为 `Resolution: open`，等待安全、可验证的实现。
+- 2026-08-14：事项 27 的批次执行器已随 PR #41 合入 `codex/v1-integration`，merge SHA 为 `673d778cede8a42d8569869a87061a48d633d9a2`；x64 Release CI 成功。候选 `009a93f` 移除了未获受控适配器支撑的强制终止扩展；保留的 `user-result-confirmation` 可写入 `optimized`/`waiting_restart` 并记录日志，自动未知结果不能覆盖；强制终止等扩展未纳入本 PR，事项 27 按已合入能力记录为 `Resolution: completed`。
