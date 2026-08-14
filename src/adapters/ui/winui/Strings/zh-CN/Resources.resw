@@ -365,4 +365,7 @@
   <data name="ApplicationSettingsCatalogDialogContent" xml:space="preserve"><value>目录变更会在提交前再次校验。失败时当前有效目录保持不变。</value></data>
   <data name="ApplicationSettingsCatalogDialogConfirm" xml:space="preserve"><value>确认变更</value></data>
   <data name="ApplicationSettingsCatalogDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="OverviewGuidedInitializationStages.AutomationProperties.Name" xml:space="preserve"><value>推荐初始化阶段</value></data>
+  <data name="OverviewGuidedStagesTitle.Text" xml:space="preserve"><value>推荐初始化阶段</value></data>
+  <data name="OverviewGuidedIndependenceNotice.Text" xml:space="preserve"><value>每个一级页面均可独立使用，推荐流程不会锁定其他操作。</value></data>
 </root>

@@ -69,3 +69,4 @@ add_subdirectory(history-and-logs)
 add_subdirectory(settings_catalog)
 
 add_subdirectory(application-settings)
+add_subdirectory(guided-initialization)
