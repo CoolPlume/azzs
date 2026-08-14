@@ -1271,6 +1271,8 @@ static_assert(!VerifiesFrozenInstallationItem<batch_app::InstallResultVerifier>)
     return false;
   }
   auto const requested = fixture.service.request_force_termination();
+  auto const cancelled = fixture.service.cancel_force_termination();
+  auto const requested_after_cancel = fixture.service.request_force_termination();
   fixture.executor.terminations.push_back(
       {.code = batch_app::InstallerTerminationCode::unavailable,
        .detail = "no controlled terminator is registered"});
@@ -1285,10 +1287,19 @@ static_assert(!VerifiesFrozenInstallationItem<batch_app::InstallResultVerifier>)
                     requested.snapshot.active.has_value() &&
                     requested.snapshot.active->items.front().state ==
                         batch::InstallationItemState::force_termination_confirmation_pending &&
+                    cancelled.succeeded() && cancelled.snapshot.active.has_value() &&
+                    cancelled.snapshot.active->items.front().state ==
+                        batch::InstallationItemState::installer_running &&
+                    !cancelled.snapshot.active->items.front().
+                        force_termination_confirmation_requested &&
+                    has_logged_action(fixture.log,
+                                      "forced-termination-confirmation-cancelled") &&
+                    requested_after_cancel.code ==
+                        batch_app::InstallationBatchActionCode::confirmation_required &&
                     fixture.executor.termination_calls == 2 &&
                     has_logged_action(fixture.log,
                                       "forced-termination-confirmation-requested"),
-                "force termination must record a separate explicit confirmation boundary") &&
+                "force termination must record an explicit and cancellable confirmation boundary") &&
          expect(unavailable.code == batch_app::InstallationBatchActionCode::rejected &&
                     unavailable.snapshot.active.has_value() &&
                     unavailable.snapshot.active->items.front().state ==
@@ -1331,7 +1342,8 @@ static_assert(!VerifiesFrozenInstallationItem<batch_app::InstallResultVerifier>)
   auto const continued = reopened.continue_after_recovery();
   return expect(closing.succeeded() && closing.snapshot.active.has_value() &&
                     closing.snapshot.active->state == batch::InstallationBatchState::closing &&
-                    closing.snapshot.active->close_requested,
+                    closing.snapshot.active->close_requested &&
+                    has_logged_action(fixture.log, "normal-close-requested"),
                 "window close must retain a distinct closing state instead of force termination") &&
          expect(restored.succeeded() && restored.snapshot.active.has_value() &&
                     restored.snapshot.active->state ==
