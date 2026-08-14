@@ -172,9 +172,7 @@ bool FrozenOptimizationBatchPlan::valid() const noexcept {
 bool OptimizationStepProgress::valid() const noexcept {
   return bounded(scheme_id) && bounded(option_id) && attempt <= 1024 &&
          valid_step_state(state) && detail.size() <= 4096 &&
-         !(force_close_completed && !force_close_confirmation_requested) &&
-         !(force_termination_completed &&
-           !force_termination_confirmation_requested);
+         !(force_close_completed && !force_close_confirmation_requested);
 }
 
 bool DurableLeaseBinding::valid() const noexcept {
@@ -272,11 +270,6 @@ bool command_allowed(OptimizationStepState state,
     case OptimizationBatchCommand::confirm_force_close:
     case OptimizationBatchCommand::cancel_force_close:
       return state == OptimizationStepState::force_close_confirmation_pending;
-    case OptimizationBatchCommand::request_force_termination:
-      return state == OptimizationStepState::executing;
-    case OptimizationBatchCommand::confirm_force_termination:
-    case OptimizationBatchCommand::cancel_force_termination:
-      return state == OptimizationStepState::executing;
     case OptimizationBatchCommand::confirm_current_complete:
       return state == OptimizationStepState::result_confirmation_pending;
     case OptimizationBatchCommand::recover_read_only:
