@@ -53,8 +53,12 @@ namespace cache = application::offline_package_cache;
       return "normal-stop-requested";
     case batch::InstallationFactKind::forced_termination_confirmation_requested:
       return "forced-termination-confirmation-requested";
+    case batch::InstallationFactKind::forced_termination_confirmation_cancelled:
+      return "forced-termination-confirmation-cancelled";
     case batch::InstallationFactKind::forced_termination_observed:
       return "forced-termination-observed";
+    case batch::InstallationFactKind::normal_close_requested:
+      return "normal-close-requested";
     case batch::InstallationFactKind::recovery_continued:
       return "recovery-continued";
     case batch::InstallationFactKind::recovery_observed:

@@ -126,6 +126,16 @@
   <data name="InstallationBatchCompletedBody" xml:space="preserve"><value>批次已完成。</value></data>
   <data name="InstallationBatchRecoveryBody" xml:space="preserve"><value>重新打开后先验证已有安装结果，再由用户明确继续或重试。</value></data>
   <data name="InstallationBatchFailedClosedBody" xml:space="preserve"><value>批次状态存在未确认结果，已停止自动继续。</value></data>
+  <data name="InstallationBatchPauseDownloadCommand" xml:space="preserve"><value>暂停下载</value></data>
+  <data name="InstallationBatchResumeDownloadCommand" xml:space="preserve"><value>继续下载</value></data>
+  <data name="InstallationBatchStopCommand" xml:space="preserve"><value>停止批次</value></data>
+  <data name="InstallationBatchRequestForceTerminationCommand" xml:space="preserve"><value>强制终止安装程序</value></data>
+  <data name="InstallationBatchForceTerminationRiskBody" xml:space="preserve"><value>强制终止可能留下半安装状态。仅在确认当前安装程序无法正常结束时继续。</value></data>
+  <data name="InstallationBatchConfirmForceTerminationCommand" xml:space="preserve"><value>确认强制终止</value></data>
+  <data name="InstallationBatchCancelForceTerminationCommand" xml:space="preserve"><value>取消</value></data>
+  <data name="InstallationBatchConfirmCurrentCompleteCommand" xml:space="preserve"><value>确认已完成</value></data>
+  <data name="InstallationBatchRecoverReadOnlyCommand" xml:space="preserve"><value>重新检测</value></data>
+  <data name="InstallationBatchContinueAfterRecoveryCommand" xml:space="preserve"><value>继续批次</value></data>
   <data name="SoftwareSelectionStatusAccessibleName" xml:space="preserve"><value>软件选择状态</value></data>
   <data name="SoftwareSelectionAvailableTitle" xml:space="preserve"><value>软件选择</value></data>
   <data name="SoftwareSelectionAvailableBodyPrefix" xml:space="preserve"><value>已保留 </value></data>

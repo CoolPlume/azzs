@@ -205,6 +205,7 @@ bool command_allowed(InstallationItemState state,
              command == InstallationItemCommand::read_only_verify;
     case InstallationItemState::force_termination_confirmation_pending:
       return command == InstallationItemCommand::confirm_force_termination ||
+             command == InstallationItemCommand::cancel_force_termination ||
              command == InstallationItemCommand::stop ||
              command == InstallationItemCommand::read_only_verify;
     case InstallationItemState::installer_interaction_pending:

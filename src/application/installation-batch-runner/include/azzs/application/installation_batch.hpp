@@ -228,7 +228,9 @@ enum class InstallationFactKind {
   download_resumed,
   normal_stop_requested,
   forced_termination_confirmation_requested,
+  forced_termination_confirmation_cancelled,
   forced_termination_observed,
+  normal_close_requested,
   recovery_continued,
   recovery_observed,
   coverage_gap,
@@ -336,6 +338,7 @@ class InstallationBatchService final {
   [[nodiscard]] InstallationBatchActionResult stop_current();
   [[nodiscard]] InstallationBatchActionResult request_force_termination();
   [[nodiscard]] InstallationBatchActionResult confirm_force_termination();
+  [[nodiscard]] InstallationBatchActionResult cancel_force_termination();
   [[nodiscard]] InstallationBatchActionResult request_close();
   [[nodiscard]] InstallationBatchActionResult recover_read_only();
   [[nodiscard]] InstallationBatchActionResult continue_after_recovery();

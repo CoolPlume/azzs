@@ -145,6 +145,7 @@ enum class InstallationItemCommand {
   resume_download,
   request_force_termination,
   confirm_force_termination,
+  cancel_force_termination,
   user_complete_installer_interaction,
   user_complete_confirmation,
   read_only_verify,

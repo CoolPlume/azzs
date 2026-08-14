@@ -2,6 +2,10 @@
 
 #include "SoftwareInstallationPage.xaml.h"
 
+#include <algorithm>
+#include <string>
+#include <utility>
+
 #include "DesignSystem/Controls/ReadOnlyPresentationSurface.xaml.h"
 #include "DesignSystem/presentation_contract.hpp"
 #include "DesignSystem/software_selection_presentation.hpp"
@@ -14,6 +18,24 @@ namespace {
 
 namespace batch = azzs::domain::installation_batch;
 namespace presentation = azzs::ui::presentation;
+
+void add_batch_command(presentation::ComponentProjection& component,
+                       std::string id,
+                       std::string label,
+                       presentation::CommandRole role,
+                       presentation::IntentKind kind,
+                       bool default_focus = false) {
+  auto command_id = id;
+  component.commands.push_back({
+      .id = std::move(id),
+      .label = std::move(label),
+      .role = role,
+      .default_focus = default_focus,
+      .intent = {.kind = kind,
+                 .target_id = component.id,
+                 .command_id = std::move(command_id)},
+  });
+}
 
 [[nodiscard]] std::shared_ptr<presentation::PresentationSnapshot const>
 make_installation_batch_presentation(
@@ -44,6 +66,12 @@ make_installation_batch_presentation(
   }
 
   auto const& active = *snapshot.active;
+  auto const current = std::ranges::find_if(
+      active.items, [](batch::InstallationItemProgress const& item) {
+        return !batch::is_terminal(item.state);
+      });
+  auto const* current_item =
+      current == active.items.end() ? nullptr : std::addressof(*current);
   std::uint64_t processed{};
   for (auto const& item : active.items) {
     if (batch::is_terminal(item.state)) {
@@ -66,10 +94,40 @@ make_installation_batch_presentation(
     case batch::InstallationBatchState::running:
       component.state = presentation::PresentationState::in_progress;
       component.body = text(L"InstallationBatchRunningBody");
+      if (current_item != nullptr &&
+          current_item->state == batch::InstallationItemState::downloading) {
+        add_batch_command(component, "pause-download",
+                          text(L"InstallationBatchPauseDownloadCommand"),
+                          presentation::CommandRole::secondary,
+                          presentation::IntentKind::continue_workflow);
+        add_batch_command(component, "stop-batch",
+                          text(L"InstallationBatchStopCommand"),
+                          presentation::CommandRole::danger,
+                          presentation::IntentKind::stop_safely);
+      } else if (current_item != nullptr &&
+                 current_item->state ==
+                     batch::InstallationItemState::installer_running) {
+        add_batch_command(component, "stop-batch",
+                          text(L"InstallationBatchStopCommand"),
+                          presentation::CommandRole::primary,
+                          presentation::IntentKind::stop_safely, true);
+        add_batch_command(component, "request-force-termination",
+                          text(L"InstallationBatchRequestForceTerminationCommand"),
+                          presentation::CommandRole::danger,
+                          presentation::IntentKind::confirm_risk);
+      }
       break;
     case batch::InstallationBatchState::download_paused:
       component.state = presentation::PresentationState::pending_confirmation;
       component.body = text(L"InstallationBatchDownloadPausedBody");
+      add_batch_command(component, "resume-download",
+                        text(L"InstallationBatchResumeDownloadCommand"),
+                        presentation::CommandRole::primary,
+                        presentation::IntentKind::continue_workflow, true);
+      add_batch_command(component, "stop-batch",
+                        text(L"InstallationBatchStopCommand"),
+                        presentation::CommandRole::danger,
+                        presentation::IntentKind::stop_safely);
       break;
     case batch::InstallationBatchState::stopping:
       component.state = presentation::PresentationState::in_progress;
@@ -80,6 +138,28 @@ make_installation_batch_presentation(
       component.state = presentation::PresentationState::pending_confirmation;
       component.announcement = presentation::AnnouncementMode::polite;
       component.body = text(L"InstallationBatchAwaitingUserBody");
+      if (current_item != nullptr &&
+          current_item->state ==
+              batch::InstallationItemState::force_termination_confirmation_pending) {
+        component.kind = presentation::ComponentKind::risk_confirmation;
+        component.risk = presentation::RiskLevel::high;
+        component.body = text(L"InstallationBatchForceTerminationRiskBody");
+        add_batch_command(component, "cancel-force-termination",
+                          text(L"InstallationBatchCancelForceTerminationCommand"),
+                          presentation::CommandRole::primary,
+                          presentation::IntentKind::continue_workflow, true);
+        add_batch_command(component, "confirm-force-termination",
+                          text(L"InstallationBatchConfirmForceTerminationCommand"),
+                          presentation::CommandRole::danger,
+                          presentation::IntentKind::confirm_risk);
+      } else if (current_item != nullptr &&
+                 current_item->state ==
+                     batch::InstallationItemState::result_confirmation_pending) {
+        add_batch_command(component, "confirm-current-complete",
+                          text(L"InstallationBatchConfirmCurrentCompleteCommand"),
+                          presentation::CommandRole::primary,
+                          presentation::IntentKind::continue_workflow, true);
+      }
       break;
     case batch::InstallationBatchState::waiting_restart:
       component.kind = presentation::ComponentKind::waiting;
@@ -104,6 +184,19 @@ make_installation_batch_presentation(
       component.state = presentation::PresentationState::pending_confirmation;
       component.announcement = presentation::AnnouncementMode::polite;
       component.body = text(L"InstallationBatchRecoveryBody");
+      if (current_item != nullptr &&
+          (current_item->state == batch::InstallationItemState::installer_running ||
+           batch::blocks_batch(current_item->state))) {
+        add_batch_command(component, "recover-read-only",
+                          text(L"InstallationBatchRecoverReadOnlyCommand"),
+                          presentation::CommandRole::primary,
+                          presentation::IntentKind::continue_workflow, true);
+      } else {
+        add_batch_command(component, "continue-after-recovery",
+                          text(L"InstallationBatchContinueAfterRecoveryCommand"),
+                          presentation::CommandRole::primary,
+                          presentation::IntentKind::continue_workflow, true);
+      }
       break;
     case batch::InstallationBatchState::failed_closed:
       component.kind = presentation::ComponentKind::failure;
@@ -126,6 +219,23 @@ SoftwareInstallationPage::SoftwareInstallationPage() {
       .mode = azzs::application::software_selection::SelectionLifecycleMode::
           not_restored,
   }, {}, {});
+}
+
+void SoftwareInstallationPage::bind(
+    std::shared_ptr<azzs::application::WorkbenchServices> services) {
+  services_ = std::move(services);
+  refresh();
+}
+
+void SoftwareInstallationPage::refresh() {
+  if (!services_) {
+    project({.mode = azzs::application::software_selection::SelectionLifecycleMode::not_restored},
+            {}, {});
+    return;
+  }
+  project(services_->software_selection().snapshot(),
+          services_->offline_package_cache().snapshot(),
+          services_->installation_batches().snapshot());
 }
 
 void SoftwareInstallationPage::project(
@@ -187,7 +297,40 @@ void SoftwareInstallationPage::project(
   winrt::get_self<SurfaceImplementation>(InstallationBatchStatus())->project(
       make_installation_batch_presentation(batch, resources),
       "installation-batch.status", azzs::ui::presentation::ViewMode::standard,
-      {}, 0, "SoftwareInstallation");
+      [weak_this = get_weak()](presentation::PresentationIntent const& intent) {
+        if (auto self = weak_this.get()) {
+          self->handle_installation_batch_intent(intent);
+        }
+      },
+      0, "SoftwareInstallation");
+}
+
+void SoftwareInstallationPage::handle_installation_batch_intent(
+    presentation::PresentationIntent const& intent) {
+  if (!services_ || intent.target_id != "installation-batch.status") {
+    return;
+  }
+  auto& batches = services_->installation_batches();
+  if (intent.command_id == "pause-download") {
+    static_cast<void>(batches.pause_current_download());
+  } else if (intent.command_id == "resume-download") {
+    static_cast<void>(batches.resume_current_download());
+  } else if (intent.command_id == "stop-batch") {
+    static_cast<void>(batches.stop_current());
+  } else if (intent.command_id == "request-force-termination") {
+    static_cast<void>(batches.request_force_termination());
+  } else if (intent.command_id == "confirm-force-termination") {
+    static_cast<void>(batches.confirm_force_termination());
+  } else if (intent.command_id == "cancel-force-termination") {
+    static_cast<void>(batches.cancel_force_termination());
+  } else if (intent.command_id == "confirm-current-complete") {
+    static_cast<void>(batches.confirm_current_complete());
+  } else if (intent.command_id == "recover-read-only") {
+    static_cast<void>(batches.recover_read_only());
+  } else if (intent.command_id == "continue-after-recovery") {
+    static_cast<void>(batches.continue_after_recovery());
+  }
+  refresh();
 }
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation

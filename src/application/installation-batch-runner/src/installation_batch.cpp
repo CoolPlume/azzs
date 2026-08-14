@@ -693,8 +693,12 @@ namespace {
       return "normal-stop-requested";
     case InstallationFactKind::forced_termination_confirmation_requested:
       return "forced-termination-confirmation-requested";
+    case InstallationFactKind::forced_termination_confirmation_cancelled:
+      return "forced-termination-confirmation-cancelled";
     case InstallationFactKind::forced_termination_observed:
       return "forced-termination-observed";
+    case InstallationFactKind::normal_close_requested:
+      return "normal-close-requested";
     case InstallationFactKind::recovery_continued:
       return "recovery-continued";
     case InstallationFactKind::recovery_observed:
@@ -1424,6 +1428,36 @@ class InstallationBatchService::Impl final {
                   "the controlled installer was not confirmed terminated");
   }
 
+  [[nodiscard]] InstallationBatchActionResult cancel_force_termination() {
+    if (!ready_for_command()) {
+      return result(InstallationBatchActionCode::not_restored);
+    }
+    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
+      return fail_closed_result();
+    }
+    auto index = next_runnable_index();
+    if (!index.has_value() || !batch_domain::command_allowed(
+                                  active_->items[*index].state,
+                                  batch_domain::InstallationItemCommand::cancel_force_termination) ||
+        !active_->items[*index].force_termination_confirmation_requested) {
+      return result(InstallationBatchActionCode::rejected,
+                    "force termination confirmation is not pending");
+    }
+    auto& progress = active_->items[*index];
+    auto lease = acquire_and_bind();
+    if (!lease.has_value()) {
+      return lease_failure_result();
+    }
+    progress.force_termination_confirmation_requested = false;
+    progress.state = batch_domain::InstallationItemState::installer_running;
+    progress.detail = "force termination confirmation was cancelled; the installer remains under observation";
+    active_->state = active_->stop_requested
+                         ? batch_domain::InstallationBatchState::stopping
+                         : batch_domain::InstallationBatchState::running;
+    return commit_and_release(
+        *lease, InstallationFactKind::forced_termination_confirmation_cancelled, progress);
+  }
+
   [[nodiscard]] InstallationBatchActionResult request_close() {
     if (!ready_for_command()) {
       return result(InstallationBatchActionCode::not_restored);
@@ -1447,7 +1481,7 @@ class InstallationBatchService::Impl final {
       if (observed.code == InstallationDownloadCode::stopped) {
         active_->items[*index].state = batch_domain::InstallationItemState::stop_pending;
       }
-      auto persisted = commit_and_release(*lease, InstallationFactKind::batch_paused,
+      auto persisted = commit_and_release(*lease, InstallationFactKind::normal_close_requested,
                                           active_->items[*index]);
       if (!persisted.succeeded()) {
         return persisted;
@@ -1457,7 +1491,7 @@ class InstallationBatchService::Impl final {
                  : result(InstallationBatchActionCode::outcome_unknown,
                           "the unfinished controlled download could not be confirmed stopped");
     }
-    return commit_and_release(*lease, InstallationFactKind::batch_paused,
+    return commit_and_release(*lease, InstallationFactKind::normal_close_requested,
                               active_->items.front());
   }
 
@@ -2243,6 +2277,10 @@ InstallationBatchActionResult InstallationBatchService::request_force_terminatio
 
 InstallationBatchActionResult InstallationBatchService::confirm_force_termination() {
   return impl_->confirm_force_termination();
+}
+
+InstallationBatchActionResult InstallationBatchService::cancel_force_termination() {
+  return impl_->cancel_force_termination();
 }
 
 InstallationBatchActionResult InstallationBatchService::request_close() {
