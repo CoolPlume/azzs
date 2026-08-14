@@ -35,6 +35,7 @@ add_subdirectory(architecture-selection)
 add_subdirectory(software-selection)
 add_subdirectory(offline-package-cache)
 add_subdirectory(installation-batch-runner)
+add_subdirectory(debug-log-policy)
 
 add_library(azzs_software_optimization_catalog_application STATIC
   src/sogou_optimization.cpp
