@@ -123,6 +123,89 @@ bool ResolvedSourceSnapshot::valid() const noexcept {
   });
 }
 
+bool ExternalHandoffFact::valid() const noexcept {
+  auto const known_kind = [&] {
+    switch (kind) {
+      case ExternalHandoffFactKind::source_resolution_failed:
+      case ExternalHandoffFactKind::declared_address_opened:
+      case ExternalHandoffFactKind::returned_for_recheck:
+      case ExternalHandoffFactKind::skipped:
+      case ExternalHandoffFactKind::continued:
+      case ExternalHandoffFactKind::awaiting_user_confirmation:
+      case ExternalHandoffFactKind::user_confirmed:
+      case ExternalHandoffFactKind::completed:
+      case ExternalHandoffFactKind::legacy_record_imported:
+        return true;
+    }
+    return false;
+  }();
+  if (!known_kind || correlation_id.empty() || declared_address.empty()) {
+    return false;
+  }
+
+  auto const timestamp_valid = [&] {
+    switch (timestamp_availability) {
+      case ExternalHandoffFactAvailability::obtained:
+        return occurred_at_milliseconds > 0 &&
+               timestamp_not_obtained_reason ==
+                   ExternalHandoffNotObtainedReason::none;
+      case ExternalHandoffFactAvailability::not_obtained:
+        return occurred_at_milliseconds == 0 &&
+               timestamp_not_obtained_reason !=
+                   ExternalHandoffNotObtainedReason::none;
+    }
+    return false;
+  }();
+  if (!timestamp_valid) {
+    return false;
+  }
+
+  switch (resolved_source.availability) {
+    case ExternalHandoffFactAvailability::obtained:
+      return resolved_source.not_obtained_reason ==
+                 ExternalHandoffNotObtainedReason::none &&
+             !resolved_source.resolved_address.empty() &&
+             !resolved_source.resolved_version.empty() &&
+             !resolved_source.resolver_capability_version.empty() &&
+             resolved_source.resolved_at_milliseconds > 0;
+    case ExternalHandoffFactAvailability::not_obtained:
+      return resolved_source.not_obtained_reason !=
+                 ExternalHandoffNotObtainedReason::none &&
+             resolved_source.resolved_address.empty() &&
+             resolved_source.resolved_version.empty() &&
+             resolved_source.resolver_capability_version.empty() &&
+             resolved_source.resolved_at_milliseconds == 0;
+  }
+  return false;
+}
+
+bool ExternalHandoffTimeline::valid() const noexcept {
+  if (facts.empty()) {
+    return false;
+  }
+  std::int64_t previous_timestamp{};
+  for (auto const& fact : facts) {
+    if (!fact.valid()) {
+      return false;
+    }
+    if (fact.timestamp_availability ==
+        ExternalHandoffFactAvailability::obtained) {
+      if (previous_timestamp > fact.occurred_at_milliseconds) {
+        return false;
+      }
+      previous_timestamp = fact.occurred_at_milliseconds;
+    }
+  }
+  return true;
+}
+
+bool ExternalHandoffRecord::valid() const noexcept {
+  return !software_id.empty() && !declared_address.empty() && timeline.valid() &&
+         timeline.facts.back().declared_address == declared_address &&
+         timeline.facts.back().status == status &&
+         timeline.facts.back().detail == detail;
+}
+
 SelectionState default_selection(catalog::RuntimeSoftwareCatalog const& runtime) {
   SelectionState state{.initialized = true};
   std::vector<std::string> closure;
@@ -294,6 +377,61 @@ char const* to_string(ExternalHandoffStatus status) noexcept {
       return "externally-recognized";
     case ExternalHandoffStatus::skipped:
       return "skipped";
+    case ExternalHandoffStatus::awaiting_user_confirmation:
+      return "awaiting-user-confirmation";
+    case ExternalHandoffStatus::completed:
+      return "completed";
+  }
+  return "unknown";
+}
+
+char const* to_string(ExternalHandoffFactKind kind) noexcept {
+  switch (kind) {
+    case ExternalHandoffFactKind::source_resolution_failed:
+      return "source-resolution-failed";
+    case ExternalHandoffFactKind::declared_address_opened:
+      return "declared-address-opened";
+    case ExternalHandoffFactKind::returned_for_recheck:
+      return "returned-for-recheck";
+    case ExternalHandoffFactKind::skipped:
+      return "skipped";
+    case ExternalHandoffFactKind::continued:
+      return "continued";
+    case ExternalHandoffFactKind::awaiting_user_confirmation:
+      return "awaiting-user-confirmation";
+    case ExternalHandoffFactKind::user_confirmed:
+      return "user-confirmed";
+    case ExternalHandoffFactKind::completed:
+      return "completed";
+    case ExternalHandoffFactKind::legacy_record_imported:
+      return "legacy-record-imported";
+  }
+  return "unknown";
+}
+
+char const* to_string(ExternalHandoffFactAvailability value) noexcept {
+  switch (value) {
+    case ExternalHandoffFactAvailability::obtained:
+      return "obtained";
+    case ExternalHandoffFactAvailability::not_obtained:
+      return "NOT_OBTAINED";
+  }
+  return "unknown";
+}
+
+char const* to_string(ExternalHandoffNotObtainedReason reason) noexcept {
+  switch (reason) {
+    case ExternalHandoffNotObtainedReason::none:
+      return "none";
+    case ExternalHandoffNotObtainedReason::resolution_failed:
+      return "resolution-failed";
+    case ExternalHandoffNotObtainedReason::no_persisted_resolved_source:
+      return "no-persisted-resolved-source";
+    case ExternalHandoffNotObtainedReason::not_captured_for_this_fact:
+      return "not-captured-for-this-fact";
+    case ExternalHandoffNotObtainedReason::
+        legacy_record_has_no_historical_detail:
+      return "legacy-record-has-no-historical-detail";
   }
   return "unknown";
 }
