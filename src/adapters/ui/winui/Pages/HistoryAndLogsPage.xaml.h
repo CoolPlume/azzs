@@ -14,6 +14,9 @@ struct HistoryAndLogsPage : HistoryAndLogsPageT<HistoryAndLogsPage> {
   void bind(azzs::application::HistoryAndLogsService& service);
   void OnRefresh(winrt::Windows::Foundation::IInspectable const& sender,
                  Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void OnFilterChanged(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::Controls::TextChangedEventArgs const& args);
   void OnExportDiagnostic(
       winrt::Windows::Foundation::IInspectable const& sender,
       Microsoft::UI::Xaml::RoutedEventArgs const& args);

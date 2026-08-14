@@ -1,5 +1,10 @@
 #include "azzs/application/history_and_logs.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -9,6 +14,7 @@
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/installation_batch.hpp"
 #include "azzs/application/platform_info.hpp"
+#include "azzs/application/restart_resume.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
 #include "azzs/application/software_optimization_batch.hpp"
 #include "azzs/application/software_selection.hpp"
@@ -98,55 +104,849 @@ void append_retained(DiagnosticContext& context, std::string key,
                             .disposition = DiagnosticValueDisposition::retain});
 }
 
+void append_fact(std::vector<HistoryFactProjection>& target, std::string key,
+                 std::string value) {
+  target.push_back({.key = std::move(key),
+                    .value = std::move(value),
+                    .disposition = HistoryFactDisposition::obtained});
+}
+
+void append_unavailable_fact(std::vector<HistoryFactProjection>& target,
+                             std::string key, std::string reason) {
+  target.push_back({.key = std::move(key),
+                    .disposition = HistoryFactDisposition::not_obtained,
+                    .reason = std::move(reason)});
+}
+
+[[nodiscard]] char const* execution_result_name(ExecutionResult result) {
+  switch (result) {
+    case ExecutionResult::started:
+      return "started";
+    case ExecutionResult::succeeded:
+      return "succeeded";
+    case ExecutionResult::failed:
+      return "failed";
+    case ExecutionResult::cancelled:
+      return "cancelled";
+    case ExecutionResult::unknown:
+      return "unknown";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] HistoryTimelineKind timeline_kind(ExecutionEventKind kind) {
+  switch (kind) {
+    case ExecutionEventKind::user_command:
+      return HistoryTimelineKind::user_command;
+    case ExecutionEventKind::state_transition:
+      return HistoryTimelineKind::state_transition;
+    case ExecutionEventKind::adapter_result:
+      return HistoryTimelineKind::adapter_result;
+    case ExecutionEventKind::coverage_gap:
+      return HistoryTimelineKind::coverage_gap;
+  }
+  return HistoryTimelineKind::snapshot;
+}
+
+[[nodiscard]] HistoryTimelineProjection timeline_from_event(
+    ExecutionLogEventProjection const& event) {
+  HistoryTimelineProjection result{
+      .kind = timeline_kind(event.kind),
+      .recorded_at_milliseconds = event.recorded_at_milliseconds,
+      .state = execution_result_name(event.result),
+      .detail = event.stage,
+  };
+  append_fact(result.facts, "event.segment", std::to_string(event.segment));
+  append_fact(result.facts, "event.sequence", std::to_string(event.sequence));
+  append_fact(result.facts, "event.correlation", event.correlation.value);
+  append_fact(result.facts, "event.component", event.component);
+  append_fact(result.facts, "event.stage", event.stage);
+  for (auto const& field : event.fields) {
+    append_fact(result.facts, "event." + field.key, field.value);
+  }
+  if (event.error.has_value()) {
+    append_fact(result.facts, "event.error_source", event.error->source);
+    append_fact(result.facts, "event.error_code",
+                std::to_string(event.error->code));
+    append_fact(result.facts, "event.error_message", event.error->message);
+  }
+  if (event.last_trusted_state.has_value()) {
+    append_fact(result.facts, "event.last_trusted_generation",
+                std::to_string(event.last_trusted_state->generation));
+    append_fact(result.facts, "event.last_trusted_summary",
+                event.last_trusted_state->summary);
+  }
+  if (event.coverage_gap.has_value()) {
+    append_fact(result.facts, "event.coverage_gap_reason",
+                event.coverage_gap->reason);
+    if (event.coverage_gap->first_missing_sequence.has_value()) {
+      append_fact(result.facts, "event.coverage_gap_first_sequence",
+                  std::to_string(
+                      *event.coverage_gap->first_missing_sequence));
+    }
+    if (event.coverage_gap->last_missing_sequence.has_value()) {
+      append_fact(result.facts, "event.coverage_gap_last_sequence",
+                  std::to_string(*event.coverage_gap->last_missing_sequence));
+    }
+  }
+  return result;
+}
+
+void append_correlation_timeline(HistoryEntryProjection& target,
+                                 ExecutionLogSnapshot const& log,
+                                 std::string_view correlation) {
+  if (!log.available) {
+    append_unavailable_fact(
+        target.facts, "execution_timeline",
+        log.error.empty() ? "execution log projection is unavailable"
+                          : log.error);
+    return;
+  }
+  if (correlation.empty()) {
+    append_unavailable_fact(target.facts, "execution_timeline",
+                            "the durable record has no correlation identifier");
+    return;
+  }
+  bool found = false;
+  for (auto const& event : log.events) {
+    if (event.correlation.value != correlation) {
+      continue;
+    }
+    target.timeline.push_back(timeline_from_event(event));
+    found = true;
+  }
+  if (!found) {
+    append_unavailable_fact(
+        target.facts, "execution_timeline",
+        "no retained execution events matched the durable correlation identifier");
+  }
+}
+
+[[nodiscard]] bool event_mentions_id(ExecutionLogEventProjection const& event,
+                                      std::string_view stable_id) {
+  if (stable_id.empty()) {
+    return false;
+  }
+  return std::ranges::any_of(event.fields, [&](auto const& field) {
+    return (field.key == "software_id" || field.key == "item_id" ||
+            field.key == "setting_id" || field.key == "operation_id") &&
+           field.value == stable_id;
+  });
+}
+
+void append_id_timeline(HistoryEntryProjection& target,
+                        ExecutionLogSnapshot const& log,
+                        std::string_view stable_id) {
+  if (!log.available) {
+    append_unavailable_fact(
+        target.facts, "execution_timeline",
+        log.error.empty() ? "execution log projection is unavailable"
+                          : log.error);
+    return;
+  }
+  bool found = false;
+  for (auto const& event : log.events) {
+    if (!event_mentions_id(event, stable_id)) {
+      continue;
+    }
+    target.timeline.push_back(timeline_from_event(event));
+    found = true;
+  }
+  if (!found) {
+    append_unavailable_fact(target.facts, "execution_timeline",
+                            "no retained execution events named this stable identifier");
+  }
+}
+
+[[nodiscard]] char const* installation_durable_outcome_name(
+    domain::installation_batch::DurableTransitionOutcome outcome) noexcept {
+  switch (outcome) {
+    case domain::installation_batch::DurableTransitionOutcome::committed:
+      return "committed";
+    case domain::installation_batch::DurableTransitionOutcome::outcome_unknown:
+      return "outcome-unknown";
+    case domain::installation_batch::DurableTransitionOutcome::failed_closed:
+      return "failed-closed";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] char const* optimization_durable_outcome_name(
+    domain::software_optimization_batch::DurableTransitionOutcome outcome)
+    noexcept {
+  switch (outcome) {
+    case domain::software_optimization_batch::DurableTransitionOutcome::committed:
+      return "committed";
+    case domain::software_optimization_batch::DurableTransitionOutcome::
+        outcome_unknown:
+      return "outcome-unknown";
+    case domain::software_optimization_batch::DurableTransitionOutcome::
+        failed_closed:
+      return "failed-closed";
+  }
+  return "unknown";
+}
+
+void append_installation_plan_facts(
+    std::vector<HistoryFactProjection>& target,
+    domain::installation_batch::FrozenBatchPlan const& plan) {
+  append_fact(target, "batch.correlation_id", plan.correlation_id);
+  append_fact(target, "batch.frozen_at_utc_ms",
+              std::to_string(plan.frozen_at_milliseconds));
+  append_fact(target, "catalog.revision", std::to_string(plan.catalog.revision));
+  append_fact(target, "catalog.schema_version",
+              std::to_string(plan.catalog.schema_version));
+  append_fact(target, "catalog.release_state",
+              catalog_release_state_name(plan.catalog.release_state));
+  append_fact(target, "catalog.identity",
+              plan.catalog.local_trial ? "local-trial" : "released");
+  if (plan.catalog.content_identity.empty()) {
+    append_unavailable_fact(target, "catalog.content_identity",
+                            "the frozen catalog did not retain a content identity");
+  } else {
+    append_fact(target, "catalog.content_identity", plan.catalog.content_identity);
+  }
+  if (plan.catalog.application_id.empty()) {
+    append_unavailable_fact(target, "catalog.application_id",
+                            "the frozen catalog did not retain an application association");
+  } else {
+    append_fact(target, "catalog.application_id", plan.catalog.application_id);
+  }
+  if (plan.retry_of_batch_id.has_value()) {
+    append_fact(target, "batch.retry_of", *plan.retry_of_batch_id);
+  }
+}
+
+void append_installation_item_timeline(
+    HistoryEntryProjection& target,
+    domain::installation_batch::FrozenBatchPlan const& plan,
+    domain::installation_batch::InstallationItemProgress const& progress) {
+  HistoryTimelineProjection item{
+      .kind = HistoryTimelineKind::snapshot,
+      .state = domain::installation_batch::to_string(progress.state),
+      .detail = progress.detail,
+  };
+  append_fact(item.facts, "item.id", progress.item_id);
+  append_fact(item.facts, "item.attempt", std::to_string(progress.attempt));
+  append_fact(item.facts, "item.launch_requested",
+              progress.launch_requested ? "true" : "false");
+  append_fact(item.facts, "item.installer_started",
+              progress.installer_started ? "true" : "false");
+  append_fact(item.facts, "item.force_termination_confirmation_requested",
+              progress.force_termination_confirmation_requested ? "true" : "false");
+  append_fact(item.facts, "item.force_termination_completed",
+              progress.force_termination_completed ? "true" : "false");
+  append_fact(item.facts, "item.post_install_completed",
+              progress.post_install_completed ? "true" : "false");
+  auto const found = std::ranges::find_if(
+      plan.items, [&](auto const& candidate) {
+        return candidate.item_id == progress.item_id;
+      });
+  if (found == plan.items.end()) {
+    append_unavailable_fact(item.facts, "item.frozen_definition",
+                            "the durable item progress has no matching frozen item");
+  } else {
+    append_fact(item.facts, "item.resource_kind",
+                domain::installation_batch::to_string(found->resource_kind));
+    append_fact(item.facts, "source.software_id", found->source.software_id);
+    append_fact(item.facts, "source.network_required",
+                found->source.network_required ? "true" : "false");
+    append_fact(item.facts, "source.resolved_at_utc_ms",
+                std::to_string(found->source.resolved_at_milliseconds));
+    if (found->source.version.empty()) {
+      append_unavailable_fact(item.facts, "source.version",
+                              "the frozen source snapshot had no version");
+    } else {
+      append_fact(item.facts, "source.version", found->source.version);
+    }
+    append_fact(item.facts, "package.kind",
+                domain::software_selection::to_string(
+                    found->selected_package.package_type));
+    append_fact(item.facts, "package.complete",
+                found->selected_package.complete_package ? "true" : "false");
+    append_fact(item.facts, "package.network_required",
+                found->selected_package.network_required ? "true" : "false");
+  }
+  target.timeline.push_back(std::move(item));
+}
+
 void append_installation_history(
     std::vector<HistoryEntryProjection>& target,
-    installation_batch::InstallationBatchService& service) {
+    installation_batch::InstallationBatchService& service,
+    ExecutionLogSnapshot const& log) {
   auto const snapshot = service.snapshot();
   for (auto const& record : snapshot.history) {
-    target.push_back({
+    HistoryEntryProjection entry{
         .kind = HistoryEntryKind::installation_batch,
         .stable_id = record.plan.batch_id,
         .state = domain::installation_batch::to_string(record.final_state),
         .detail = record.reason,
         .retry = record.plan.retry_of_batch_id.has_value(),
-    });
+    };
+    append_installation_plan_facts(entry.facts, record.plan);
+    for (auto const& progress : record.items) {
+      append_installation_item_timeline(entry, record.plan, progress);
+    }
+    append_correlation_timeline(entry, log, record.plan.correlation_id);
+    target.push_back(std::move(entry));
   }
   if (snapshot.active.has_value()) {
     auto const& active = *snapshot.active;
-    target.push_back({
+    HistoryEntryProjection entry{
         .kind = HistoryEntryKind::installation_batch,
         .stable_id = active.plan.batch_id,
         .state = domain::installation_batch::to_string(active.state),
         .detail = active.last_transition.item_id,
         .retry = active.plan.retry_of_batch_id.has_value(),
-    });
+    };
+    append_installation_plan_facts(entry.facts, active.plan);
+    append_fact(entry.facts, "batch.generation",
+                std::to_string(active.generation));
+    append_fact(entry.facts, "batch.close_requested",
+                active.close_requested ? "true" : "false");
+    append_fact(entry.facts, "batch.stop_requested",
+                active.stop_requested ? "true" : "false");
+    append_fact(entry.facts, "last_durable_transition.item_id",
+                active.last_transition.item_id);
+    append_fact(entry.facts, "last_durable_transition.item_state",
+                domain::installation_batch::to_string(
+                    active.last_transition.item_state));
+    append_fact(entry.facts, "last_durable_transition.outcome",
+                installation_durable_outcome_name(
+                    active.last_transition.outcome));
+    append_fact(entry.facts, "last_durable_transition.coverage_gap",
+                active.last_transition.coverage_gap ? "true" : "false");
+    for (auto const& progress : active.items) {
+      append_installation_item_timeline(entry, active.plan, progress);
+    }
+    append_correlation_timeline(entry, log, active.plan.correlation_id);
+    target.push_back(std::move(entry));
   }
+}
+
+void append_optimization_plan_facts(
+    std::vector<HistoryFactProjection>& target,
+    domain::software_optimization_batch::FrozenOptimizationBatchPlan const&
+        plan) {
+  append_fact(target, "batch.correlation_id", plan.correlation_id);
+  append_fact(target, "batch.frozen_at_utc_ms",
+              std::to_string(plan.frozen_at_milliseconds));
+  append_fact(target, "catalog.revision", std::to_string(plan.catalog_revision));
+  append_fact(target, "emergency_notice.revision",
+              std::to_string(plan.emergency_notice_revision));
+  if (plan.retry_of_batch_id.has_value()) {
+    append_fact(target, "batch.retry_of", *plan.retry_of_batch_id);
+  }
+}
+
+void append_optimization_step_timeline(
+    HistoryEntryProjection& target,
+    domain::software_optimization_batch::OptimizationStepProgress const& step) {
+  HistoryTimelineProjection timeline{
+      .kind = HistoryTimelineKind::snapshot,
+      .state = domain::software_optimization_batch::to_string(step.state),
+      .detail = step.detail,
+  };
+  append_fact(timeline.facts, "scheme.id", step.scheme_id);
+  append_fact(timeline.facts, "option.id", step.option_id);
+  append_fact(timeline.facts, "step.attempt", std::to_string(step.attempt));
+  append_fact(timeline.facts, "step.execution_started",
+              step.execution_started ? "true" : "false");
+  append_fact(timeline.facts, "step.target_exit_confirmed",
+              step.target_exit_confirmed ? "true" : "false");
+  append_fact(timeline.facts, "step.force_close_confirmation_requested",
+              step.force_close_confirmation_requested ? "true" : "false");
+  append_fact(timeline.facts, "step.force_close_completed",
+              step.force_close_completed ? "true" : "false");
+  append_fact(timeline.facts, "step.emergency_notice_revision",
+              std::to_string(step.emergency_notice_revision));
+  target.timeline.push_back(std::move(timeline));
 }
 
 void append_optimization_history(
     std::vector<HistoryEntryProjection>& target,
-    software_optimization_batch::SoftwareOptimizationBatchService& service) {
+    software_optimization_batch::SoftwareOptimizationBatchService& service,
+    ExecutionLogSnapshot const& log) {
   auto const snapshot = service.snapshot();
   for (auto const& record : snapshot.history) {
-    target.push_back({
+    HistoryEntryProjection entry{
         .kind = HistoryEntryKind::software_optimization_batch,
         .stable_id = record.plan.batch_id,
         .state =
             domain::software_optimization_batch::to_string(record.final_state),
         .detail = record.reason,
         .retry = record.plan.retry_of_batch_id.has_value(),
-    });
+    };
+    append_optimization_plan_facts(entry.facts, record.plan);
+    for (auto const& step : record.steps) {
+      append_optimization_step_timeline(entry, step);
+    }
+    append_correlation_timeline(entry, log, record.plan.correlation_id);
+    target.push_back(std::move(entry));
   }
   if (snapshot.active.has_value()) {
     auto const& active = *snapshot.active;
-    target.push_back({
+    HistoryEntryProjection entry{
         .kind = HistoryEntryKind::software_optimization_batch,
         .stable_id = active.plan.batch_id,
         .state = domain::software_optimization_batch::to_string(active.state),
         .detail = active.last_transition.option_id,
         .retry = active.plan.retry_of_batch_id.has_value(),
-    });
+    };
+    append_optimization_plan_facts(entry.facts, active.plan);
+    append_fact(entry.facts, "batch.generation",
+                std::to_string(active.generation));
+    append_fact(entry.facts, "batch.close_requested",
+                active.close_requested ? "true" : "false");
+    append_fact(entry.facts, "batch.stop_requested",
+                active.stop_requested ? "true" : "false");
+    append_fact(entry.facts, "last_durable_transition.scheme_id",
+                active.last_transition.scheme_id);
+    append_fact(entry.facts, "last_durable_transition.option_id",
+                active.last_transition.option_id);
+    append_fact(entry.facts, "last_durable_transition.step_state",
+                domain::software_optimization_batch::to_string(
+                    active.last_transition.step_state));
+    append_fact(entry.facts, "last_durable_transition.outcome",
+                optimization_durable_outcome_name(active.last_transition.outcome));
+    append_fact(entry.facts, "last_durable_transition.coverage_gap",
+                active.last_transition.coverage_gap ? "true" : "false");
+    for (auto const& step : active.steps) {
+      append_optimization_step_timeline(entry, step);
+    }
+    append_correlation_timeline(entry, log, active.plan.correlation_id);
+    target.push_back(std::move(entry));
   }
+}
+
+[[nodiscard]] char const* system_setting_state_name(
+    SystemSettingApplyState state) noexcept {
+  switch (state) {
+    case SystemSettingApplyState::not_selected:
+      return "not-selected";
+    case SystemSettingApplyState::already_effective:
+      return "already-effective";
+    case SystemSettingApplyState::applied:
+      return "applied";
+    case SystemSettingApplyState::waiting_explorer_restart:
+      return "waiting-explorer-restart";
+    case SystemSettingApplyState::not_applicable:
+      return "not-applicable";
+    case SystemSettingApplyState::force_confirmation_required:
+      return "force-confirmation-required";
+    case SystemSettingApplyState::blocked_by_dependency:
+      return "blocked-by-dependency";
+    case SystemSettingApplyState::failed:
+      return "failed";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] char const* recovery_operation_name(
+    RecoveryRecordOperation operation) noexcept {
+  switch (operation) {
+    case RecoveryRecordOperation::apply:
+      return "apply";
+    case RecoveryRecordOperation::restore:
+      return "restore";
+    case RecoveryRecordOperation::windows11_default:
+      return "windows11-default";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] char const* restart_requirement_name(
+    domain::settings_catalog::RestartRequirement requirement) noexcept {
+  switch (requirement) {
+    case domain::settings_catalog::RestartRequirement::none:
+      return "none";
+    case domain::settings_catalog::RestartRequirement::explorer:
+      return "explorer";
+    case domain::settings_catalog::RestartRequirement::windows:
+      return "windows";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] std::string windows_version_name(
+    domain::settings_catalog::WindowsVersion const& version) {
+  auto const generation =
+      version.generation == domain::settings_catalog::WindowsGeneration::windows_11
+          ? "windows-11"
+          : "windows-10";
+  return std::string{generation} + "-" +
+         std::to_string(version.feature_update_year) + "H" +
+         std::to_string(version.feature_update_half);
+}
+
+[[nodiscard]] std::string windows_range_name(
+    domain::settings_catalog::WindowsVersionRange const& range) {
+  auto const minimum = range.minimum.has_value()
+                           ? windows_version_name(*range.minimum)
+                           : std::string{"unbounded"};
+  auto const maximum = range.maximum.has_value()
+                           ? windows_version_name(*range.maximum)
+                           : std::string{"unbounded"};
+  return minimum + ".." + maximum;
+}
+
+void append_system_settings_history(
+    std::vector<HistoryEntryProjection>& target,
+    SystemSettingsApplyService& service, ExecutionLogSnapshot const& log,
+    std::optional<std::string> const& observed_windows_version) {
+  auto const snapshot = service.snapshot();
+  for (auto const& setting : snapshot.settings) {
+    HistoryEntryProjection entry{
+        .kind = HistoryEntryKind::system_setting_apply,
+        .stable_id = setting.id.value,
+        .state = system_setting_state_name(setting.state),
+        .detail = setting.detail,
+    };
+    append_fact(entry.facts, "settings.catalog_revision",
+                std::to_string(snapshot.catalog_revision));
+    append_fact(entry.facts, "settings.selected",
+                setting.selected ? "true" : "false");
+    append_fact(entry.facts, "settings.applicable",
+                setting.applicable ? "true" : "false");
+    append_fact(entry.facts, "settings.can_force_attempt",
+                setting.can_force_attempt ? "true" : "false");
+    append_fact(entry.facts, "settings.recovery_available",
+                setting.recovery_available ? "true" : "false");
+    append_fact(entry.facts, "settings.known_windows_range",
+                windows_range_name(setting.known_windows_range));
+    append_fact(entry.facts, "settings.restart_requirement",
+                restart_requirement_name(setting.restart_requirement));
+    append_fact(entry.facts, "settings.explorer_restart_pending",
+                snapshot.waiting_for_explorer_restart ? "true" : "false");
+    if (observed_windows_version.has_value()) {
+      append_fact(entry.facts, "settings.observed_windows_version",
+                  *observed_windows_version);
+    } else {
+      append_unavailable_fact(entry.facts, "settings.observed_windows_version",
+                              "platform owner could not read the Windows build");
+    }
+    if (snapshot.recommended_plan.has_value()) {
+      append_fact(entry.facts, "settings.recommended_plan",
+                  snapshot.recommended_plan->value);
+    }
+    if (snapshot.selected_plan.has_value()) {
+      append_fact(entry.facts, "settings.selected_plan",
+                  snapshot.selected_plan->value);
+    }
+    append_unavailable_fact(
+        entry.facts, "settings.force_attempt_confirmation",
+        "the current settings snapshot does not retain an operation-specific confirmation fact");
+    HistoryTimelineProjection timeline{
+        .kind = HistoryTimelineKind::snapshot,
+        .state = entry.state,
+        .detail = entry.detail,
+        .facts = entry.facts,
+    };
+    entry.timeline.push_back(std::move(timeline));
+    append_id_timeline(entry, log, setting.id.value);
+    target.push_back(std::move(entry));
+  }
+
+  for (auto const& record : service.recovery_records()) {
+    HistoryEntryProjection entry{
+        .kind = HistoryEntryKind::system_setting_recovery,
+        .stable_id = record.setting_id.value + "/recovery/" +
+                     std::to_string(record.record_id),
+        .state = recovery_status_name(record.status),
+        .detail = record.display_name,
+    };
+    append_fact(entry.facts, "recovery.record_id",
+                std::to_string(record.record_id));
+    append_fact(entry.facts, "recovery.setting_id", record.setting_id.value);
+    append_fact(entry.facts, "recovery.catalog_revision",
+                std::to_string(record.catalog_revision));
+    append_fact(entry.facts, "recovery.operation",
+                recovery_operation_name(record.operation));
+    append_fact(entry.facts, "recovery.restart_requirement",
+                restart_requirement_name(record.restart_requirement));
+    append_fact(entry.facts, "recovery.original_value_recorded", "true");
+    HistoryTimelineProjection timeline{
+        .kind = HistoryTimelineKind::recovery,
+        .state = entry.state,
+        .detail = entry.detail,
+        .facts = entry.facts,
+    };
+    entry.timeline.push_back(std::move(timeline));
+    append_id_timeline(entry, log, record.setting_id.value);
+    target.push_back(std::move(entry));
+  }
+}
+
+void append_external_handoff_history(
+    std::vector<HistoryEntryProjection>& target,
+    software_selection::SoftwareSelectionLifecycle& service,
+    ExecutionLogSnapshot const& log) {
+  auto const snapshot = service.snapshot();
+  for (auto const& handoff : snapshot.handoffs) {
+    HistoryEntryProjection entry{
+        .kind = HistoryEntryKind::external_install_handoff,
+        .stable_id = handoff.software_id,
+        .state = domain::software_selection::to_string(handoff.status),
+        .detail = handoff.detail,
+    };
+    append_fact(entry.facts, "handoff.software_id", handoff.software_id);
+    append_fact(entry.facts, "handoff.currently_incomplete",
+                handoff.status == domain::software_selection::
+                                      ExternalHandoffStatus::waiting_for_external_install ||
+                        handoff.status == domain::software_selection::
+                                              ExternalHandoffStatus::skipped
+                    ? "true"
+                    : "false");
+    // An address can contain credentials. The source owner retains it for the
+    // explicit handoff command, while this generic history projection exposes
+    // only its presence and reads the centrally redacted event trail.
+    append_fact(entry.facts, "handoff.declared_address_recorded",
+                handoff.declared_address.empty() ? "false" : "true");
+    if (handoff.declared_address.empty()) {
+      append_unavailable_fact(entry.facts, "handoff.declared_address",
+                              "the durable handoff record had no declared address");
+    } else {
+      append_unavailable_fact(
+          entry.facts, "handoff.declared_address",
+          "the address is available only through the explicit handoff command and redacted event trail");
+    }
+    auto const source = std::ranges::find_if(
+        snapshot.sources, [&](auto const& candidate) {
+          return candidate.software_id == handoff.software_id;
+        });
+    if (source == snapshot.sources.end()) {
+      append_unavailable_fact(entry.facts, "source.snapshot",
+                              "no durable resolved source snapshot remains for this handoff");
+    } else {
+      append_fact(entry.facts, "source.resolved_at_utc_ms",
+                  std::to_string(source->resolved_at_milliseconds));
+      append_fact(entry.facts, "source.network_required",
+                  source->network_required ? "true" : "false");
+      if (source->version.empty()) {
+        append_unavailable_fact(entry.facts, "source.version",
+                                "the resolved source snapshot had no version");
+      } else {
+        append_fact(entry.facts, "source.version", source->version);
+      }
+    }
+    HistoryTimelineProjection timeline{
+        .kind = HistoryTimelineKind::external_handoff,
+        .state = entry.state,
+        .detail = entry.detail,
+        .facts = entry.facts,
+    };
+    entry.timeline.push_back(std::move(timeline));
+    append_id_timeline(entry, log, handoff.software_id);
+    target.push_back(std::move(entry));
+  }
+}
+
+[[nodiscard]] char const* restart_operation_name(
+    restart_resume::RestartResumeOperation operation) noexcept {
+  switch (operation) {
+    case restart_resume::RestartResumeOperation::system_settings:
+      return "system-settings";
+    case restart_resume::RestartResumeOperation::installation_batch:
+      return "installation-batch";
+    case restart_resume::RestartResumeOperation::software_optimization_batch:
+      return "software-optimization-batch";
+    case restart_resume::RestartResumeOperation::driver_acquisition:
+      return "driver-acquisition";
+  }
+  return "unknown";
+}
+
+void append_restart_resume_history(
+    std::vector<HistoryEntryProjection>& target,
+    restart_resume::RestartResumeService const* service,
+    ExecutionLogSnapshot const& log) {
+  if (service == nullptr) {
+    return;
+  }
+  auto const snapshot = service->snapshot();
+  if (snapshot.state == restart_resume::RestartResumeState::idle &&
+      !snapshot.checkpoint.has_value()) {
+    return;
+  }
+  HistoryEntryProjection entry{
+      .kind = HistoryEntryKind::restart_resume,
+      .stable_id = snapshot.checkpoint.has_value()
+                       ? snapshot.checkpoint->correlation_id
+                       : std::string{"restart-resume"},
+      .state = restart_resume::to_string(snapshot.state),
+      .detail = snapshot.detail,
+  };
+  append_fact(entry.facts, "restart.writable",
+              snapshot.writable ? "true" : "false");
+  append_fact(entry.facts, "restart.login_resume_registered",
+              snapshot.login_resume_registered ? "true" : "false");
+  if (snapshot.checkpoint.has_value()) {
+    append_fact(entry.facts, "restart.correlation_id",
+                snapshot.checkpoint->correlation_id);
+    for (auto const& participant : snapshot.checkpoint->participants) {
+      HistoryTimelineProjection participant_timeline{
+          .kind = HistoryTimelineKind::recovery,
+          .state = entry.state,
+          .detail = participant.operation_id,
+      };
+      append_fact(participant_timeline.facts, "restart.operation",
+                  restart_operation_name(participant.operation));
+      append_fact(participant_timeline.facts, "restart.operation_id",
+                  participant.operation_id);
+      entry.timeline.push_back(std::move(participant_timeline));
+    }
+    append_correlation_timeline(entry, log, snapshot.checkpoint->correlation_id);
+  } else {
+    append_unavailable_fact(entry.facts, "restart.checkpoint",
+                            "restart state has no durable checkpoint");
+  }
+  target.push_back(std::move(entry));
+}
+
+[[nodiscard]] char const* update_state_name(UpdateState state) noexcept {
+  switch (state) {
+    case UpdateState::idle:
+      return "idle";
+    case UpdateState::latest_stable:
+      return "latest-stable";
+    case UpdateState::update_available:
+      return "update-available";
+    case UpdateState::stable_switch_available:
+      return "stable-switch-available";
+    case UpdateState::no_matching_stable_asset:
+      return "no-matching-stable-asset";
+    case UpdateState::awaiting_user_confirmation:
+      return "awaiting-user-confirmation";
+    case UpdateState::deferred_initialization_operation:
+      return "deferred-initialization-operation";
+    case UpdateState::update_unavailable:
+      return "update-unavailable";
+    case UpdateState::update_failed_restored:
+      return "update-failed-restored";
+    case UpdateState::candidate_pending_start_health:
+      return "candidate-pending-start-health";
+    case UpdateState::awaiting_start_recovery_choice:
+      return "awaiting-start-recovery-choice";
+    case UpdateState::previous_pending_start_health:
+      return "previous-pending-start-health";
+    case UpdateState::recovery_read_only:
+      return "recovery-read-only";
+  }
+  return "unknown";
+}
+
+void append_update_history(std::vector<HistoryEntryProjection>& target,
+                           ApplicationUpdateLifecycle& service) {
+  auto const update = service.snapshot();
+  if (!update.current.valid() && update.state == UpdateState::idle) {
+    return;
+  }
+  HistoryEntryProjection entry{
+      .kind = HistoryEntryKind::application_update,
+      .stable_id = update.current.valid() ? update.current.version
+                                           : std::string{"workbench-update"},
+      .state = update_state_name(update.state),
+      .detail = update.detail,
+  };
+  if (update.current.valid()) {
+    append_fact(entry.facts, "update.current_version", update.current.version);
+    append_fact(entry.facts, "update.current_architecture",
+                architecture_name(update.current.architecture));
+  } else {
+    append_unavailable_fact(entry.facts, "update.current_build",
+                            "update owner has no valid current build identity");
+  }
+  if (update.candidate.has_value()) {
+    append_fact(entry.facts, "update.candidate_version",
+                update.candidate->target.version);
+  }
+  if (update.health.has_value()) {
+    append_fact(entry.facts, "update.health_started_at_utc_ms",
+                std::to_string(
+                    update.health->started_at.time_since_epoch().count()));
+  }
+  append_fact(entry.facts, "update.read_only",
+              update.read_only ? "true" : "false");
+  HistoryTimelineProjection timeline{
+      .kind = HistoryTimelineKind::snapshot,
+      .state = entry.state,
+      .detail = entry.detail,
+      .facts = entry.facts,
+  };
+  entry.timeline.push_back(std::move(timeline));
+  target.push_back(std::move(entry));
+}
+
+[[nodiscard]] std::string lower_ascii(std::string_view text) {
+  std::string result{text};
+  std::ranges::transform(result, result.begin(), [](unsigned char value) {
+    return static_cast<char>(std::tolower(value));
+  });
+  return result;
+}
+
+[[nodiscard]] bool contains_query(std::string_view value,
+                                  std::string const& query) {
+  return query.empty() || lower_ascii(value).find(query) != std::string::npos;
+}
+
+[[nodiscard]] bool facts_match_query(
+    std::vector<HistoryFactProjection> const& facts,
+    std::string const& query) {
+  return std::ranges::any_of(facts, [&](auto const& fact) {
+    return contains_query(fact.key, query) || contains_query(fact.value, query) ||
+           contains_query(fact.reason, query);
+  });
+}
+
+[[nodiscard]] bool history_matches(HistoryEntryProjection const& entry,
+                                   HistoryAndLogsFilter const& filter) {
+  if (filter.history_kind.has_value() && entry.kind != *filter.history_kind) {
+    return false;
+  }
+  if (filter.query.empty()) {
+    return true;
+  }
+  auto const query = lower_ascii(filter.query);
+  if (contains_query(entry.stable_id, query) || contains_query(entry.state, query) ||
+      contains_query(entry.detail, query) || facts_match_query(entry.facts, query)) {
+    return true;
+  }
+  return std::ranges::any_of(entry.timeline, [&](auto const& timeline) {
+    return contains_query(timeline.state, query) ||
+           contains_query(timeline.detail, query) ||
+           facts_match_query(timeline.facts, query);
+  });
+}
+
+[[nodiscard]] bool event_matches(ExecutionLogEventProjection const& event,
+                                  HistoryAndLogsFilter const& filter) {
+  if (filter.event_kind.has_value() && event.kind != *filter.event_kind) {
+    return false;
+  }
+  if (filter.event_result.has_value() && event.result != *filter.event_result) {
+    return false;
+  }
+  if (!filter.correlation_id.empty() &&
+      event.correlation.value != filter.correlation_id) {
+    return false;
+  }
+  if (filter.query.empty()) {
+    return true;
+  }
+  auto const query = lower_ascii(filter.query);
+  if (contains_query(event.correlation.value, query) ||
+      contains_query(event.component, query) || contains_query(event.stage, query)) {
+    return true;
+  }
+  if (event.error.has_value() &&
+      (contains_query(event.error->source, query) ||
+       contains_query(event.error->message, query))) {
+    return true;
+  }
+  return std::ranges::any_of(event.fields, [&](auto const& field) {
+    return contains_query(field.key, query) || contains_query(field.value, query);
+  });
 }
 
 }  // namespace
@@ -160,7 +960,9 @@ HistoryAndLogsService::HistoryAndLogsService(
     software_optimization_batch::SoftwareOptimizationBatchService&
         software_optimization_batches,
     SystemSettingsApplyService& system_settings,
-    software_selection::SoftwareSelectionLifecycle& software_selection)
+    software_selection::SoftwareSelectionLifecycle& software_selection,
+    DebugLogStatusSource const* debug_log_status,
+    restart_resume::RestartResumeService const* restart_resume)
     : clock_(clock),
       application_updates_(application_updates),
       platform_info_(platform_info),
@@ -170,36 +972,68 @@ HistoryAndLogsService::HistoryAndLogsService(
       installation_batches_(installation_batches),
       software_optimization_batches_(software_optimization_batches),
       system_settings_(system_settings),
-      software_selection_(software_selection) {}
+      software_selection_(software_selection),
+      debug_log_status_(debug_log_status),
+      restart_resume_(restart_resume) {}
 
 HistoryAndLogsSnapshot HistoryAndLogsService::refresh() {
+  return refresh({});
+}
+
+HistoryAndLogsSnapshot HistoryAndLogsService::refresh(
+    HistoryAndLogsFilter const& filter) {
   HistoryAndLogsSnapshot result;
-  append_installation_history(result.history, installation_batches_);
-  append_optimization_history(result.history, software_optimization_batches_);
-
-  for (auto const& record : system_settings_.recovery_records()) {
-    result.history.push_back({
-        .kind = HistoryEntryKind::system_setting_recovery,
-        .stable_id = record.setting_id.value,
-        .state = recovery_status_name(record.status),
-        .detail = record.display_name,
-    });
-  }
-
-  auto const selection = software_selection_.snapshot();
-  for (auto const& handoff : selection.handoffs) {
-    result.history.push_back({
-        .kind = HistoryEntryKind::external_install_handoff,
-        .stable_id = handoff.software_id,
-        .state = domain::software_selection::to_string(handoff.status),
-        .detail = handoff.detail,
-    });
-  }
-
+  result.applied_filter = filter;
   result.log = log_.snapshot();
+  std::optional<std::string> observed_windows_version;
+  if (auto const version = platform_info_.windows_version()) {
+    observed_windows_version = std::to_string(version->major) + "." +
+                               std::to_string(version->minor) + "." +
+                               std::to_string(version->build);
+  }
+  append_installation_history(result.history, installation_batches_, result.log);
+  append_optimization_history(result.history, software_optimization_batches_,
+                              result.log);
+  append_system_settings_history(result.history, system_settings_, result.log,
+                                 observed_windows_version);
+  append_external_handoff_history(result.history, software_selection_, result.log);
+  append_restart_resume_history(result.history, restart_resume_, result.log);
+  append_update_history(result.history, application_updates_);
+  if (debug_log_status_ != nullptr) {
+    result.debug = debug_log_status_->snapshot();
+  } else {
+    result.debug.detail =
+        "debug status is not provided by the current composition root";
+  }
   if (!result.log.available && !result.log.error.empty()) {
     result.detail = "execution-log-unavailable";
   }
+  if (filter.history_kind.has_value() || !filter.query.empty()) {
+    std::erase_if(result.history, [&](auto const& entry) {
+      return !history_matches(entry, filter);
+    });
+  }
+  if (filter.event_kind.has_value() || filter.event_result.has_value() ||
+      !filter.correlation_id.empty() || !filter.query.empty()) {
+    std::erase_if(result.log.events, [&](auto const& event) {
+      return !event_matches(event, filter);
+    });
+  }
+  return result;
+}
+
+HistoryAndLogsSnapshot HistoryAndLogsService::locate(
+    std::string_view stable_id) {
+  auto result = refresh();
+  auto const requested = std::string{stable_id};
+  result.applied_filter.query = requested;
+  std::erase_if(result.history, [&](auto const& entry) {
+    return entry.stable_id != requested;
+  });
+  std::erase_if(result.log.events, [&](auto const& event) {
+    return event.correlation.value != requested &&
+           !event_mentions_id(event, requested);
+  });
   return result;
 }
 
@@ -406,10 +1240,46 @@ char const* to_string(HistoryEntryKind value) noexcept {
       return "installation-batch";
     case HistoryEntryKind::software_optimization_batch:
       return "software-optimization-batch";
+    case HistoryEntryKind::system_setting_apply:
+      return "system-setting-apply";
     case HistoryEntryKind::system_setting_recovery:
       return "system-setting-recovery";
     case HistoryEntryKind::external_install_handoff:
       return "external-install-handoff";
+    case HistoryEntryKind::restart_resume:
+      return "restart-resume";
+    case HistoryEntryKind::application_update:
+      return "application-update";
+  }
+  return "unknown";
+}
+
+char const* to_string(HistoryFactDisposition value) noexcept {
+  switch (value) {
+    case HistoryFactDisposition::obtained:
+      return "obtained";
+    case HistoryFactDisposition::not_obtained:
+      return "not-obtained";
+  }
+  return "unknown";
+}
+
+char const* to_string(HistoryTimelineKind value) noexcept {
+  switch (value) {
+    case HistoryTimelineKind::snapshot:
+      return "snapshot";
+    case HistoryTimelineKind::user_command:
+      return "user-command";
+    case HistoryTimelineKind::state_transition:
+      return "state-transition";
+    case HistoryTimelineKind::adapter_result:
+      return "adapter-result";
+    case HistoryTimelineKind::recovery:
+      return "recovery";
+    case HistoryTimelineKind::external_handoff:
+      return "external-handoff";
+    case HistoryTimelineKind::coverage_gap:
+      return "coverage-gap";
   }
   return "unknown";
 }
