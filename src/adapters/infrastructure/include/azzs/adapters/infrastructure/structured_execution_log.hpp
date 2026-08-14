@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -9,11 +10,17 @@
 
 namespace azzs::adapters::infrastructure {
 
+enum class LogStorageWriteFailure {
+  none,
+  capacity_exhausted,
+};
+
 struct LogStorageWriteResult final {
   // committed may be true when publication happened but its durability or
   // reread could not be confirmed. Only verified is a successful log commit.
   bool committed{false};
   bool verified{false};
+  LogStorageWriteFailure failure{LogStorageWriteFailure::none};
   std::string error;
 };
 
@@ -67,6 +74,10 @@ class StructuredExecutionLog final : public application::ExecutionLog {
  private:
   LogStorage& storage_;
   application::Clock const& clock_;
+  std::mutex state_mutex_;
+  application::ExecutionLogCapacityState capacity_state_{
+      application::ExecutionLogCapacityState::available};
+  std::uint64_t pending_noncritical_dropped_count_{0};
 };
 
 }  // namespace azzs::adapters::infrastructure

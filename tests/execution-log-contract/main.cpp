@@ -19,6 +19,8 @@
 #include "in_memory_log_storage.hpp"
 
 #ifdef _WIN32
+#include <windows.h>
+
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #endif
 
@@ -26,6 +28,9 @@ namespace {
 
 using azzs::adapters::infrastructure::StructuredExecutionLog;
 using azzs::adapters::infrastructure::LocalFileLogStorage;
+#ifdef _WIN32
+using azzs::adapters::infrastructure::classify_windows_log_storage_write_failure;
+#endif
 using azzs::application::ExecutionEvent;
 using azzs::application::ExecutionEventKind;
 using azzs::application::ExecutionError;
@@ -33,10 +38,13 @@ using azzs::application::ExecutionResult;
 using azzs::application::CorrelationId;
 using azzs::application::CoverageGap;
 using azzs::application::CoverageGapKind;
+using azzs::application::DiagnosticFact;
 using azzs::application::DiagnosticField;
 using azzs::application::DiagnosticContext;
 using azzs::application::MissingDiagnosticFact;
 using azzs::application::DiagnosticValueDisposition;
+using azzs::application::ExecutionLogCapacityState;
+using azzs::application::ExecutionLogCriticality;
 using azzs::application::LastTrustedState;
 using azzs::application::WallClockTime;
 using azzs::testing::FixedClock;
@@ -702,6 +710,30 @@ void replace_once(std::string& bytes, std::string_view original,
       .timezone = "Asia/Shanghai",
       .coverage_started_at = clock.now(),
       .coverage_ended_at = clock.now(),
+      .frozen_directory_identity = DiagnosticFact{
+          .value = "catalog-identity-41",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .directory_application_association = DiagnosticFact{
+          .value = "application-association-41",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .directory_load_result = DiagnosticFact{
+          .value = "loaded",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .directory_release_result = DiagnosticFact{
+          .value = "release-approved",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .batch_plan = DiagnosticFact{
+          .value = "batch-plan-41",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .debug_log_coverage = DiagnosticFact{
+          .value = "normal",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
   });
 
   bool leaked = false;
@@ -1255,6 +1287,208 @@ void replace_once(std::string& bytes, std::string_view original,
                 "the export contract must cover an unverified visible artifact");
 }
 
+[[nodiscard]] bool
+verify_capacity_exhaustion_suppresses_noncritical_events_and_recovers() {
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'406'750}}};
+  InMemoryLogStorage storage;
+  StructuredExecutionLog log{storage, clock};
+  auto const correlation = log.begin_correlation();
+  auto const before_exhaustion = storage.bytes();
+
+  storage.set_capacity_exhausted(true, "simulated log volume exhausted");
+  auto const first_noncritical = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "debug-detail-one",
+          .stage = "trace",
+          .result = ExecutionResult::succeeded,
+          .criticality = ExecutionLogCriticality::noncritical,
+      });
+  auto const second_noncritical = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "debug-detail-two",
+          .stage = "trace",
+          .result = ExecutionResult::succeeded,
+          .criticality = ExecutionLogCriticality::noncritical,
+      });
+  auto const unavailable_critical = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::state_transition,
+          .component = "install-batch",
+          .stage = "durable-transition",
+          .result = ExecutionResult::started,
+          .criticality = ExecutionLogCriticality::noncritical,
+      });
+  auto const during_exhaustion = log.snapshot();
+  auto const during_exhaustion_export = log.export_diagnostic(DiagnosticContext{
+      .coverage_started_at = clock.now(),
+      .coverage_ended_at = clock.now(),
+  });
+  auto const revisions_after_suppression = storage.revisions().size();
+  auto const bytes_after_critical_failure = storage.bytes();
+
+  storage.set_capacity_exhausted(false);
+  storage.fail_next_replace_due_to_capacity(
+      "recovery annotation did not fit before the critical transition");
+  auto const recovered_critical = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::state_transition,
+          .component = "install-batch",
+          .stage = "durable-transition",
+          .result = ExecutionResult::succeeded,
+          .criticality = ExecutionLogCriticality::noncritical,
+      });
+  auto const resumed_noncritical = log.append(
+      correlation,
+      ExecutionEvent{
+          .kind = ExecutionEventKind::adapter_result,
+          .component = "debug-detail-after-recovery",
+          .stage = "trace",
+          .result = ExecutionResult::succeeded,
+          .criticality = ExecutionLogCriticality::noncritical,
+      });
+  auto const after_recovery = log.snapshot();
+  auto const bytes = storage.bytes();
+
+  return expect(first_noncritical.suppressed && !first_noncritical.persisted &&
+                    first_noncritical.capacity_state ==
+                        ExecutionLogCapacityState::space_exhausted &&
+                    first_noncritical.noncritical_dropped_count == 1,
+                "space exhaustion must suppress the first noncritical event") &&
+         expect(second_noncritical.suppressed &&
+                    second_noncritical.noncritical_dropped_count == 2 &&
+                    revisions_after_suppression == 1,
+                "space exhaustion must keep noncritical detail out of durable bytes") &&
+         expect(!unavailable_critical.suppressed &&
+                    !unavailable_critical.persisted &&
+                    unavailable_critical.capacity_state ==
+                        ExecutionLogCapacityState::space_exhausted &&
+                    bytes_after_critical_failure == before_exhaustion,
+                "critical transitions must remain write-through and never be silently dropped") &&
+         expect(during_exhaustion.available &&
+                    during_exhaustion.capacity_state ==
+                        ExecutionLogCapacityState::space_exhausted &&
+                    during_exhaustion.noncritical_dropped_count == 2 &&
+                    during_exhaustion.coverage_gap_count == 0,
+                "the snapshot must expose unresolved capacity loss") &&
+         expect(during_exhaustion_export.produced &&
+                    !during_exhaustion_export.complete &&
+                    during_exhaustion_export.file_bytes.find(
+                        "LOG_CAPACITY_STATE\tspace_exhausted") !=
+                        std::string::npos &&
+                    during_exhaustion_export.file_bytes.find(
+                        "NONCRITICAL_DROPPED_COUNT\t2") !=
+                        std::string::npos &&
+                    during_exhaustion_export.file_bytes.find(
+                        "NOT_OBTAINED\texecution_log_coverage\t2 noncritical events were suppressed while storage capacity was exhausted") !=
+                        std::string::npos,
+                "an incomplete export must carry the unresolved capacity coverage gap") &&
+         expect(recovered_critical.persisted && !recovered_critical.suppressed &&
+                    recovered_critical.capacity_state ==
+                        ExecutionLogCapacityState::space_exhausted &&
+                    recovered_critical.noncritical_dropped_count == 2 &&
+                    recovered_critical.error ==
+                        "recovery annotation did not fit before the critical transition" &&
+                    resumed_noncritical.persisted &&
+                    after_recovery.capacity_state ==
+                        ExecutionLogCapacityState::available &&
+                    after_recovery.noncritical_dropped_count == 2 &&
+                    after_recovery.coverage_gap_count == 1,
+                "the first recovered write must durably record the dropped coverage before resuming detail") &&
+         expect(bytes.find("debug-detail-one") == std::string::npos &&
+                    bytes.find("debug-detail-two") == std::string::npos &&
+                    bytes.find("capacity-recovery") != std::string::npos &&
+                    bytes.find("noncritical_dropped_count=2") !=
+                        std::string::npos,
+                "the durable recovery record must carry exact drop statistics");
+}
+
+#ifdef _WIN32
+[[nodiscard]] bool
+verify_windows_quota_exhaustion_is_classified_as_capacity_pressure() {
+  return expect(
+             classify_windows_log_storage_write_failure(
+                 ERROR_DISK_QUOTA_EXCEEDED) ==
+                 azzs::adapters::infrastructure::LogStorageWriteFailure::
+                     capacity_exhausted,
+             "Windows quota exhaustion must enter the noncritical suppression path") &&
+         expect(
+             classify_windows_log_storage_write_failure(ERROR_FILE_NOT_FOUND) ==
+                 azzs::adapters::infrastructure::LogStorageWriteFailure::none,
+             "unrelated Windows failures must not be misclassified as capacity pressure");
+}
+#endif
+
+[[nodiscard]] bool
+verify_diagnostic_context_facts_mark_absence_and_redact_dynamic_text() {
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'406'875}}};
+  InMemoryLogStorage storage;
+  StructuredExecutionLog log{storage, clock};
+
+  auto const exported = log.export_diagnostic(DiagnosticContext{
+      .workbench_build = "1.0.0+facts",
+      .release_form = "portable",
+      .process_architecture = "x64",
+      .package_architecture = "x64",
+      .windows_version = "10.0.26200",
+      .language = "zh-CN",
+      .timezone = "Asia/Shanghai",
+      .coverage_started_at = clock.now(),
+      .coverage_ended_at = clock.now(),
+      .frozen_directory_identity = DiagnosticFact{
+          .value = "frozen-catalog-2026.08.15",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .directory_application_association = DiagnosticFact{
+          .unavailable_reason =
+              "association source omitted SSID=Private Wifi With Spaces",
+      },
+      .directory_load_result = DiagnosticFact{
+          .value = "loaded-with-warnings",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .batch_plan = DiagnosticFact{
+          .value = "software-batch-42",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+      .debug_log_coverage = DiagnosticFact{
+          .value = "Computer Name=HOST-DIAGNOSTIC-PRIVATE",
+          .disposition = DiagnosticValueDisposition::retain,
+      },
+  });
+
+  return expect(exported.produced && !exported.complete &&
+                    exported.missing_fact_count >= 2,
+                "missing owned diagnostic facts must make an export incomplete") &&
+         expect(exported.file_bytes.find(
+                    "FROZEN_DIRECTORY_IDENTITY\tfrozen-catalog-2026.08.15") !=
+                        std::string::npos &&
+                    exported.file_bytes.find(
+                        "DIRECTORY_LOAD_RESULT\tloaded-with-warnings") !=
+                        std::string::npos &&
+                    exported.file_bytes.find("BATCH_PLAN\tsoftware-batch-42") !=
+                        std::string::npos,
+                "the export must carry retained directory and batch facts") &&
+         expect(exported.file_bytes.find(
+                    "NOT_OBTAINED\tdirectory_application_association\t") !=
+                        std::string::npos &&
+                    exported.file_bytes.find(
+                        "NOT_OBTAINED\tdirectory_release_result\tthe directory release result owner did not provide it") !=
+                        std::string::npos,
+                "unobtained facts must use explicit stable diagnostic records") &&
+         expect(exported.file_bytes.find("Private Wifi With Spaces") ==
+                        std::string::npos &&
+                    exported.file_bytes.find("HOST-DIAGNOSTIC-PRIVATE") ==
+                        std::string::npos &&
+                    exported.file_bytes.find("[redacted]") != std::string::npos,
+                "diagnostic facts and unavailable reasons must share centralized redaction");
+}
+
 [[nodiscard]] bool verify_storage_failure_is_explicit_and_non_destructive() {
   FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'407'000}}};
   InMemoryLogStorage storage;
@@ -1392,6 +1626,11 @@ int main() {
       !verify_redaction_defaults_and_stable_event_tokens() ||
       !verify_single_file_export_is_self_contained() ||
       !verify_diagnostic_export_failure_is_explicit() ||
+      !verify_capacity_exhaustion_suppresses_noncritical_events_and_recovers() ||
+#ifdef _WIN32
+      !verify_windows_quota_exhaustion_is_classified_as_capacity_pressure() ||
+#endif
+      !verify_diagnostic_context_facts_mark_absence_and_redact_dynamic_text() ||
       !verify_local_file_storage_and_single_file_export() ||
       !verify_concurrent_instances_share_a_stable_total_order() ||
       !verify_unverified_publication_is_never_reported_as_durable() ||

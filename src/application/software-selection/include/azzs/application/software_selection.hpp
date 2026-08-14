@@ -157,10 +157,20 @@ class SoftwareSelectionLifecycle final {
       std::string_view software_id);
   [[nodiscard]] SelectionActionResult skip_external_handoff(
       std::string_view software_id);
+  // A guided-flow continuation is a separate user fact. It does not turn an
+  // external recognition into an in-app installation result.
+  [[nodiscard]] SelectionActionResult continue_external_handoff(
+      std::string_view software_id);
 
  private:
   [[nodiscard]] SelectionActionResult persist_subject();
   [[nodiscard]] SelectionActionResult persist_machine();
+  [[nodiscard]] SelectionActionResult append_handoff_fact(
+      std::string_view software_id, selection_domain::ExternalHandoffFact fact);
+  [[nodiscard]] selection_domain::ExternalHandoffResolvedSourceFact
+  source_fact_for(std::string_view software_id,
+                  catalog_domain::CatalogSource const& declared_source) const;
+  [[nodiscard]] std::int64_t now_milliseconds() const noexcept;
   [[nodiscard]] bool source_matches_catalog(
       selection_domain::ResolvedSourceSnapshot const& source,
       catalog_domain::CatalogSource const& declared_source) const noexcept;
@@ -170,6 +180,9 @@ class SoftwareSelectionLifecycle final {
       CatalogSelectionProjection const& projection) const noexcept;
   [[nodiscard]] std::vector<std::string> impact_ids(
       software_catalog::CatalogSelectionImpactReason reason) const;
+  void log_event(CorrelationId const& correlation, std::string_view stage,
+                 ExecutionResult result, std::string_view software_id = {},
+                 std::string_view detail = {});
   void log_event(std::string_view stage, ExecutionResult result,
                  std::string_view software_id = {},
                  std::string_view detail = {});

@@ -14,6 +14,7 @@ azzs_project_target(
   ROLE application
   PUBLIC_LINKS
     azzs::application
+    azzs::debug_log_policy_application
     azzs::installation_batch_runner_application
     azzs::software_catalog_application
     azzs::software_optimization_batch_runner_application

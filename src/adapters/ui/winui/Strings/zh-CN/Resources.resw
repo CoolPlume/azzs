@@ -219,6 +219,8 @@
   <data name="HistoryAndLogsClearLogsButton.AutomationProperties.Name" xml:space="preserve"><value>清空详细日志</value></data>
   <data name="HistoryAndLogsHistoryTitle.Text" xml:space="preserve"><value>执行历史</value></data>
   <data name="HistoryAndLogsHistoryEmpty.Text" xml:space="preserve"><value>尚无可显示的执行历史。</value></data>
+  <data name="HistoryAndLogsFilter.PlaceholderText" xml:space="preserve"><value>筛选历史和日志</value></data>
+  <data name="HistoryAndLogsFilter.AutomationProperties.Name" xml:space="preserve"><value>筛选历史和日志</value></data>
   <data name="HistoryAndLogsLogTitle.Text" xml:space="preserve"><value>详细日志</value></data>
   <data name="HistoryAndLogsLogEmpty.Text" xml:space="preserve"><value>当前日志段尚无事件。</value></data>
   <data name="HistoryAndLogsClearConfirmationTitle" xml:space="preserve"><value>清空详细日志</value></data>
@@ -236,10 +238,16 @@
   <data name="HistoryAndLogsClearCompletionPending" xml:space="preserve"><value>详细日志清空已提交，但新日志段完成尚未确认；此前记录不会显示为仍未清空。</value></data>
   <data name="HistoryAndLogsNotObtained" xml:space="preserve"><value>未取得</value></data>
   <data name="HistoryAndLogsDiagnosticPreview" xml:space="preserve"><value>导出范围：{start} 至 {end}（UTC 毫秒）；当前日志大小：{bytes} 字节；将执行集中脱敏；已记录采集缺口：{gaps}。未取得事实会在文件中明确标注。</value></data>
+  <data name="HistoryAndLogsDebugStatus" xml:space="preserve"><value>调试日志：{state}；粒度：{granularity}。</value></data>
+  <data name="HistoryAndLogsDebugEnabled" xml:space="preserve"><value>已开启</value></data>
+  <data name="HistoryAndLogsDebugDisabled" xml:space="preserve"><value>已关闭</value></data>
   <data name="HistoryAndLogsHistoryKindInstallationBatch" xml:space="preserve"><value>软件安装批次</value></data>
   <data name="HistoryAndLogsHistoryKindSoftwareOptimizationBatch" xml:space="preserve"><value>软件优化批次</value></data>
+  <data name="HistoryAndLogsHistoryKindSystemSettingApply" xml:space="preserve"><value>系统设置操作</value></data>
   <data name="HistoryAndLogsHistoryKindSystemSettingRecovery" xml:space="preserve"><value>系统设置恢复记录</value></data>
   <data name="HistoryAndLogsHistoryKindExternalInstallHandoff" xml:space="preserve"><value>来源手动交接</value></data>
+  <data name="HistoryAndLogsHistoryKindRestartResume" xml:space="preserve"><value>重启恢复交接</value></data>
+  <data name="HistoryAndLogsHistoryKindApplicationUpdate" xml:space="preserve"><value>应用更新状态</value></data>
   <data name="HistoryAndLogsHistoryKindUnknown" xml:space="preserve"><value>历史记录</value></data>
   <data name="HistoryAndLogsEventKindUserCommand" xml:space="preserve"><value>用户命令</value></data>
   <data name="HistoryAndLogsEventKindStateTransition" xml:space="preserve"><value>状态变化</value></data>
