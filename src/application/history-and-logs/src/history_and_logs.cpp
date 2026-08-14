@@ -287,6 +287,57 @@ void append_id_timeline(HistoryEntryProjection& target,
   return "unknown";
 }
 
+[[nodiscard]] char const* optimization_risk_name(
+    domain::software_optimization_catalog::RiskLevel risk) noexcept {
+  switch (risk) {
+    case domain::software_optimization_catalog::RiskLevel::low:
+      return "low";
+    case domain::software_optimization_catalog::RiskLevel::medium:
+      return "medium";
+    case domain::software_optimization_catalog::RiskLevel::high:
+      return "high";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] char const* optimization_automation_name(
+    domain::software_optimization_catalog::AutomationSupport automation)
+    noexcept {
+  switch (automation) {
+    case domain::software_optimization_catalog::AutomationSupport::controlled:
+      return "controlled";
+    case domain::software_optimization_catalog::AutomationSupport::manual_only:
+      return "manual-only";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] char const* optimization_exit_requirement_name(
+    domain::software_optimization_catalog::ExitRequirement requirement)
+    noexcept {
+  switch (requirement) {
+    case domain::software_optimization_catalog::ExitRequirement::none:
+      return "none";
+    case domain::software_optimization_catalog::ExitRequirement::graceful_exit:
+      return "graceful-exit";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] char const* optimization_restart_requirement_name(
+    domain::software_optimization_catalog::RestartRequirement requirement)
+    noexcept {
+  switch (requirement) {
+    case domain::software_optimization_catalog::RestartRequirement::none:
+      return "none";
+    case domain::software_optimization_catalog::RestartRequirement::explorer:
+      return "explorer";
+    case domain::software_optimization_catalog::RestartRequirement::windows:
+      return "windows";
+  }
+  return "unknown";
+}
+
 void append_installation_plan_facts(
     std::vector<HistoryFactProjection>& target,
     domain::installation_batch::FrozenBatchPlan const& plan) {
@@ -437,6 +488,72 @@ void append_optimization_plan_facts(
   if (plan.retry_of_batch_id.has_value()) {
     append_fact(target, "batch.retry_of", *plan.retry_of_batch_id);
   }
+  for (auto const& frozen_scheme : plan.schemes) {
+    auto const prefix = "scheme." + frozen_scheme.scheme.id.value + ".";
+    append_fact(target, prefix + "target_id", frozen_scheme.target.id.value);
+    append_fact(target, prefix + "target_identity_anchor",
+                frozen_scheme.target.identity_anchor.value);
+    append_fact(target, prefix + "detected_version",
+                frozen_scheme.detected_version);
+    append_fact(target, prefix + "risk",
+                optimization_risk_name(frozen_scheme.scheme.risk));
+    append_fact(target, prefix + "risk_confirmation_id",
+                frozen_scheme.risk_confirmation_id);
+    append_fact(target, prefix + "automation",
+                optimization_automation_name(frozen_scheme.scheme.automation));
+    append_fact(target, prefix + "exit_requirement",
+                optimization_exit_requirement_name(
+                    frozen_scheme.scheme.exit_requirement));
+    append_fact(target, prefix + "restart_requirement",
+                optimization_restart_requirement_name(
+                    frozen_scheme.scheme.restart_requirement));
+    append_fact(target, prefix + "forced_version_execution",
+                frozen_scheme.forced_version_execution ? "true" : "false");
+    append_fact(target, prefix + "force_version_confirmed",
+                frozen_scheme.force_version_confirmed ? "true" : "false");
+    if (frozen_scheme.force_risk_version.empty()) {
+      append_unavailable_fact(
+          target, prefix + "force_risk_version",
+          "the frozen scheme did not require a forced-version confirmation");
+    } else {
+      append_fact(target, prefix + "force_risk_version",
+                  frozen_scheme.force_risk_version);
+    }
+    if (frozen_scheme.force_version_confirmation_id.has_value()) {
+      append_fact(target, prefix + "force_version_confirmation_id",
+                  *frozen_scheme.force_version_confirmation_id);
+    } else {
+      append_unavailable_fact(
+          target, prefix + "force_version_confirmation_id",
+          "the frozen scheme did not require a forced-version confirmation");
+    }
+    append_fact(target, prefix + "withdrawal_notice_revision",
+                std::to_string(plan.emergency_notice_revision));
+    if (frozen_scheme.scheme.manual_emergency_explanation.empty()) {
+      append_unavailable_fact(
+          target, prefix + "withdrawal_explanation",
+          "the frozen scheme did not retain a manual withdrawal explanation");
+    } else {
+      append_fact(target, prefix + "withdrawal_explanation",
+                  frozen_scheme.scheme.manual_emergency_explanation);
+    }
+    for (auto const& frozen_option : frozen_scheme.selected_options) {
+      auto const option_prefix =
+          prefix + "option." + frozen_option.option.id.value + ".";
+      append_fact(target, option_prefix + "selected", "true");
+      append_fact(target, option_prefix + "automation",
+                  optimization_automation_name(frozen_option.option.automation));
+      append_fact(target, option_prefix + "impact", frozen_option.option.impact);
+      if (frozen_option.selected_value.has_value()) {
+        append_fact(target, option_prefix + "selected_value",
+                    *frozen_option.selected_value);
+      } else {
+        append_unavailable_fact(
+            target, option_prefix + "selected_value",
+            "the frozen selected option has no value parameter");
+      }
+    }
+  }
 }
 
 void append_optimization_step_timeline(
@@ -500,17 +617,38 @@ void append_optimization_history(
                 active.close_requested ? "true" : "false");
     append_fact(entry.facts, "batch.stop_requested",
                 active.stop_requested ? "true" : "false");
-    append_fact(entry.facts, "last_durable_transition.scheme_id",
-                active.last_transition.scheme_id);
-    append_fact(entry.facts, "last_durable_transition.option_id",
-                active.last_transition.option_id);
-    append_fact(entry.facts, "last_durable_transition.step_state",
-                domain::software_optimization_batch::to_string(
-                    active.last_transition.step_state));
-    append_fact(entry.facts, "last_durable_transition.outcome",
-                optimization_durable_outcome_name(active.last_transition.outcome));
-    append_fact(entry.facts, "last_durable_transition.coverage_gap",
-                active.last_transition.coverage_gap ? "true" : "false");
+    if (active.last_transition.valid()) {
+      append_fact(entry.facts, "last_durable_transition.generation",
+                  std::to_string(active.last_transition.generation));
+      append_fact(entry.facts, "last_durable_transition.scheme_id",
+                  active.last_transition.scheme_id);
+      append_fact(entry.facts, "last_durable_transition.option_id",
+                  active.last_transition.option_id);
+      append_fact(entry.facts, "last_durable_transition.step_state",
+                  domain::software_optimization_batch::to_string(
+                      active.last_transition.step_state));
+      append_fact(entry.facts, "last_durable_transition.outcome",
+                  optimization_durable_outcome_name(
+                      active.last_transition.outcome));
+      append_fact(entry.facts, "last_durable_transition.coverage_gap",
+                  active.last_transition.coverage_gap ? "true" : "false");
+    } else {
+      constexpr std::string_view reason{
+          "the active optimization record has no valid durable transition"};
+      append_unavailable_fact(entry.facts, "last_durable_transition.generation",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts, "last_durable_transition.scheme_id",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts, "last_durable_transition.option_id",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts, "last_durable_transition.step_state",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts, "last_durable_transition.outcome",
+                              std::string{reason});
+      append_unavailable_fact(entry.facts,
+                              "last_durable_transition.coverage_gap",
+                              std::string{reason});
+    }
     for (auto const& step : active.steps) {
       append_optimization_step_timeline(entry, step);
     }
@@ -961,7 +1099,7 @@ HistoryAndLogsService::HistoryAndLogsService(
         software_optimization_batches,
     SystemSettingsApplyService& system_settings,
     software_selection::SoftwareSelectionLifecycle& software_selection,
-    DebugLogStatusSource const* debug_log_status,
+    DebugLogPolicySnapshotSource const* debug_log_policy,
     restart_resume::RestartResumeService const* restart_resume)
     : clock_(clock),
       application_updates_(application_updates),
@@ -973,7 +1111,7 @@ HistoryAndLogsService::HistoryAndLogsService(
       software_optimization_batches_(software_optimization_batches),
       system_settings_(system_settings),
       software_selection_(software_selection),
-      debug_log_status_(debug_log_status),
+      debug_log_policy_(debug_log_policy),
       restart_resume_(restart_resume) {}
 
 HistoryAndLogsSnapshot HistoryAndLogsService::refresh() {
@@ -999,11 +1137,11 @@ HistoryAndLogsSnapshot HistoryAndLogsService::refresh(
   append_external_handoff_history(result.history, software_selection_, result.log);
   append_restart_resume_history(result.history, restart_resume_, result.log);
   append_update_history(result.history, application_updates_);
-  if (debug_log_status_ != nullptr) {
-    result.debug = debug_log_status_->snapshot();
+  if (debug_log_policy_ != nullptr) {
+    result.debug = debug_log_policy_->snapshot();
   } else {
-    result.debug.detail =
-        "debug status is not provided by the current composition root";
+    result.debug.not_obtained_reason =
+        "debug log policy is not provided by the current composition root";
   }
   if (!result.log.available && !result.log.error.empty()) {
     result.detail = "execution-log-unavailable";
@@ -1030,9 +1168,27 @@ HistoryAndLogsSnapshot HistoryAndLogsService::locate(
   std::erase_if(result.history, [&](auto const& entry) {
     return entry.stable_id != requested;
   });
+  std::optional<std::string> frozen_batch_correlation;
+  for (auto const& entry : result.history) {
+    if (entry.kind != HistoryEntryKind::installation_batch &&
+        entry.kind != HistoryEntryKind::software_optimization_batch) {
+      continue;
+    }
+    auto const correlation = std::ranges::find_if(
+        entry.facts, [](HistoryFactProjection const& fact) {
+          return fact.key == "batch.correlation_id" &&
+                 fact.disposition == HistoryFactDisposition::obtained;
+        });
+    if (correlation != entry.facts.end()) {
+      frozen_batch_correlation = correlation->value;
+    }
+    break;
+  }
   std::erase_if(result.log.events, [&](auto const& event) {
-    return event.correlation.value != requested &&
-           !event_mentions_id(event, requested);
+    if (frozen_batch_correlation.has_value()) {
+      return event.correlation.value != *frozen_batch_correlation;
+    }
+    return !event_mentions_id(event, requested);
   });
   return result;
 }
@@ -1191,6 +1347,19 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
           std::to_string(snapshot.log.coverage_gap_count) +
               " recorded coverage gap events are present");
     }
+    append_retained(
+        context, "execution_log_capacity_state",
+        snapshot.log.capacity_state == ExecutionLogCapacityState::available
+            ? "available"
+            : "space-exhausted");
+    append_retained(context, "execution_log_noncritical_dropped_count",
+                    std::to_string(snapshot.log.noncritical_dropped_count));
+    if (snapshot.log.noncritical_dropped_count != 0) {
+      append_missing(
+          context, "execution_log_coverage",
+          std::to_string(snapshot.log.noncritical_dropped_count) +
+              " noncritical events were suppressed while storage capacity was exhausted");
+    }
   }
   if (snapshot.log.coverage_started_at.has_value()) {
     context.coverage_started_at = snapshot.log.coverage_started_at;
@@ -1203,6 +1372,27 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
   } else {
     append_missing(context, "coverage_end",
                    "current log projection has no recorded coverage end");
+  }
+  auto const debug_context = make_debug_log_policy_context(snapshot.debug);
+  if (!debug_context.facts_available) {
+    context.debug_log_coverage.unavailable_reason =
+        debug_context.not_obtained_reason.empty()
+            ? "debug log policy owner did not provide a readable snapshot"
+            : debug_context.not_obtained_reason;
+    append_missing(context, "debug_log_policy",
+                   context.debug_log_coverage.unavailable_reason);
+  } else {
+    context.debug_log_coverage = {
+        .value = "mode=" + debug_context.debug_mode +
+                 ";granularity=" + debug_context.granularity +
+                 ";locating=" + debug_context.locating_semantics +
+                 ";retention=" + debug_context.existing_log_retention,
+        .disposition = DiagnosticValueDisposition::retain,
+    };
+    append_retained(context, "debug_log_filterable_fields",
+                    std::to_string(debug_context.filterable_fields.size()));
+    append_retained(context, "debug_log_coverage_count",
+                    std::to_string(debug_context.coverage.size()));
   }
   return context;
 }

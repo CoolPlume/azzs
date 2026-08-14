@@ -19,6 +19,8 @@
 #include "in_memory_log_storage.hpp"
 
 #ifdef _WIN32
+#include <windows.h>
+
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #endif
 
@@ -26,6 +28,9 @@ namespace {
 
 using azzs::adapters::infrastructure::StructuredExecutionLog;
 using azzs::adapters::infrastructure::LocalFileLogStorage;
+#ifdef _WIN32
+using azzs::adapters::infrastructure::classify_windows_log_storage_write_failure;
+#endif
 using azzs::application::ExecutionEvent;
 using azzs::application::ExecutionEventKind;
 using azzs::application::ExecutionError;
@@ -1387,6 +1392,8 @@ verify_capacity_exhaustion_suppresses_noncritical_events_and_recovers() {
                     recovered_critical.capacity_state ==
                         ExecutionLogCapacityState::space_exhausted &&
                     recovered_critical.noncritical_dropped_count == 2 &&
+                    recovered_critical.error ==
+                        "recovery annotation did not fit before the critical transition" &&
                     resumed_noncritical.persisted &&
                     after_recovery.capacity_state ==
                         ExecutionLogCapacityState::available &&
@@ -1400,6 +1407,22 @@ verify_capacity_exhaustion_suppresses_noncritical_events_and_recovers() {
                         std::string::npos,
                 "the durable recovery record must carry exact drop statistics");
 }
+
+#ifdef _WIN32
+[[nodiscard]] bool
+verify_windows_quota_exhaustion_is_classified_as_capacity_pressure() {
+  return expect(
+             classify_windows_log_storage_write_failure(
+                 ERROR_DISK_QUOTA_EXCEEDED) ==
+                 azzs::adapters::infrastructure::LogStorageWriteFailure::
+                     capacity_exhausted,
+             "Windows quota exhaustion must enter the noncritical suppression path") &&
+         expect(
+             classify_windows_log_storage_write_failure(ERROR_FILE_NOT_FOUND) ==
+                 azzs::adapters::infrastructure::LogStorageWriteFailure::none,
+             "unrelated Windows failures must not be misclassified as capacity pressure");
+}
+#endif
 
 [[nodiscard]] bool
 verify_diagnostic_context_facts_mark_absence_and_redact_dynamic_text() {
@@ -1604,6 +1627,9 @@ int main() {
       !verify_single_file_export_is_self_contained() ||
       !verify_diagnostic_export_failure_is_explicit() ||
       !verify_capacity_exhaustion_suppresses_noncritical_events_and_recovers() ||
+#ifdef _WIN32
+      !verify_windows_quota_exhaustion_is_classified_as_capacity_pressure() ||
+#endif
       !verify_diagnostic_context_facts_mark_absence_and_redact_dynamic_text() ||
       !verify_local_file_storage_and_single_file_export() ||
       !verify_concurrent_instances_share_a_stable_total_order() ||

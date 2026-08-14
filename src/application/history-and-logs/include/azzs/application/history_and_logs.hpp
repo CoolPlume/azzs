@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "azzs/application/debug_log_policy/debug_log_policy.hpp"
 #include "azzs/application/execution_log.hpp"
 
 namespace azzs::application {
@@ -88,21 +89,6 @@ struct HistoryEntryProjection final {
   std::vector<HistoryTimelineProjection> timeline;
 };
 
-// Issue 32 owns the editable debug preference. History only consumes this
-// projection so turning debug mode off cannot erase previously persisted logs.
-struct DebugLogStatusProjection final {
-  bool available{false};
-  bool enabled{false};
-  std::string granularity;
-  std::string detail;
-};
-
-class DebugLogStatusSource {
- public:
-  virtual ~DebugLogStatusSource() = default;
-  [[nodiscard]] virtual DebugLogStatusProjection snapshot() const = 0;
-};
-
 struct HistoryAndLogsFilter final {
   std::string query;
   std::optional<HistoryEntryKind> history_kind;
@@ -114,7 +100,7 @@ struct HistoryAndLogsFilter final {
 struct HistoryAndLogsSnapshot final {
   std::vector<HistoryEntryProjection> history;
   ExecutionLogSnapshot log;
-  DebugLogStatusProjection debug;
+  DebugLogPolicySnapshot debug;
   HistoryAndLogsFilter applied_filter;
   std::string detail;
 };
@@ -148,7 +134,7 @@ class HistoryAndLogsService final {
           software_optimization_batches,
       SystemSettingsApplyService& system_settings,
       software_selection::SoftwareSelectionLifecycle& software_selection,
-      DebugLogStatusSource const* debug_log_status = nullptr,
+      DebugLogPolicySnapshotSource const* debug_log_policy = nullptr,
       restart_resume::RestartResumeService const* restart_resume = nullptr);
 
   [[nodiscard]] HistoryAndLogsSnapshot refresh();
@@ -173,7 +159,7 @@ class HistoryAndLogsService final {
       software_optimization_batches_;
   SystemSettingsApplyService& system_settings_;
   software_selection::SoftwareSelectionLifecycle& software_selection_;
-  DebugLogStatusSource const* debug_log_status_{};
+  DebugLogPolicySnapshotSource const* debug_log_policy_{};
   restart_resume::RestartResumeService const* restart_resume_{};
 };
 

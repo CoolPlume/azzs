@@ -362,13 +362,6 @@ class FileLock final {
   std::string error_;
 };
 
-[[nodiscard]] LogStorageWriteFailure storage_write_failure(
-    DWORD error) noexcept {
-  return error == ERROR_DISK_FULL || error == ERROR_HANDLE_DISK_FULL
-             ? LogStorageWriteFailure::capacity_exhausted
-             : LogStorageWriteFailure::none;
-}
-
 [[nodiscard]] LogStorageWriteResult write_and_flush(
     std::filesystem::path const& path,
     std::string const& bytes,
@@ -378,7 +371,7 @@ class FileLock final {
                                FILE_ATTRIBUTE_NORMAL, security);
   if (file.get() == nullptr) {
     auto const error = ::GetLastError();
-    return {.failure = storage_write_failure(error),
+    return {.failure = classify_windows_log_storage_write_failure(error),
             .error = "log transaction open or security validation failed: win32:" +
                      std::to_string(error)};
   }
@@ -386,7 +379,7 @@ class FileLock final {
   if (!::SetFilePointerEx(file.get(), start, nullptr, FILE_BEGIN) ||
       !::SetEndOfFile(file.get())) {
     auto const error = ::GetLastError();
-    return {.failure = storage_write_failure(error),
+    return {.failure = classify_windows_log_storage_write_failure(error),
             .error = "log transaction truncate failed: win32:" +
                      std::to_string(error)};
   }
@@ -398,7 +391,7 @@ class FileLock final {
     if (!::WriteFile(file.get(), bytes.data() + offset, amount, &written,
                      nullptr)) {
       auto const error = ::GetLastError();
-      return {.failure = storage_write_failure(error),
+      return {.failure = classify_windows_log_storage_write_failure(error),
               .error = "log transaction write failed: win32:" +
                        std::to_string(error)};
     }
@@ -410,7 +403,7 @@ class FileLock final {
   }
   if (!::FlushFileBuffers(file.get())) {
     auto const error = ::GetLastError();
-    return {.failure = storage_write_failure(error),
+    return {.failure = classify_windows_log_storage_write_failure(error),
             .error = "log transaction flush failed: win32:" +
                      std::to_string(error)};
   }
@@ -426,7 +419,7 @@ class FileLock final {
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, security);
   if (source_guard.get() == nullptr) {
     auto const error = ::GetLastError();
-    return {.failure = storage_write_failure(error),
+    return {.failure = classify_windows_log_storage_write_failure(error),
             .error = "log transaction source validation failed: win32:" +
                      std::to_string(error)};
   }
@@ -437,7 +430,7 @@ class FileLock final {
     auto const target_error = ::GetLastError();
     if (target_error != ERROR_FILE_NOT_FOUND &&
         target_error != ERROR_PATH_NOT_FOUND) {
-      return {.failure = storage_write_failure(target_error),
+      return {.failure = classify_windows_log_storage_write_failure(target_error),
               .error = "log transaction target validation failed: win32:" +
                        std::to_string(target_error)};
     }
@@ -447,7 +440,7 @@ class FileLock final {
   if (!::MoveFileExW(source.c_str(), target.c_str(),
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
     auto const error = ::GetLastError();
-    return {.failure = storage_write_failure(error),
+    return {.failure = classify_windows_log_storage_write_failure(error),
             .error = "log transaction replace failed: win32:" +
                      std::to_string(error)};
   }
@@ -588,6 +581,16 @@ class FileLock final {
 #endif
 
 }  // namespace
+
+#ifdef _WIN32
+LogStorageWriteFailure classify_windows_log_storage_write_failure(
+    unsigned long error) noexcept {
+  return error == ERROR_DISK_FULL || error == ERROR_HANDLE_DISK_FULL ||
+                 error == ERROR_DISK_QUOTA_EXCEEDED
+             ? LogStorageWriteFailure::capacity_exhausted
+             : LogStorageWriteFailure::none;
+}
+#endif
 
 class LocalFileLogStorage::Impl final {
  public:
