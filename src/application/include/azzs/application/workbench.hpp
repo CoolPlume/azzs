@@ -5,6 +5,7 @@
 #include <stop_token>
 
 #include "azzs/application/application_update.hpp"
+#include "azzs/application/driver_acquisition.hpp"
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/platform_info.hpp"
@@ -25,6 +26,7 @@ struct WorkbenchSnapshot final {
   SystemSettingsApplySnapshot system_settings;
   UpdateSnapshot update;
   HardwareOverviewSnapshot hardware_overview;
+  driver_acquisition::DriverAcquisitionSnapshot driver_acquisition;
 };
 
 class Workbench final {
@@ -42,6 +44,11 @@ class Workbench final {
       std::stop_token cancellation = {});
   [[nodiscard]] HardwareOverviewSnapshot refresh_hardware(
       std::stop_token cancellation = {});
+  [[nodiscard]] driver_acquisition::DriverActionResult begin_driver_handoff(
+      driver_acquisition::DriverEntrypoint entrypoint);
+  [[nodiscard]] driver_acquisition::DriverActionResult driver_flow_returned();
+  [[nodiscard]] driver_acquisition::DriverActionResult decide_driver_handoff(
+      driver_acquisition::DriverHandoffDecision decision);
   [[nodiscard]] WorkbenchSnapshot snapshot() const;
   [[nodiscard]] std::shared_ptr<WorkbenchServices> services() const noexcept;
 

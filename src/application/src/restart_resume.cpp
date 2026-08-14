@@ -112,7 +112,7 @@ class Decoder final {
 
 [[nodiscard]] bool valid_operation(std::uint8_t value) noexcept {
   return value <= static_cast<std::uint8_t>(
-                      RestartResumeOperation::software_optimization_batch);
+                      RestartResumeOperation::driver_acquisition);
 }
 
 [[nodiscard]] std::optional<domain::StateBytes> encode(
@@ -269,6 +269,7 @@ class RestartResumeService::Impl final {
       return result(RestartResumeActionCode::rejected,
                     "a valid restart checkpoint must be the only pending checkpoint");
     }
+    auto const previous = snapshot_;
     snapshot_.state = RestartResumeState::waiting_for_windows_restart;
     snapshot_.checkpoint = std::move(request);
     snapshot_.login_resume_registered = false;
@@ -276,13 +277,24 @@ class RestartResumeService::Impl final {
 
     auto registered = registration_.register_once();
     if (!registration_succeeded(registered.code)) {
-      snapshot_.detail = registered.detail.empty()
-                             ? "the next-login resume registration was not established"
-                             : std::move(registered.detail);
+      auto const message = registered.detail.empty()
+                               ? "the next-login resume registration was not established"
+                               : std::move(registered.detail);
+      if (rollback_armed_checkpoint(previous, message)) {
+        return result(RestartResumeActionCode::registration_failed, message);
+      }
       return result(RestartResumeActionCode::registration_failed, snapshot_.detail);
     }
     snapshot_.login_resume_registered = true;
-    if (!persist()) return result(RestartResumeActionCode::persistence_failed);
+    if (!persist()) {
+      auto const message = snapshot_.detail.empty()
+                               ? "the restart registration state could not be persisted"
+                               : snapshot_.detail;
+      if (rollback_armed_checkpoint(previous, message)) {
+        return result(RestartResumeActionCode::persistence_failed, message);
+      }
+      return result(RestartResumeActionCode::persistence_failed, snapshot_.detail);
+    }
     snapshot_.detail.clear();
     return result(RestartResumeActionCode::succeeded);
   }
@@ -356,6 +368,31 @@ class RestartResumeService::Impl final {
     snapshot_.detail = committed.error.empty()
                            ? "restart-resume checkpoint could not be persisted"
                            : std::move(committed.error);
+    return false;
+  }
+
+  // `arm` writes a checkpoint before it asks the platform to register a
+  // one-shot launch. A registration failure must not leave a bare checkpoint
+  // behind. If cleanup or the rollback write itself fails, retain the pending
+  // snapshot so the caller can stay fail-closed against the same barrier.
+  [[nodiscard]] bool rollback_armed_checkpoint(
+      RestartResumeSnapshot const& previous, std::string const& reason) {
+    auto cleared = registration_.clear_once();
+    if (!registration_succeeded(cleared.code)) {
+      snapshot_.detail = reason + "; restart registration cleanup failed";
+      return false;
+    }
+    auto const pending = snapshot_;
+    snapshot_ = previous;
+    snapshot_.detail = reason;
+    if (persist()) {
+      return true;
+    }
+    auto const rollback_error = snapshot_.detail;
+    snapshot_ = pending;
+    snapshot_.detail = rollback_error.empty()
+                           ? reason + "; restart checkpoint rollback failed"
+                           : std::move(rollback_error);
     return false;
   }
 
