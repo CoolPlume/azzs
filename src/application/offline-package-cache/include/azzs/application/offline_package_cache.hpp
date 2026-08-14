@@ -298,6 +298,9 @@ class OfflinePackageCacheService final {
   [[nodiscard]] OfflinePackageCacheSnapshot snapshot();
   [[nodiscard]] CacheActionResult download(CacheAssetIdentity const& identity);
   [[nodiscard]] CacheActionResult resume(CacheAssetIdentity const& identity);
+  // Discards only this in-process unfinished transfer and its temporary
+  // bytes. Completed cache entries are deliberately untouched.
+  [[nodiscard]] CacheActionResult abandon(CacheAssetIdentity const& identity);
   [[nodiscard]] CacheActionResult retry(CacheAssetIdentity const& identity);
   [[nodiscard]] CacheCleanupResult clean();
 

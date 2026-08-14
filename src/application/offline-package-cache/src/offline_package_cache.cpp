@@ -222,6 +222,25 @@ CacheActionResult OfflinePackageCacheService::resume(
   return run_download(assets_[*index], false, true);
 }
 
+CacheActionResult OfflinePackageCacheService::abandon(
+    CacheAssetIdentity const& identity) {
+  auto const asset = asset_index(identity);
+  if (!asset.has_value()) {
+    return action_for_missing_asset(identity);
+  }
+  auto const session = session_index(identity);
+  if (!session.has_value() || !sessions_[*session].writer) {
+    return {.code = CacheActionCode::failed,
+            .item = item_snapshot(assets_[*asset]),
+            .detail = "no unfinished controlled cache transfer can be abandoned"};
+  }
+  abandon_session(*session);
+  sessions_.erase(sessions_.begin() + static_cast<std::ptrdiff_t>(*session));
+  return {.code = CacheActionCode::interrupted,
+          .item = item_snapshot(assets_[*asset]),
+          .detail = "unfinished controlled cache transfer and temporary bytes were discarded"};
+}
+
 CacheActionResult OfflinePackageCacheService::retry(
     CacheAssetIdentity const& identity) {
   auto const asset = asset_index(identity);

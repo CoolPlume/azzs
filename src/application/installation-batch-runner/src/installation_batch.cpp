@@ -25,7 +25,7 @@ namespace catalog = domain::software_catalog;
 namespace cache = domain::offline_package_cache;
 namespace selection = domain::software_selection;
 
-constexpr std::uint32_t k_format_version = 4;
+constexpr std::uint32_t k_format_version = 5;
 constexpr std::size_t k_max_payload_bytes = 2U * 1024U * 1024U;
 constexpr std::size_t k_max_text_bytes = 1024U * 1024U;
 constexpr std::size_t k_max_items = 128;
@@ -390,6 +390,8 @@ void write_progress(Writer& writer, batch_domain::InstallationItemProgress const
   writer.u32(value.attempt);
   writer.u8(value.launch_requested ? 1 : 0);
   writer.u8(value.installer_started ? 1 : 0);
+  writer.u8(value.force_termination_confirmation_requested ? 1 : 0);
+  writer.u8(value.force_termination_completed ? 1 : 0);
   writer.u8(value.post_install_completed ? 1 : 0);
   writer.u8(0);
   writer.text("");
@@ -399,16 +401,22 @@ void write_progress(Writer& writer, batch_domain::InstallationItemProgress const
                                  batch_domain::InstallationItemProgress& value) {
   std::uint8_t launch_requested{};
   std::uint8_t started{};
+  std::uint8_t force_confirmation{};
+  std::uint8_t force_terminated{};
   std::uint8_t post_install_completed{};
   std::uint8_t has_handle{};
   if (!reader.text(value.item_id, 256) || !read_enum(reader, value.state) ||
       !reader.u32(value.attempt) || !reader.u8(launch_requested) || !reader.u8(started) ||
+      !reader.u8(force_confirmation) || !reader.u8(force_terminated) ||
       !reader.u8(post_install_completed) || !reader.u8(has_handle) ||
-      launch_requested > 1 || started > 1 || post_install_completed > 1 || has_handle > 1) {
+      launch_requested > 1 || started > 1 || force_confirmation > 1 ||
+      force_terminated > 1 || post_install_completed > 1 || has_handle > 1) {
     return false;
   }
   value.launch_requested = launch_requested != 0;
   value.installer_started = started != 0;
+  value.force_termination_confirmation_requested = force_confirmation != 0;
+  value.force_termination_completed = force_terminated != 0;
   value.post_install_completed = post_install_completed != 0;
   value.opaque_installer_handle.reset();
   if (has_handle != 0) {
@@ -458,6 +466,7 @@ void write_record(Writer& writer, batch_domain::InstallationBatchRecord const& v
   write_plan(writer, value.plan);
   write_enum(writer, value.state);
   writer.u8(value.close_requested ? 1 : 0);
+  writer.u8(value.stop_requested ? 1 : 0);
   writer.u32(static_cast<std::uint32_t>(value.items.size()));
   for (auto const& progress : value.items) {
     write_progress(writer, progress);
@@ -473,13 +482,16 @@ void write_record(Writer& writer, batch_domain::InstallationBatchRecord const& v
 [[nodiscard]] bool read_record(Reader& reader,
                                batch_domain::InstallationBatchRecord& value) {
   std::uint8_t closing{};
+  std::uint8_t stopping{};
   std::uint32_t count{};
   std::uint8_t has_lease{};
   if (!read_plan(reader, value.plan) || !read_enum(reader, value.state) ||
-      !reader.u8(closing) || closing > 1 || !reader.u32(count) || count > k_max_items) {
+      !reader.u8(closing) || !reader.u8(stopping) || closing > 1 || stopping > 1 ||
+      !reader.u32(count) || count > k_max_items) {
     return false;
   }
   value.close_requested = closing != 0;
+  value.stop_requested = stopping != 0;
   value.items.clear();
   value.items.reserve(count);
   for (std::uint32_t index = 0; index < count; ++index) {
@@ -659,6 +671,46 @@ bool InstallationEffectTarget::valid() const noexcept {
          execution_profile.valid() && bounded_effect_text(opaque_item_handle);
 }
 
+namespace {
+
+[[nodiscard]] char const* fact_action_name(InstallationFactKind kind) noexcept {
+  switch (kind) {
+    case InstallationFactKind::batch_created:
+      return "batch-created";
+    case InstallationFactKind::state_persisted:
+      return "state-persisted";
+    case InstallationFactKind::launch_requested:
+      return "launch-requested";
+    case InstallationFactKind::verification_observed:
+      return "verification-observed";
+    case InstallationFactKind::batch_paused:
+      return "batch-paused";
+    case InstallationFactKind::download_paused:
+      return "download-paused";
+    case InstallationFactKind::download_resumed:
+      return "download-resumed";
+    case InstallationFactKind::normal_stop_requested:
+      return "normal-stop-requested";
+    case InstallationFactKind::forced_termination_confirmation_requested:
+      return "forced-termination-confirmation-requested";
+    case InstallationFactKind::forced_termination_confirmation_cancelled:
+      return "forced-termination-confirmation-cancelled";
+    case InstallationFactKind::forced_termination_observed:
+      return "forced-termination-observed";
+    case InstallationFactKind::normal_close_requested:
+      return "normal-close-requested";
+    case InstallationFactKind::recovery_continued:
+      return "recovery-continued";
+    case InstallationFactKind::recovery_observed:
+      return "recovery-observed";
+    case InstallationFactKind::coverage_gap:
+      return "coverage-gap";
+  }
+  return "unknown";
+}
+
+}  // namespace
+
 class InstallationBatchService::Impl final {
  public:
   Impl(DeviceStateStore& states, SharedOperationOccupancy& occupancy,
@@ -788,7 +840,9 @@ class InstallationBatchService::Impl final {
     }
     auto index = next_runnable_index();
     if (!index.has_value()) {
-      active_->state = batch_domain::InstallationBatchState::completed;
+      active_->state = active_->stop_requested
+                           ? batch_domain::InstallationBatchState::stopped
+                           : batch_domain::InstallationBatchState::completed;
       auto lease = acquire_and_bind();
       return lease.has_value()
                  ? commit_and_release(*lease, InstallationFactKind::state_persisted,
@@ -816,15 +870,25 @@ class InstallationBatchService::Impl final {
       active_->state = batch_domain::InstallationBatchState::running;
     }
     if (batch_domain::blocks_batch(progress.state)) {
-      active_->state = progress.state == batch_domain::InstallationItemState::waiting_restart
-                           ? batch_domain::InstallationBatchState::waiting_restart
-                           : batch_domain::InstallationBatchState::awaiting_user;
+      if (progress.state == batch_domain::InstallationItemState::download_paused) {
+        active_->state = batch_domain::InstallationBatchState::download_paused;
+      } else if (progress.state == batch_domain::InstallationItemState::waiting_restart) {
+        active_->state = batch_domain::InstallationBatchState::waiting_restart;
+      } else if (!active_->stop_requested) {
+        active_->state = batch_domain::InstallationBatchState::awaiting_user;
+      }
       return result(InstallationBatchActionCode::blocked, "the current item requires explicit action");
     }
     if (progress.state == batch_domain::InstallationItemState::installer_running) {
       auto lease = acquire_and_bind();
       if (!lease.has_value()) {
         return lease_failure_result();
+      }
+      if (active_->stop_requested && !progress.installer_started) {
+        progress.state = batch_domain::InstallationItemState::stop_pending;
+        progress.detail = "the installer launch was not completed before normal stop";
+        return commit_and_release(*lease, InstallationFactKind::normal_stop_requested,
+                                  progress);
       }
       if (!progress.installer_started) {
         if (!progress.launch_requested) {
@@ -936,7 +1000,14 @@ class InstallationBatchService::Impl final {
           progress.state = batch_domain::InstallationItemState::source_invalid;
           break;
         case InstallationDownloadCode::downloading:
+          break;
         case InstallationDownloadCode::paused:
+          progress.state = batch_domain::InstallationItemState::download_paused;
+          active_->state = batch_domain::InstallationBatchState::download_paused;
+          break;
+        case InstallationDownloadCode::restart_required:
+        case InstallationDownloadCode::stopped:
+          progress.state = batch_domain::InstallationItemState::failed;
           break;
         case InstallationDownloadCode::failed:
           progress.state = batch_domain::InstallationItemState::failed;
@@ -1082,6 +1153,133 @@ class InstallationBatchService::Impl final {
                : lease_failure_result();
   }
 
+  [[nodiscard]] InstallationBatchActionResult pause_current_download() {
+    if (!ready_for_command()) {
+      return result(InstallationBatchActionCode::not_restored);
+    }
+    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
+      return fail_closed_result();
+    }
+    auto index = next_runnable_index();
+    if (!index.has_value() || !batch_domain::command_allowed(
+                                  active_->items[*index].state,
+                                  batch_domain::InstallationItemCommand::pause_download)) {
+      return result(InstallationBatchActionCode::rejected,
+                    "pause is only allowed while the current item is downloading");
+    }
+    auto& progress = active_->items[*index];
+    auto lease = acquire_and_bind();
+    if (!lease.has_value()) {
+      return lease_failure_result();
+    }
+    auto observed = download_.pause(effect_target(*index));
+    progress.detail = observed.detail;
+    InstallationFactKind kind = InstallationFactKind::state_persisted;
+    switch (observed.code) {
+      case InstallationDownloadCode::paused:
+        progress.state = batch_domain::InstallationItemState::download_paused;
+        active_->state = batch_domain::InstallationBatchState::download_paused;
+        kind = InstallationFactKind::download_paused;
+        break;
+      case InstallationDownloadCode::cached_ready:
+      case InstallationDownloadCode::completed:
+        progress.state = batch_domain::InstallationItemState::installer_running;
+        active_->state = batch_domain::InstallationBatchState::running;
+        break;
+      case InstallationDownloadCode::downloading:
+        active_->state = batch_domain::InstallationBatchState::running;
+        break;
+      case InstallationDownloadCode::waiting_network:
+        progress.state = batch_domain::InstallationItemState::waiting_network;
+        active_->state = batch_domain::InstallationBatchState::running;
+        break;
+      case InstallationDownloadCode::source_invalid:
+        progress.state = batch_domain::InstallationItemState::source_invalid;
+        active_->state = batch_domain::InstallationBatchState::running;
+        break;
+      case InstallationDownloadCode::restart_required:
+      case InstallationDownloadCode::stopped:
+      case InstallationDownloadCode::failed:
+        break;
+    }
+    auto persisted = commit_and_release(*lease, kind, progress);
+    if (!persisted.succeeded()) {
+      return persisted;
+    }
+    return observed.code == InstallationDownloadCode::paused ||
+                   observed.code == InstallationDownloadCode::cached_ready ||
+                   observed.code == InstallationDownloadCode::completed
+               ? persisted
+               : result(InstallationBatchActionCode::rejected,
+                        "the controlled download could not be paused");
+  }
+
+  [[nodiscard]] InstallationBatchActionResult resume_current_download() {
+    if (!ready_for_command()) {
+      return result(InstallationBatchActionCode::not_restored);
+    }
+    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
+      return fail_closed_result();
+    }
+    auto index = next_runnable_index();
+    if (!index.has_value() || !batch_domain::command_allowed(
+                                  active_->items[*index].state,
+                                  batch_domain::InstallationItemCommand::resume_download)) {
+      return result(InstallationBatchActionCode::rejected,
+                    "resume is only allowed for a paused current download");
+    }
+    auto& progress = active_->items[*index];
+    auto lease = acquire_and_bind();
+    if (!lease.has_value()) {
+      return lease_failure_result();
+    }
+    auto observed = download_.resume(effect_target(*index));
+    progress.detail = observed.detail;
+    InstallationFactKind kind = InstallationFactKind::state_persisted;
+    switch (observed.code) {
+      case InstallationDownloadCode::cached_ready:
+      case InstallationDownloadCode::completed:
+        progress.state = batch_domain::InstallationItemState::installer_running;
+        active_->state = batch_domain::InstallationBatchState::running;
+        kind = InstallationFactKind::download_resumed;
+        break;
+      case InstallationDownloadCode::downloading:
+      case InstallationDownloadCode::restart_required:
+        // A restart-from-zero is a visible recovery outcome, not a normal
+        // continuation. The adapter detail tells the UI to say so explicitly.
+        progress.state = batch_domain::InstallationItemState::downloading;
+        active_->state = batch_domain::InstallationBatchState::running;
+        kind = InstallationFactKind::download_resumed;
+        break;
+      case InstallationDownloadCode::paused:
+        progress.state = batch_domain::InstallationItemState::download_paused;
+        active_->state = batch_domain::InstallationBatchState::download_paused;
+        break;
+      case InstallationDownloadCode::waiting_network:
+        progress.state = batch_domain::InstallationItemState::waiting_network;
+        active_->state = batch_domain::InstallationBatchState::running;
+        break;
+      case InstallationDownloadCode::source_invalid:
+        progress.state = batch_domain::InstallationItemState::source_invalid;
+        active_->state = batch_domain::InstallationBatchState::running;
+        break;
+      case InstallationDownloadCode::stopped:
+      case InstallationDownloadCode::failed:
+        break;
+    }
+    auto persisted = commit_and_release(*lease, kind, progress);
+    if (!persisted.succeeded()) {
+      return persisted;
+    }
+    return observed.code == InstallationDownloadCode::downloading ||
+                   observed.code == InstallationDownloadCode::restart_required ||
+                   observed.code == InstallationDownloadCode::cached_ready ||
+                   observed.code == InstallationDownloadCode::completed
+               ? persisted
+               : result(InstallationBatchActionCode::rejected,
+                        "the controlled download could not be resumed");
+  }
+
   [[nodiscard]] InstallationBatchActionResult stop_current() {
     if (!ready_for_command()) {
       return result(InstallationBatchActionCode::not_restored);
@@ -1100,13 +1298,164 @@ class InstallationBatchService::Impl final {
     if (!lease.has_value()) {
       return lease_failure_result();
     }
-    if (progress.state == batch_domain::InstallationItemState::downloading) {
+    active_->stop_requested = true;
+    active_->state = batch_domain::InstallationBatchState::stopping;
+    if (progress.state == batch_domain::InstallationItemState::downloading ||
+        progress.state == batch_domain::InstallationItemState::download_paused) {
       auto observed = download_.stop(effect_target(*index));
       progress.detail = observed.detail;
+      if (observed.code != InstallationDownloadCode::stopped) {
+        active_->state = batch_domain::InstallationBatchState::recovery_required;
+        auto persisted = commit_and_release(*lease, InstallationFactKind::normal_stop_requested,
+                                            progress);
+        if (!persisted.succeeded()) {
+          return persisted;
+        }
+        return result(InstallationBatchActionCode::outcome_unknown,
+                      "the unfinished controlled download could not be confirmed stopped");
+      }
+      progress.state = batch_domain::InstallationItemState::stop_pending;
+    } else if (progress.state ==
+                   batch_domain::InstallationItemState::force_termination_confirmation_pending ||
+               progress.state ==
+                   batch_domain::InstallationItemState::installer_interaction_pending) {
+      // Normal stop never becomes a hidden force-termination. Return to the
+      // owned installer observation path and wait for its normal boundary.
+      progress.state = batch_domain::InstallationItemState::installer_running;
+      progress.force_termination_confirmation_requested = false;
+      progress.detail = "normal stop requested; the current installer may finish normally";
+    } else if (progress.state != batch_domain::InstallationItemState::installer_running) {
+      progress.state = batch_domain::InstallationItemState::stop_pending;
+      progress.detail = "the item was not started because the batch was normally stopped";
     }
-    progress.state = batch_domain::InstallationItemState::stop_pending;
-    active_->state = batch_domain::InstallationBatchState::stopped;
-    return commit_and_release(*lease, InstallationFactKind::batch_paused, progress);
+    return commit_and_release(*lease, InstallationFactKind::normal_stop_requested, progress);
+  }
+
+  [[nodiscard]] InstallationBatchActionResult request_force_termination() {
+    if (!ready_for_command()) {
+      return result(InstallationBatchActionCode::not_restored);
+    }
+    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
+      return fail_closed_result();
+    }
+    auto index = next_runnable_index();
+    if (!index.has_value() || !batch_domain::command_allowed(
+                                  active_->items[*index].state,
+                                  batch_domain::InstallationItemCommand::request_force_termination) ||
+        !active_->items[*index].installer_started) {
+      return result(InstallationBatchActionCode::rejected,
+                    "force termination is only allowed for a started controlled installer");
+    }
+    auto& progress = active_->items[*index];
+    auto lease = acquire_and_bind();
+    if (!lease.has_value()) {
+      return lease_failure_result();
+    }
+    // Persist the risk acknowledgement boundary before asking the UI to show
+    // confirmation. No process effect has happened at this point.
+    progress.force_termination_confirmation_requested = true;
+    progress.state = batch_domain::InstallationItemState::force_termination_confirmation_pending;
+    progress.detail = "force termination requires explicit acknowledgement of half-installed state risk";
+    active_->state = batch_domain::InstallationBatchState::awaiting_user;
+    auto persisted = commit_and_release(
+        *lease, InstallationFactKind::forced_termination_confirmation_requested, progress);
+    if (!persisted.succeeded()) {
+      return persisted;
+    }
+    return result(InstallationBatchActionCode::confirmation_required,
+                  "force termination requires explicit confirmation");
+  }
+
+  [[nodiscard]] InstallationBatchActionResult confirm_force_termination() {
+    if (!ready_for_command()) {
+      return result(InstallationBatchActionCode::not_restored);
+    }
+    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
+      return fail_closed_result();
+    }
+    auto index = next_runnable_index();
+    if (!index.has_value() || !batch_domain::command_allowed(
+                                  active_->items[*index].state,
+                                  batch_domain::InstallationItemCommand::confirm_force_termination) ||
+        !active_->items[*index].force_termination_confirmation_requested) {
+      return result(InstallationBatchActionCode::rejected,
+                    "force termination confirmation is not pending");
+    }
+    auto& progress = active_->items[*index];
+    auto lease = acquire_and_bind();
+    if (!lease.has_value()) {
+      return lease_failure_result();
+    }
+    auto observed = executor_.force_terminate(
+        {.target = effect_target(*index),
+         .opaque_operation_handle = progress.opaque_installer_handle});
+    progress.detail = observed.detail;
+    switch (observed.code) {
+      case InstallerTerminationCode::terminated:
+        // A terminated installer is never a completion claim. Keep the
+        // preserved completed items and require result verification before any
+        // user-confirmed completion or retry path is available.
+        progress.force_termination_completed = true;
+        progress.state = batch_domain::InstallationItemState::result_confirmation_pending;
+        active_->state = batch_domain::InstallationBatchState::awaiting_user;
+        return commit_and_release(*lease, InstallationFactKind::forced_termination_observed,
+                                  progress);
+      case InstallerTerminationCode::unknown:
+        // The adapter may have changed the external process before losing its
+        // observation. Treat that ambiguity like an unknown installation
+        // result and never launch a later item.
+        progress.state = batch_domain::InstallationItemState::result_confirmation_pending;
+        active_->state = batch_domain::InstallationBatchState::awaiting_user;
+        return commit_and_release(*lease, InstallationFactKind::forced_termination_observed,
+                                  progress);
+      case InstallerTerminationCode::still_running:
+      case InstallerTerminationCode::unavailable:
+      case InstallerTerminationCode::failed:
+        // The production Windows adapter currently takes this path. It must
+        // not make a process-result claim or bypass the normal observer.
+        progress.state = batch_domain::InstallationItemState::installer_running;
+        active_->state = active_->stop_requested
+                             ? batch_domain::InstallationBatchState::stopping
+                             : batch_domain::InstallationBatchState::running;
+        break;
+    }
+    auto persisted = commit_and_release(*lease, InstallationFactKind::forced_termination_observed,
+                                        progress);
+    if (!persisted.succeeded()) {
+      return persisted;
+    }
+    return result(InstallationBatchActionCode::rejected,
+                  "the controlled installer was not confirmed terminated");
+  }
+
+  [[nodiscard]] InstallationBatchActionResult cancel_force_termination() {
+    if (!ready_for_command()) {
+      return result(InstallationBatchActionCode::not_restored);
+    }
+    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
+      return fail_closed_result();
+    }
+    auto index = next_runnable_index();
+    if (!index.has_value() || !batch_domain::command_allowed(
+                                  active_->items[*index].state,
+                                  batch_domain::InstallationItemCommand::cancel_force_termination) ||
+        !active_->items[*index].force_termination_confirmation_requested) {
+      return result(InstallationBatchActionCode::rejected,
+                    "force termination confirmation is not pending");
+    }
+    auto& progress = active_->items[*index];
+    auto lease = acquire_and_bind();
+    if (!lease.has_value()) {
+      return lease_failure_result();
+    }
+    progress.force_termination_confirmation_requested = false;
+    progress.state = batch_domain::InstallationItemState::installer_running;
+    progress.detail = "force termination confirmation was cancelled; the installer remains under observation";
+    active_->state = active_->stop_requested
+                         ? batch_domain::InstallationBatchState::stopping
+                         : batch_domain::InstallationBatchState::running;
+    return commit_and_release(
+        *lease, InstallationFactKind::forced_termination_confirmation_cancelled, progress);
   }
 
   [[nodiscard]] InstallationBatchActionResult request_close() {
@@ -1123,15 +1472,26 @@ class InstallationBatchService::Impl final {
     if (!lease.has_value()) {
       return lease_failure_result();
     }
-    if (index.has_value() && active_->items[*index].state ==
-                                batch_domain::InstallationItemState::downloading) {
+    if (index.has_value() &&
+        (active_->items[*index].state == batch_domain::InstallationItemState::downloading ||
+         active_->items[*index].state ==
+             batch_domain::InstallationItemState::download_paused)) {
       auto observed = download_.stop(effect_target(*index));
-      active_->items[*index].state = batch_domain::InstallationItemState::stop_pending;
       active_->items[*index].detail = observed.detail;
-      return commit_and_release(*lease, InstallationFactKind::batch_paused,
-                                active_->items[*index]);
+      if (observed.code == InstallationDownloadCode::stopped) {
+        active_->items[*index].state = batch_domain::InstallationItemState::stop_pending;
+      }
+      auto persisted = commit_and_release(*lease, InstallationFactKind::normal_close_requested,
+                                          active_->items[*index]);
+      if (!persisted.succeeded()) {
+        return persisted;
+      }
+      return observed.code == InstallationDownloadCode::stopped
+                 ? persisted
+                 : result(InstallationBatchActionCode::outcome_unknown,
+                          "the unfinished controlled download could not be confirmed stopped");
     }
-    return commit_and_release(*lease, InstallationFactKind::batch_paused,
+    return commit_and_release(*lease, InstallationFactKind::normal_close_requested,
                               active_->items.front());
   }
 
@@ -1208,6 +1568,38 @@ class InstallationBatchService::Impl final {
     apply_verification(progress, profile, observed, phase);
     active_->state = batch_domain::InstallationBatchState::recovery_required;
     return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
+  }
+
+  [[nodiscard]] InstallationBatchActionResult continue_after_recovery() {
+    if (!ready_for_command()) {
+      return result(InstallationBatchActionCode::not_restored);
+    }
+    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
+      return fail_closed_result();
+    }
+    if (!active_->close_requested ||
+        active_->state != batch_domain::InstallationBatchState::recovery_required) {
+      return result(InstallationBatchActionCode::rejected,
+                    "only a recovered closing batch may be explicitly continued");
+    }
+    auto index = next_runnable_index();
+    if (index.has_value()) {
+      auto const state = active_->items[*index].state;
+      if (state == batch_domain::InstallationItemState::installer_running ||
+          batch_domain::blocks_batch(state)) {
+        return result(InstallationBatchActionCode::recovery_required,
+                      "the recovered installer result still requires verification or user handling");
+      }
+    }
+    auto lease = acquire_and_bind();
+    if (!lease.has_value()) {
+      return lease_failure_result();
+    }
+    active_->close_requested = false;
+    active_->state = index.has_value() ? batch_domain::InstallationBatchState::ready
+                                        : batch_domain::InstallationBatchState::completed;
+    auto const& progress = index.has_value() ? active_->items[*index] : active_->items.front();
+    return commit_and_release(*lease, InstallationFactKind::recovery_continued, progress);
   }
 
  private:
@@ -1629,6 +2021,7 @@ class InstallationBatchService::Impl final {
   [[nodiscard]] InstallationBatchActionResult commit_and_release(
       OperationLease const& lease, InstallationFactKind kind,
       batch_domain::InstallationItemProgress const& progress) {
+    finalize_normal_stop_if_terminal(progress);
     active_->generation++;
     active_->last_transition = {.generation = active_->generation,
                                 .item_id = progress.item_id,
@@ -1682,6 +2075,21 @@ class InstallationBatchService::Impl final {
            active_->state == batch_domain::InstallationBatchState::stopped;
   }
 
+  void finalize_normal_stop_if_terminal(
+      batch_domain::InstallationItemProgress const& current) {
+    if (!active_->stop_requested || active_->close_requested ||
+        !batch_domain::is_terminal(current.state)) {
+      return;
+    }
+    for (auto& progress : active_->items) {
+      if (!batch_domain::is_terminal(progress.state)) {
+        progress.state = batch_domain::InstallationItemState::stop_pending;
+        progress.detail = "not started because the batch was normally stopped";
+      }
+    }
+    active_->state = batch_domain::InstallationBatchState::stopped;
+  }
+
   enum class PersistOutcome { committed, failed, outcome_unknown };
 
   [[nodiscard]] PersistOutcome persist() {
@@ -1719,6 +2127,9 @@ class InstallationBatchService::Impl final {
                                             .disposition = DiagnosticValueDisposition::retain},
                                            {.key = "item",
                                             .value = progress.item_id,
+                                            .disposition = DiagnosticValueDisposition::retain},
+                                           {.key = "action",
+                                            .value = fact_action_name(kind),
                                             .disposition = DiagnosticValueDisposition::retain}}});
     if (!receipt.persisted) {
       error_ = receipt.error;
@@ -1848,8 +2259,28 @@ InstallationBatchActionResult InstallationBatchService::confirm_current_complete
   return impl_->confirm_current_complete();
 }
 
+InstallationBatchActionResult InstallationBatchService::pause_current_download() {
+  return impl_->pause_current_download();
+}
+
+InstallationBatchActionResult InstallationBatchService::resume_current_download() {
+  return impl_->resume_current_download();
+}
+
 InstallationBatchActionResult InstallationBatchService::stop_current() {
   return impl_->stop_current();
+}
+
+InstallationBatchActionResult InstallationBatchService::request_force_termination() {
+  return impl_->request_force_termination();
+}
+
+InstallationBatchActionResult InstallationBatchService::confirm_force_termination() {
+  return impl_->confirm_force_termination();
+}
+
+InstallationBatchActionResult InstallationBatchService::cancel_force_termination() {
+  return impl_->cancel_force_termination();
 }
 
 InstallationBatchActionResult InstallationBatchService::request_close() {
@@ -1858,6 +2289,10 @@ InstallationBatchActionResult InstallationBatchService::request_close() {
 
 InstallationBatchActionResult InstallationBatchService::recover_read_only() {
   return impl_->recover_read_only();
+}
+
+InstallationBatchActionResult InstallationBatchService::continue_after_recovery() {
+  return impl_->continue_after_recovery();
 }
 
 char const* to_string(InstallationBatchActionCode value) noexcept {
@@ -1876,6 +2311,8 @@ char const* to_string(InstallationBatchActionCode value) noexcept {
       return "persistence_failed";
     case InstallationBatchActionCode::outcome_unknown:
       return "outcome_unknown";
+    case InstallationBatchActionCode::confirmation_required:
+      return "confirmation_required";
     case InstallationBatchActionCode::no_active_batch:
       return "no_active_batch";
     case InstallationBatchActionCode::recovery_required:
