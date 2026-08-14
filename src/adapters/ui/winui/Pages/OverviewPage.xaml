@@ -45,8 +45,8 @@
                 Grid.Row="2"
                 Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 Spacing="{StaticResource AzzsSpaceSmall}"
-                AutomationProperties.AutomationId="AzzsGuidedInitializationStages"
-                AutomationProperties.Name="推荐初始化阶段">
+                x:Uid="OverviewGuidedInitializationStages"
+                AutomationProperties.AutomationId="AzzsGuidedInitializationStages">
                 <TextBlock
                     x:Uid="OverviewGuidedStagesTitle"
                     AutomationProperties.HeadingLevel="Level2"
