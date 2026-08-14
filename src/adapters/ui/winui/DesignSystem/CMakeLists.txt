@@ -1,5 +1,6 @@
 add_library(azzs_ui_presentation_contract STATIC
   Fixtures/design_system_fixture.cpp
+  guided_initialization_presentation.cpp
   presentation_contract.cpp
   software_selection_presentation.cpp
 )
@@ -16,6 +17,7 @@ azzs_project_target(
   TARGET azzs_ui_presentation_contract
   ROLE ui
   PUBLIC_LINKS
+    azzs::guided_initialization_application
     azzs::software_selection_application
     azzs::offline_package_cache_application
 )

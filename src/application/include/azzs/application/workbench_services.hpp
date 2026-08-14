@@ -52,6 +52,10 @@ namespace restart_resume {
 class RestartResumeService;
 }
 
+namespace guided_initialization {
+class GuidedInitializationService;
+}
+
 // The application-facing service bundle assembled exactly once by the host.
 // Concrete filesystem, lock and Win32 types remain behind these typed seams.
 class WorkbenchServices {
@@ -96,6 +100,8 @@ class WorkbenchServices {
   software_optimization_batches() noexcept = 0;
   [[nodiscard]] virtual restart_resume::RestartResumeService&
   restart_resume() noexcept = 0;
+  [[nodiscard]] virtual guided_initialization::GuidedInitializationService&
+  guided_initialization() noexcept = 0;
 };
 
 }  // namespace azzs::application

@@ -163,6 +163,7 @@ set(AZZS_ARCHITECTURE_EXPECTED_MSBUILD_EDGES
   "Azzs.WinUI|azzs_infrastructure_adapter"
   "Azzs.WinUI|azzs_settings_catalog_file_adapter"
   "Azzs.WinUI|azzs_application"
+  "Azzs.WinUI|azzs_guided_initialization_application"
   "Azzs.WinUI|azzs_settings_catalog_lifecycle"
   "Azzs.WinUI|azzs_domain"
   "Azzs.WinUI|azzs_settings_catalog_domain"

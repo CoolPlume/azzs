@@ -23,6 +23,7 @@ add_subdirectory(software-optimization-discovery-contract)
 add_subdirectory(software-optimization-batch-runner-contract)
 add_subdirectory(restart-resume-contract)
 add_subdirectory(emergency-withdrawal-contract)
+add_subdirectory(guided-initialization-contract)
 add_subdirectory(ui-design-contract)
 add_subdirectory(product-identity-contract)
 
