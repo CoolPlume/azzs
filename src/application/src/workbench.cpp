@@ -27,6 +27,7 @@ Workbench::Workbench(PlatformInfo const& platform_info,
   };
   if (services_) {
     snapshot_.update = services_->application_updates().snapshot();
+    snapshot_.driver_acquisition = services_->driver_acquisition().snapshot();
   } else {
     snapshot_.update.current = ApplicationBuildIdentity{
         .version = "0.1.0",
@@ -76,6 +77,44 @@ HardwareOverviewSnapshot Workbench::refresh_hardware(
     std::stop_token cancellation) {
   return observe_hardware(HardwareOverviewTrigger::user_refresh,
                           cancellation);
+}
+
+driver_acquisition::DriverActionResult Workbench::begin_driver_handoff(
+    driver_acquisition::DriverEntrypoint entrypoint) {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().begin_external_handoff(entrypoint);
+  snapshot_.driver_acquisition = result.snapshot;
+  return result;
+}
+
+driver_acquisition::DriverActionResult Workbench::driver_flow_returned() {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().external_flow_returned();
+  snapshot_.driver_acquisition = result.snapshot;
+  return result;
+}
+
+driver_acquisition::DriverActionResult Workbench::decide_driver_handoff(
+    driver_acquisition::DriverHandoffDecision decision) {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().decide(decision);
+  snapshot_.driver_acquisition = result.snapshot;
+  if (result.refreshed_hardware.has_value()) {
+    snapshot_.hardware_overview = *result.refreshed_hardware;
+  }
+  return result;
 }
 
 WorkbenchSnapshot Workbench::snapshot() const {

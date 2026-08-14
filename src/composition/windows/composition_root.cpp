@@ -25,6 +25,7 @@
 #include "azzs/adapters/infrastructure/system_settings_recovery_store.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
+#include "azzs/adapters/windows/windows_driver_acquisition.hpp"
 #include "azzs/adapters/windows/windows_application_update_platform.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_external_address_launcher.hpp"
@@ -42,6 +43,7 @@
 #include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
+#include "azzs/application/driver_acquisition.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/installation_batch.hpp"
@@ -154,6 +156,10 @@ class WindowsWorkbenchServices final
         restart_resume_(states_, restart_resume_registration_),
         log_storage_(environment.root_utf8, environment.subject_id),
         log_(log_storage_, clock_),
+        driver_handoff_platform_{},
+        driver_network_{},
+        driver_acquisition_(states_, hardware_overview_, driver_handoff_platform_,
+                            driver_network_, log_, restart_resume_),
         emergency_notice_source_(),
         emergency_withdrawals_(
             states_, clock_, emergency_notice_source_,
@@ -236,6 +242,7 @@ class WindowsWorkbenchServices final
     }
     synchronize_live_offline_package_cache();
     static_cast<void>(restart_resume_.restore());
+    static_cast<void>(driver_acquisition_.restore());
     static_cast<void>(installation_batches_.restore());
     static_cast<void>(software_optimization_batches_.restore());
     if (adapters::windows::is_restart_resume_login_launch()) {
@@ -250,6 +257,10 @@ class WindowsWorkbenchServices final
               break;
             case application::restart_resume::RestartResumeOperation::software_optimization_batch:
               read_only_verified = software_optimization_batches_.recover_read_only().succeeded() &&
+                                   read_only_verified;
+              break;
+            case application::restart_resume::RestartResumeOperation::driver_acquisition:
+              read_only_verified = driver_acquisition_.recover_after_restart().succeeded() &&
                                    read_only_verified;
               break;
             case application::restart_resume::RestartResumeOperation::system_settings:
@@ -383,6 +394,11 @@ class WindowsWorkbenchServices final
     return hardware_overview_;
   }
 
+  [[nodiscard]] application::driver_acquisition::DriverAcquisitionService&
+  driver_acquisition() noexcept override {
+    return driver_acquisition_;
+  }
+
   [[nodiscard]] application::offline_package_cache::OfflinePackageCacheService&
   offline_package_cache() noexcept override {
     synchronize_live_offline_package_cache();
@@ -433,6 +449,9 @@ class WindowsWorkbenchServices final
   application::restart_resume::RestartResumeService restart_resume_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;
   adapters::infrastructure::StructuredExecutionLog log_;
+  adapters::windows::WindowsDriverHandoffPlatform driver_handoff_platform_;
+  adapters::windows::WindowsDriverNetworkObserver driver_network_;
+  application::driver_acquisition::DriverAcquisitionService driver_acquisition_;
   std::once_flag emergency_preflight_started_;
   adapters::windows::WindowsEmergencyWithdrawalNoticeSource
       emergency_notice_source_;
