@@ -58,7 +58,7 @@
             <StackPanel
                 x:Name="CanOptimizeGroup"
                 Grid.Row="3"
-                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareOptimizationCanOptimize">
                 <TextBlock
                     x:Uid="SoftwareOptimizationCanOptimizeTitle"
