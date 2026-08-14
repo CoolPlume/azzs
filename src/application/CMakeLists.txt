@@ -36,6 +36,7 @@ add_subdirectory(installation-batch-runner)
 
 add_library(azzs_software_optimization_catalog_application STATIC
   src/sogou_optimization.cpp
+  src/software_optimization_discovery.cpp
   src/software_optimization_catalog_lifecycle.cpp
 )
 
@@ -54,6 +55,7 @@ azzs_project_target(
   ROLE application
   PUBLIC_LINKS
     azzs::application
+    azzs::software_selection_application
     azzs::software_optimization_catalog_domain
 )
 

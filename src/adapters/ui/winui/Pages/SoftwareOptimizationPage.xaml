@@ -19,6 +19,11 @@
             </VisualStateManager.VisualStateGroups>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="SoftwareOptimizationPageTitle"
@@ -27,6 +32,72 @@
                 AutomationProperties.HeadingLevel="Level1"
                 Style="{StaticResource AzzsPageTitleTextStyle}"
                 TextWrapping="Wrap" />
+            <InfoBar
+                x:Name="StatusInfoBar"
+                Grid.Row="1"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                AutomationProperties.AutomationId="AzzsSoftwareOptimizationStatus"
+                IsOpen="False"
+                IsClosable="False" />
+            <StackPanel
+                Grid.Row="2"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                Orientation="Horizontal"
+                Spacing="{StaticResource AzzsSpaceSmall}">
+                <Button
+                    x:Name="RefreshButton"
+                    x:Uid="SoftwareOptimizationRefreshButton"
+                    AutomationProperties.AutomationId="AzzsSoftwareOptimizationRefresh"
+                    Click="OnRefresh" />
+                <Button
+                    x:Name="PrepareSelectedButton"
+                    x:Uid="SoftwareOptimizationPrepareSelectedButton"
+                    AutomationProperties.AutomationId="AzzsSoftwareOptimizationPrepareSelected"
+                    Click="OnPrepareSelected" />
+            </StackPanel>
+            <StackPanel
+                x:Name="CanOptimizeGroup"
+                Grid.Row="3"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                AutomationProperties.AutomationId="AzzsSoftwareOptimizationCanOptimize">
+                <TextBlock
+                    x:Uid="SoftwareOptimizationCanOptimizeTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <StackPanel x:Name="CanOptimizeItems" Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
+            <StackPanel
+                x:Name="NeedsAttentionGroup"
+                Grid.Row="4"
+                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
+                AutomationProperties.AutomationId="AzzsSoftwareOptimizationNeedsAttention">
+                <TextBlock
+                    x:Uid="SoftwareOptimizationNeedsAttentionTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <StackPanel x:Name="NeedsAttentionItems" Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
+            <StackPanel
+                x:Name="OptimizedGroup"
+                Grid.Row="5"
+                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
+                AutomationProperties.AutomationId="AzzsSoftwareOptimizationOptimized">
+                <TextBlock
+                    x:Uid="SoftwareOptimizationOptimizedTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <StackPanel x:Name="OptimizedItems" Spacing="{StaticResource AzzsSpaceSmall}" />
+                <Expander
+                    x:Name="NoAvailableOptimizationExpander"
+                    x:Uid="SoftwareOptimizationNoAvailableExpander"
+                    Margin="0,{StaticResource AzzsSpaceLarge},0,0"
+                    AutomationProperties.AutomationId="AzzsSoftwareOptimizationNoAvailable">
+                    <StackPanel x:Name="NoAvailableItems" Spacing="{StaticResource AzzsSpaceSmall}" />
+                </Expander>
+            </StackPanel>
         </Grid>
     </ScrollViewer>
 </Page>

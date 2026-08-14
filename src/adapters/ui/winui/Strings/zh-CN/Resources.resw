@@ -154,6 +154,27 @@
   <data name="OfflinePackageCacheItemSuffix" xml:space="preserve"><value> 个已缓存资源</value></data>
   <data name="OfflinePackageCacheNetworkSuffix" xml:space="preserve"><value>；当前无法联网</value></data>
   <data name="SoftwareOptimizationPageTitle.Text" xml:space="preserve"><value>软件优化</value></data>
+  <data name="SoftwareOptimizationRefreshButton.Content" xml:space="preserve"><value>重新检测</value></data>
+  <data name="SoftwareOptimizationPrepareSelectedButton.Content" xml:space="preserve"><value>准备所选优化</value></data>
+  <data name="SoftwareOptimizationCanOptimizeTitle.Text" xml:space="preserve"><value>可以优化</value></data>
+  <data name="SoftwareOptimizationNeedsAttentionTitle.Text" xml:space="preserve"><value>需要处理</value></data>
+  <data name="SoftwareOptimizationOptimizedTitle.Text" xml:space="preserve"><value>已优化</value></data>
+  <data name="SoftwareOptimizationNoAvailableExpander.Header" xml:space="preserve"><value>暂无可用优化</value></data>
+  <data name="SoftwareOptimizationSogouRecommendedTitle" xml:space="preserve"><value>搜狗输入法推荐优化</value></data>
+  <data name="SoftwareOptimizationNoExecutableSelection" xml:space="preserve"><value>没有可提交的已选优化项。</value></data>
+  <data name="SoftwareOptimizationPreparedMessage" xml:space="preserve"><value>已准备 {count} 个所选优化项；尚未创建优化批次。</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentTitle" xml:space="preserve"><value>确认选择调整</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentContent" xml:space="preserve"><value>此选择会补选必需项或取消冲突项。确认后才会更新选择。</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentConfirm" xml:space="preserve"><value>确认调整</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="SoftwareOptimizationCatalogUnavailable" xml:space="preserve"><value>当前没有可用的软件优化目录。</value></data>
+  <data name="SoftwareOptimizationUnrecognizedVersion" xml:space="preserve"><value>未识别</value></data>
+  <data name="SoftwareOptimizationVersionDetails" xml:space="preserve"><value>版本：{version}；适用范围：{minimum} - {maximum}</value></data>
+  <data name="SoftwareOptimizationRequiredSuffix" xml:space="preserve"><value>（必需）</value></data>
+  <data name="SoftwareOptimizationAdvancedForceNotice" xml:space="preserve"><value>高级视图会在执行前单独披露强制执行或强制关闭的不可撤销风险。当前页面不会创建批次。</value></data>
+  <data name="SoftwareOptimizationFirstReleaseSchemeMissingDetail" xml:space="preserve"><value>当前受支持版本缺少首版必达的受控优化方案，不能作为“暂无可用优化”处理。</value></data>
+  <data name="SoftwareOptimizationFirstReleaseSchemeMissingStatus" xml:space="preserve"><value>软件优化目录缺少首版必达方案，当前状态不能通过发布验收。</value></data>
+  <data name="SoftwareOptimizationOptionVersionNotApplicable" xml:space="preserve"><value>此选项不适用于当前软件版本，不能提交。</value></data>
   <data name="HistoryAndLogsPageTitle.Text" xml:space="preserve"><value>历史与日志</value></data>
   <data name="ApplicationSettingsPageTitle.Text" xml:space="preserve"><value>应用设置</value></data>
   <data name="ApplicationViewTitle.Text" xml:space="preserve"><value>视图</value></data>
