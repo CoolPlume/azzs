@@ -13,6 +13,7 @@
 #include "Pages/OverviewPage.xaml.h"
 #include "Pages/SoftwareInstallationPage.xaml.h"
 #include "azzs/application/installation_batch.hpp"
+#include "azzs/application/driver_acquisition.hpp"
 #include "Pages/SoftwareOptimizationPage.xaml.h"
 #include "Pages/SystemOptimizationPage.xaml.h"
 #include "azzs/application/advanced_view_preferences.hpp"
@@ -155,9 +156,22 @@ void MainWindow::navigate_to(PageId page) {
                 azzs::application::HardwareOverviewTrigger::page_entered);
         auto weak_this = get_weak();
         winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
-            ->bind(hardware, [weak_this] {
+            ->bind(hardware, workbench_->snapshot().driver_acquisition,
+                   [weak_this] {
               if (auto self = weak_this.get()) {
                 self->refresh_drivers_page();
+              }
+            }, [weak_this](auto entrypoint) {
+              if (auto self = weak_this.get()) {
+                self->begin_driver_handoff(entrypoint);
+              }
+            }, [weak_this] {
+              if (auto self = weak_this.get()) {
+                self->driver_flow_returned();
+              }
+            }, [weak_this](auto decision) {
+              if (auto self = weak_this.get()) {
+                self->decide_driver_handoff(decision);
               }
             });
       }
@@ -232,7 +246,47 @@ void MainWindow::refresh_drivers_page() {
   if (auto const drivers_page =
           ContentFrame().Content().try_as<Pages::DriversPage>()) {
     winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
-        ->project(hardware);
+        ->project(hardware, workbench_->snapshot().driver_acquisition);
+  }
+}
+
+void MainWindow::begin_driver_handoff(
+    azzs::application::driver_acquisition::DriverEntrypoint entrypoint) {
+  if (!workbench_) {
+    return;
+  }
+  auto const result = workbench_->begin_driver_handoff(entrypoint);
+  project_drivers_page(result.snapshot);
+}
+
+void MainWindow::driver_flow_returned() {
+  if (!workbench_) {
+    return;
+  }
+  auto const result = workbench_->driver_flow_returned();
+  project_drivers_page(result.snapshot);
+}
+
+void MainWindow::decide_driver_handoff(
+    azzs::application::driver_acquisition::DriverHandoffDecision decision) {
+  if (!workbench_) {
+    return;
+  }
+  auto const result = workbench_->decide_driver_handoff(decision);
+  project_drivers_page(result.snapshot);
+}
+
+void MainWindow::project_drivers_page(
+    azzs::application::driver_acquisition::DriverAcquisitionSnapshot const&
+        driver_snapshot) {
+  if (!workbench_) {
+    return;
+  }
+  if (auto const drivers_page =
+          ContentFrame().Content().try_as<Pages::DriversPage>()) {
+    auto const snapshot = workbench_->snapshot();
+    winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
+        ->project(snapshot.hardware_overview, driver_snapshot);
   }
 }
 
