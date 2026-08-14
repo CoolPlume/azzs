@@ -18,6 +18,10 @@ namespace offline_package_cache {
 class OfflinePackageCacheService;
 }
 
+namespace installation_batch {
+class InstallationBatchService;
+}
+
 namespace sogou_optimization {
 class SogouOptimizationService;
 }
@@ -59,6 +63,10 @@ class WorkbenchServices {
       noexcept = 0;
   [[nodiscard]] virtual offline_package_cache::OfflinePackageCacheService&
   offline_package_cache() noexcept = 0;
+  // Batch state remains application-owned. Hosts and WinUI can only observe
+  // its snapshot or submit typed commands through this service.
+  [[nodiscard]] virtual installation_batch::InstallationBatchService&
+  installation_batches() noexcept = 0;
 };
 
 }  // namespace azzs::application

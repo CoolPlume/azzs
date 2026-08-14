@@ -31,6 +31,8 @@ enum class SelectionActionCode {
   no_current_catalog,
   not_restored,
   rejected,
+  invalid_catalog_projection,
+  stale_catalog_projection,
   resolver_failed,
   network_unavailable,
   source_not_declared,
@@ -60,6 +62,15 @@ struct SourceResolutionResult final {
   bool resolved{false};
   std::optional<selection_domain::ResolvedSourceSnapshot> snapshot;
   std::string error;
+};
+
+// The catalog lifecycle produces this complete in-memory handoff after it has
+// already loaded and evaluated the active catalog. Selection never reopens the
+// directory, and the active identity is intentionally not persisted here.
+struct CatalogSelectionProjection final {
+  catalog_domain::RuntimeSoftwareCatalog runtime;
+  software_catalog::ActiveCatalogInfo active;
+  software_catalog::CatalogSelectionImpact impact;
 };
 
 // The resolver receives one exact declaration selected by the user. It cannot
@@ -110,6 +121,7 @@ struct SoftwareSelectionSnapshot final {
   std::vector<selection_domain::SelectionItem> items;
   std::vector<selection_domain::ResolvedSourceSnapshot> sources;
   std::vector<selection_domain::ExternalHandoffRecord> handoffs;
+  std::optional<software_catalog::ActiveCatalogInfo> active_catalog;
   std::string error;
 };
 
@@ -129,8 +141,7 @@ class SoftwareSelectionLifecycle final {
   [[nodiscard]] SoftwareSelectionSnapshot snapshot() const;
 
   [[nodiscard]] SelectionActionResult on_catalog_replaced(
-      catalog_domain::RuntimeSoftwareCatalog catalog,
-      software_catalog::CatalogSelectionImpact impact = {});
+      CatalogSelectionProjection projection);
   [[nodiscard]] SelectionActionResult select(std::string_view software_id,
                                               bool selected);
   [[nodiscard]] SelectionActionResult resolve_declared_source(
@@ -153,6 +164,10 @@ class SoftwareSelectionLifecycle final {
   [[nodiscard]] bool source_matches_catalog(
       selection_domain::ResolvedSourceSnapshot const& source,
       catalog_domain::CatalogSource const& declared_source) const noexcept;
+  [[nodiscard]] bool projection_is_complete(
+      CatalogSelectionProjection const& projection) const noexcept;
+  [[nodiscard]] bool projection_is_stale(
+      CatalogSelectionProjection const& projection) const noexcept;
   [[nodiscard]] std::vector<std::string> impact_ids(
       software_catalog::CatalogSelectionImpactReason reason) const;
   void log_event(std::string_view stage, ExecutionResult result,
@@ -177,6 +192,7 @@ class SoftwareSelectionLifecycle final {
   std::vector<selection_domain::ResolvedSourceSnapshot> sources_;
   std::vector<selection_domain::ExternalHandoffRecord> handoffs_;
   std::optional<catalog_domain::RuntimeSoftwareCatalog> catalog_;
+  std::optional<software_catalog::ActiveCatalogInfo> active_catalog_;
   software_catalog::CatalogSelectionImpact impact_;
   std::string error_;
 };

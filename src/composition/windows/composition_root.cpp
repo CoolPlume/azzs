@@ -16,6 +16,7 @@
 #include "../../adapters/ui/winui/MainWindow.xaml.h"
 #include "azzs/adapters/infrastructure/local_file_log_storage.hpp"
 #include "azzs/adapters/infrastructure/local_package_cache_storage.hpp"
+#include "azzs/adapters/infrastructure/software_catalog_file.hpp"
 #include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
 #include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
@@ -27,6 +28,7 @@
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_external_address_launcher.hpp"
 #include "azzs/adapters/windows/windows_hardware_observer.hpp"
+#include "azzs/adapters/windows/windows_installation_batch_adapters.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
@@ -40,9 +42,11 @@
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
+#include "azzs/application/installation_batch.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/software_selection.hpp"
+#include "azzs/application/software_catalog_lifecycle.hpp"
 #include "azzs/application/sogou_optimization.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench.hpp"
@@ -58,6 +62,15 @@ class ProductionSettingsCatalogImportAuthorization final
  public:
   [[nodiscard]] bool debug_import_allowed() const noexcept override {
     return false;
+  }
+};
+
+class ProductionCatalogMaintenanceAccess final
+    : public application::software_catalog::CatalogMaintenanceAccess {
+ public:
+  [[nodiscard]] application::software_catalog::CatalogEditorAccess
+  editor_access() const noexcept override {
+    return application::software_catalog::CatalogEditorAccess::unavailable;
   }
 };
 
@@ -81,6 +94,19 @@ class OfflineNetworkObserver final
 [[nodiscard]] std::filesystem::path path_from_utf8(std::string const& value) {
   auto const* begin = reinterpret_cast<char8_t const*>(value.data());
   return std::filesystem::path{std::u8string{begin, begin + value.size()}};
+}
+
+[[nodiscard]] std::string utf8_from_path(std::filesystem::path const& value) {
+  auto const native = value.generic_u8string();
+  return {reinterpret_cast<char const*>(native.data()), native.size()};
+}
+
+[[nodiscard]] std::filesystem::path repository_catalog_path() {
+  // The repository catalog is an explicitly embedded, deployment-controlled
+  // input for this desktop host. Its path does not cross any application seam.
+  auto const source = std::filesystem::path{__FILE__};
+  return source.parent_path().parent_path().parent_path().parent_path() /
+         "catalog" / "software-catalog.toml";
 }
 
 class UnavailableSoftwarePresenceDetector final
@@ -148,8 +174,10 @@ class WindowsWorkbenchServices final
                              "package-cache-v1",
                 .create_if_missing = true}}),
         cache_downloader_{},
-        offline_package_cache_(cache_storage_, cache_downloader_, network_,
-                              clock_, cache_root_),
+        live_offline_package_cache_(cache_storage_, cache_downloader_, network_,
+                                    clock_, cache_root_),
+        batch_offline_package_cache_(cache_storage_, cache_downloader_, network_,
+                                     clock_, cache_root_),
         software_selection_(states_, clock_, log_, architecture_selection_,
                             source_resolver_, network_, presence_detector_,
                             external_launcher_, state_subject_) {
@@ -157,8 +185,11 @@ class WindowsWorkbenchServices final
         application::settings_catalog::initial_settings_catalog()));
     static_cast<void>(system_settings_apply_.refresh());
     static_cast<void>(architecture_selection_.start());
+    static_cast<void>(software_catalog_.restore());
     static_cast<void>(software_selection_.restore());
-    synchronize_offline_package_cache();
+    synchronize_catalog_selection_projection();
+    synchronize_live_offline_package_cache();
+    static_cast<void>(installation_batches_.restore());
   }
 
   void start_emergency_preflight() {
@@ -232,6 +263,26 @@ class WindowsWorkbenchServices final
     return software_selection_;
   }
 
+  void shutdown() noexcept {
+    // Persist the runner's close boundary before discarding its batch-owned
+    // cache session. A later launch can then recover read-only rather than
+    // treating a closing batch as safe to continue.
+    try {
+      static_cast<void>(installation_batches_.request_close());
+    } catch (...) {
+      // Restore never auto-continues an active batch. If the best-effort
+      // close receipt cannot be produced, the persisted state remains
+      // fail-closed for the explicit recovery path on the next launch.
+    }
+    live_offline_package_cache_.shutdown();
+    batch_offline_package_cache_.shutdown();
+  }
+
+  [[nodiscard]] application::installation_batch::InstallationBatchService&
+  installation_batches() noexcept override {
+    return installation_batches_;
+  }
+
   [[nodiscard]] application::HardwareOverviewService& hardware_overview()
       noexcept override {
     return hardware_overview_;
@@ -239,8 +290,8 @@ class WindowsWorkbenchServices final
 
   [[nodiscard]] application::offline_package_cache::OfflinePackageCacheService&
   offline_package_cache() noexcept override {
-    synchronize_offline_package_cache();
-    return offline_package_cache_;
+    synchronize_live_offline_package_cache();
+    return live_offline_package_cache_;
   }
 
   [[nodiscard]] adapters::windows::WindowsPlatformInfo const& platform_info()
@@ -249,7 +300,20 @@ class WindowsWorkbenchServices final
   }
 
  private:
-  void synchronize_offline_package_cache() {
+  void synchronize_catalog_selection_projection() {
+    auto const catalog = software_catalog_.snapshot();
+    if (catalog.mode != application::software_catalog::CatalogLifecycleMode::ready ||
+        !catalog.current.has_value() || !catalog.current_catalog.has_value()) {
+      return;
+    }
+    static_cast<void>(software_selection_.on_catalog_replaced({
+        .runtime = *catalog.current_catalog,
+        .active = *catalog.current,
+        .impact = {},
+    }));
+  }
+
+  void synchronize_live_offline_package_cache() {
     auto const selection = software_selection_.snapshot();
     std::vector<application::offline_package_cache::CacheAsset> assets;
     for (auto const& source : selection.sources) {
@@ -260,7 +324,7 @@ class WindowsWorkbenchServices final
         }
       }
     }
-    offline_package_cache_.synchronize_assets(std::move(assets));
+    live_offline_package_cache_.synchronize_assets(std::move(assets));
   }
 
   domain::StateSubject state_subject_;
@@ -324,6 +388,14 @@ class WindowsWorkbenchServices final
   application::ApplicationUpdateLifecycle application_updates_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
+  adapters::infrastructure::LocalSoftwareCatalogFileReader software_catalog_file_{
+      utf8_from_path(repository_catalog_path())};
+  adapters::infrastructure::TomlSoftwareCatalogCodec software_catalog_codec_;
+  ProductionCatalogMaintenanceAccess software_catalog_maintenance_access_;
+  application::software_catalog::SoftwareCatalogLifecycle software_catalog_{
+      states_, log_, occupancy_, software_catalog_file_, software_catalog_codec_,
+      domain::software_catalog::initial_software_catalog_policy(),
+      software_catalog_maintenance_access_, state_subject_};
   UnavailableControlledSourceResolver source_resolver_;
   OfflineNetworkObserver network_;
   application::offline_package_cache::ControlledCacheRoot cache_root_;
@@ -331,11 +403,23 @@ class WindowsWorkbenchServices final
   adapters::infrastructure::UnavailableControlledPackageDownloader
       cache_downloader_;
   application::offline_package_cache::OfflinePackageCacheService
-      offline_package_cache_;
+      live_offline_package_cache_;
+  application::offline_package_cache::OfflinePackageCacheService
+      batch_offline_package_cache_;
   UnavailableSoftwarePresenceDetector presence_detector_;
   adapters::windows::WindowsExternalAddressLauncher external_launcher_;
   application::software_selection::SoftwareSelectionLifecycle
       software_selection_;
+  adapters::windows::WindowsInstallationDownloadAdapter batch_download_{
+      batch_offline_package_cache_};
+  adapters::windows::WindowsControlledProfileReadinessAdapter batch_readiness_;
+  adapters::windows::WindowsOpaqueCacheInstallerLauncher batch_executor_{
+      batch_offline_package_cache_};
+  adapters::windows::WindowsInstallationResultVerifier batch_verifier_;
+  adapters::windows::WindowsInstallationFactSink batch_facts_{log_};
+  application::installation_batch::InstallationBatchService installation_batches_{
+      states_, occupancy_, log_, batch_download_, batch_executor_, batch_readiness_,
+      batch_verifier_, batch_facts_, software_catalog_, software_selection_};
 };
 
 }  // namespace
@@ -366,7 +450,7 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
                std::move(advanced_view_preferences));
   auto result = window.as<winrt::Microsoft::UI::Xaml::Window>();
   result.Closed([services](auto&&, auto&&) {
-    services->offline_package_cache().shutdown();
+    services->shutdown();
   });
   return result;
 }
