@@ -379,10 +379,7 @@ map_windows_version(DWORD major, DWORD build) {
   return std::nullopt;
 }
 
-}  // namespace
-
-std::optional<settings_domain::WindowsVersion>
-WindowsSystemSettingsAdapter::windows_version() const {
+[[nodiscard]] std::optional<RTL_OSVERSIONINFOW> read_native_windows_version() {
   RTL_OSVERSIONINFOW version{.dwOSVersionInfoSize = sizeof(version)};
   auto const ntdll = ::GetModuleHandleW(L"ntdll.dll");
   if (ntdll == nullptr) {
@@ -394,7 +391,42 @@ WindowsSystemSettingsAdapter::windows_version() const {
   if (get_version == nullptr || get_version(&version) < 0) {
     return std::nullopt;
   }
-  return map_windows_version(version.dwMajorVersion, version.dwBuildNumber);
+  return version;
+}
+
+[[nodiscard]] std::string display_version(
+    settings_domain::WindowsVersion const& version) {
+  return "Windows " + std::to_string(static_cast<unsigned>(version.generation)) +
+         " " + std::to_string(version.feature_update_year) + "H" +
+         std::to_string(version.feature_update_half);
+}
+
+}  // namespace
+
+std::optional<settings_domain::WindowsVersion>
+WindowsSystemSettingsAdapter::windows_version() const {
+  auto const version = read_native_windows_version();
+  if (!version.has_value()) {
+    return std::nullopt;
+  }
+  return map_windows_version(version->dwMajorVersion, version->dwBuildNumber);
+}
+
+std::optional<SystemSettingsWindowsVersionFact>
+WindowsSystemSettingsAdapter::windows_version_fact() const {
+  auto const native_version = read_native_windows_version();
+  if (!native_version.has_value()) {
+    return std::nullopt;
+  }
+  auto const mapped = map_windows_version(native_version->dwMajorVersion,
+                                          native_version->dwBuildNumber);
+  if (!mapped.has_value()) {
+    return std::nullopt;
+  }
+  return SystemSettingsWindowsVersionFact{
+      .display_version = display_version(*mapped),
+      .internal_build = native_version->dwBuildNumber,
+  };
 }
 
 SystemSettingsRead WindowsSystemSettingsAdapter::read(

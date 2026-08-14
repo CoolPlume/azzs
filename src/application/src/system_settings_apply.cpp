@@ -61,6 +61,116 @@ constexpr std::string_view kWindows10ExplorerRecover{
   return left == right;
 }
 
+[[nodiscard]] SystemSettingsOperationStatus operation_status(
+    SystemSettingApplyState state) noexcept {
+  switch (state) {
+    case SystemSettingApplyState::already_effective:
+      return SystemSettingsOperationStatus::skipped;
+    case SystemSettingApplyState::applied:
+      return SystemSettingsOperationStatus::completed;
+    case SystemSettingApplyState::waiting_explorer_restart:
+      return SystemSettingsOperationStatus::waiting_explorer_restart;
+    case SystemSettingApplyState::not_applicable:
+      return SystemSettingsOperationStatus::not_applicable;
+    case SystemSettingApplyState::force_confirmation_required:
+      return SystemSettingsOperationStatus::confirmation_required;
+    case SystemSettingApplyState::blocked_by_dependency:
+      return SystemSettingsOperationStatus::blocked;
+    case SystemSettingApplyState::not_selected:
+    case SystemSettingApplyState::failed:
+      return SystemSettingsOperationStatus::failed;
+  }
+  return SystemSettingsOperationStatus::failed;
+}
+
+[[nodiscard]] SystemSettingsOperationStatus operation_status(
+    RecoveryRecordStatus status) noexcept {
+  switch (status) {
+    case RecoveryRecordStatus::applied:
+      return SystemSettingsOperationStatus::completed;
+    case RecoveryRecordStatus::restored:
+      return SystemSettingsOperationStatus::restored;
+    case RecoveryRecordStatus::waiting_explorer_restart:
+      return SystemSettingsOperationStatus::waiting_explorer_restart;
+    case RecoveryRecordStatus::pending:
+    case RecoveryRecordStatus::restoring:
+    case RecoveryRecordStatus::restore_failed:
+      return SystemSettingsOperationStatus::failed;
+  }
+  return SystemSettingsOperationStatus::failed;
+}
+
+[[nodiscard]] SystemSettingsOperationStatus operation_status(
+    SystemSettingsSnapshotStatus status) noexcept {
+  return status == SystemSettingsSnapshotStatus::completed
+             ? SystemSettingsOperationStatus::completed
+             : SystemSettingsOperationStatus::failed;
+}
+
+[[nodiscard]] SystemSettingsWindowsEnvironmentFact windows_environment_fact(
+    std::optional<SystemSettingsWindowsVersionFact> const& version) {
+  if (!version.has_value()) {
+    return {.availability = SystemSettingsFactAvailability::not_obtained,
+            .display_version = "NOT_OBTAINED",
+            .internal_build = 0,
+            .reason =
+                "NOT_OBTAINED: Windows environment was unavailable at operation"};
+  }
+  return {.availability = SystemSettingsFactAvailability::obtained,
+          .display_version = version->display_version,
+          .internal_build = version->internal_build,
+          .reason = {}};
+}
+
+[[nodiscard]] SystemSettingsOperationFact legacy_operation_fact(
+    SystemSettingsRecoveryRecord const& record) {
+  auto const status = operation_status(record.status);
+  constexpr std::string_view reason{
+      "NOT_OBTAINED: legacy recovery record predates immutable operation history"};
+  return {
+      .operation = record.operation == RecoveryRecordOperation::restore
+                       ? SystemSettingsOperationKind::restore
+                       : record.operation == RecoveryRecordOperation::windows11_default
+                             ? SystemSettingsOperationKind::windows11_default
+                             : SystemSettingsOperationKind::apply,
+      .catalog_availability = SystemSettingsFactAvailability::not_obtained,
+      .catalog_identity = "NOT_OBTAINED",
+      .catalog_revision = record.catalog_revision,
+      .catalog_reason = std::string{reason},
+      .windows_environment = {.availability =
+                                  SystemSettingsFactAvailability::not_obtained,
+                              .display_version = "NOT_OBTAINED",
+                              .internal_build = 0,
+                              .reason = std::string{reason}},
+      .status = status,
+      .reason = std::string{reason},
+      .settings = {{.setting_id = record.setting_id,
+                    .display_name = record.display_name,
+                    .controlled_identity = "NOT_OBTAINED",
+                    .catalog_revision = record.catalog_revision,
+                    .declared_range_availability =
+                        SystemSettingsFactAvailability::not_obtained,
+                    .declared_range_reason = std::string{reason},
+                    .original_value = record.original_value,
+                    .recovery_record_id = record.record_id,
+                    .restart_requirement = record.restart_requirement,
+                    .status = status,
+                    .reason = std::string{reason}}},
+      .timeline = {{.ordinal = 1,
+                    .stage = "legacy-recovery-record",
+                    .status = status,
+                    .reason = std::string{reason}}},
+  };
+}
+
+[[nodiscard]] bool operation_fact_references_recovery_record(
+    SystemSettingsOperationFact const& fact, std::uint64_t record_id) {
+  return std::ranges::any_of(
+      fact.settings, [record_id](SystemSettingsOperationSettingFact const& setting) {
+        return setting.recovery_record_id == record_id;
+      });
+}
+
 }  // namespace
 
 SystemSettingsApplyService::SystemSettingsApplyService(
@@ -79,6 +189,25 @@ SystemSettingsApplyService::SystemSettingsApplyService(
     for (auto const& record : recovery_records_) {
       next_recovery_record_id_ =
           std::max(next_recovery_record_id_, record.record_id + 1);
+    }
+    operation_history_ = std::move(stored.operation_history);
+    for (auto const& fact : operation_history_.facts) {
+      next_operation_fact_id_ =
+          std::max(next_operation_fact_id_, fact.fact_id + 1);
+    }
+    for (auto const& record : recovery_records_) {
+      auto const already_recorded = std::ranges::any_of(
+          operation_history_.facts, [&record](SystemSettingsOperationFact const& fact) {
+            return operation_fact_references_recovery_record(fact,
+                                                             record.record_id);
+          });
+      if (already_recorded) {
+        continue;
+      }
+      auto fact = legacy_operation_fact(record);
+      fact.fact_id = next_operation_fact_id_++;
+      pending_legacy_operation_facts_.push_back(fact);
+      operation_history_.facts.push_back(std::move(fact));
     }
   }
   static_cast<void>(refresh());
@@ -281,6 +410,13 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
     return result;
   }
 
+  std::string legacy_history_detail;
+  if (!persist_pending_legacy_operation_facts(legacy_history_detail)) {
+    result.detail = std::move(legacy_history_detail);
+    static_cast<void>(occupancy_.release(*lease.lease));
+    return result;
+  }
+
   snapshot_.status = SystemSettingsSnapshotStatus::applying;
   append_log(correlation, "apply-start", ExecutionResult::started, "",
              "冻结当前有效系统设置目录和选择");
@@ -304,7 +440,14 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
     }
   }
 
+  auto const frozen_plan_id = snapshot_.selected_plan;
+  auto const frozen_plan_name = snapshot_.plan_name;
   auto const platform_version = platform_.windows_version();
+  auto const captured_windows_environment =
+      windows_environment_fact(platform_.windows_version_fact());
+  std::vector<SystemSettingsRecoveryRecord> operation_records;
+  auto explorer_restart_result =
+      SystemSettingsExplorerRestartResult::not_required;
   auto dependency_ready = [&](settings_domain::SettingDefinition const& setting) {
     for (auto const& dependency : setting.depends_on) {
       auto const* item = find_snapshot(dependency);
@@ -421,6 +564,7 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
       continue;
     }
     recovery_records_.push_back(record);
+    operation_records.push_back(record);
     snapshot_.recovery_records = recovery_records_;
 
     append_log(correlation, "read-and-save-original", ExecutionResult::succeeded,
@@ -481,6 +625,7 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
     result.explorer_restart_attempted = true;
     auto restarted = platform_.restart_explorer();
     if (restarted.status == SystemSettingsAdapterStatus::succeeded) {
+      explorer_restart_result = SystemSettingsExplorerRestartResult::succeeded;
       for (auto& item : snapshot_.settings) {
         if (item.state != SystemSettingApplyState::waiting_explorer_restart) {
           continue;
@@ -495,6 +640,8 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
         if (record == recovery_records_.rend()) {
           item.state = SystemSettingApplyState::failed;
           item.detail = "等待重启的恢复记录不可用";
+          explorer_restart_result =
+              SystemSettingsExplorerRestartResult::verification_failed;
           continue;
         }
         auto const expected = expected_value_for_recovery(*record);
@@ -512,11 +659,15 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
           } else {
             item.state = SystemSettingApplyState::failed;
             item.detail = std::move(recovery_detail);
+            explorer_restart_result =
+                SystemSettingsExplorerRestartResult::verification_failed;
           }
         } else {
           item.state = SystemSettingApplyState::failed;
           item.detail = observed.detail.empty() ? "资源管理器重启后验证失败"
                                                 : observed.detail;
+          explorer_restart_result =
+              SystemSettingsExplorerRestartResult::verification_failed;
         }
       }
       waiting_restart = std::ranges::any_of(
@@ -525,9 +676,12 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
                    SystemSettingApplyState::waiting_explorer_restart;
           });
     } else {
+      explorer_restart_result = SystemSettingsExplorerRestartResult::failed;
       result.detail = restarted.detail.empty() ? "资源管理器重启失败"
                                                : restarted.detail;
     }
+  } else if (waiting_restart) {
+    explorer_restart_result = SystemSettingsExplorerRestartResult::deferred;
   }
 
   snapshot_.waiting_for_explorer_restart = waiting_restart;
@@ -539,12 +693,96 @@ SystemSettingsApplyResult SystemSettingsApplyService::apply_selected(
                          : SystemSettingsSnapshotStatus::completed;
   snapshot_.recovery_records = recovery_records_;
   result.status = snapshot_.status;
-  result.settings = snapshot_.settings;
   result.waiting_for_explorer_restart = waiting_restart;
   if (result.detail.empty()) {
     result.detail = waiting_restart ? "系统优化已应用，等待资源管理器重启"
                                     : "系统优化已完成";
   }
+  for (auto& record : operation_records) {
+    auto const updated = std::ranges::find(
+        recovery_records_, record.record_id,
+        &SystemSettingsRecoveryRecord::record_id);
+    if (updated != recovery_records_.end()) {
+      record = *updated;
+    }
+  }
+  SystemSettingsOperationFact fact{
+      .operation = request.target == SystemSettingsApplyRequest::Target::
+                            windows11_default
+                       ? SystemSettingsOperationKind::windows11_default
+                       : SystemSettingsOperationKind::apply,
+      .catalog_availability = SystemSettingsFactAvailability::obtained,
+      .catalog_identity = "system-settings-catalog",
+      .catalog_revision = frozen.catalog_revision,
+      .catalog_reason = {},
+      .selected_plan_id = frozen_plan_id,
+      .selected_plan_name = frozen_plan_name,
+      .windows_environment = captured_windows_environment,
+      .explorer_restart_requested =
+          request.explorer_restart_action ==
+          SystemSettingsApplyRequest::ExplorerRestartAction::restart_now,
+      .explorer_restart_result = explorer_restart_result,
+      .windows_restart_barrier = std::ranges::any_of(
+          frozen.settings, [](auto const& setting) {
+            return setting.restart_requirement ==
+                   settings_domain::RestartRequirement::windows;
+          }),
+      .status = result.status == SystemSettingsSnapshotStatus::failed
+                    ? SystemSettingsOperationStatus::failed
+                    : waiting_restart
+                          ? SystemSettingsOperationStatus::waiting_explorer_restart
+                          : SystemSettingsOperationStatus::completed,
+      .reason = result.detail,
+  };
+  for (auto const& setting : frozen.settings) {
+    auto const* item = find_snapshot(setting.id);
+    auto const kind = map_setting(setting);
+    auto const record = std::ranges::find(
+        operation_records, setting.id,
+        &SystemSettingsRecoveryRecord::setting_id);
+    fact.settings.push_back({
+        .setting_id = setting.id,
+        .display_name = setting.display_name,
+        .controlled_identity = setting.semantics.identity,
+        .catalog_revision = frozen.catalog_revision,
+        .declared_range_availability = SystemSettingsFactAvailability::obtained,
+        .declared_windows_range = setting.known_windows_range,
+        .declared_range_reason = {},
+        .original_value = record == operation_records.end()
+                              ? std::nullopt
+                              : std::optional<WindowsSystemSettingValue>{
+                                    record->original_value},
+        .target_value = kind.has_value()
+                            ? target_value(*kind, request.target)
+                            : std::nullopt,
+        .recovery_record_id = record == operation_records.end()
+                                  ? std::nullopt
+                                  : std::optional<std::uint64_t>{
+                                        record->record_id},
+        .restart_requirement = setting.restart_requirement,
+        .force_attempt_confirmed = request.force_attempt_confirmed,
+        .status = item == nullptr ? SystemSettingsOperationStatus::failed
+                                  : operation_status(item->state),
+        .reason = item == nullptr ? "冻结设置投影不可用" : item->detail,
+    });
+  }
+  fact.timeline = {
+      {.ordinal = 1,
+       .stage = "selection-frozen",
+       .status = SystemSettingsOperationStatus::completed,
+       .reason = "已冻结所选设置、方案和目录修订"},
+      {.ordinal = 2,
+       .stage = "operation-finished",
+       .status = fact.status,
+       .reason = fact.reason},
+  };
+  std::string history_detail;
+  if (!append_operation_fact(std::move(fact), history_detail)) {
+    snapshot_.status = SystemSettingsSnapshotStatus::failed;
+    result.status = SystemSettingsSnapshotStatus::failed;
+    result.detail = std::move(history_detail);
+  }
+  result.settings = snapshot_.settings;
   append_log(correlation, "apply-finished",
              result.status == SystemSettingsSnapshotStatus::completed
                  ? ExecutionResult::succeeded
@@ -577,12 +815,90 @@ SystemSettingsApplyResult SystemSettingsApplyService::restart_explorer_now() {
     return result;
   }
 
+  std::string legacy_history_detail;
+  if (!persist_pending_legacy_operation_facts(legacy_history_detail)) {
+    result.status = SystemSettingsSnapshotStatus::failed;
+    result.detail = std::move(legacy_history_detail);
+    static_cast<void>(occupancy_.release(*lease.lease));
+    return result;
+  }
+
+  std::vector<std::uint64_t> restarting_record_ids;
+  for (auto const& record : recovery_records_) {
+    if (record.status == RecoveryRecordStatus::waiting_explorer_restart) {
+      restarting_record_ids.push_back(record.record_id);
+    }
+  }
+  auto const captured_windows_environment =
+      windows_environment_fact(platform_.windows_version_fact());
+  auto append_restart_history =
+      [&](SystemSettingsOperationStatus status,
+          SystemSettingsExplorerRestartResult restart_result,
+          std::string const& reason) {
+        SystemSettingsOperationFact fact{
+            .operation = SystemSettingsOperationKind::restart_explorer,
+            .catalog_availability = SystemSettingsFactAvailability::not_obtained,
+            .catalog_identity = "NOT_OBTAINED",
+            .catalog_reason =
+                "NOT_OBTAINED: Explorer restart uses frozen recovery records",
+            .windows_environment = captured_windows_environment,
+            .explorer_restart_requested = true,
+            .explorer_restart_result = restart_result,
+            .status = status,
+            .reason = reason,
+        };
+        for (auto const record_id : restarting_record_ids) {
+          auto const record = std::ranges::find(
+              recovery_records_, record_id,
+              &SystemSettingsRecoveryRecord::record_id);
+          if (record == recovery_records_.end()) {
+            continue;
+          }
+          fact.settings.push_back({
+              .setting_id = record->setting_id,
+              .display_name = record->display_name,
+              .controlled_identity = "NOT_OBTAINED",
+              .catalog_revision = record->catalog_revision,
+              .declared_range_availability =
+                  SystemSettingsFactAvailability::not_obtained,
+              .declared_range_reason =
+                  "NOT_OBTAINED: recovery record does not contain declared Windows range",
+              .original_value = record->original_value,
+              .target_value = expected_value_for_recovery(*record),
+              .recovery_record_id = record->record_id,
+              .restart_requirement = record->restart_requirement,
+              .status = operation_status(record->status),
+              .reason = reason,
+          });
+        }
+        fact.timeline = {
+            {.ordinal = 1,
+             .stage = "explorer-restart-requested",
+             .status = SystemSettingsOperationStatus::completed,
+             .reason = "已按冻结恢复记录请求资源管理器重启"},
+            {.ordinal = 2,
+             .stage = "explorer-restart-finished",
+             .status = status,
+             .reason = reason},
+        };
+        std::string history_detail;
+        return append_operation_fact(std::move(fact), history_detail)
+                   ? std::optional<std::string>{}
+                   : std::optional<std::string>{std::move(history_detail)};
+      };
+
   result.explorer_restart_attempted = true;
   auto restarted = platform_.restart_explorer();
   if (restarted.status != SystemSettingsAdapterStatus::succeeded) {
     result.status = SystemSettingsSnapshotStatus::failed;
     result.detail = restarted.detail.empty() ? "资源管理器重启失败"
                                              : restarted.detail;
+    if (auto history_detail = append_restart_history(
+            SystemSettingsOperationStatus::failed,
+            SystemSettingsExplorerRestartResult::failed, result.detail);
+        history_detail.has_value()) {
+      result.detail = std::move(*history_detail);
+    }
     append_log(correlation, "restart-explorer", ExecutionResult::failed, "",
                result.detail);
     static_cast<void>(occupancy_.release(*lease.lease));
@@ -638,6 +954,19 @@ SystemSettingsApplyResult SystemSettingsApplyService::restart_explorer_now() {
   result.detail = result.waiting_for_explorer_restart
                       ? "等待资源管理器重启后的验证"
                       : "资源管理器重启后验证完成";
+  if (auto history_detail = append_restart_history(
+          result.status == SystemSettingsSnapshotStatus::completed
+              ? SystemSettingsOperationStatus::completed
+              : SystemSettingsOperationStatus::failed,
+          verification_failed
+              ? SystemSettingsExplorerRestartResult::verification_failed
+              : SystemSettingsExplorerRestartResult::succeeded,
+          result.detail);
+      history_detail.has_value()) {
+    result.status = SystemSettingsSnapshotStatus::failed;
+    result.detail = std::move(*history_detail);
+  }
+  result.settings = snapshot_.settings;
   append_log(correlation, "restart-explorer",
              result.status == SystemSettingsSnapshotStatus::completed
                  ? ExecutionResult::succeeded
@@ -692,6 +1021,11 @@ SystemSettingsApplyService::recovery_records() const {
   return recovery_records_;
 }
 
+SystemSettingsOperationHistory SystemSettingsApplyService::operation_history()
+    const {
+  return operation_history_;
+}
+
 SystemSettingsUndoResult SystemSettingsApplyService::undo(
     settings_domain::StableId const& setting_id,
     SystemSettingsUndoRequest request) {
@@ -725,12 +1059,79 @@ SystemSettingsUndoResult SystemSettingsApplyService::undo(
     return result;
   }
 
+  std::string legacy_history_detail;
+  if (!persist_pending_legacy_operation_facts(legacy_history_detail)) {
+    result.status = SystemSettingsUndoStatus::failed;
+    result.detail = std::move(legacy_history_detail);
+    static_cast<void>(occupancy_.release(*lease.lease));
+    return result;
+  }
+
+  auto const frozen_recovery = *record;
+  auto const captured_windows_environment =
+      windows_environment_fact(platform_.windows_version_fact());
+  auto append_undo_history = [&](SystemSettingsOperationStatus status,
+                                 std::string const& reason) {
+    SystemSettingsOperationFact fact{
+        .operation = SystemSettingsOperationKind::restore,
+        .catalog_availability = SystemSettingsFactAvailability::not_obtained,
+        .catalog_identity = "NOT_OBTAINED",
+        .catalog_revision = frozen_recovery.catalog_revision,
+        .catalog_reason =
+            "NOT_OBTAINED: restore uses the frozen recovery record, not the current catalog",
+        .windows_environment = captured_windows_environment,
+        .explorer_restart_requested =
+            request.explorer_restart_action ==
+            SystemSettingsApplyRequest::ExplorerRestartAction::restart_now,
+        .explorer_restart_result =
+            status == SystemSettingsOperationStatus::waiting_explorer_restart
+                ? SystemSettingsExplorerRestartResult::deferred
+                : SystemSettingsExplorerRestartResult::not_required,
+        .status = status,
+        .reason = reason,
+        .settings = {{
+            .setting_id = frozen_recovery.setting_id,
+            .display_name = frozen_recovery.display_name,
+            .controlled_identity = "NOT_OBTAINED",
+            .catalog_revision = frozen_recovery.catalog_revision,
+            .declared_range_availability =
+                SystemSettingsFactAvailability::not_obtained,
+            .declared_range_reason =
+                "NOT_OBTAINED: recovery record does not contain declared Windows range",
+            .original_value = frozen_recovery.original_value,
+            .target_value = frozen_recovery.original_value,
+            .recovery_record_id = frozen_recovery.record_id,
+            .restart_requirement = frozen_recovery.restart_requirement,
+            .status = status,
+            .reason = reason,
+        }},
+        .timeline = {{
+            .ordinal = 1,
+            .stage = "restore-frozen-recovery",
+            .status = SystemSettingsOperationStatus::completed,
+            .reason = "已冻结原值和恢复记录"},
+                     {.ordinal = 2,
+                      .stage = "restore-finished",
+                      .status = status,
+                      .reason = reason}},
+    };
+    std::string history_detail;
+    return append_operation_fact(std::move(fact), history_detail)
+               ? std::optional<std::string>{}
+               : std::optional<std::string>{std::move(history_detail)};
+  };
+
   auto current = *record;
   current.operation = RecoveryRecordOperation::restore;
   current.status = RecoveryRecordStatus::restoring;
   if (auto saved = recovery_store_.save(current);
       saved.status != RecoveryStorageStatus::committed) {
     result.detail = saved.detail.empty() ? "撤销状态保存失败" : saved.detail;
+    if (auto history_detail = append_undo_history(
+            SystemSettingsOperationStatus::failed, result.detail);
+        history_detail.has_value()) {
+      result.detail = std::move(*history_detail);
+    }
     static_cast<void>(occupancy_.release(*lease.lease));
     return result;
   }
@@ -746,6 +1147,11 @@ SystemSettingsUndoResult SystemSettingsApplyService::undo(
     *record = current;
     snapshot_.recovery_records = recovery_records_;
     result.detail = restored.detail.empty() ? "恢复原值失败" : restored.detail;
+    if (auto history_detail = append_undo_history(
+            SystemSettingsOperationStatus::failed, result.detail);
+        history_detail.has_value()) {
+      result.detail = std::move(*history_detail);
+    }
     append_log(correlation, "undo-restore", ExecutionResult::failed,
                current.setting_id.value, result.detail);
     static_cast<void>(occupancy_.release(*lease.lease));
@@ -761,6 +1167,11 @@ SystemSettingsUndoResult SystemSettingsApplyService::undo(
     snapshot_.recovery_records = recovery_records_;
     result.detail = verified.detail.empty() ? "恢复原值后验证失败"
                                              : verified.detail;
+    if (auto history_detail = append_undo_history(
+            SystemSettingsOperationStatus::failed, result.detail);
+        history_detail.has_value()) {
+      result.detail = std::move(*history_detail);
+    }
     append_log(correlation, "undo-verify", ExecutionResult::failed,
                current.setting_id.value, result.detail);
     static_cast<void>(occupancy_.release(*lease.lease));
@@ -779,6 +1190,11 @@ SystemSettingsUndoResult SystemSettingsApplyService::undo(
     snapshot_.recovery_records = recovery_records_;
     result.detail = committed.detail.empty() ? "撤销结果提交失败"
                                                : committed.detail;
+    if (auto history_detail = append_undo_history(
+            SystemSettingsOperationStatus::failed, result.detail);
+        history_detail.has_value()) {
+      result.detail = std::move(*history_detail);
+    }
     static_cast<void>(occupancy_.release(*lease.lease));
     return result;
   }
@@ -791,6 +1207,15 @@ SystemSettingsUndoResult SystemSettingsApplyService::undo(
   if (current.status == RecoveryRecordStatus::waiting_explorer_restart) {
     result.status = SystemSettingsUndoStatus::waiting_explorer_restart;
     result.detail = "原值已恢复，等待资源管理器重启后重新验证";
+    if (auto history_detail = append_undo_history(
+            SystemSettingsOperationStatus::waiting_explorer_restart,
+            result.detail);
+        history_detail.has_value()) {
+      result.status = SystemSettingsUndoStatus::failed;
+      result.detail = std::move(*history_detail);
+      static_cast<void>(occupancy_.release(*lease.lease));
+      return result;
+    }
     if (request.explorer_restart_action ==
         SystemSettingsApplyRequest::ExplorerRestartAction::restart_now) {
       result.explorer_restart_attempted = true;
@@ -815,6 +1240,12 @@ SystemSettingsUndoResult SystemSettingsApplyService::undo(
   } else {
     result.status = SystemSettingsUndoStatus::restored;
     result.detail = "已恢复保存的原值并验证";
+    if (auto history_detail = append_undo_history(
+            SystemSettingsOperationStatus::restored, result.detail);
+        history_detail.has_value()) {
+      result.status = SystemSettingsUndoStatus::failed;
+      result.detail = std::move(*history_detail);
+    }
   }
   append_log(correlation, "undo-finished",
              result.status == SystemSettingsUndoStatus::failed
@@ -844,6 +1275,11 @@ RecoveryRecordDeleteResult SystemSettingsApplyService::delete_recovery_record(
   if (!confirmed) {
     result.status = RecoveryRecordDeleteStatus::confirmation_required;
     result.detail = "删除后将无法恢复“" + record->display_name + "”的保存原值";
+    return result;
+  }
+  std::string legacy_history_detail;
+  if (!persist_pending_legacy_operation_facts(legacy_history_detail)) {
+    result.detail = std::move(legacy_history_detail);
     return result;
   }
   auto committed = recovery_store_.erase(record_id);
@@ -966,6 +1402,35 @@ bool SystemSettingsApplyService::mark_explorer_restart_verified(
   }
   *found = std::move(record);
   snapshot_.recovery_records = recovery_records_;
+  return true;
+}
+
+bool SystemSettingsApplyService::append_operation_fact(
+    SystemSettingsOperationFact fact, std::string& detail) {
+  fact.fact_id = next_operation_fact_id_++;
+  auto committed = recovery_store_.append_operation_fact(fact);
+  if (committed.status != RecoveryStorageStatus::committed) {
+    detail = committed.detail.empty() ? "系统设置操作历史提交失败"
+                                      : committed.detail;
+    return false;
+  }
+  operation_history_.facts.push_back(std::move(fact));
+  return true;
+}
+
+bool SystemSettingsApplyService::persist_pending_legacy_operation_facts(
+    std::string& detail) {
+  auto pending = pending_legacy_operation_facts_.begin();
+  while (pending != pending_legacy_operation_facts_.end()) {
+    auto committed = recovery_store_.append_operation_fact(*pending);
+    if (committed.status != RecoveryStorageStatus::committed) {
+      detail = committed.detail.empty()
+                   ? "旧系统设置恢复记录历史迁移失败"
+                   : committed.detail;
+      return false;
+    }
+    pending = pending_legacy_operation_facts_.erase(pending);
+  }
   return true;
 }
 

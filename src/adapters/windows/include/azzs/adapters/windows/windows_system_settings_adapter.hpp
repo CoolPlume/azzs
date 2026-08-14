@@ -10,6 +10,8 @@ class WindowsSystemSettingsAdapter final
   [[nodiscard]] std::optional<
       application::settings_domain::WindowsVersion>
   windows_version() const override;
+  [[nodiscard]] std::optional<application::SystemSettingsWindowsVersionFact>
+  windows_version_fact() const override;
   [[nodiscard]] application::SystemSettingsRead read(
       application::ControlledSystemSetting setting) override;
   [[nodiscard]] application::SystemSettingsAdapterResult apply(

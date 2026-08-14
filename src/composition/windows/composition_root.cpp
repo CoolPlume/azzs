@@ -43,6 +43,7 @@
 #include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
+#include "azzs/application/debug_log_policy/debug_log_policy.hpp"
 #include "azzs/application/driver_acquisition.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
@@ -88,6 +89,16 @@ class ProductionSoftwareOptimizationCatalogDebugAuthorization final
  public:
   [[nodiscard]] bool local_import_allowed() const noexcept override {
     return false;
+  }
+};
+
+class UnavailableDebugLogPolicyProvider final
+    : public application::DebugLogPolicyProvider {
+ public:
+  [[nodiscard]] application::DebugLogPolicyRead read_debug_log_policy()
+      const override {
+    return {.not_obtained_reason =
+                "the Windows composition root has no debug log policy provider"};
   }
 };
 
@@ -227,7 +238,10 @@ class WindowsWorkbenchServices final
         software_optimization_batches_(
             states_, occupancy_, log_, software_optimization_batch_plans_,
             software_optimization_batch_executor_,
-            software_optimization_batch_withdrawals_, &restart_resume_) {
+            software_optimization_batch_withdrawals_, &restart_resume_),
+        debug_log_policy_provider_(
+            std::make_shared<UnavailableDebugLogPolicyProvider>()),
+        debug_log_policy_(debug_log_policy_provider_) {
     static_cast<void>(settings_catalog_.initialize_builtin(
         application::settings_catalog::initial_settings_catalog()));
     static_cast<void>(system_settings_apply_.refresh());
@@ -569,11 +583,14 @@ class WindowsWorkbenchServices final
       states_, occupancy_, log_, batch_download_, batch_executor_, batch_readiness_,
       batch_verifier_, batch_facts_, software_catalog_, software_selection_,
       &restart_resume_};
+  std::shared_ptr<application::DebugLogPolicyProvider const>
+      debug_log_policy_provider_;
+  application::DebugLogPolicyReader debug_log_policy_;
   application::HistoryAndLogsService history_and_logs_{
       clock_, application_updates_, platform_info_, hardware_overview_,
       software_catalog_, log_, installation_batches_,
       software_optimization_batches_, system_settings_apply_,
-      software_selection_};
+      software_selection_, &debug_log_policy_, &restart_resume_};
 };
 
 }  // namespace
