@@ -108,7 +108,9 @@ struct FrozenBatchPlan final {
 enum class InstallationItemState {
   pending,
   downloading,
+  download_paused,
   installer_running,
+  force_termination_confirmation_pending,
   waiting_network,
   source_invalid,
   installer_interaction_pending,
@@ -124,6 +126,8 @@ enum class InstallationItemState {
 enum class InstallationBatchState {
   ready,
   running,
+  download_paused,
+  stopping,
   awaiting_user,
   waiting_restart,
   closing,
@@ -137,6 +141,10 @@ enum class InstallationItemCommand {
   start,
   retry,
   stop,
+  pause_download,
+  resume_download,
+  request_force_termination,
+  confirm_force_termination,
   user_complete_installer_interaction,
   user_complete_confirmation,
   read_only_verify,
@@ -150,6 +158,10 @@ struct InstallationItemProgress final {
   // interrupted launch so recovery can observe rather than issue it again.
   bool launch_requested{false};
   bool installer_started{false};
+  // The request and observed forced termination are retained separately: a
+  // confirmation never implies that an installer was actually terminated.
+  bool force_termination_confirmation_requested{false};
+  bool force_termination_completed{false};
   // A controlled post-install action needs an explicit completion fact before
   // result detection may establish this item as complete.
   bool post_install_completed{false};
@@ -194,6 +206,9 @@ struct InstallationBatchRecord final {
   FrozenBatchPlan plan;
   InstallationBatchState state{InstallationBatchState::ready};
   bool close_requested{false};
+  // Normal stop waits for an already-running installer but permanently
+  // prevents any later item in this frozen batch from starting.
+  bool stop_requested{false};
   std::vector<InstallationItemProgress> items;
   std::uint64_t generation{};
   std::optional<DurableLeaseBinding> active_lease;

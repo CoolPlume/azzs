@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 08
 Owner: issue-09
+Claimed by: codex/issue-09-installation-batch-controls
 Consumers: 21, 27
 Verification: 停止、暂停、继续、强制终止、关闭重开和单项重试的状态机与进程适配器测试。
 Evidence freshness: 绑定当前提交和安装器适配器版本；Windows 进程证据绑定实际候选构建。

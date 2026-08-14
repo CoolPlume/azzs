@@ -19,6 +19,12 @@ class WindowsInstallationDownloadAdapter final
   advance(application::installation_batch::InstallationEffectTarget const& target)
       override;
   [[nodiscard]] application::installation_batch::InstallationDownloadObservation
+  pause(application::installation_batch::InstallationEffectTarget const& target)
+      override;
+  [[nodiscard]] application::installation_batch::InstallationDownloadObservation
+  resume(application::installation_batch::InstallationEffectTarget const& target)
+      override;
+  [[nodiscard]] application::installation_batch::InstallationDownloadObservation
   stop(application::installation_batch::InstallationEffectTarget const& target)
       override;
 
@@ -53,6 +59,10 @@ class WindowsOpaqueCacheInstallerLauncher final
   [[nodiscard]] application::installation_batch::ControlledInstallerCompletionObservation
   observe_completion(
       application::installation_batch::ControlledInstallerCompletionRequest const& request)
+      override;
+  [[nodiscard]] application::installation_batch::ControlledInstallerTerminationObservation
+  force_terminate(
+      application::installation_batch::ControlledInstallerTerminationRequest const& request)
       override;
 
  private:
