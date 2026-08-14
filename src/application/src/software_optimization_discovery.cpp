@@ -71,10 +71,6 @@ external_handoff_for(
                                           : std::optional{*found};
 }
 
-[[nodiscard]] bool is_executable(discovery_domain::SchemeState state) noexcept {
-  return state == discovery_domain::SchemeState::can_optimize;
-}
-
 }  // namespace
 
 SogouOptimizationDiscoveryObserver::SogouOptimizationDiscoveryObserver(
@@ -168,15 +164,22 @@ DiscoveryActionResult SoftwareOptimizationDiscoveryService::change_selection(
           .adjustment = std::move(changed.adjustment)};
 }
 
-DiscoveryActionResult SoftwareOptimizationDiscoveryService::prepare_submission() const {
-  auto selected_options = executable_selected_options();
+DiscoveryActionResult SoftwareOptimizationDiscoveryService::prepare_submission() {
+  auto fresh = rebuild();
+  if (!fresh.has_current_catalog) {
+    return {.code = DiscoveryActionCode::no_current_catalog,
+            .snapshot = std::move(fresh),
+            .message = snapshot_.error};
+  }
+  auto selected_options = discovery_domain::executable_selected_options(
+      fresh.discovery, selection_);
   if (selected_options.empty()) {
     return {.code = DiscoveryActionCode::no_executable_selection,
-            .snapshot = snapshot_,
+            .snapshot = std::move(fresh),
             .message = "no selected option is currently executable"};
   }
   return {.code = DiscoveryActionCode::selection_changed,
-          .snapshot = snapshot_,
+          .snapshot = std::move(fresh),
           .submission = SoftwareOptimizationSubmissionRequest{
               .catalog_revision = snapshot_.discovery.catalog_revision,
               .selected_options = std::move(selected_options)}};
@@ -193,7 +196,11 @@ SoftwareOptimizationDiscoveryService::rebuild() {
   }
   if (!defaults_initialized_) {
     selection_ = discovery_domain::default_selection(*catalog_snapshot.current);
+    selection_catalog_revision_ = catalog_snapshot.current->revision;
     defaults_initialized_ = true;
+  } else if (selection_catalog_revision_ != catalog_snapshot.current->revision) {
+    selection_ = {};
+    selection_catalog_revision_ = catalog_snapshot.current->revision;
   }
 
   auto const selection_snapshot = selections_.snapshot();
@@ -263,32 +270,6 @@ SoftwareOptimizationDiscoveryService::rebuild() {
       .error = {},
   };
   return snapshot_;
-}
-
-std::vector<discovery_domain::SelectedOption>
-SoftwareOptimizationDiscoveryService::executable_selected_options() const {
-  std::vector<discovery_domain::SelectedOption> result;
-  for (auto const& target : snapshot_.discovery.targets) {
-    for (auto const& scheme : target.schemes) {
-      if (!is_executable(scheme.state)) {
-        continue;
-      }
-      for (auto const& option : scheme.options) {
-        if (option.selected &&
-            option.state == discovery_domain::OptionState::needs_optimization) {
-          auto const selected = std::ranges::find_if(
-              selection_.options, [&](auto const& entry) {
-                return entry.scheme_id == scheme.scheme.id &&
-                       entry.option_id == option.option.id;
-              });
-          if (selected != selection_.options.end()) {
-            result.push_back(*selected);
-          }
-        }
-      }
-    }
-  }
-  return result;
 }
 
 char const* to_string(DiscoveryActionCode value) noexcept {

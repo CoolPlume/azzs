@@ -103,12 +103,10 @@ class SoftwareOptimizationDiscoveryService final {
   [[nodiscard]] SoftwareOptimizationDiscoverySnapshot snapshot() const;
   [[nodiscard]] DiscoveryActionResult change_selection(
       discovery_domain::SelectionMutation mutation);
-  [[nodiscard]] DiscoveryActionResult prepare_submission() const;
+  [[nodiscard]] DiscoveryActionResult prepare_submission();
 
  private:
   [[nodiscard]] SoftwareOptimizationDiscoverySnapshot rebuild();
-  [[nodiscard]] std::vector<discovery_domain::SelectedOption>
-  executable_selected_options() const;
 
   SoftwareOptimizationCatalogLifecycle& catalogs_;
   software_selection::SoftwareSelectionLifecycle const& selections_;
@@ -116,6 +114,7 @@ class SoftwareOptimizationDiscoveryService final {
   SoftwareOptimizationObservationPort& observations_;
   discovery_domain::SelectionState selection_;
   SoftwareOptimizationDiscoverySnapshot snapshot_;
+  std::optional<std::uint64_t> selection_catalog_revision_;
   bool defaults_initialized_{false};
 };
 

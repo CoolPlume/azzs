@@ -193,7 +193,19 @@ void SoftwareOptimizationPage::project(
 
   StatusInfoBar().IsOpen(false);
   PrepareSelectedButton().IsEnabled(false);
+  bool has_selected_executable_option = false;
+  bool has_first_release_implementation_error = false;
   for (auto const& target : snapshot.discovery.targets) {
+    has_first_release_implementation_error =
+        has_first_release_implementation_error ||
+        target.first_release_implementation_error;
+    if (target.first_release_implementation_error) {
+      auto error = TextBlock{};
+      error.Text(resource_string(
+          L"SoftwareOptimizationFirstReleaseSchemeMissingDetail"));
+      error.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
+      NeedsAttentionItems().Children().Append(error);
+    }
     for (auto const& scheme : target.schemes) {
       auto card = Border{};
       card.BorderThickness({1, 1, 1, 1});
@@ -245,11 +257,22 @@ void SoftwareOptimizationPage::project(
         check_box.IsEnabled(scheme.state == SchemeState::can_optimize &&
                             option.state == OptionState::needs_optimization &&
                             !option.option.required);
+        has_selected_executable_option =
+            has_selected_executable_option ||
+            (scheme.state == SchemeState::can_optimize && option.selected &&
+             option.state == OptionState::needs_optimization);
         check_box.Tag(winrt::box_value(option_tag(scheme, option.option.id.value)));
         AutomationProperties::SetName(check_box, label);
         check_box.Checked({this, &SoftwareOptimizationPage::OnOptionSelectionChanged});
         check_box.Unchecked({this, &SoftwareOptimizationPage::OnOptionSelectionChanged});
         content.Children().Append(check_box);
+        if (option.state == OptionState::version_not_applicable) {
+          auto version_detail = TextBlock{};
+          version_detail.Text(resource_string(
+              L"SoftwareOptimizationOptionVersionNotApplicable"));
+          version_detail.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
+          content.Children().Append(version_detail);
+        }
       }
       if (advanced_view_ &&
           (scheme.state == SchemeState::version_not_applicable ||
@@ -293,6 +316,12 @@ void SoftwareOptimizationPage::project(
       NoAvailableItems().Children().Size() == 0
           ? Microsoft::UI::Xaml::Visibility::Collapsed
           : Microsoft::UI::Xaml::Visibility::Visible);
+  PrepareSelectedButton().IsEnabled(has_selected_executable_option);
+  if (has_first_release_implementation_error) {
+    set_status(resource_string(
+                   L"SoftwareOptimizationFirstReleaseSchemeMissingStatus"),
+               InfoBarSeverity::Error);
+  }
 }
 
 void SoftwareOptimizationPage::set_status(
