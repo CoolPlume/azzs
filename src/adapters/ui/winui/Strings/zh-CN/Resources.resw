@@ -295,4 +295,7 @@
   <data name="ApplicationUpdateReadOnlyDetail" xml:space="preserve"><value>恢复记录（旧版本 / 失败版本 / UTC 毫秒时间）：</value></data>
   <data name="ApplicationUpdateManualButton" xml:space="preserve"><value>打开 GitHub 下载</value></data>
   <data name="ApplicationUpdateDiagnosticButton" xml:space="preserve"><value>导出诊断资料</value></data>
+  <data name="OverviewGuidedInitializationStages.AutomationProperties.Name" xml:space="preserve"><value>推荐初始化阶段</value></data>
+  <data name="OverviewGuidedStagesTitle.Text" xml:space="preserve"><value>推荐初始化阶段</value></data>
+  <data name="OverviewGuidedIndependenceNotice.Text" xml:space="preserve"><value>每个一级页面均可独立使用，推荐流程不会锁定其他操作。</value></data>
 </root>
