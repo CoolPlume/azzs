@@ -86,8 +86,8 @@ struct DiagnosticContext final {
   std::string windows_version;
   std::string language;
   std::string timezone;
-  WallClockTime coverage_started_at;
-  WallClockTime coverage_ended_at;
+  std::optional<WallClockTime> coverage_started_at;
+  std::optional<WallClockTime> coverage_ended_at;
   std::vector<DiagnosticField> fields;
   std::vector<MissingDiagnosticFact> missing_facts;
   std::vector<std::string> sensitive_values;
@@ -125,9 +125,56 @@ struct ExecutionLogClearReceipt final {
 
 struct DiagnosticExportReceipt final {
   bool produced{false};
+  // A produced file may still name observations that the host could not
+  // obtain. Consumers must not present that as a complete diagnostic.
+  bool complete{false};
   std::size_t file_count{0};
+  std::size_t missing_fact_count{0};
   std::string file_name;
   std::string file_bytes;
+  std::string error;
+};
+
+// A read-only, already-redacted projection. Consumers never receive the
+// storage format or an unredacted event payload.
+struct ExecutionLogFieldProjection final {
+  std::string key;
+  std::string value;
+};
+
+struct ExecutionLogEventProjection final {
+  std::uint64_t segment{0};
+  std::uint64_t sequence{0};
+  CorrelationId correlation;
+  std::int64_t recorded_at_milliseconds{0};
+  ExecutionEventKind kind{ExecutionEventKind::state_transition};
+  std::string component;
+  std::string stage;
+  ExecutionResult result{ExecutionResult::unknown};
+  std::optional<ExecutionError> error;
+  std::optional<LastTrustedState> last_trusted_state;
+  std::optional<CoverageGap> coverage_gap;
+  std::vector<ExecutionLogFieldProjection> fields;
+};
+
+// The cutoff record is durable, while the replacement segment has not yet
+// been verified. Readers must present this as a committed clear in progress,
+// not as unchanged old records or a confirmed new segment.
+struct ExecutionLogPendingClearProjection final {
+  std::uint64_t cutoff_segment{0};
+  std::uint64_t cutoff_sequence{0};
+};
+
+struct ExecutionLogSnapshot final {
+  bool available{false};
+  std::uint64_t active_segment{0};
+  std::uint64_t last_sequence{0};
+  std::size_t durable_bytes{0};
+  std::optional<WallClockTime> coverage_started_at;
+  std::optional<WallClockTime> coverage_ended_at;
+  std::size_t coverage_gap_count{0};
+  std::optional<ExecutionLogPendingClearProjection> pending_clear;
+  std::vector<ExecutionLogEventProjection> events;
   std::string error;
 };
 
@@ -140,6 +187,9 @@ class ExecutionLog {
   [[nodiscard]] virtual CorrelationId begin_correlation() = 0;
   [[nodiscard]] virtual ExecutionLogReceipt append(
       CorrelationId const& correlation, ExecutionEvent const& event) = 0;
+  // Test fakes that only record writes may retain the empty default. Production
+  // adapters override it with a parsed, centrally redacted projection.
+  [[nodiscard]] virtual ExecutionLogSnapshot snapshot() { return {}; }
   [[nodiscard]] virtual ExecutionLogClearReceipt clear() = 0;
   [[nodiscard]] virtual DiagnosticExportReceipt export_diagnostic(
       DiagnosticContext const& context) = 0;

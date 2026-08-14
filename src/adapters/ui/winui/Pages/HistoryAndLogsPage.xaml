@@ -19,6 +19,11 @@
             </VisualStateManager.VisualStateGroups>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="HistoryAndLogsPageTitle"
@@ -27,6 +32,88 @@
                 AutomationProperties.HeadingLevel="Level1"
                 Style="{StaticResource AzzsPageTitleTextStyle}"
                 TextWrapping="Wrap" />
+            <InfoBar
+                x:Name="StatusInfoBar"
+                Grid.Row="1"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                AutomationProperties.AutomationId="AzzsHistoryAndLogsStatus"
+                IsClosable="False"
+                IsOpen="False" />
+            <CommandBar
+                Grid.Row="2"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                AutomationProperties.AutomationId="AzzsHistoryAndLogsCommands"
+                DefaultLabelPosition="Right">
+                <AppBarButton
+                    x:Name="RefreshButton"
+                    x:Uid="HistoryAndLogsRefreshButton"
+                    AutomationProperties.AutomationId="AzzsHistoryAndLogsRefresh"
+                    Click="OnRefresh">
+                    <AppBarButton.Icon><SymbolIcon Symbol="Refresh" /></AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton
+                    x:Name="ExportDiagnosticButton"
+                    x:Uid="HistoryAndLogsExportDiagnosticButton"
+                    AutomationProperties.AutomationId="AzzsHistoryAndLogsExportDiagnostic"
+                    Click="OnExportDiagnostic">
+                    <AppBarButton.Icon><SymbolIcon Symbol="Save" /></AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton
+                    x:Name="ClearLogsButton"
+                    x:Uid="HistoryAndLogsClearLogsButton"
+                    AutomationProperties.AutomationId="AzzsHistoryAndLogsClear"
+                    Click="OnClearLogs">
+                    <AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon>
+                </AppBarButton>
+            </CommandBar>
+            <TextBlock
+                x:Name="DiagnosticPreviewText"
+                Grid.Row="3"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                AutomationProperties.AutomationId="AzzsHistoryAndLogsDiagnosticPreview"
+                TextWrapping="Wrap" />
+            <StackPanel
+                Grid.Row="4"
+                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
+                AutomationProperties.AutomationId="AzzsHistoryRecords">
+                <TextBlock
+                    x:Uid="HistoryAndLogsHistoryTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    x:Name="HistoryEmptyText"
+                    x:Uid="HistoryAndLogsHistoryEmpty"
+                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
+                    TextWrapping="Wrap" />
+                <StackPanel
+                    x:Name="HistoryItems"
+                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
+                    Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
+            <StackPanel
+                Grid.Row="5"
+                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
+                AutomationProperties.AutomationId="AzzsLogRecords">
+                <TextBlock
+                    x:Uid="HistoryAndLogsLogTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    x:Name="LogSummaryText"
+                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    x:Name="LogEmptyText"
+                    x:Uid="HistoryAndLogsLogEmpty"
+                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
+                    TextWrapping="Wrap" />
+                <StackPanel
+                    x:Name="LogItems"
+                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
+                    Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
         </Grid>
     </ScrollViewer>
 </Page>

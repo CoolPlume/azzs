@@ -46,6 +46,7 @@
 #include "azzs/application/driver_acquisition.hpp"
 #include "azzs/application/emergency_withdrawal_service.hpp"
 #include "azzs/application/hardware_overview.hpp"
+#include "azzs/application/history_and_logs.hpp"
 #include "azzs/application/installation_batch.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/operation_occupancy.hpp"
@@ -310,6 +311,11 @@ class WindowsWorkbenchServices final
     return log_;
   }
 
+  [[nodiscard]] application::HistoryAndLogsService& history_and_logs()
+      noexcept override {
+    return history_and_logs_;
+  }
+
   [[nodiscard]] application::SharedOperationOccupancy& operation_occupancy()
       noexcept override {
     return occupancy_;
@@ -563,6 +569,11 @@ class WindowsWorkbenchServices final
       states_, occupancy_, log_, batch_download_, batch_executor_, batch_readiness_,
       batch_verifier_, batch_facts_, software_catalog_, software_selection_,
       &restart_resume_};
+  application::HistoryAndLogsService history_and_logs_{
+      clock_, application_updates_, platform_info_, hardware_overview_,
+      software_catalog_, log_, installation_batches_,
+      software_optimization_batches_, system_settings_apply_,
+      software_selection_};
 };
 
 }  // namespace
