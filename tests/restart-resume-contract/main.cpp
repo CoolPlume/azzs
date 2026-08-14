@@ -129,12 +129,34 @@ struct Registration final : LoginResumeRegistration {
   return passed;
 }
 
+[[nodiscard]] bool unverified_recovery_keeps_the_restart_gate_closed() {
+  InMemoryStateFileSystem files;
+  FixedClock clock{azzs::application::WallClockTime{}};
+  DeviceStateStore states{files, clock};
+  Registration registration;
+  RestartResumeService service{states, registration};
+  bool passed = expect(service.restore().succeeded(), "unverified fixture must restore");
+  passed &= expect(service.arm(request()).succeeded(),
+                   "unverified fixture must persist a restart checkpoint");
+  passed &= expect(service.resume_after_login().succeeded(),
+                   "unverified fixture must enter read-only verification");
+  passed &= expect(service.snapshot().state ==
+                       RestartResumeState::awaiting_read_only_verification,
+                   "a failed, missing, or lease-blocked participant recovery must remain read-only");
+  passed &= expect(service.confirm_continue().code == RestartResumeActionCode::rejected,
+                   "continuation must remain blocked until every participant is verified");
+  passed &= expect(service.cancel().code == RestartResumeActionCode::rejected,
+                   "cancellation must remain blocked until every participant is verified");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
   return persists_a_barrier_and_requires_explicit_decision() &&
                  registration_failure_keeps_the_durable_gate() &&
-                 cancellation_requires_the_same_explicit_recovery_boundary()
+                 cancellation_requires_the_same_explicit_recovery_boundary() &&
+                 unverified_recovery_keeps_the_restart_gate_closed()
              ? EXIT_SUCCESS
              : EXIT_FAILURE;
 }
