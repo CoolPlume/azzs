@@ -1,8 +1,11 @@
+#include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -14,11 +17,16 @@ using azzs::application::DebugLogCoverage;
 using azzs::application::DebugLogFilterField;
 using azzs::application::DebugLogGranularity;
 using azzs::application::DebugLogLocationSemantics;
+using azzs::application::DebugLogPolicyContext;
 using azzs::application::DebugLogPolicyProvider;
 using azzs::application::DebugLogPolicyRead;
 using azzs::application::DebugLogPolicyReader;
+using azzs::application::DebugLogPolicySnapshotSource;
 using azzs::application::DebugLogRetention;
 using azzs::application::DebugModeState;
+using azzs::application::kRequiredDebugLogCoverage;
+using azzs::application::kRequiredDebugLogFilterFields;
+using azzs::application::make_debug_log_policy_context;
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
   if (!condition) {
@@ -33,18 +41,12 @@ using azzs::application::DebugModeState;
       .debug_enabled = debug_enabled,
       .granularity = debug_enabled ? DebugLogGranularity::maximum
                                    : DebugLogGranularity::normal,
-      .filterable_fields = {
-          DebugLogFilterField::retry,
-          DebugLogFilterField::command,
-          DebugLogFilterField::correlation_id,
-      },
+      .filterable_fields = {kRequiredDebugLogFilterFields.begin(),
+                            kRequiredDebugLogFilterFields.end()},
       .locating_semantics =
           DebugLogLocationSemantics::event_sequence_and_correlation_id,
-      .coverage = {
-          DebugLogCoverage::recovery,
-          DebugLogCoverage::installation,
-          DebugLogCoverage::catalog_validation,
-      },
+      .coverage = {kRequiredDebugLogCoverage.begin(),
+                   kRequiredDebugLogCoverage.end()},
   };
 }
 
@@ -87,55 +89,131 @@ class FakeDebugLogPolicyProvider final : public DebugLogPolicyProvider {
 [[nodiscard]] bool filters_and_location_are_canonical_and_deterministic() {
   auto provider = std::make_shared<FakeDebugLogPolicyProvider>();
   provider->policy = available_policy(true);
-  provider->policy.filterable_fields = {
-      DebugLogFilterField::retry,
-      DebugLogFilterField::command,
-      DebugLogFilterField::retry,
-      DebugLogFilterField::correlation_id,
-      DebugLogFilterField::command,
-  };
-  provider->policy.coverage = {
-      DebugLogCoverage::recovery,
-      DebugLogCoverage::catalog_validation,
-      DebugLogCoverage::recovery,
-  };
+  std::ranges::reverse(provider->policy.filterable_fields);
+  provider->policy.filterable_fields.push_back(
+      DebugLogFilterField::command);
+  std::ranges::reverse(provider->policy.coverage);
+  provider->policy.coverage.push_back(DebugLogCoverage::recovery);
   DebugLogPolicyReader reader{provider};
 
   auto const snapshot = reader.snapshot();
   return expect(snapshot.filterable_fields ==
                     std::vector<DebugLogFilterField>{
-                        DebugLogFilterField::command,
-                        DebugLogFilterField::retry,
-                        DebugLogFilterField::correlation_id,
-                    },
+                        kRequiredDebugLogFilterFields.begin(),
+                        kRequiredDebugLogFilterFields.end()},
                 "filterable fields must be ordered and deduplicated") &&
          expect(snapshot.coverage == std::vector<DebugLogCoverage>{
-                    DebugLogCoverage::catalog_validation,
-                    DebugLogCoverage::recovery,
-                },
+                    kRequiredDebugLogCoverage.begin(),
+                    kRequiredDebugLogCoverage.end()},
                 "coverage must be ordered and deduplicated") &&
          expect(snapshot.locating_semantics ==
                     DebugLogLocationSemantics::event_sequence_and_correlation_id,
                 "location must use stable event sequence and correlation id");
 }
 
-[[nodiscard]] bool disabling_debug_preserves_existing_log_records() {
+[[nodiscard]] bool every_required_filter_and_coverage_fact_is_enforced() {
+  constexpr std::array<std::pair<DebugLogFilterField, std::string_view>, 11>
+      filter_reasons{{
+          {DebugLogFilterField::command, "command"},
+          {DebugLogFilterField::state_transition, "state_transition"},
+          {DebugLogFilterField::catalog, "catalog"},
+          {DebugLogFilterField::source, "source"},
+          {DebugLogFilterField::download, "download"},
+          {DebugLogFilterField::installer, "installer"},
+          {DebugLogFilterField::recovery, "recovery"},
+          {DebugLogFilterField::adapter_result, "adapter_result"},
+          {DebugLogFilterField::duration, "duration"},
+          {DebugLogFilterField::retry, "retry"},
+          {DebugLogFilterField::correlation_id, "correlation_id"},
+      }};
+  constexpr std::array<std::pair<DebugLogCoverage, std::string_view>, 9>
+      coverage_reasons{{
+          {DebugLogCoverage::catalog_validation, "catalog_validation"},
+          {DebugLogCoverage::source_resolution, "source_resolution"},
+          {DebugLogCoverage::dependency_planning, "dependency_planning"},
+          {DebugLogCoverage::download, "download"},
+          {DebugLogCoverage::installation, "installation"},
+          {DebugLogCoverage::result_detection, "result_detection"},
+          {DebugLogCoverage::recovery, "recovery"},
+          {DebugLogCoverage::state_transition, "state_transition"},
+          {DebugLogCoverage::adapter_result, "adapter_result"},
+      }};
+
+  auto provider = std::make_shared<FakeDebugLogPolicyProvider>();
+  DebugLogPolicyReader reader{provider};
+  bool passed = true;
+  for (auto const& [missing, name] : filter_reasons) {
+    provider->policy = available_policy(true);
+    std::erase(provider->policy.filterable_fields, missing);
+    auto const snapshot = reader.snapshot();
+    auto const expected =
+        std::string{"NOT_OBTAINED: debug log policy provider omitted required "
+                    "filter field: "} +
+        std::string{name};
+    passed &= expect(!snapshot.facts_available &&
+                         snapshot.not_obtained_reason == expected,
+                     "each missing required filter must fail closed");
+  }
+  for (auto const& [missing, name] : coverage_reasons) {
+    provider->policy = available_policy(true);
+    std::erase(provider->policy.coverage, missing);
+    auto const snapshot = reader.snapshot();
+    auto const expected =
+        std::string{"NOT_OBTAINED: debug log policy provider omitted required "
+                    "coverage: "} +
+        std::string{name};
+    passed &= expect(!snapshot.facts_available &&
+                         snapshot.not_obtained_reason == expected,
+                     "each missing required coverage fact must fail closed");
+  }
+  return passed;
+}
+
+class HistoryAndLogsPolicyConsumerProbe final {
+ public:
+  explicit HistoryAndLogsPolicyConsumerProbe(
+      DebugLogPolicySnapshotSource const& source) noexcept
+      : source_(source) {}
+
+  [[nodiscard]] DebugLogPolicyContext context() const {
+    return make_debug_log_policy_context(source_.snapshot());
+  }
+
+ private:
+  DebugLogPolicySnapshotSource const& source_;
+};
+
+[[nodiscard]] bool history_consumer_can_inject_and_consume_without_log_writes() {
   auto provider = std::make_shared<FakeDebugLogPolicyProvider>();
   provider->policy = available_policy(true);
   DebugLogPolicyReader reader{provider};
+  DebugLogPolicySnapshotSource const& injectable_reader = reader;
+  HistoryAndLogsPolicyConsumerProbe consumer{injectable_reader};
+  std::vector<std::string> retained_log_records{
+      "segment-4/sequence-19",
+      "segment-4/sequence-20",
+  };
+  auto const retained_before = retained_log_records;
 
-  auto const before = reader.snapshot();
+  auto const enabled = consumer.context();
   provider->policy = available_policy(false);
-  auto const after = reader.snapshot();
+  auto const disabled = consumer.context();
 
-  return expect(before.existing_log_retention ==
-                    DebugLogRetention::preserves_existing_records &&
-                    after.existing_log_retention ==
-                        DebugLogRetention::preserves_existing_records,
-                "changing debug mode must not delete or rewrite existing logs") &&
-         expect(before.coverage == after.coverage &&
-                    before.filterable_fields == after.filterable_fields,
-                "disabling debug must preserve the existing log-view contract");
+  return expect(enabled.facts_available && enabled.debug_mode == "enabled" &&
+                    enabled.granularity == "maximum" &&
+                    enabled.filterable_fields.size() ==
+                        kRequiredDebugLogFilterFields.size() &&
+                    enabled.coverage.size() ==
+                        kRequiredDebugLogCoverage.size(),
+                "history consumers must receive complete provider context") &&
+         expect(disabled.facts_available &&
+                    disabled.debug_mode == "disabled" &&
+                    disabled.granularity == "normal" &&
+                    disabled.existing_log_retention ==
+                        "preserves_existing_records",
+                "disabled context must retain existing log semantics") &&
+         expect(retained_log_records == retained_before,
+                "policy consumption and debug shutdown must not mutate logs");
 }
 
 [[nodiscard]] bool missing_or_failed_providers_fail_closed() {
@@ -164,7 +242,8 @@ int main() {
   bool passed = true;
   passed &= enabled_and_disabled_states_report_their_granularity();
   passed &= filters_and_location_are_canonical_and_deterministic();
-  passed &= disabling_debug_preserves_existing_log_records();
+  passed &= every_required_filter_and_coverage_fact_is_enforced();
+  passed &= history_consumer_can_inject_and_consume_without_log_writes();
   passed &= missing_or_failed_providers_fail_closed();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
