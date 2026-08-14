@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -151,6 +152,16 @@ concept ProfileExposesForbiddenExecutionField =
 
 static_assert(!ProfileExposesForbiddenExecutionField<
               catalog::ControlledInstallProfile>);
+
+[[nodiscard]] bool has_profile_issue(
+    catalog::ControlledInstallProfileValidation const& validation,
+    catalog::ControlledInstallProfileIssueCode code) {
+  return std::ranges::any_of(
+      validation.issues,
+      [&](catalog::ControlledInstallProfileIssue const& issue) {
+        return issue.code == code;
+      });
+}
 
 [[nodiscard]] bool has_impact(
     lifecycle::CatalogSelectionImpact const& impact, std::string_view id,
@@ -589,12 +600,28 @@ struct LifecycleFixture final {
     auto const& profile = profiles.front();
     passed &= expect(profile.id == "sogou-input-defaults-v1" &&
                          profile.software_id == "sogou-input" &&
+                         profile.execution_kind ==
+                             catalog::ControlledWindowsExecutionKind::
+                                 project_owned_windows_executor &&
                          profile.execution ==
                              catalog::WindowsExecutionReadiness::declaration_only &&
+                         profile.completion_boundary ==
+                             catalog::InstallationCompletionBoundary::
+                                 post_install_then_result_detection &&
+                         profile.post_install_behavior ==
+                             catalog::PostInstallBehavior::controlled_preferences &&
+                         profile.restart_verification ==
+                             catalog::RestartVerification::not_required &&
+                         profile.result_detection ==
+                             catalog::ResultDetectionStrategy::
+                                 project_owned_presence_probe &&
+                         profile.interaction_scope ==
+                             catalog::InstallerInteractionScope::
+                                 non_identity_preferences_only &&
                          profile.baselines.size() == 1 &&
                          profile.baselines.front().version == "16.7" &&
                          profile.preferences.size() == 2,
-                     "Sogou must record the observed 16.7 baseline and two controlled preferences");
+                     "Sogou must freeze closed project-owned completion and interaction semantics without registering an executor");
     if (profile.preferences.size() == 2) {
       auto const& first = profile.preferences[0];
       auto const& second = profile.preferences[1];
@@ -607,6 +634,33 @@ struct LifecycleFixture final {
                            first.disposition_order == second.disposition_order,
                        "Sogou preferences must default to decline with the fixed three-level fallback");
     }
+    auto invalid_profile = profile;
+    invalid_profile.result_detection =
+        static_cast<catalog::ResultDetectionStrategy>(99);
+    auto const invalid_profiles =
+        catalog::validate_controlled_install_profiles(
+            std::span<catalog::ControlledInstallProfile const>{&invalid_profile,
+                                                                1});
+    passed &= expect(
+        !invalid_profiles.accepted() && has_profile_issue(
+                                           invalid_profiles,
+                                           catalog::ControlledInstallProfileIssueCode::
+                                               invalid_result_detection_strategy),
+        "unrecognized controlled profile semantics must fail closed validation");
+    invalid_profile = profile;
+    invalid_profile.completion_boundary =
+        catalog::InstallationCompletionBoundary::
+            post_install_then_restart_verification;
+    auto const inconsistent_profiles =
+        catalog::validate_controlled_install_profiles(
+            std::span<catalog::ControlledInstallProfile const>{&invalid_profile,
+                                                                1});
+    passed &= expect(
+        !inconsistent_profiles.accepted() && has_profile_issue(
+                                               inconsistent_profiles,
+                                               catalog::ControlledInstallProfileIssueCode::
+                                                   inconsistent_completion_semantics),
+        "restart completion semantics must not be inferred from process exit or mismatched facts");
   }
 
   std::vector<std::string> required = policy.required_release_software;

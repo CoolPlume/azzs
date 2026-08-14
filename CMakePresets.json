@@ -13,6 +13,7 @@
       "binaryDir": "${sourceDir}/out/build/host-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_SYSTEM_VERSION": "10.0.28000.0",
         "BUILD_TESTING": "ON"
       }
     },

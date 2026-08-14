@@ -59,6 +59,7 @@ if(WIN32)
     src/windows_emergency_withdrawal_notice_source.cpp
     src/windows_external_address_launcher.cpp
     src/windows_hardware_observer.cpp
+    src/windows_installation_batch_adapters.cpp
     src/windows_lease_token_source.cpp
     src/windows_platform_info.cpp
     src/windows_state_file_system.cpp
@@ -88,6 +89,8 @@ azzs_project_target(
   OPTIONAL
   PUBLIC_LINKS
     azzs::application
+    azzs::installation_batch_runner_application
+    azzs::offline_package_cache_application
     azzs::software_selection_application
     azzs::software_optimization_catalog_application
   PRIVATE_LINKS

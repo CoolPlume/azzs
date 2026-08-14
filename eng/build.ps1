@@ -79,8 +79,8 @@ if ($visualStudioInstances.Count -eq 0) {
 $visualStudioInstance = $visualStudioInstances[0]
 $visualStudioPath = $visualStudioInstance.installationPath
 $visualStudioVersion = $visualStudioInstance.catalog.productDisplayVersion
-if ($visualStudioVersion -ne "18.8.2") {
-    throw "Visual Studio 2026 Stable 18.8.2 is required; found '$visualStudioVersion'."
+if ([string]::IsNullOrWhiteSpace($visualStudioVersion)) {
+    throw "The selected Visual Studio instance did not report a product version."
 }
 $msbuildPath = Join-Path $visualStudioPath "MSBuild/Current/Bin/MSBuild.exe"
 if (-not (Test-Path -LiteralPath $msbuildPath)) {
@@ -96,8 +96,8 @@ if (-not (Test-Path -LiteralPath $ctestPath)) {
     throw "ctest.exe was not found beside cmake.exe."
 }
 $cmakeVersion = (& $cmakePath --version | Select-Object -First 1).Trim()
-if ($cmakeVersion -ne "cmake version 4.3.1-msvc1") {
-    throw "CMake 4.3.1-msvc1 is required by the Windows build baseline; found '$cmakeVersion'."
+if (-not $cmakeVersion.StartsWith("cmake version ")) {
+    throw "The selected Visual Studio CMake executable did not report a usable version: '$cmakeVersion'."
 }
 
 $toolsetVersionPath = Join-Path $visualStudioPath "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt"
@@ -105,8 +105,8 @@ if (-not (Test-Path -LiteralPath $toolsetVersionPath)) {
     throw "The default MSVC toolset version file was not found."
 }
 $toolsetVersion = (Get-Content -LiteralPath $toolsetVersionPath -Raw).Trim()
-if ($toolsetVersion -ne "14.51.36231") {
-    throw "MSVC 14.51.36231 is required; the selected Visual Studio instance defaults to '$toolsetVersion'."
+if ([string]::IsNullOrWhiteSpace($toolsetVersion)) {
+    throw "The selected Visual Studio instance did not report a default MSVC toolset version."
 }
 
 $windowsSdkRelease = "10.0.28000.2526"

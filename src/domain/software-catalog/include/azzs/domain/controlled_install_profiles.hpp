@@ -51,10 +51,44 @@ enum class InteractionDisposition {
   official_installer,
 };
 
-// Issue 19 records declarations only. Adding an executable state requires the
-// later Windows execution owner to extend this closed type and its contracts.
+// Execution details stay in the project-owned Windows adapter. The profile
+// carries only the closed capability identity that an application snapshot may
+// freeze; it never carries commands, paths, selectors, or vendor data.
+enum class ControlledWindowsExecutionKind {
+  project_owned_windows_executor,
+};
+
 enum class WindowsExecutionReadiness {
   declaration_only,
+  project_executor_registered,
+};
+
+// A launched installer process is never a completion boundary by itself.
+enum class InstallationCompletionBoundary {
+  post_install_then_result_detection,
+  post_install_then_restart_verification,
+};
+
+enum class PostInstallBehavior {
+  none,
+  controlled_preferences,
+};
+
+enum class RestartVerification {
+  not_required,
+  required_after_restart,
+};
+
+enum class ResultDetectionStrategy {
+  project_owned_presence_probe,
+  user_confirmation_only,
+};
+
+// This scope deliberately excludes identity, credential, payment, and other
+// personal-data interactions. Those always remain in the official installer.
+enum class InstallerInteractionScope {
+  non_identity_preferences_only,
+  official_identity_required,
 };
 
 struct ArchitectureFacts final {
@@ -111,8 +145,18 @@ struct ControlledInstallProfile final {
   std::string software_id;
   std::vector<InstallerBaseline> baselines;
   std::vector<ControlledInstallPreference> preferences;
+  ControlledWindowsExecutionKind execution_kind{
+      ControlledWindowsExecutionKind::project_owned_windows_executor};
   WindowsExecutionReadiness execution{
       WindowsExecutionReadiness::declaration_only};
+  InstallationCompletionBoundary completion_boundary{
+      InstallationCompletionBoundary::post_install_then_result_detection};
+  PostInstallBehavior post_install_behavior{PostInstallBehavior::none};
+  RestartVerification restart_verification{RestartVerification::not_required};
+  ResultDetectionStrategy result_detection{
+      ResultDetectionStrategy::project_owned_presence_probe};
+  InstallerInteractionScope interaction_scope{
+      InstallerInteractionScope::non_identity_preferences_only};
 
   auto operator<=>(ControlledInstallProfile const&) const = default;
 };
@@ -125,9 +169,16 @@ enum class ControlledInstallProfileIssueCode {
   duplicate_baseline_id,
   invalid_preference,
   duplicate_preference_id,
+  invalid_execution_kind,
   invalid_architecture_facts,
   invalid_capability_facts,
   invalid_execution_readiness,
+  invalid_completion_boundary,
+  invalid_post_install_behavior,
+  invalid_restart_verification,
+  invalid_result_detection_strategy,
+  invalid_interaction_scope,
+  inconsistent_completion_semantics,
 };
 
 struct ControlledInstallProfileIssue final {
