@@ -207,9 +207,21 @@ class CountingAdmission final : public batch_app::FrozenBatchPlanAdmissionPort {
             .detail = accepts ? "" : "injected frozen-plan rejection"};
   }
 
+  [[nodiscard]] batch_app::FrozenBatchPlanAdmission admit_retry(
+      batch::FrozenBatchPlan const& plan) const override {
+    ++retry_calls;
+    retry_plans.push_back(plan);
+    return {.code = retry_accepts ? batch_app::FrozenBatchPlanAdmissionCode::accepted
+                                  : batch_app::FrozenBatchPlanAdmissionCode::rejected,
+            .detail = retry_accepts ? "" : "injected frozen-retry-plan rejection"};
+  }
+
   bool accepts{true};
+  bool retry_accepts{true};
   mutable std::size_t calls{};
+  mutable std::size_t retry_calls{};
   mutable std::vector<batch::FrozenBatchPlan> plans;
+  mutable std::vector<batch::FrozenBatchPlan> retry_plans;
 };
 
 struct Fixture final {
@@ -695,8 +707,8 @@ static_assert(!VerifiesFrozenInstallationItem<batch_app::InstallResultVerifier>)
   auto const retried = fixture.service.retry_current(std::move(retry_plan));
   auto const& active = *retried.snapshot.active;
   return expect(retried.succeeded(), "failed item retry must create a new durable batch") &&
-         expect(fixture.admission.calls == 1,
-                "retry must not re-admit or live-resolve the upstream-frozen plan") &&
+         expect(fixture.admission.calls == 1 && fixture.admission.retry_calls == 1,
+                "retry must use frozen retry admission without live re-admission") &&
          expect(retried.snapshot.history.size() == 1 &&
                     retried.snapshot.history.front().plan == expected_history_plan,
                 "retry must preserve the complete original history projection") &&
@@ -714,6 +726,58 @@ static_assert(!VerifiesFrozenInstallationItem<batch_app::InstallResultVerifier>)
                 "retry must adopt the distinct upstream catalog, source, package and profile snapshot") &&
          expect(active.items.front().attempt == 1,
                 "retry must start a distinct attempt without mutating prior history");
+}
+
+[[nodiscard]] bool retry_requires_admission_and_readiness_before_replacing_failed_batch() {
+  Fixture fixture;
+  auto original = fixture_plan({fixture_item("editor")}, "retry-gate-original");
+  fixture.verifier.observations = {{.code = batch_app::InstallVerificationCode::absent}};
+  fixture.download.advances = {
+      {.code = batch_app::InstallationDownloadCode::failed, .detail = "download failed"},
+  };
+  if (!create(fixture, original) || !advance(fixture, 2)) {
+    return false;
+  }
+  auto const failed = fixture.service.snapshot();
+  if (!failed.active.has_value()) {
+    return false;
+  }
+  auto retry_plan = [&](std::string batch_id, batch::FrozenExecutionProfile profile) {
+    auto plan = fixture_plan({fixture_item("editor", std::move(profile))}, std::move(batch_id));
+    plan.retry_of_batch_id = original.batch_id;
+    return plan;
+  };
+  fixture.admission.retry_accepts = false;
+  auto const unregistered = fixture.service.retry_current(
+      retry_plan("retry-gate-unregistered", fixture_profile()));
+
+  fixture.admission.retry_accepts = true;
+  fixture.readiness.registered = false;
+  auto const unavailable = fixture.service.retry_current(
+      retry_plan("retry-gate-unavailable", fixture_profile()));
+
+  fixture.readiness.registered = true;
+  auto declaration_only = fixture_profile();
+  declaration_only.execution = catalog::WindowsExecutionReadiness::declaration_only;
+  auto const declaration = fixture.service.retry_current(
+      retry_plan("retry-gate-declaration-only", std::move(declaration_only)));
+
+  auto preserves_failed_batch = [&failed](batch_app::InstallationBatchActionResult const& result) {
+    return result.code == batch_app::InstallationBatchActionCode::rejected &&
+           result.snapshot.active.has_value() &&
+           result.snapshot.active->plan == failed.active->plan &&
+           result.snapshot.active->state == failed.active->state &&
+           result.snapshot.history == failed.history;
+  };
+  return expect(preserves_failed_batch(unregistered) && preserves_failed_batch(unavailable) &&
+                    preserves_failed_batch(declaration),
+                "rejected retry admission or readiness must preserve the failed batch") &&
+         expect(fixture.admission.calls == 1 && fixture.admission.retry_calls == 3,
+                "retry must use its dedicated frozen admission for every replacement attempt") &&
+         expect(fixture.readiness.profiles.size() == 2,
+                "only an admitted registered-profile retry may query readiness") &&
+         expect(fixture.executor.launch_calls == 0,
+                "rejected retry admission or readiness must not launch an executor");
 }
 
 [[nodiscard]] bool failures_close_the_batch_before_any_effect() {
@@ -1075,8 +1139,9 @@ int main() {
                   source_failure_only_blocks_dependent_items() &&
                  explicit_restart_profile_is_the_only_restart_barrier() &&
                  interaction_and_result_confirmation_are_disjoint() &&
-                  retry_creates_a_new_immutable_single_item_plan() &&
-                  failures_close_the_batch_before_any_effect() &&
+                 retry_creates_a_new_immutable_single_item_plan() &&
+                 retry_requires_admission_and_readiness_before_replacing_failed_batch() &&
+                 failures_close_the_batch_before_any_effect() &&
                   restore_and_read_only_recovery_never_start_effects() &&
                   interrupted_launch_is_recovered_without_a_second_effect() &&
                   public_and_durable_batch_state_is_redacted() &&

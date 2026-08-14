@@ -228,13 +228,14 @@ struct FrozenBatchPlanAdmission final {
   std::string detail;
 };
 
-// Only an initial batch is admitted against the current catalog and selection
-// projection. Retrying is intentionally excluded: it derives from a prior
-// durable plan and must never trigger a live source resolution.
+// Initial and retry batches have distinct admission paths. A retry derives
+// from a prior durable plan and must never trigger a live source resolution.
 class FrozenBatchPlanAdmissionPort {
  public:
   virtual ~FrozenBatchPlanAdmissionPort() = default;
   [[nodiscard]] virtual FrozenBatchPlanAdmission admit(
+      batch_domain::FrozenBatchPlan const& plan) const = 0;
+  [[nodiscard]] virtual FrozenBatchPlanAdmission admit_retry(
       batch_domain::FrozenBatchPlan const& plan) const = 0;
 };
 
