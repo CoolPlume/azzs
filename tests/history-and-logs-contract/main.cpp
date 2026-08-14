@@ -735,6 +735,13 @@ struct HistoryFixture final {
          fact->reason == reason;
 }
 
+[[nodiscard]] bool is_not_default_diagnostic_fact(
+    app::DiagnosticFact const& fact, std::string_view adapter_default_reason) {
+  return !fact.value.empty() ||
+         (!fact.unavailable_reason.empty() &&
+          fact.unavailable_reason != adapter_default_reason);
+}
+
 [[nodiscard]] bool stable_history_taxonomy_is_available() {
   bool passed = true;
   passed &= expect(
@@ -856,12 +863,51 @@ struct HistoryFixture final {
   return passed;
 }
 
+[[nodiscard]] bool diagnostic_context_projects_owned_facts() {
+  HistoryFixture fixture;
+  if (!expect(fixture.prepare(),
+              "fake owners must prepare diagnostic context facts")) {
+    return false;
+  }
+  auto const exported = fixture.history.export_diagnostic();
+  if (!expect(exported.code == app::HistoryAndLogsActionCode::succeeded &&
+                  fixture.log.exported_context.has_value(),
+              "the real history service must export a diagnostic context")) {
+    return false;
+  }
+  auto const& context = *fixture.log.exported_context;
+  bool passed = true;
+  passed &= expect(
+      is_not_default_diagnostic_fact(
+          context.frozen_directory_identity,
+          "the frozen directory owner did not provide it") &&
+          is_not_default_diagnostic_fact(
+              context.directory_application_association,
+              "the directory application association owner did not provide it") &&
+          is_not_default_diagnostic_fact(
+              context.directory_load_result,
+              "the directory load result owner did not provide it") &&
+          is_not_default_diagnostic_fact(
+              context.directory_release_result,
+              "the directory release result owner did not provide it") &&
+          is_not_default_diagnostic_fact(
+              context.batch_plan,
+              "the batch plan owner did not provide it"),
+      "diagnostic export must project every owner-backed context field instead of adapter defaults");
+  passed &= expect(
+      context.batch_plan.disposition == app::DiagnosticValueDisposition::retain &&
+          context.batch_plan.value.find("kind=software-optimization") == 0,
+      "the current frozen optimization plan must be retained as one diagnostic batch plan");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
   auto const passed = stable_history_taxonomy_is_available() &&
                       immutable_owner_timeline_and_missing_facts_are_projected() &&
                       frozen_correlation_generation_and_value_shape_are_preserved() &&
-                      debug_policy_is_read_only_and_missing_sources_fail_closed();
+                      debug_policy_is_read_only_and_missing_sources_fail_closed() &&
+                      diagnostic_context_projects_owned_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
