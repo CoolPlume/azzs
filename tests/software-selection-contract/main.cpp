@@ -21,6 +21,7 @@ namespace architecture = azzs::domain::architecture_selection;
 namespace catalog = azzs::domain::software_catalog;
 namespace selection = azzs::domain::software_selection;
 namespace app_selection = azzs::application::software_selection;
+namespace catalog_lifecycle = azzs::application::software_catalog;
 using azzs::application::CorrelationId;
 using azzs::application::DeviceStateStore;
 using azzs::application::DiagnosticContext;
@@ -196,6 +197,23 @@ class FixtureLauncher final : public app_selection::ExternalAddressLauncher {
   };
 }
 
+[[nodiscard]] app_selection::CatalogSelectionProjection catalog_projection(
+    catalog::RuntimeSoftwareCatalog runtime, std::string content_identity) {
+  auto const item_count = runtime.software.size() + runtime.drivers.size();
+  auto const revision = runtime.revision;
+  return {
+      .runtime = std::move(runtime),
+      .active = {
+          .revision = revision,
+          .item_count = item_count,
+          .origin = catalog_lifecycle::CatalogCandidateOrigin::built_in,
+          .identity = catalog_lifecycle::EffectiveCatalogIdentity::released,
+          .content_identity = std::move(content_identity),
+          .application_id = "catalog-application-" + std::to_string(revision),
+      },
+  };
+}
+
 struct Fixture final {
   InMemoryStateFileSystem files;
   FixedClock clock{WallClockTime{std::chrono::milliseconds{2'000}}};
@@ -285,7 +303,9 @@ struct Fixture final {
   bool passed = true;
   passed &= expect(fixture.lifecycle.restore().succeeded(),
                    "selection lifecycle must restore empty state");
-  passed &= expect(fixture.lifecycle.on_catalog_replaced(runtime).succeeded(),
+  passed &= expect(fixture.lifecycle
+                       .on_catalog_replaced(catalog_projection(runtime, "fixture-v3"))
+                       .succeeded(),
                    "catalog projection must initialize selection");
   auto resolution =
       fixture.lifecycle.resolve_declared_source("editor", primary(runtime, "editor"));
@@ -315,6 +335,8 @@ struct Fixture final {
                        fixture.detector.calls == detector_calls &&
                        fixture.launcher.calls == launcher_calls,
                    "restore must not resolve, detect, launch, or access network");
+  passed &= expect(!snapshot.active_catalog.has_value(),
+                   "restored selection must not persist or recreate an active catalog");
   return passed;
 }
 
@@ -323,7 +345,8 @@ struct Fixture final {
   Fixture fixture;
   bool passed = true;
   static_cast<void>(fixture.lifecycle.restore());
-  static_cast<void>(fixture.lifecycle.on_catalog_replaced(runtime));
+  static_cast<void>(
+      fixture.lifecycle.on_catalog_replaced(catalog_projection(runtime, "fixture-v3")));
   fixture.resolver.fail = true;
   auto const failed =
       fixture.lifecycle.resolve_declared_source("editor", primary(runtime, "editor"));
@@ -348,6 +371,32 @@ struct Fixture final {
                        recognized.handoff->status ==
                            selection::ExternalHandoffStatus::externally_recognized,
                    "explicit detector result must be recorded as external recognition");
+  return passed;
+}
+
+[[nodiscard]] bool catalog_projection_identity_is_memory_only_and_stale_is_rejected() {
+  Fixture fixture;
+  auto current = fixture_catalog();
+  bool passed = true;
+  static_cast<void>(fixture.lifecycle.restore());
+  auto const applied = fixture.lifecycle.on_catalog_replaced(
+      catalog_projection(current, "fixture-content-v3"));
+  auto const after_applied = fixture.lifecycle.snapshot();
+  passed &= expect(
+      applied.succeeded() && after_applied.active_catalog.has_value() &&
+          after_applied.active_catalog->revision == current.revision &&
+          after_applied.active_catalog->content_identity == "fixture-content-v3",
+      "selection snapshot must expose the complete active catalog identity");
+
+  auto stale = fixture_catalog();
+  stale.revision = current.revision - 1;
+  auto const rejected = fixture.lifecycle.on_catalog_replaced(
+      catalog_projection(stale, "fixture-content-v2"));
+  auto const after_rejected = fixture.lifecycle.snapshot();
+  passed &= expect(
+      rejected.code == app_selection::SelectionActionCode::stale_catalog_projection &&
+          after_rejected.active_catalog == after_applied.active_catalog,
+      "a stale catalog projection must be rejected without replacing the active identity");
   return passed;
 }
 
@@ -380,6 +429,7 @@ int main() {
                       declared_source_and_snapshot_are_fail_closed() &&
                       lifecycle_persists_and_restore_is_local_only() &&
                       resolver_failure_never_switches_source_and_detection_is_explicit() &&
+                      catalog_projection_identity_is_memory_only_and_stale_is_rejected() &&
                       catalog_changes_retain_but_block_selection();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
