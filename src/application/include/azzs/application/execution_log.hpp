@@ -31,6 +31,19 @@ enum class ExecutionResult {
   unknown,
 };
 
+// Noncritical events are diagnostic detail only. State transitions and coverage
+// boundaries remain critical even when a caller accidentally classifies them
+// as noncritical.
+enum class ExecutionLogCriticality {
+  critical,
+  noncritical,
+};
+
+enum class ExecutionLogCapacityState {
+  available,
+  space_exhausted,
+};
+
 struct ExecutionError final {
   std::string source;
   std::int64_t code{0};
@@ -78,6 +91,14 @@ struct MissingDiagnosticFact final {
   std::string reason;
 };
 
+// Each owner supplies either a retained fact or an explicit unavailable
+// reason. Values default to sensitive so a new fact cannot bypass redaction.
+struct DiagnosticFact final {
+  std::string value;
+  std::string unavailable_reason;
+  DiagnosticValueDisposition disposition{DiagnosticValueDisposition::sensitive};
+};
+
 struct DiagnosticContext final {
   std::string workbench_build;
   std::string release_form;
@@ -88,6 +109,12 @@ struct DiagnosticContext final {
   std::string timezone;
   std::optional<WallClockTime> coverage_started_at;
   std::optional<WallClockTime> coverage_ended_at;
+  DiagnosticFact frozen_directory_identity;
+  DiagnosticFact directory_application_association;
+  DiagnosticFact directory_load_result;
+  DiagnosticFact directory_release_result;
+  DiagnosticFact batch_plan;
+  DiagnosticFact debug_log_coverage;
   std::vector<DiagnosticField> fields;
   std::vector<MissingDiagnosticFact> missing_facts;
   std::vector<std::string> sensitive_values;
@@ -101,6 +128,7 @@ struct ExecutionEvent final {
   std::optional<ExecutionError> error;
   std::optional<LastTrustedState> last_trusted_state;
   std::optional<CoverageGap> coverage_gap;
+  ExecutionLogCriticality criticality{ExecutionLogCriticality::critical};
   std::vector<DiagnosticField> fields;
   // Known identity or credential fragments that may also occur inside raw
   // adapter error text. Values are consumed only by the redactor and are never
@@ -110,8 +138,12 @@ struct ExecutionEvent final {
 
 struct ExecutionLogReceipt final {
   bool persisted{false};
+  bool suppressed{false};
   std::uint64_t segment{0};
   std::uint64_t sequence{0};
+  ExecutionLogCapacityState capacity_state{
+      ExecutionLogCapacityState::available};
+  std::uint64_t noncritical_dropped_count{0};
   std::string error;
 };
 
@@ -173,6 +205,9 @@ struct ExecutionLogSnapshot final {
   std::optional<WallClockTime> coverage_started_at;
   std::optional<WallClockTime> coverage_ended_at;
   std::size_t coverage_gap_count{0};
+  ExecutionLogCapacityState capacity_state{
+      ExecutionLogCapacityState::available};
+  std::uint64_t noncritical_dropped_count{0};
   std::optional<ExecutionLogPendingClearProjection> pending_clear;
   std::vector<ExecutionLogEventProjection> events;
   std::string error;

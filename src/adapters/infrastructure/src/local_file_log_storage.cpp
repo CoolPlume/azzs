@@ -362,6 +362,13 @@ class FileLock final {
   std::string error_;
 };
 
+[[nodiscard]] LogStorageWriteFailure storage_write_failure(
+    DWORD error) noexcept {
+  return error == ERROR_DISK_FULL || error == ERROR_HANDLE_DISK_FULL
+             ? LogStorageWriteFailure::capacity_exhausted
+             : LogStorageWriteFailure::none;
+}
+
 [[nodiscard]] LogStorageWriteResult write_and_flush(
     std::filesystem::path const& path,
     std::string const& bytes,
@@ -370,14 +377,18 @@ class FileLock final {
                                FILE_SHARE_READ, OPEN_ALWAYS,
                                FILE_ATTRIBUTE_NORMAL, security);
   if (file.get() == nullptr) {
-    return {.error = "log transaction open or security validation failed: win32:" +
-                     std::to_string(::GetLastError())};
+    auto const error = ::GetLastError();
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction open or security validation failed: win32:" +
+                     std::to_string(error)};
   }
   LARGE_INTEGER start{};
   if (!::SetFilePointerEx(file.get(), start, nullptr, FILE_BEGIN) ||
       !::SetEndOfFile(file.get())) {
-    return {.error = "log transaction truncate failed: win32:" +
-                     std::to_string(::GetLastError())};
+    auto const error = ::GetLastError();
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction truncate failed: win32:" +
+                     std::to_string(error)};
   }
   std::size_t offset = 0;
   while (offset < bytes.size()) {
@@ -386,8 +397,10 @@ class FileLock final {
     DWORD written = 0;
     if (!::WriteFile(file.get(), bytes.data() + offset, amount, &written,
                      nullptr)) {
-      return {.error = "log transaction write failed: win32:" +
-                       std::to_string(::GetLastError())};
+      auto const error = ::GetLastError();
+      return {.failure = storage_write_failure(error),
+              .error = "log transaction write failed: win32:" +
+                       std::to_string(error)};
     }
     if (written == 0) {
       return {.error = "log transaction write failed: win32:" +
@@ -396,8 +409,10 @@ class FileLock final {
     offset += written;
   }
   if (!::FlushFileBuffers(file.get())) {
-    return {.error = "log transaction flush failed: win32:" +
-                     std::to_string(::GetLastError())};
+    auto const error = ::GetLastError();
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction flush failed: win32:" +
+                     std::to_string(error)};
   }
   return {.committed = true, .verified = true};
 }
@@ -410,8 +425,10 @@ class FileLock final {
       source, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, security);
   if (source_guard.get() == nullptr) {
-    return {.error = "log transaction source validation failed: win32:" +
-                     std::to_string(::GetLastError())};
+    auto const error = ::GetLastError();
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction source validation failed: win32:" +
+                     std::to_string(error)};
   }
   auto target_guard = open_secure_file(
       target, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -420,7 +437,8 @@ class FileLock final {
     auto const target_error = ::GetLastError();
     if (target_error != ERROR_FILE_NOT_FOUND &&
         target_error != ERROR_PATH_NOT_FOUND) {
-      return {.error = "log transaction target validation failed: win32:" +
+      return {.failure = storage_write_failure(target_error),
+              .error = "log transaction target validation failed: win32:" +
                        std::to_string(target_error)};
     }
   }
@@ -428,8 +446,10 @@ class FileLock final {
   target_guard.reset();
   if (!::MoveFileExW(source.c_str(), target.c_str(),
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-    return {.error = "log transaction replace failed: win32:" +
-                     std::to_string(::GetLastError())};
+    auto const error = ::GetLastError();
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction replace failed: win32:" +
+                     std::to_string(error)};
   }
   auto published = open_secure_file(
       target, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -488,13 +508,28 @@ class FileLock final {
   std::string error_;
 };
 
+[[nodiscard]] LogStorageWriteFailure storage_write_failure(
+    int error) noexcept {
+  if (error == ENOSPC) {
+    return LogStorageWriteFailure::capacity_exhausted;
+  }
+#ifdef EDQUOT
+  if (error == EDQUOT) {
+    return LogStorageWriteFailure::capacity_exhausted;
+  }
+#endif
+  return LogStorageWriteFailure::none;
+}
+
 [[nodiscard]] LogStorageWriteResult write_and_flush(
     std::filesystem::path const& path,
     std::string const& bytes) {
   auto descriptor = ::open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0600);
   if (descriptor < 0) {
-    return {.error = "log transaction open failed: errno:" +
-                     std::to_string(errno)};
+    auto const error = errno;
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction open failed: errno:" +
+                     std::to_string(error)};
   }
   NativeHandle file{new int{descriptor}};
   std::size_t offset = 0;
@@ -505,8 +540,10 @@ class FileLock final {
       if (errno == EINTR) {
         continue;
       }
-      return {.error = "log transaction write failed: errno:" +
-                       std::to_string(errno)};
+      auto const error = errno;
+      return {.failure = storage_write_failure(error),
+              .error = "log transaction write failed: errno:" +
+                       std::to_string(error)};
     }
     if (written == 0) {
       return {.error = "log transaction write made no progress"};
@@ -514,8 +551,10 @@ class FileLock final {
     offset += static_cast<std::size_t>(written);
   }
   if (::fsync(*file) != 0) {
-    return {.error = "log transaction flush failed: errno:" +
-                     std::to_string(errno)};
+    auto const error = errno;
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction flush failed: errno:" +
+                     std::to_string(error)};
   }
   return {.committed = true, .verified = true};
 }
@@ -524,8 +563,10 @@ class FileLock final {
     std::filesystem::path const& source,
     std::filesystem::path const& target) {
   if (::rename(source.c_str(), target.c_str()) != 0) {
-    return {.error = "log transaction replace failed: errno:" +
-                     std::to_string(errno)};
+    auto const error = errno;
+    return {.failure = storage_write_failure(error),
+            .error = "log transaction replace failed: errno:" +
+                     std::to_string(error)};
   }
   auto descriptor = ::open(target.parent_path().c_str(), O_RDONLY);
   if (descriptor < 0) {
