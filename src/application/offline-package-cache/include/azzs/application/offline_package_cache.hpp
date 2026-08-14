@@ -303,6 +303,9 @@ class OfflinePackageCacheService final {
   [[nodiscard]] CacheActionResult abandon(CacheAssetIdentity const& identity);
   [[nodiscard]] CacheActionResult retry(CacheAssetIdentity const& identity);
   [[nodiscard]] CacheCleanupResult clean();
+  // Removes all completed workbench cache entries at the selected root. It
+  // leaves bundled resources and in-progress sessions untouched.
+  [[nodiscard]] CacheCleanupResult clear_completed();
 
   // Called by the composition root during orderly shutdown. It never removes
   // completed cache entries or bundled resources.

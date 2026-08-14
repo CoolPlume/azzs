@@ -693,6 +693,52 @@ class ScriptedDownloader final : public ControlledPackageDownloader {
   return passed;
 }
 
+[[nodiscard]] bool manual_clear_preserves_built_in_and_active_work() {
+  InMemoryCacheStorage storage;
+  auto const selected_root = root();
+  storage.define_root(selected_root);
+  FixtureNetwork network;
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{5'000}}};
+  auto const completed = asset("completed", "1.0.0", CacheArchitecture::x64,
+                               "source-a");
+  auto const active = asset("active", "1.0.0", CacheArchitecture::x64,
+                            "source-a", CacheAssetKind::full_package, true, 4);
+  auto const built_in = asset("bundled", "1.0.0", CacheArchitecture::arm64,
+                              "edition-resource");
+  storage.seed_completed(selected_root, completed.identity, clock.now());
+
+  ScriptedDownloader downloader;
+  downloader.scripts = {{.code = ControlledDownloadCode::paused,
+                         .payload = "ab",
+                         .detail = "paused by user"}};
+  auto cache_service = service(storage, downloader, network, clock, selected_root);
+  cache_service.synchronize_assets({completed, active, built_in},
+                                   {{.asset = built_in}});
+  auto const paused = cache_service.download(active.identity);
+  auto const cleared = cache_service.clear_completed();
+  auto const snapshot = cache_service.snapshot();
+  auto const* active_item = item_for(snapshot, active.identity);
+  auto const* built_in_item = item_for(snapshot, built_in.identity);
+
+  bool passed = true;
+  passed &= expect(paused.code == CacheActionCode::paused,
+                   "the fixture must retain an active paused transfer");
+  passed &= expect(cleared.removed_completed_count == 1 &&
+                       cleared.removed_partial_count == 0 &&
+                       !storage.has_completed(selected_root, completed.identity),
+                   "manual cache clearing must remove completed downloads only");
+  passed &= expect(storage.has_partial(selected_root, active.identity) &&
+                       active_item != nullptr &&
+                       active_item->session ==
+                           cache::PackageCacheSessionState::paused,
+                   "manual cache clearing must preserve the active transfer session");
+  passed &= expect(
+      built_in_item != nullptr &&
+          built_in_item->availability == OfflinePackageAvailability::built_in_available,
+      "manual cache clearing must preserve bundled offline resources");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -702,6 +748,7 @@ int main() {
   passed &= pause_resume_and_restart_rules_are_explicit();
   passed &= two_failures_retry_then_manual_retry_is_available();
   passed &= cleanup_and_location_failures_are_conservative();
+  passed &= manual_clear_preserves_built_in_and_active_work();
 
   if (!passed) {
     return EXIT_FAILURE;

@@ -39,6 +39,7 @@
 #include "azzs/adapters/windows/windows_system_settings_adapter.hpp"
 #include "azzs/adapters/windows/windows_view_preferences.hpp"
 #include "azzs/application/clock.hpp"
+#include "azzs/application/application_settings.hpp"
 #include "azzs/application/architecture_selection.hpp"
 #include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_update.hpp"
@@ -102,6 +103,57 @@ class UnavailableDebugLogPolicyProvider final
   }
 };
 
+class UnavailableApplicationSettingsDebugProvider final
+    : public application::ApplicationSettingsDebugProvider {
+ public:
+  [[nodiscard]] application::ApplicationSettingsDebugSnapshot snapshot()
+      override {
+    return {.detail =
+                "the Windows composition root has no debug settings provider"};
+  }
+
+  [[nodiscard]] application::ApplicationSettingsDebugActionResult set_enabled(
+      bool) override {
+    auto current = snapshot();
+    return {.code = application::ApplicationSettingsDebugActionCode::unavailable,
+            .snapshot = std::move(current),
+            .detail = "the Windows composition root has no debug settings provider"};
+  }
+};
+
+class EmbeddedSettingsCatalogUpdateSource final
+    : public application::TrustedSettingsCatalogUpdateSource {
+ public:
+  [[nodiscard]] application::TrustedSettingsCatalogUpdateRead read_update()
+      override {
+    return {.candidate = application::settings_catalog::initial_settings_catalog()};
+  }
+};
+
+class EmbeddedSoftwareOptimizationCatalogUpdateSource final
+    : public application::TrustedSoftwareOptimizationCatalogUpdateSource {
+ public:
+  EmbeddedSoftwareOptimizationCatalogUpdateSource(
+      application::SoftwareOptimizationCatalogLocalImportFile& files,
+      std::string source_path)
+      : files_(files), source_path_(std::move(source_path)) {}
+
+  [[nodiscard]] application::TrustedSoftwareOptimizationCatalogUpdateRead
+  read_update() override {
+    auto const read = files_.read(source_path_);
+    if (!read.succeeded) {
+      return {.detail = read.error};
+    }
+    return {.update = application::TrustedSoftwareOptimizationCatalogUpdate{
+                .source = read.source,
+                .source_reference = "embedded-software-optimization-catalog"}};
+  }
+
+ private:
+  application::SoftwareOptimizationCatalogLocalImportFile& files_;
+  std::string source_path_;
+};
+
 class UnavailableControlledSourceResolver final
     : public application::software_selection::ControlledSourceResolver {
  public:
@@ -157,7 +209,11 @@ class WindowsWorkbenchServices final
       public std::enable_shared_from_this<WindowsWorkbenchServices> {
  public:
   explicit WindowsWorkbenchServices(
-      adapters::windows::DeviceDataEnvironment environment)
+      adapters::windows::DeviceDataEnvironment environment,
+      std::shared_ptr<application::ArchitecturePreferences>
+          architecture_preferences,
+      std::shared_ptr<application::CacheRetentionPreferences>
+          cache_retention_preferences)
       : state_subject_{environment.subject_id},
         clock_{},
         hardware_observer_{},
@@ -200,10 +256,14 @@ class WindowsWorkbenchServices final
                                      application_update_health_storage_),
         application_updates_(application_update_platform_, operation_activity_,
                              log_, clock_),
-        architecture_selection_(platform_info_, log_,
-                                application::architecture_selection::
-                                    selection_domain::ArchitecturePreference::
-                                        prefer_arm64_prompt_fallback),
+        architecture_preferences_(std::move(architecture_preferences)),
+        cache_retention_preferences_(std::move(cache_retention_preferences)),
+        architecture_selection_(
+            platform_info_, log_,
+            architecture_preferences_
+                ? architecture_preferences_->preference()
+                : application::architecture_selection::selection_domain::
+                      ArchitecturePreference::prefer_arm64_prompt_fallback),
         cache_root_{.kind = domain::offline_package_cache::
                             CacheLocationKind::system_directory,
                     .id = "program-data"},
@@ -214,10 +274,18 @@ class WindowsWorkbenchServices final
                              "package-cache-v1",
                 .create_if_missing = true}}),
         cache_downloader_{},
-        live_offline_package_cache_(cache_storage_, cache_downloader_, network_,
-                                    clock_, cache_root_),
-        batch_offline_package_cache_(cache_storage_, cache_downloader_, network_,
-                                     clock_, cache_root_),
+        live_offline_package_cache_(
+            cache_storage_, cache_downloader_, network_, clock_, cache_root_,
+            cache_retention_preferences_
+                ? cache_retention_preferences_->retention()
+                : domain::offline_package_cache::CacheRetentionPolicy::
+                      retain_seven_days),
+        batch_offline_package_cache_(
+            cache_storage_, cache_downloader_, network_, clock_, cache_root_,
+            cache_retention_preferences_
+                ? cache_retention_preferences_->retention()
+                : domain::offline_package_cache::CacheRetentionPolicy::
+                      retain_seven_days),
         software_selection_(states_, clock_, log_, architecture_selection_,
                             source_resolver_, network_, presence_detector_,
                             external_launcher_, state_subject_),
@@ -241,7 +309,20 @@ class WindowsWorkbenchServices final
             software_optimization_batch_withdrawals_, &restart_resume_),
         debug_log_policy_provider_(
             std::make_shared<UnavailableDebugLogPolicyProvider>()),
-        debug_log_policy_(debug_log_policy_provider_) {
+        debug_log_policy_(debug_log_policy_provider_),
+        software_optimization_catalog_update_source_(
+            optimization_catalog_file_,
+            utf8_from_path(repository_optimization_catalog_path())),
+        application_settings_(
+            architecture_selection_, *architecture_preferences_,
+            live_offline_package_cache_, batch_offline_package_cache_,
+            *cache_retention_preferences_,
+            history_and_logs_, system_settings_apply_, software_catalog_,
+            settings_catalog_, software_optimization_catalog_,
+            software_selection_, software_optimization_discovery_,
+            &settings_catalog_update_source_,
+            &software_optimization_catalog_update_source_,
+            &application_settings_debug_provider_) {
     static_cast<void>(settings_catalog_.initialize_builtin(
         application::settings_catalog::initial_settings_catalog()));
     static_cast<void>(system_settings_apply_.refresh());
@@ -328,6 +409,11 @@ class WindowsWorkbenchServices final
   [[nodiscard]] application::HistoryAndLogsService& history_and_logs()
       noexcept override {
     return history_and_logs_;
+  }
+
+  [[nodiscard]] application::ApplicationSettingsService& application_settings()
+      noexcept override {
+    return application_settings_;
   }
 
   [[nodiscard]] application::SharedOperationOccupancy& operation_occupancy()
@@ -523,6 +609,10 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsApplicationUpdatePlatform
       application_update_platform_;
   application::ApplicationUpdateLifecycle application_updates_;
+  std::shared_ptr<application::ArchitecturePreferences>
+      architecture_preferences_;
+  std::shared_ptr<application::CacheRetentionPreferences>
+      cache_retention_preferences_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
   adapters::infrastructure::LocalSoftwareCatalogFileReader software_catalog_file_{
@@ -591,6 +681,11 @@ class WindowsWorkbenchServices final
       software_catalog_, log_, installation_batches_,
       software_optimization_batches_, system_settings_apply_,
       software_selection_, &debug_log_policy_, &restart_resume_};
+  UnavailableApplicationSettingsDebugProvider application_settings_debug_provider_;
+  EmbeddedSettingsCatalogUpdateSource settings_catalog_update_source_;
+  EmbeddedSoftwareOptimizationCatalogUpdateSource
+      software_optimization_catalog_update_source_;
+  application::ApplicationSettingsService application_settings_;
 };
 
 }  // namespace
@@ -603,19 +698,23 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
         "device data environment preparation failed (raw=" +
         std::to_string(environment.raw_error) + "): " + environment.detail);
   }
+  auto view_preferences =
+      std::make_shared<adapters::windows::WindowsViewPreferences>();
+  auto advanced_view_preferences =
+      std::make_shared<application::AdvancedViewPreferences>(view_preferences);
+  auto architecture_preferences =
+      std::make_shared<application::ArchitecturePreferences>(view_preferences);
+  auto cache_retention_preferences =
+      std::make_shared<application::CacheRetentionPreferences>(view_preferences);
   auto services = std::make_shared<WindowsWorkbenchServices>(
-      std::move(*environment.environment));
+      std::move(*environment.environment), std::move(architecture_preferences),
+      std::move(cache_retention_preferences));
   auto workbench = std::make_shared<application::Workbench>(
       services->platform_info(), services);
   auto system_settings = services->system_settings_apply_shared();
   services->start_emergency_preflight();
   auto motion_preferences = ui::winui::MotionPreferences::create();
   auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
-  auto view_preferences =
-      std::make_shared<adapters::windows::WindowsViewPreferences>();
-  auto advanced_view_preferences =
-      std::make_shared<application::AdvancedViewPreferences>(
-          std::move(view_preferences));
   window->bind(std::move(workbench), std::move(motion_preferences),
                std::move(system_settings),
                std::move(advanced_view_preferences));

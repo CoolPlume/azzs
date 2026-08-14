@@ -722,6 +722,21 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         require(required in resource_names,
                 f"existing localized shell resource disappeared: {required}")
 
+    required_settings_resources = {
+        "ApplicationSettingsCatalogHeading.Text",
+        "ApplicationSettingsCacheTitle.Text",
+        "ApplicationSettingsArchitectureTitle.Text",
+        "ApplicationSettingsLogsTitle.Text",
+        "ApplicationSettingsRecoveryTitle.Text",
+        "ApplicationSettingsDebugTitle.Text",
+        "ApplicationSettingsClearCacheDialogTitle",
+        "ApplicationSettingsClearLogsDialogTitle",
+        "ApplicationSettingsDeleteRecoveryDialogTitle",
+        "ApplicationSettingsCatalogDialogTitle",
+    }
+    require(required_settings_resources <= resource_names,
+            "application settings must retain localized section and confirmation text")
+
     fixture_xaml = read(root / (
         "src/adapters/ui/winui/DesignSystem/Fixtures/"
         "DesignSystemFixturePage.xaml"
@@ -734,6 +749,16 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     ))
     settings_cpp = read(root / (
         "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.cpp"
+    ))
+    settings_service_header = read(root / (
+        "src/application/application-settings/include/azzs/application/"
+        "application_settings.hpp"
+    ))
+    settings_service_cpp = read(root / (
+        "src/application/application-settings/src/application_settings.cpp"
+    ))
+    workbench_services_header = read(root / (
+        "src/application/include/azzs/application/workbench_services.hpp"
     ))
     main_window_cpp = read(root / "src/adapters/ui/winui/MainWindow.xaml.cpp")
     composition_root_cpp = read(root / "src/composition/windows/composition_root.cpp")
@@ -758,6 +783,39 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     require("advanced_view_" in system_optimization_cpp and
             "SystemSettingsForceAttemptButtonText" in system_optimization_cpp,
             "only the system-optimization advanced projection may expose force attempt")
+    require('x:Uid="ApplicationSettingsCatalogHeading"' in settings_xaml,
+            "the application settings catalog heading must resolve its localized text")
+    for automation_id in (
+        "AzzsApplicationSettingsPage",
+        "AzzsApplicationAdvancedView",
+        "AzzsApplicationUpdateCommand",
+        "AzzsApplicationCacheRetention",
+        "AzzsApplicationArchitecturePreference",
+        "AzzsApplicationClearCache",
+        "AzzsApplicationClearLogs",
+        "AzzsApplicationDeleteRecoveryRecord",
+        "AzzsApplicationDebugMode",
+    ):
+        require(automation_id in settings_xaml,
+                f"application settings is missing AutomationId {automation_id}")
+    require(settings_cpp.count("ContentDialog dialog;") >= 4 and
+            "settings_->clear_cache(false)" in settings_cpp and
+            "settings_->clear_cache(true)" in settings_cpp and
+            "settings_->clear_logs(false)" in settings_cpp and
+            "settings_->clear_logs(true)" in settings_cpp and
+            "settings_->delete_recovery_record(*record_id, false)" in settings_cpp and
+            "settings_->delete_recovery_record(*record_id, true)" in settings_cpp and
+            "confirm_catalog_change(" in settings_cpp,
+            "application settings must gate destructive work behind native confirmation")
+    require(not any(token in settings_xaml or token in settings_cpp for token in (
+                "Storyboard", "ConnectedAnimation", "CompositionAnimation")),
+            "application settings must keep high-frequency settings changes static")
+    require("ApplicationSettingsDebugProvider" in settings_service_header and
+            "UnavailableApplicationSettingsDebugProvider" in composition_root_cpp and
+            "application_settings()" in workbench_services_header and
+            "application_settings()" in main_window_cpp and
+            "requires_explicit_confirmation" in settings_service_cpp,
+            "settings must use injected debug ownership and application confirmation gates")
 
 
 def main() -> int:

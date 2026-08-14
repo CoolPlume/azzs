@@ -304,6 +304,42 @@ CacheCleanupResult OfflinePackageCacheService::clean() {
   return result;
 }
 
+CacheCleanupResult OfflinePackageCacheService::clear_completed() {
+  auto const root = selected_root_.valid()
+                        ? storage_.observe_root(selected_root_)
+                        : CacheRootObservation{};
+  if (!root.available) {
+    return {.detail = root.detail.empty() ? "cache location is unavailable"
+                                          : root.detail};
+  }
+
+  auto partial = storage_.clean_orphaned_partials(selected_root_);
+  CacheCleanupResult result{
+      .removed_partial_count = partial.removed_partial_count,
+      .detail = partial.detail,
+  };
+  if (partial.code != CacheStorageCleanupCode::succeeded) {
+    return result;
+  }
+
+  auto entries = storage_.list_completed(selected_root_);
+  if (entries.code != CompletedCacheReadCode::found) {
+    result.detail = entries.detail;
+    return result;
+  }
+  for (auto const& entry : entries.entries) {
+    auto const erased = storage_.remove_completed(selected_root_, entry.identity);
+    if (erased.code == CacheStorageRemovalCode::removed) {
+      ++result.removed_completed_count;
+    } else if (erased.code == CacheStorageRemovalCode::root_unavailable ||
+               erased.code == CacheStorageRemovalCode::failed) {
+      result.detail = erased.detail;
+      return result;
+    }
+  }
+  return result;
+}
+
 void OfflinePackageCacheService::shutdown() noexcept {
   if (shutdown_) {
     return;
