@@ -183,6 +183,12 @@ void HistoryAndLogsPage::bind(
   project(service_->refresh());
 }
 
+void HistoryAndLogsPage::locate(std::string_view stable_id) {
+  if (service_ != nullptr) {
+    project(service_->locate(stable_id));
+  }
+}
+
 void HistoryAndLogsPage::OnRefresh(
     winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {

@@ -545,12 +545,13 @@ void append_optimization_plan_facts(
                   optimization_automation_name(frozen_option.option.automation));
       append_fact(target, option_prefix + "impact", frozen_option.option.impact);
       if (frozen_option.selected_value.has_value()) {
+        append_fact(target, option_prefix + "selected_value_kind",
+                    "explicit-value");
         append_fact(target, option_prefix + "selected_value",
                     *frozen_option.selected_value);
       } else {
-        append_unavailable_fact(
-            target, option_prefix + "selected_value",
-            "the frozen selected option has no value parameter");
+        append_fact(target, option_prefix + "selected_value_kind",
+                    "no-value-parameter");
       }
     }
   }
@@ -821,59 +822,88 @@ void append_external_handoff_history(
     ExecutionLogSnapshot const& log) {
   auto const snapshot = service.snapshot();
   for (auto const& handoff : snapshot.handoffs) {
+    auto const timeline_is_valid = handoff.timeline.valid();
     HistoryEntryProjection entry{
         .kind = HistoryEntryKind::external_install_handoff,
         .stable_id = handoff.software_id,
-        .state = domain::software_selection::to_string(handoff.status),
-        .detail = handoff.detail,
+        .state = timeline_is_valid
+                     ? domain::software_selection::to_string(handoff.status)
+                     : "not-obtained",
+        .detail = timeline_is_valid
+                      ? domain::software_selection::to_string(
+                            handoff.timeline.facts.back().kind)
+                      : "external-handoff-timeline-unavailable",
     };
     append_fact(entry.facts, "handoff.software_id", handoff.software_id);
-    append_fact(entry.facts, "handoff.currently_incomplete",
-                handoff.status == domain::software_selection::
-                                      ExternalHandoffStatus::waiting_for_external_install ||
-                        handoff.status == domain::software_selection::
-                                              ExternalHandoffStatus::skipped
-                    ? "true"
-                    : "false");
-    // An address can contain credentials. The source owner retains it for the
-    // explicit handoff command, while this generic history projection exposes
-    // only its presence and reads the centrally redacted event trail.
-    append_fact(entry.facts, "handoff.declared_address_recorded",
-                handoff.declared_address.empty() ? "false" : "true");
-    if (handoff.declared_address.empty()) {
-      append_unavailable_fact(entry.facts, "handoff.declared_address",
-                              "the durable handoff record had no declared address");
-    } else {
+    if (!timeline_is_valid) {
       append_unavailable_fact(
-          entry.facts, "handoff.declared_address",
-          "the address is available only through the explicit handoff command and redacted event trail");
-    }
-    auto const source = std::ranges::find_if(
-        snapshot.sources, [&](auto const& candidate) {
-          return candidate.software_id == handoff.software_id;
-        });
-    if (source == snapshot.sources.end()) {
-      append_unavailable_fact(entry.facts, "source.snapshot",
-                              "no durable resolved source snapshot remains for this handoff");
+          entry.facts, "handoff.timeline",
+          "the durable external handoff record has no valid immutable timeline");
     } else {
-      append_fact(entry.facts, "source.resolved_at_utc_ms",
-                  std::to_string(source->resolved_at_milliseconds));
-      append_fact(entry.facts, "source.network_required",
-                  source->network_required ? "true" : "false");
-      if (source->version.empty()) {
-        append_unavailable_fact(entry.facts, "source.version",
-                                "the resolved source snapshot had no version");
-      } else {
-        append_fact(entry.facts, "source.version", source->version);
+      append_fact(entry.facts, "handoff.timeline_fact_count",
+                  std::to_string(handoff.timeline.facts.size()));
+      append_fact(entry.facts, "handoff.currently_incomplete",
+                  handoff.status == domain::software_selection::
+                                        ExternalHandoffStatus::
+                                            waiting_for_external_install ||
+                          handoff.status == domain::software_selection::
+                                                ExternalHandoffStatus::skipped
+                      ? "true"
+                      : "false");
+      for (auto const& fact : handoff.timeline.facts) {
+        HistoryTimelineProjection timeline{
+            .kind = HistoryTimelineKind::external_handoff,
+            .state = domain::software_selection::to_string(fact.status),
+            .detail = domain::software_selection::to_string(fact.kind),
+        };
+        append_fact(timeline.facts, "handoff.kind",
+                    domain::software_selection::to_string(fact.kind));
+        append_fact(timeline.facts, "handoff.status",
+                    domain::software_selection::to_string(fact.status));
+        append_fact(timeline.facts, "handoff.correlation_id",
+                    fact.correlation_id);
+        append_fact(timeline.facts, "handoff.declared_address_recorded",
+                    fact.declared_address.empty() ? "false" : "true");
+        append_unavailable_fact(
+            timeline.facts, "handoff.declared_address",
+            "the address is available only through the explicit handoff command and redacted event trail");
+        append_unavailable_fact(
+            timeline.facts, "handoff.detail",
+            "raw handoff detail is available only through the centrally redacted event trail");
+        if (fact.timestamp_availability ==
+            domain::software_selection::ExternalHandoffFactAvailability::
+                obtained) {
+          timeline.recorded_at_milliseconds = fact.occurred_at_milliseconds;
+          append_fact(timeline.facts, "handoff.occurred_at_utc_ms",
+                      std::to_string(fact.occurred_at_milliseconds));
+        } else {
+          append_unavailable_fact(
+              timeline.facts, "handoff.occurred_at_utc_ms",
+              domain::software_selection::to_string(
+                  fact.timestamp_not_obtained_reason));
+        }
+        if (fact.resolved_source.availability ==
+            domain::software_selection::ExternalHandoffFactAvailability::
+                obtained) {
+          append_fact(timeline.facts, "source.resolved_at_utc_ms",
+                      std::to_string(
+                          fact.resolved_source.resolved_at_milliseconds));
+          append_fact(timeline.facts, "source.version",
+                      fact.resolved_source.resolved_version);
+          append_fact(timeline.facts, "source.resolver_capability_version",
+                      fact.resolved_source.resolver_capability_version);
+          append_unavailable_fact(
+              timeline.facts, "source.resolved_address",
+              "the address is available only through the centrally redacted event trail");
+        } else {
+          append_unavailable_fact(
+              timeline.facts, "source.snapshot",
+              domain::software_selection::to_string(
+                  fact.resolved_source.not_obtained_reason));
+        }
+        entry.timeline.push_back(std::move(timeline));
       }
     }
-    HistoryTimelineProjection timeline{
-        .kind = HistoryTimelineKind::external_handoff,
-        .state = entry.state,
-        .detail = entry.detail,
-        .facts = entry.facts,
-    };
-    entry.timeline.push_back(std::move(timeline));
     append_id_timeline(entry, log, handoff.software_id);
     target.push_back(std::move(entry));
   }
