@@ -18,6 +18,7 @@ enum class RestartResumeOperation {
   system_settings,
   installation_batch,
   software_optimization_batch,
+  driver_acquisition,
 };
 
 struct RestartResumeParticipant final {

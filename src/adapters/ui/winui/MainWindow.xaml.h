@@ -38,6 +38,14 @@ struct MainWindow : MainWindowT<MainWindow> {
       Microsoft::UI::Xaml::Controls::NavigationViewItem const& item);
   void navigate_to(azzs::application::PageId page);
   void refresh_drivers_page();
+  void begin_driver_handoff(
+      azzs::application::driver_acquisition::DriverEntrypoint entrypoint);
+  void driver_flow_returned();
+  void decide_driver_handoff(
+      azzs::application::driver_acquisition::DriverHandoffDecision decision);
+  void project_drivers_page(
+      azzs::application::driver_acquisition::DriverAcquisitionSnapshot const&
+          driver_snapshot);
   [[nodiscard]] bool set_advanced_view(bool enabled);
   void project(azzs::application::WorkbenchSnapshot const& snapshot);
 

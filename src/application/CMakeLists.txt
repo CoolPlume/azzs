@@ -5,6 +5,7 @@ add_library(azzs_application STATIC
   src/application_update.cpp
   src/bounded_cpu_scheduler.cpp
   src/device_state_store.cpp
+  src/driver_acquisition.cpp
   src/emergency_withdrawal_service.cpp
   src/hardware_overview.cpp
   src/operation_occupancy.cpp
