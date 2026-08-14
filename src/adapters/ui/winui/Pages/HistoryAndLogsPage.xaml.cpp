@@ -319,9 +319,11 @@ void HistoryAndLogsPage::project(HistoryAndLogsSnapshot const& snapshot) {
                 std::to_wstring(snapshot.log.coverage_gap_count));
   preview += L"\n";
   preview += std::wstring{resource_string(L"HistoryAndLogsDebugStatus")};
+  auto const debug_context =
+      azzs::application::make_debug_log_policy_context(snapshot.debug);
   replace_token(preview, L"{state}",
-                snapshot.debug.available
-                    ? (snapshot.debug.enabled
+                debug_context.facts_available
+                    ? (debug_context.debug_mode == "enabled"
                            ? std::wstring{resource_string(
                                  L"HistoryAndLogsDebugEnabled")}
                            : std::wstring{resource_string(
@@ -329,10 +331,18 @@ void HistoryAndLogsPage::project(HistoryAndLogsSnapshot const& snapshot) {
                     : std::wstring{resource_string(
                           L"HistoryAndLogsNotObtained")});
   replace_token(preview, L"{granularity}",
-                snapshot.debug.granularity.empty()
+                !debug_context.facts_available ||
+                        debug_context.granularity.empty()
                     ? std::wstring{resource_string(L"HistoryAndLogsNotObtained")}
-                    : std::wstring{winrt::to_hstring(snapshot.debug.granularity)
+                    : std::wstring{winrt::to_hstring(debug_context.granularity)
                                        .c_str()});
+  if (!debug_context.facts_available &&
+      !debug_context.not_obtained_reason.empty()) {
+    preview += L"\n";
+    preview += std::wstring{resource_string(L"HistoryAndLogsNotObtained")};
+    preview += L": ";
+    preview += winrt::to_hstring(debug_context.not_obtained_reason).c_str();
+  }
   DiagnosticPreviewText().Text(winrt::hstring{preview});
   AutomationProperties::SetName(DiagnosticPreviewText(), winrt::hstring{preview});
   for (auto const& event : snapshot.log.events) {

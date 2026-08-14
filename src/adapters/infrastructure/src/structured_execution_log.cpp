@@ -1009,11 +1009,13 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
   records += serialize_event(counters, correlation, event, clock_);
 
   auto result = transaction->replace(serialize(counters, records));
+  std::string recovery_annotation_error;
   if (!result.verified &&
       result.failure == LogStorageWriteFailure::capacity_exhausted &&
       include_recovery_gap && event_is_critical) {
     // A durable transition is more valuable than a recovery annotation. Keep
     // the annotation pending and retry the transition without it.
+    recovery_annotation_error = result.error;
     counters = parsed.counters;
     records = std::string{parsed.records};
     ++counters.sequence;
@@ -1034,8 +1036,10 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
         .sequence = counters.sequence,
         .capacity_state = capacity_state_,
         .noncritical_dropped_count = recovered_dropped_count,
-        .error = result.error.empty() ? std::move(recovery_warning)
-                                      : result.error,
+        .error = !recovery_annotation_error.empty()
+                     ? std::move(recovery_annotation_error)
+                     : (result.error.empty() ? std::move(recovery_warning)
+                                             : result.error),
     };
   }
   if (result.failure == LogStorageWriteFailure::capacity_exhausted) {

@@ -7,6 +7,13 @@
 
 namespace azzs::adapters::infrastructure {
 
+#ifdef _WIN32
+// Kept at the Windows adapter boundary so the capacity policy can classify
+// quota exhaustion without leaking a Win32 error code into the application.
+[[nodiscard]] LogStorageWriteFailure classify_windows_log_storage_write_failure(
+    unsigned long error) noexcept;
+#endif
+
 class LocalFileLogStorage final : public LogStorage {
  public:
   class Impl;
