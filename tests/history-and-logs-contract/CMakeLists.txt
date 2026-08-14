@@ -6,6 +6,7 @@ azzs_project_target(
   TARGET azzs_history_and_logs_contract
   ROLE test
   PRIVATE_LINKS
+    azzs::test_support
     azzs::history_and_logs_application
 )
 
