@@ -17,6 +17,8 @@ class SystemSettingsRecoveryStore final
   [[nodiscard]] application::RecoveryStorageRead read() override;
   [[nodiscard]] application::RecoveryStorageWrite save(
       application::SystemSettingsRecoveryRecord record) override;
+  [[nodiscard]] application::RecoveryStorageWrite append_operation_fact(
+      application::SystemSettingsOperationFact fact) override;
   [[nodiscard]] application::RecoveryStorageWrite erase(
       std::uint64_t record_id) override;
 
@@ -24,6 +26,7 @@ class SystemSettingsRecoveryStore final
   application::DeviceStateStore& states_;
   std::optional<domain::RevisionToken> revision_;
   std::vector<application::SystemSettingsRecoveryRecord> records_;
+  application::SystemSettingsOperationHistory operation_history_;
   bool loaded_{false};
 };
 

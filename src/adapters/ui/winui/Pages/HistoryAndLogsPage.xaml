@@ -24,6 +24,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="HistoryAndLogsPageTitle"
@@ -72,8 +73,15 @@
                 Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsDiagnosticPreview"
                 TextWrapping="Wrap" />
-            <StackPanel
+            <TextBox
+                x:Name="FilterTextBox"
+                x:Uid="HistoryAndLogsFilter"
                 Grid.Row="4"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                AutomationProperties.AutomationId="AzzsHistoryAndLogsFilter"
+                TextChanged="OnFilterChanged" />
+            <StackPanel
+                Grid.Row="5"
                 Margin="0,{StaticResource AzzsSpaceLarge},0,0"
                 AutomationProperties.AutomationId="AzzsHistoryRecords">
                 <TextBlock
@@ -92,7 +100,7 @@
                     Spacing="{StaticResource AzzsSpaceSmall}" />
             </StackPanel>
             <StackPanel
-                Grid.Row="5"
+                Grid.Row="6"
                 Margin="0,{StaticResource AzzsSpaceLarge},0,0"
                 AutomationProperties.AutomationId="AzzsLogRecords">
                 <TextBlock

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 #include "Pages/HistoryAndLogsPage.g.h"
 
 namespace azzs::application {
@@ -12,8 +14,12 @@ namespace winrt::Azzs::Ui::Pages::implementation {
 struct HistoryAndLogsPage : HistoryAndLogsPageT<HistoryAndLogsPage> {
   HistoryAndLogsPage();
   void bind(azzs::application::HistoryAndLogsService& service);
+  void locate(std::string_view stable_id);
   void OnRefresh(winrt::Windows::Foundation::IInspectable const& sender,
                  Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void OnFilterChanged(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::Controls::TextChangedEventArgs const& args);
   void OnExportDiagnostic(
       winrt::Windows::Foundation::IInspectable const& sender,
       Microsoft::UI::Xaml::RoutedEventArgs const& args);
