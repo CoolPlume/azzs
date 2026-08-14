@@ -148,6 +148,20 @@ WindowsOpaqueCacheInstallerLauncher::launch(
           .detail = "no complete production Windows installer launcher is registered"};
 }
 
+batch::ControlledInstallerCompletionObservation
+WindowsOpaqueCacheInstallerLauncher::observe_completion(
+    batch::ControlledInstallerCompletionRequest const& request) {
+  if (!request.target.valid()) {
+    return {.code = batch::InstallerCompletionCode::failed,
+            .detail = "the controlled installer completion target is invalid"};
+  }
+  // No project-owned launcher is registered yet, so this adapter has no
+  // authoritative completion fact to provide. It must not infer one from a
+  // cache hit, a process handle, or an apparent result.
+  return {.code = batch::InstallerCompletionCode::unknown,
+          .detail = "no complete production Windows installer completion observer is registered"};
+}
+
 batch::InstallVerificationObservation
 WindowsInstallationResultVerifier::verify(
     batch::InstallVerificationRequest const& request) {

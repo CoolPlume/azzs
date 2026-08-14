@@ -25,7 +25,7 @@ namespace catalog = domain::software_catalog;
 namespace cache = domain::offline_package_cache;
 namespace selection = domain::software_selection;
 
-constexpr std::uint32_t k_format_version = 1;
+constexpr std::uint32_t k_format_version = 4;
 constexpr std::size_t k_max_payload_bytes = 2U * 1024U * 1024U;
 constexpr std::size_t k_max_text_bytes = 1024U * 1024U;
 constexpr std::size_t k_max_items = 128;
@@ -135,11 +135,20 @@ template <typename Enum>
   return true;
 }
 
+[[nodiscard]] std::string lease_token_fingerprint(std::string_view token) {
+  std::uint64_t hash = 1469598103934665603ULL;
+  for (auto const byte : token) {
+    hash ^= static_cast<unsigned char>(byte);
+    hash *= 1099511628211ULL;
+  }
+  return "lease-" + std::to_string(hash);
+}
+
 void write_package(Writer& writer, selection::ResolvedPackage const& value) {
   writer.text(value.candidate.software_id);
   write_enum(writer, value.candidate.architecture);
   writer.text(value.candidate.version);
-  writer.text(value.candidate.identity);
+  writer.text("frozen-package");
   write_enum(writer, value.package_type);
   writer.u8(value.complete_package ? 1 : 0);
   writer.u8(value.network_required ? 1 : 0);
@@ -161,18 +170,18 @@ void write_package(Writer& writer, selection::ResolvedPackage const& value) {
 void write_source(Writer& writer, selection::ResolvedSourceSnapshot const& value) {
   writer.text(value.software_id);
   write_enum(writer, value.declared_purpose);
-  writer.text(value.declared_address);
+  writer.text("redacted-source");
   writer.text(value.version);
-  writer.text(value.actual_address);
-  writer.text(value.hosting_mechanism);
-  writer.text(value.branch);
+  writer.text("redacted-source");
+  writer.text("controlled");
+  writer.text("frozen");
   writer.u32(static_cast<std::uint32_t>(value.packages.size()));
   for (auto const& package : value.packages) {
     write_package(writer, package);
   }
   writer.u8(value.network_required ? 1 : 0);
   writer.i64(value.resolved_at_milliseconds);
-  writer.text(value.capability_version);
+  writer.text("frozen-resolver");
 }
 
 [[nodiscard]] bool read_source(Reader& reader,
@@ -324,9 +333,9 @@ void write_plan(Writer& writer, batch_domain::FrozenBatchPlan const& value) {
   if (value.retry_of_batch_id.has_value()) {
     writer.text(*value.retry_of_batch_id);
   }
-  writer.text(value.catalog.raw_catalog_bytes);
-  writer.text(value.catalog.content_identity);
-  writer.text(value.catalog.application_id);
+  writer.text("[frozen-catalog]");
+  writer.text("frozen-catalog");
+  writer.text("azzs");
   writer.u32(value.catalog.schema_version);
   writer.u64(value.catalog.revision);
   write_enum(writer, value.catalog.release_state);
@@ -379,24 +388,28 @@ void write_progress(Writer& writer, batch_domain::InstallationItemProgress const
   writer.text(value.item_id);
   write_enum(writer, value.state);
   writer.u32(value.attempt);
+  writer.u8(value.launch_requested ? 1 : 0);
   writer.u8(value.installer_started ? 1 : 0);
-  writer.u8(value.opaque_installer_handle.has_value() ? 1 : 0);
-  if (value.opaque_installer_handle.has_value()) {
-    writer.text(*value.opaque_installer_handle);
-  }
-  writer.text(value.detail);
+  writer.u8(value.post_install_completed ? 1 : 0);
+  writer.u8(0);
+  writer.text("");
 }
 
 [[nodiscard]] bool read_progress(Reader& reader,
                                  batch_domain::InstallationItemProgress& value) {
+  std::uint8_t launch_requested{};
   std::uint8_t started{};
+  std::uint8_t post_install_completed{};
   std::uint8_t has_handle{};
   if (!reader.text(value.item_id, 256) || !read_enum(reader, value.state) ||
-      !reader.u32(value.attempt) || !reader.u8(started) || !reader.u8(has_handle) ||
-      started > 1 || has_handle > 1) {
+      !reader.u32(value.attempt) || !reader.u8(launch_requested) || !reader.u8(started) ||
+      !reader.u8(post_install_completed) || !reader.u8(has_handle) ||
+      launch_requested > 1 || started > 1 || post_install_completed > 1 || has_handle > 1) {
     return false;
   }
+  value.launch_requested = launch_requested != 0;
   value.installer_started = started != 0;
+  value.post_install_completed = post_install_completed != 0;
   value.opaque_installer_handle.reset();
   if (has_handle != 0) {
     std::string handle;
@@ -430,13 +443,14 @@ void write_lease(Writer& writer, batch_domain::DurableLeaseBinding const& value)
   writer.text(value.kind);
   writer.text(value.operation_id);
   writer.text(value.correlation_id);
-  writer.text(value.lease_token);
+  writer.text(value.lease_token_fingerprint);
   writer.u64(value.occupancy_revision);
 }
 
 [[nodiscard]] bool read_lease(Reader& reader, batch_domain::DurableLeaseBinding& value) {
   return reader.text(value.kind, 256) && reader.text(value.operation_id, 256) &&
-         reader.text(value.correlation_id, 256) && reader.text(value.lease_token, 256) &&
+         reader.text(value.correlation_id, 256) &&
+         reader.text(value.lease_token_fingerprint, 256) &&
          reader.u64(value.occupancy_revision);
 }
 
@@ -496,7 +510,7 @@ void write_history(Writer& writer, batch_domain::InstallationBatchHistory const&
   for (auto const& progress : value.items) {
     write_progress(writer, progress);
   }
-  writer.text(value.reason);
+  writer.text("batch-history-retained");
 }
 
 [[nodiscard]] bool read_history(Reader& reader, batch_domain::InstallationBatchHistory& value) {
@@ -596,6 +610,48 @@ struct PersistedState final {
   return !value.empty() && value.size() <= 256U;
 }
 
+void redact_package(selection::ResolvedPackage& value) {
+  value.candidate.identity = "redacted-package";
+}
+
+void redact_plan(batch_domain::FrozenBatchPlan& value) {
+  value.catalog.raw_catalog_bytes = "[redacted]";
+  value.catalog.content_identity = "redacted-catalog";
+  value.catalog.application_id = "azzs";
+  for (auto& item : value.items) {
+    item.source.declared_address = "redacted-source";
+    item.source.actual_address = "redacted-source";
+    item.source.hosting_mechanism = "controlled";
+    item.source.branch = "frozen";
+    item.source.capability_version = "frozen-resolver";
+    for (auto& package : item.source.packages) {
+      redact_package(package);
+    }
+    redact_package(item.selected_package);
+  }
+}
+
+void redact_progress(batch_domain::InstallationItemProgress& value) {
+  value.opaque_installer_handle.reset();
+  value.detail.clear();
+}
+
+void redact_record(batch_domain::InstallationBatchRecord& value) {
+  redact_plan(value.plan);
+  for (auto& item : value.items) {
+    redact_progress(item);
+  }
+  value.active_lease.reset();
+}
+
+void redact_history(batch_domain::InstallationBatchHistory& value) {
+  redact_plan(value.plan);
+  for (auto& item : value.items) {
+    redact_progress(item);
+  }
+  value.reason = "batch-history-retained";
+}
+
 }  // namespace
 
 bool InstallationEffectTarget::valid() const noexcept {
@@ -650,13 +706,31 @@ class InstallationBatchService::Impl final {
     revision_ = read.snapshot->revision;
     writable_ = true;
     error_.clear();
+    if (active_.has_value() && active_->state != batch_domain::InstallationBatchState::completed &&
+        active_->state != batch_domain::InstallationBatchState::stopped) {
+      // A restored batch may contain a launcher effect whose durable receipt
+      // was interrupted. It can only take the explicit read-only recovery
+      // path; advance() must never repeat that effect.
+      active_->state = batch_domain::InstallationBatchState::recovery_required;
+    }
     // Restore is intentionally local-only. A caller must explicitly request
     // recovery, which uses only the verifier and cannot launch another item.
     return result(InstallationBatchActionCode::succeeded);
   }
 
   [[nodiscard]] batch_domain::InstallationBatchSnapshot snapshot() const {
-    return {.active = active_, .history = history_, .writable = writable_, .error = error_};
+    auto active = active_;
+    if (active.has_value()) {
+      redact_record(*active);
+    }
+    auto history = history_;
+    for (auto& entry : history) {
+      redact_history(entry);
+    }
+    return {.active = std::move(active),
+            .history = std::move(history),
+            .writable = writable_,
+            .error = error_.empty() ? "" : "installation batch requires attention"};
   }
 
   [[nodiscard]] InstallationBatchActionResult create(batch_domain::FrozenBatchPlan plan) {
@@ -684,9 +758,15 @@ class InstallationBatchService::Impl final {
                               .item_id = record.items.front().item_id,
                               .item_state = record.items.front().state,
                               .outcome = batch_domain::DurableTransitionOutcome::committed};
+    auto previous_active = active_;
     active_ = std::move(record);
     auto lease = acquire_and_bind();
     if (!lease.has_value()) {
+      if (last_lease_acquire_code_ == OccupancyResultCode::occupied) {
+        active_ = std::move(previous_active);
+        return result(InstallationBatchActionCode::occupied,
+                      "another controlled operation currently owns the device");
+      }
       return result(InstallationBatchActionCode::persistence_failed);
     }
     return commit_and_release(*lease, InstallationFactKind::batch_created,
@@ -726,6 +806,15 @@ class InstallationBatchService::Impl final {
                  ? commit_and_release(*lease, InstallationFactKind::state_persisted, progress)
                  : result(InstallationBatchActionCode::persistence_failed);
     }
+    if (progress.state == batch_domain::InstallationItemState::result_confirmation_pending &&
+        item.execution_profile.post_install ==
+            catalog::PostInstallBehavior::controlled_preferences &&
+        progress.installer_started && !progress.post_install_completed) {
+      // This repeats only the project-owned completion observation. It never
+      // relaunches the installer or bypasses a missing post-install fact.
+      progress.state = batch_domain::InstallationItemState::installer_running;
+      active_->state = batch_domain::InstallationBatchState::running;
+    }
     if (batch_domain::blocks_batch(progress.state)) {
       active_->state = progress.state == batch_domain::InstallationItemState::waiting_restart
                            ? batch_domain::InstallationBatchState::waiting_restart
@@ -735,9 +824,17 @@ class InstallationBatchService::Impl final {
     if (progress.state == batch_domain::InstallationItemState::installer_running) {
       auto lease = acquire_and_bind();
       if (!lease.has_value()) {
-        return result(InstallationBatchActionCode::persistence_failed);
+        return lease_failure_result();
       }
       if (!progress.installer_started) {
+        if (!progress.launch_requested) {
+          progress.launch_requested = true;
+          auto prepared = commit_and_release(*lease, InstallationFactKind::launch_requested,
+                                             progress);
+          if (!prepared.succeeded()) {
+            return prepared;
+          }
+        }
         auto observed = executor_.launch({.target = effect_target(*index)});
         switch (observed.code) {
           case InstallerLaunchCode::started:
@@ -761,6 +858,35 @@ class InstallationBatchService::Impl final {
         progress.detail = observed.detail;
         return commit_and_release(*lease, InstallationFactKind::launch_requested, progress);
       }
+      auto completion = executor_.observe_completion(
+          {.target = effect_target(*index),
+           .opaque_operation_handle = progress.opaque_installer_handle});
+      switch (completion.code) {
+        case InstallerCompletionCode::running:
+          progress.detail = completion.detail;
+          return commit_and_release(*lease, InstallationFactKind::state_persisted, progress);
+        case InstallerCompletionCode::interaction_required:
+          progress.state = batch_domain::InstallationItemState::installer_interaction_pending;
+          active_->state = batch_domain::InstallationBatchState::awaiting_user;
+          progress.detail = completion.detail;
+          return commit_and_release(*lease, InstallationFactKind::batch_paused, progress);
+        case InstallerCompletionCode::unknown:
+          progress.state = batch_domain::InstallationItemState::result_confirmation_pending;
+          active_->state = batch_domain::InstallationBatchState::awaiting_user;
+          progress.detail = completion.detail;
+          return commit_and_release(*lease, InstallationFactKind::batch_paused, progress);
+        case InstallerCompletionCode::failed:
+          progress.state = batch_domain::InstallationItemState::failed;
+          progress.detail = completion.detail;
+          return commit_and_release(*lease, InstallationFactKind::state_persisted, progress);
+        case InstallerCompletionCode::completed:
+          break;
+      }
+      if (!post_install_completion_established(
+              progress, item.execution_profile, completion,
+              batch_domain::InstallationBatchState::awaiting_user)) {
+        return commit_and_release(*lease, InstallationFactKind::batch_paused, progress);
+      }
       auto observed = verifier_.verify({.target = effect_target(*index),
                                         .phase = InstallVerificationPhase::after_process_exit,
                                         .opaque_operation_handle = progress.opaque_installer_handle});
@@ -771,7 +897,7 @@ class InstallationBatchService::Impl final {
     if (progress.state == batch_domain::InstallationItemState::pending) {
       auto lease = acquire_and_bind();
       if (!lease.has_value()) {
-        return result(InstallationBatchActionCode::persistence_failed);
+        return lease_failure_result();
       }
       auto observed = verifier_.verify({.target = effect_target(*index),
                                         .phase = InstallVerificationPhase::before_launch});
@@ -795,7 +921,7 @@ class InstallationBatchService::Impl final {
     if (progress.state == batch_domain::InstallationItemState::downloading) {
       auto lease = acquire_and_bind();
       if (!lease.has_value()) {
-        return result(InstallationBatchActionCode::persistence_failed);
+        return lease_failure_result();
       }
       auto observed = download_.advance(effect_target(*index));
       switch (observed.code) {
@@ -824,7 +950,7 @@ class InstallationBatchService::Impl final {
       auto lease = acquire_and_bind();
       return lease.has_value()
                  ? commit_and_release(*lease, InstallationFactKind::state_persisted, progress)
-                 : result(InstallationBatchActionCode::persistence_failed);
+                 : lease_failure_result();
     }
     if (progress.state == batch_domain::InstallationItemState::source_invalid ||
         progress.state == batch_domain::InstallationItemState::failed) {
@@ -833,7 +959,8 @@ class InstallationBatchService::Impl final {
     return result(InstallationBatchActionCode::blocked);
   }
 
-  [[nodiscard]] InstallationBatchActionResult retry_current() {
+  [[nodiscard]] InstallationBatchActionResult retry_current(
+      batch_domain::FrozenBatchPlan retry_plan) {
     if (!ready_for_command()) {
       return result(InstallationBatchActionCode::not_restored);
     }
@@ -845,39 +972,51 @@ class InstallationBatchService::Impl final {
       return result(InstallationBatchActionCode::rejected, "retry is not allowed in the current state");
     }
     auto const old = *active_;
-    auto retry_id = old.plan.batch_id + ".retry." + std::to_string(old.generation + 1);
-    if (retry_id.size() > 256) {
-      return result(InstallationBatchActionCode::rejected, "retry batch identifier exceeds the limit");
+    auto validation = validate_retry_plan(retry_plan, old, *index);
+    if (!validation.empty()) {
+      return result(InstallationBatchActionCode::rejected, std::move(validation));
     }
-    auto retry_plan = make_retry_plan(old, *index, std::move(retry_id));
-    if (!retry_plan.has_value()) {
-      return result(InstallationBatchActionCode::rejected,
-                    error_.empty() ? "a current controlled retry snapshot is unavailable"
-                                   : error_);
+    // The failed attempt remains the authoritative historical record. Close
+    // its nonterminal lease before allocating a new operation identity for the
+    // derivative batch; retaining that lease across the replacement would make
+    // the new batch appear externally occupied by itself.
+    auto old_lease = acquire_and_bind();
+    if (!old_lease.has_value()) {
+      return lease_failure_result();
+    }
+    active_->state = batch_domain::InstallationBatchState::stopped;
+    auto closed = commit_and_release(*old_lease, InstallationFactKind::batch_paused,
+                                     active_->items[*index]);
+    if (!closed.succeeded()) {
+      return closed;
+    }
+    auto previous_active = active_;
+    auto const retry_item_id = retry_plan.items.front().item_id;
+    active_ = batch_domain::InstallationBatchRecord{
+        .plan = std::move(retry_plan),
+        .state = batch_domain::InstallationBatchState::ready,
+        .items = {{.item_id = retry_item_id,
+                   .attempt = old.items[*index].attempt + 1}},
+        .generation = old.generation + 1,
+        .last_transition = {.generation = old.generation + 1,
+                            .item_id = retry_item_id,
+                            .item_state = batch_domain::InstallationItemState::pending,
+                            .outcome = batch_domain::DurableTransitionOutcome::committed},
+    };
+    last_lease_acquire_code_ = OccupancyResultCode::storage_error;
+    auto lease = acquire_or_recover_bound_lease();
+    if (!lease.has_value()) {
+      if (last_lease_acquire_code_ == OccupancyResultCode::occupied) {
+        active_ = std::move(previous_active);
+        return result(InstallationBatchActionCode::occupied,
+                      "another controlled operation currently owns the device");
+      }
+      return lease_failure_result();
     }
     history_.push_back({.plan = old.plan,
                         .final_state = batch_domain::InstallationBatchState::stopped,
                         .items = old.items,
                         .reason = "created immutable single-item retry batch"});
-    active_ = batch_domain::InstallationBatchRecord{
-        .plan = std::move(*retry_plan),
-        .state = batch_domain::InstallationBatchState::ready,
-        .items = {{.item_id = old.items[*index].item_id,
-                   .attempt = old.items[*index].attempt + 1}},
-        .generation = old.generation + 1,
-        .last_transition = {.generation = old.generation + 1,
-                            .item_id = old.items[*index].item_id,
-                            .item_state = batch_domain::InstallationItemState::pending,
-                            .outcome = batch_domain::DurableTransitionOutcome::committed},
-    };
-    auto lease = acquire_or_recover_bound_lease();
-    if (!lease.has_value()) {
-      // The prior batch cannot be safely restored after an acquire/bind
-      // failure because a durable write or log receipt may already exist.
-      // Keep the replacement local state fail-closed and retain its history.
-      mark_outcome_unknown(active_->items.front());
-      return result(InstallationBatchActionCode::persistence_failed);
-    }
     return commit_and_release(*lease, InstallationFactKind::batch_created,
                               active_->items.front());
   }
@@ -902,13 +1041,18 @@ class InstallationBatchService::Impl final {
       return result(InstallationBatchActionCode::rejected,
                     "the frozen profile requires project-owned result detection");
     }
+    if (profile.post_install == catalog::PostInstallBehavior::controlled_preferences &&
+        !progress.post_install_completed) {
+      return result(InstallationBatchActionCode::rejected,
+                    "the controlled post-install completion fact is still required");
+    }
     progress.state = batch_domain::InstallationItemState::succeeded;
     progress.detail = "user explicitly confirmed the installation result";
     active_->state = batch_domain::InstallationBatchState::ready;
     auto lease = acquire_and_bind();
     return lease.has_value()
                ? commit_and_release(*lease, InstallationFactKind::state_persisted, progress)
-               : result(InstallationBatchActionCode::persistence_failed);
+               : lease_failure_result();
   }
 
   [[nodiscard]] InstallationBatchActionResult complete_current_installer_interaction() {
@@ -928,13 +1072,14 @@ class InstallationBatchService::Impl final {
     // This is not a completion claim. It authorizes a post-interaction
     // observation only; the verifier remains the sole completion authority.
     progress.state = batch_domain::InstallationItemState::installer_running;
+    progress.launch_requested = true;
     progress.installer_started = true;
     progress.detail = "user completed the permitted installer interaction";
     active_->state = batch_domain::InstallationBatchState::running;
     auto lease = acquire_and_bind();
     return lease.has_value()
                ? commit_and_release(*lease, InstallationFactKind::state_persisted, progress)
-               : result(InstallationBatchActionCode::persistence_failed);
+               : lease_failure_result();
   }
 
   [[nodiscard]] InstallationBatchActionResult stop_current() {
@@ -953,7 +1098,7 @@ class InstallationBatchService::Impl final {
     auto& progress = active_->items[*index];
     auto lease = acquire_and_bind();
     if (!lease.has_value()) {
-      return result(InstallationBatchActionCode::persistence_failed);
+      return lease_failure_result();
     }
     if (progress.state == batch_domain::InstallationItemState::downloading) {
       auto observed = download_.stop(effect_target(*index));
@@ -976,7 +1121,7 @@ class InstallationBatchService::Impl final {
     auto index = next_runnable_index();
     auto lease = acquire_and_bind();
     if (!lease.has_value()) {
-      return result(InstallationBatchActionCode::persistence_failed);
+      return lease_failure_result();
     }
     if (index.has_value() && active_->items[*index].state ==
                                 batch_domain::InstallationItemState::downloading) {
@@ -994,18 +1139,65 @@ class InstallationBatchService::Impl final {
     if (!ready_for_command()) {
       return result(InstallationBatchActionCode::not_restored);
     }
-    if (active_->state == batch_domain::InstallationBatchState::failed_closed) {
-      return fail_closed_result();
-    }
     auto index = current_started_or_pending_index();
     if (!index.has_value()) {
       return result(InstallationBatchActionCode::no_active_batch,
                     "no installer requires recovery verification");
     }
     auto& progress = active_->items[*index];
+    auto const& profile = active_->plan.items[*index].execution_profile;
     auto lease = acquire_and_bind();
     if (!lease.has_value()) {
-      return result(InstallationBatchActionCode::persistence_failed);
+      return lease_failure_result();
+    }
+    if (progress.state == batch_domain::InstallationItemState::result_confirmation_pending &&
+        profile.post_install == catalog::PostInstallBehavior::controlled_preferences &&
+        progress.installer_started && !progress.post_install_completed) {
+      progress.state = batch_domain::InstallationItemState::installer_running;
+    }
+    if (progress.state == batch_domain::InstallationItemState::installer_running) {
+      auto completion = executor_.observe_completion(
+          {.target = effect_target(*index),
+           .opaque_operation_handle = progress.opaque_installer_handle});
+      switch (completion.code) {
+        case InstallerCompletionCode::running:
+          progress.detail = completion.detail;
+          active_->state = batch_domain::InstallationBatchState::recovery_required;
+          return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
+        case InstallerCompletionCode::interaction_required:
+          progress.state = batch_domain::InstallationItemState::installer_interaction_pending;
+          active_->state = batch_domain::InstallationBatchState::recovery_required;
+          progress.detail = completion.detail;
+          return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
+        case InstallerCompletionCode::unknown:
+          progress.state = batch_domain::InstallationItemState::result_confirmation_pending;
+          active_->state = batch_domain::InstallationBatchState::recovery_required;
+          progress.detail = completion.detail;
+          return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
+        case InstallerCompletionCode::failed:
+          progress.state = batch_domain::InstallationItemState::failed;
+          active_->state = batch_domain::InstallationBatchState::recovery_required;
+          progress.detail = completion.detail;
+          return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
+        case InstallerCompletionCode::completed:
+          break;
+      }
+      if (!post_install_completion_established(
+              progress, profile, completion,
+              batch_domain::InstallationBatchState::recovery_required)) {
+        active_->state = batch_domain::InstallationBatchState::recovery_required;
+        return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
+      }
+    }
+    if (progress.state == batch_domain::InstallationItemState::installer_interaction_pending) {
+      active_->state = batch_domain::InstallationBatchState::recovery_required;
+      return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
+    }
+    if (progress.state == batch_domain::InstallationItemState::result_confirmation_pending &&
+        profile.post_install == catalog::PostInstallBehavior::controlled_preferences &&
+        !progress.post_install_completed) {
+      active_->state = batch_domain::InstallationBatchState::recovery_required;
+      return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
     }
     auto phase = progress.state == batch_domain::InstallationItemState::waiting_restart
                      ? InstallVerificationPhase::after_restart_read_only
@@ -1013,16 +1205,17 @@ class InstallationBatchService::Impl final {
     auto observed = verifier_.verify({.target = effect_target(*index),
                                       .phase = phase,
                                       .opaque_operation_handle = progress.opaque_installer_handle});
-    apply_verification(progress, active_->plan.items[*index].execution_profile,
-                       observed, phase);
+    apply_verification(progress, profile, observed, phase);
     active_->state = batch_domain::InstallationBatchState::recovery_required;
     return commit_and_release(*lease, InstallationFactKind::recovery_observed, progress);
   }
 
  private:
   [[nodiscard]] InstallationBatchActionResult result(InstallationBatchActionCode code,
-                                                      std::string message = {}) const {
-    return {.code = code, .snapshot = snapshot(), .message = std::move(message)};
+                                                       std::string message = {}) const {
+    return {.code = code,
+            .snapshot = snapshot(),
+            .message = message.empty() ? "" : "installation batch action was not completed"};
   }
 
   [[nodiscard]] bool ready_for_command() const noexcept {
@@ -1032,6 +1225,13 @@ class InstallationBatchService::Impl final {
   [[nodiscard]] InstallationBatchActionResult fail_closed_result() const {
     return result(InstallationBatchActionCode::outcome_unknown,
                   "a prior durable transition is unknown; batch is fail-closed");
+  }
+
+  [[nodiscard]] InstallationBatchActionResult lease_failure_result() const {
+    return last_lease_acquire_code_ == OccupancyResultCode::occupied
+               ? result(InstallationBatchActionCode::occupied,
+                        "another controlled operation currently owns the device")
+               : result(InstallationBatchActionCode::persistence_failed);
   }
 
   [[nodiscard]] InstallationEffectTarget effect_target(std::size_t index) const {
@@ -1166,10 +1366,7 @@ class InstallationBatchService::Impl final {
     }
     for (std::size_t index = 0; index < active_->items.size(); ++index) {
       auto const state = active_->items[index].state;
-      if (state != batch_domain::InstallationItemState::succeeded &&
-          state != batch_domain::InstallationItemState::skipped_installed &&
-          state != batch_domain::InstallationItemState::dependency_blocked &&
-          state != batch_domain::InstallationItemState::stop_pending) {
+      if (!batch_domain::is_terminal(state)) {
         return index;
       }
     }
@@ -1184,45 +1381,37 @@ class InstallationBatchService::Impl final {
   }
 
   [[nodiscard]] std::optional<std::size_t> current_retryable_index() const noexcept {
-    auto const current = next_runnable_index();
-    if (!current.has_value()) {
+    if (!active_.has_value()) {
       return std::nullopt;
     }
-    auto const state = active_->items[*current].state;
-    return batch_domain::requires_fresh_retry_snapshot(state) &&
-                   batch_domain::command_allowed(
-                       state, batch_domain::InstallationItemCommand::retry)
-               ? current
-               : std::nullopt;
+    for (std::size_t index = 0; index < active_->items.size(); ++index) {
+      auto const state = active_->items[index].state;
+      if (batch_domain::requires_fresh_retry_snapshot(state) &&
+          batch_domain::command_allowed(state,
+                                        batch_domain::InstallationItemCommand::retry)) {
+        return index;
+      }
+    }
+    return std::nullopt;
   }
 
-  [[nodiscard]] std::optional<batch_domain::FrozenBatchPlan> make_retry_plan(
-      batch_domain::InstallationBatchRecord const& old, std::size_t index,
-      std::string retry_id) {
-    auto const& previous_item = old.plan.items[index];
-    if (!batch_domain::requires_fresh_retry_snapshot(old.items[index].state) ||
-        !previous_item.valid()) {
-      error_ = "only a frozen terminal failure may create a retry batch";
-      return std::nullopt;
+  [[nodiscard]] std::string validate_retry_plan(
+      batch_domain::FrozenBatchPlan const& retry_plan,
+      batch_domain::InstallationBatchRecord const& old, std::size_t index) const {
+    if (!retry_plan.valid() || retry_plan.items.size() != 1) {
+      return "retry requires a valid upstream-frozen single-item plan";
     }
-    // A retry is an immutable one-item derivative. It copies the original
-    // accepted catalog, source, package, profile and cache identity exactly;
-    // it never observes a live catalog, selection, resolver or downloader.
-    auto item = previous_item;
-    item.dependencies.clear();
-    batch_domain::FrozenBatchPlan plan{
-        .batch_id = std::move(retry_id),
-        .correlation_id = old.plan.correlation_id,
-        .retry_of_batch_id = old.plan.batch_id,
-        .catalog = old.plan.catalog,
-        .items = {std::move(item)},
-        .frozen_at_milliseconds = old.plan.frozen_at_milliseconds,
-    };
-    if (!plan.valid()) {
-      error_ = "the copied retry snapshot is invalid";
-      return std::nullopt;
+    if (!retry_plan.retry_of_batch_id.has_value() ||
+        *retry_plan.retry_of_batch_id != old.plan.batch_id) {
+      return "retry plan must identify the immutable failed batch";
     }
-    return plan;
+    if (retry_plan.batch_id == old.plan.batch_id) {
+      return "retry plan must use a distinct batch identity";
+    }
+    if (retry_plan.items.front().item_id != old.plan.items[index].item_id) {
+      return "retry plan must contain the failed item only";
+    }
+    return {};
   }
 
   [[nodiscard]] std::optional<std::size_t> current_started_or_pending_index() const noexcept {
@@ -1250,6 +1439,36 @@ class InstallationBatchService::Impl final {
         return true;
       }
     }
+    return false;
+  }
+
+  [[nodiscard]] bool post_install_completion_established(
+      batch_domain::InstallationItemProgress& progress,
+      batch_domain::FrozenExecutionProfile const& profile,
+      ControlledInstallerCompletionObservation const& completion,
+      batch_domain::InstallationBatchState pending_state) {
+    if (profile.post_install == catalog::PostInstallBehavior::none) {
+      return true;
+    }
+    switch (completion.post_install) {
+      case PostInstallCompletionCode::completed:
+        progress.post_install_completed = true;
+        return true;
+      case PostInstallCompletionCode::failed:
+        progress.state = batch_domain::InstallationItemState::failed;
+        progress.detail = completion.detail;
+        return false;
+      case PostInstallCompletionCode::not_required:
+      case PostInstallCompletionCode::pending:
+      case PostInstallCompletionCode::unknown:
+        progress.state = batch_domain::InstallationItemState::result_confirmation_pending;
+        active_->state = pending_state;
+        progress.detail = completion.detail;
+        return false;
+    }
+    progress.state = batch_domain::InstallationItemState::result_confirmation_pending;
+    active_->state = pending_state;
+    progress.detail = completion.detail;
     return false;
   }
 
@@ -1327,29 +1546,32 @@ class InstallationBatchService::Impl final {
           observed.current->identity.kind == bound.kind &&
           observed.current->identity.operation_id == bound.operation_id &&
           observed.current->identity.correlation_id == bound.correlation_id &&
-          observed.current->lease_token == bound.lease_token &&
+          lease_token_fingerprint(observed.current->lease_token) ==
+              bound.lease_token_fingerprint &&
           observed.revision == bound.occupancy_revision) {
-        auto released = occupancy_.release({.identity = observed.current->identity,
-                                             .lease_token = bound.lease_token,
-                                             .revision = bound.occupancy_revision});
-        if (released.code != OccupancyResultCode::released) {
-          error_ = released.detail;
-          mark_outcome_unknown(active_->items.front());
-          return std::nullopt;
-        }
+        return OperationLease{.identity = observed.current->identity,
+                              .lease_token = observed.current->lease_token,
+                              .revision = bound.occupancy_revision};
       } else if (observed.code != OccupancyResultCode::observed ||
-                 observed.current.has_value()) {
+                  observed.current.has_value()) {
         error_ = observed.detail.empty() ? "durable operation lease cannot be reconciled"
                                          : observed.detail;
         mark_outcome_unknown(active_->items.front());
         return std::nullopt;
       }
-      active_->active_lease.reset();
+      error_ = "the durable installation lease disappeared before completion";
+      mark_outcome_unknown(active_->items.front());
+      return std::nullopt;
     }
     auto acquired = occupancy_.try_acquire({.kind = "installation-batch",
                                             .operation_id = active_->plan.batch_id,
                                             .correlation_id = active_->plan.correlation_id});
     if (acquired.code != OccupancyResultCode::acquired || !acquired.lease.has_value()) {
+      last_lease_acquire_code_ = acquired.code;
+      if (acquired.code == OccupancyResultCode::occupied) {
+        error_ = "another controlled operation currently owns the device";
+        return std::nullopt;
+      }
       error_ = acquired.detail.empty() ? "installation batch occupancy cannot be acquired"
                                        : acquired.detail;
       mark_outcome_unknown(active_->items.front());
@@ -1359,15 +1581,11 @@ class InstallationBatchService::Impl final {
     active_->active_lease = {.kind = lease.identity.kind,
                              .operation_id = lease.identity.operation_id,
                              .correlation_id = lease.identity.correlation_id,
-                             .lease_token = lease.lease_token,
+                             .lease_token_fingerprint =
+                                 lease_token_fingerprint(lease.lease_token),
                              .occupancy_revision = lease.revision};
     auto persisted = persist();
     if (persisted != PersistOutcome::committed) {
-      auto released = occupancy_.release(lease);
-      active_->active_lease.reset();
-      if (released.code != OccupancyResultCode::released && !released.detail.empty()) {
-        error_ = released.detail;
-      }
       mark_outcome_unknown(active_->items.front());
       return std::nullopt;
     }
@@ -1375,10 +1593,6 @@ class InstallationBatchService::Impl final {
                          active_->items.front());
     if (!logged) {
       mark_outcome_unknown(active_->items.front());
-      auto released = occupancy_.release(lease);
-      if (released.code != OccupancyResultCode::released) {
-        error_ = released.detail;
-      }
       return std::nullopt;
     }
     return lease;
@@ -1392,24 +1606,15 @@ class InstallationBatchService::Impl final {
                                 .item_id = progress.item_id,
                                 .item_state = progress.state,
                                 .outcome = batch_domain::DurableTransitionOutcome::committed};
-    active_->active_lease.reset();
     auto persisted = persist();
     if (persisted != PersistOutcome::committed) {
       mark_outcome_unknown(progress);
-      auto released = occupancy_.release(lease);
-      if (released.code != OccupancyResultCode::released) {
-        error_ = released.detail;
-      }
       return result(persisted == PersistOutcome::outcome_unknown
                         ? InstallationBatchActionCode::outcome_unknown
                         : InstallationBatchActionCode::persistence_failed);
     }
     if (!append(kind, progress)) {
       mark_outcome_unknown(progress);
-      auto released = occupancy_.release(lease);
-      if (released.code != OccupancyResultCode::released) {
-        error_ = released.detail;
-      }
       return result(InstallationBatchActionCode::outcome_unknown);
     }
     facts_.observe({.kind = kind,
@@ -1417,6 +1622,9 @@ class InstallationBatchService::Impl final {
                     .item_id = progress.item_id,
                     .item_state = progress.state,
                     .result = execution_result(progress.state)});
+    if (!releases_occupancy()) {
+      return result(InstallationBatchActionCode::succeeded);
+    }
     auto released = occupancy_.release(lease);
     if (released.code != OccupancyResultCode::released) {
       error_ = released.detail;
@@ -1424,7 +1632,26 @@ class InstallationBatchService::Impl final {
       return result(InstallationBatchActionCode::outcome_unknown,
                     "operation lease release outcome is unknown");
     }
+    active_->active_lease.reset();
+    auto const cleared = persist();
+    if (cleared != PersistOutcome::committed) {
+      active_->active_lease = {.kind = lease.identity.kind,
+                               .operation_id = lease.identity.operation_id,
+                               .correlation_id = lease.identity.correlation_id,
+                               .lease_token_fingerprint =
+                                   lease_token_fingerprint(lease.lease_token),
+                               .occupancy_revision = lease.revision};
+      mark_outcome_unknown(progress);
+      return result(cleared == PersistOutcome::outcome_unknown
+                        ? InstallationBatchActionCode::outcome_unknown
+                        : InstallationBatchActionCode::persistence_failed);
+    }
     return result(InstallationBatchActionCode::succeeded);
+  }
+
+  [[nodiscard]] bool releases_occupancy() const noexcept {
+    return active_->state == batch_domain::InstallationBatchState::completed ||
+           active_->state == batch_domain::InstallationBatchState::stopped;
   }
 
   enum class PersistOutcome { committed, failed, outcome_unknown };
@@ -1478,20 +1705,44 @@ class InstallationBatchService::Impl final {
   }
 
   void mark_outcome_unknown(batch_domain::InstallationItemProgress const& progress) {
+    auto const item_id = progress.item_id;
+    auto const item_state = progress.state;
     active_->state = batch_domain::InstallationBatchState::failed_closed;
     active_->last_transition = {.generation = active_->generation + 1,
-                                .item_id = progress.item_id,
-                                .item_state = progress.state,
+                                .item_id = item_id,
+                                .item_state = item_state,
                                 .outcome = batch_domain::DurableTransitionOutcome::outcome_unknown,
                                 .coverage_gap = true};
     active_->generation++;
-    active_->active_lease.reset();
     static_cast<void>(persist());
     facts_.observe({.kind = InstallationFactKind::coverage_gap,
                     .batch_id = active_->plan.batch_id,
-                    .item_id = progress.item_id,
-                    .item_state = progress.state,
+                    .item_id = item_id,
+                    .item_state = item_state,
                     .result = ExecutionResult::unknown});
+    reconcile_unknown_transition();
+  }
+
+  void reconcile_unknown_transition() {
+    // A failed or unknown durable write is not resolved from in-memory state.
+    // Re-read the authoritative device record and retain the occupancy lease;
+    // only recover_read_only() may inspect the current installer afterward.
+    auto const read = states_.inspect(key_);
+    if ((read.mode != StateReadMode::writable &&
+         read.mode != StateReadMode::recovered_previous) || !read.snapshot.has_value()) {
+      error_ = "the durable installation outcome cannot be authoritatively reread";
+      return;
+    }
+    auto decoded = decode(read.snapshot->state.value.payload);
+    if (!decoded.has_value() || !decoded->active.has_value()) {
+      error_ = "the durable installation outcome cannot be reconstructed";
+      return;
+    }
+    active_ = std::move(decoded->active);
+    history_ = std::move(decoded->history);
+    revision_ = read.snapshot->revision;
+    active_->state = batch_domain::InstallationBatchState::recovery_required;
+    error_ = "the durable installation outcome requires read-only recovery";
   }
 
   DeviceStateStore& states_;
@@ -1512,6 +1763,7 @@ class InstallationBatchService::Impl final {
   std::vector<batch_domain::InstallationBatchHistory> history_;
   bool writable_{false};
   std::string error_;
+  OccupancyResultCode last_lease_acquire_code_{OccupancyResultCode::storage_error};
 };
 
 InstallationBatchService::InstallationBatchService(
@@ -1554,8 +1806,9 @@ InstallationBatchActionResult InstallationBatchService::advance() {
   return impl_->advance();
 }
 
-InstallationBatchActionResult InstallationBatchService::retry_current() {
-  return impl_->retry_current();
+InstallationBatchActionResult InstallationBatchService::retry_current(
+    batch_domain::FrozenBatchPlan retry_plan) {
+  return impl_->retry_current(std::move(retry_plan));
 }
 
 InstallationBatchActionResult

@@ -91,11 +91,45 @@ struct ControlledInstallerObservation final {
   std::string detail;
 };
 
+enum class InstallerCompletionCode {
+  running,
+  completed,
+  interaction_required,
+  unknown,
+  failed,
+};
+
+// A process exit is not sufficient when the frozen profile declares a
+// controlled post-install behavior. That behavior supplies its own fact.
+enum class PostInstallCompletionCode {
+  not_required,
+  completed,
+  pending,
+  unknown,
+  failed,
+};
+
+// Launch and completion are deliberately separate facts. A later observation
+// must never repeat the launch effect, and result verification is authorized
+// only after the project-owned executor has reported completed.
+struct ControlledInstallerCompletionRequest final {
+  InstallationEffectTarget target;
+  std::optional<std::string> opaque_operation_handle;
+};
+
+struct ControlledInstallerCompletionObservation final {
+  InstallerCompletionCode code{InstallerCompletionCode::unknown};
+  PostInstallCompletionCode post_install{PostInstallCompletionCode::unknown};
+  std::string detail;
+};
+
 class ControlledInstallerExecutor {
  public:
   virtual ~ControlledInstallerExecutor() = default;
   [[nodiscard]] virtual ControlledInstallerObservation launch(
       ControlledInstallerLaunch const& request) = 0;
+  [[nodiscard]] virtual ControlledInstallerCompletionObservation observe_completion(
+      ControlledInstallerCompletionRequest const& request) = 0;
 };
 
 enum class ControlledProfileReadinessCode {
@@ -257,7 +291,8 @@ class InstallationBatchService final {
   [[nodiscard]] InstallationBatchActionResult create(
       batch_domain::FrozenBatchPlan plan);
   [[nodiscard]] InstallationBatchActionResult advance();
-  [[nodiscard]] InstallationBatchActionResult retry_current();
+  [[nodiscard]] InstallationBatchActionResult retry_current(
+      batch_domain::FrozenBatchPlan retry_plan);
   [[nodiscard]] InstallationBatchActionResult complete_current_installer_interaction();
   [[nodiscard]] InstallationBatchActionResult confirm_current_complete();
   [[nodiscard]] InstallationBatchActionResult stop_current();
