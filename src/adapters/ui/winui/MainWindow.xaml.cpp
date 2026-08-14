@@ -186,6 +186,13 @@ void MainWindow::navigate_to(PageId page) {
     case PageId::software_optimization:
       ContentFrame().Navigate(xaml_typename<Pages::SoftwareOptimizationPage>(),
                               nullptr, transition);
+      if (auto const services = workbench_->services()) {
+        auto const page = ContentFrame()
+                              .Content()
+                              .as<Pages::SoftwareOptimizationPage>();
+        winrt::get_self<Pages::implementation::SoftwareOptimizationPage>(page)
+            ->bind(services->software_optimization_discovery(), advanced_view_);
+      }
       break;
     case PageId::history_and_logs:
       ContentFrame().Navigate(xaml_typename<Pages::HistoryAndLogsPage>(), nullptr,
