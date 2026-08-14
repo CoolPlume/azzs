@@ -11,6 +11,7 @@
 
 #include "motion_contract.hpp"
 #include "presentation_contract.hpp"
+#include "guided_initialization_presentation.hpp"
 #include "software_selection_presentation.hpp"
 #include "Fixtures/design_system_fixture.hpp"
 #include "azzs/application/advanced_view_preferences.hpp"
@@ -470,6 +471,80 @@ class InMemoryAdvancedViewPreferenceStore final
   return passed;
 }
 
+[[nodiscard]] bool verify_guided_initialization_projection() {
+  namespace guided = azzs::application::guided_initialization;
+
+  guided::Snapshot source;
+  source.mode = guided::LifecycleMode::ready;
+  source.writable = true;
+  source.active = guided::FlowRecord{
+      .id = "guided-1",
+      .state = guided::FlowState::awaiting_restart_continue,
+      .current_stage = guided::Stage::system_optimization,
+      .stages = {{
+          {.stage = guided::Stage::drivers,
+           .state = guided::StageState::completed},
+          {.stage = guided::Stage::system_optimization,
+           .state = guided::StageState::waiting_for_restart,
+           .detail = "restart verification is complete"},
+          {.stage = guided::Stage::software_installation},
+          {.stage = guided::Stage::software_optimization},
+      }},
+  };
+  source.evidence.restart_gate = guided::RestartGateState::awaiting_user_continue;
+
+  auto projected =
+      azzs::ui::presentation::make_guided_initialization_presentation(source);
+  auto const* restart_stage =
+      projected->find_component("guided.stage.system-optimization");
+  bool passed = expect(restart_stage != nullptr,
+                       "guided projection must expose the current restart stage");
+  bool has_restart_continue = false;
+  if (restart_stage != nullptr) {
+    auto const restart_continue = std::ranges::find_if(
+        restart_stage->commands, [](auto const& command) {
+          return command.id == "continue";
+        });
+    has_restart_continue =
+        restart_continue != restart_stage->commands.end() &&
+        restart_continue->default_focus &&
+        restart_continue->intent.kind == IntentKind::continue_workflow;
+  }
+  passed &= expect(
+      has_restart_continue,
+      "restart verification must expose an explicit focused continue command");
+
+  source.active->state = guided::FlowState::active;
+  source.active->current_stage = guided::Stage::drivers;
+  source.active->stages[0].state = guided::StageState::failed;
+  source.evidence.restart_gate = guided::RestartGateState::none;
+  projected =
+      azzs::ui::presentation::make_guided_initialization_presentation(source);
+  auto const* failed_stage = projected->find_component("guided.stage.drivers");
+  bool has_retry = false;
+  if (failed_stage != nullptr) {
+    auto const retry = std::ranges::find_if(
+        failed_stage->commands,
+        [](auto const& command) { return command.id == "retry"; });
+    has_retry = retry != failed_stage->commands.end() &&
+                retry->intent.kind == IntentKind::retry;
+  }
+  passed &= expect(has_retry, "failed guided stages must expose a typed retry intent");
+
+  auto const* summary = projected->find_component("guided.summary");
+  bool has_history = false;
+  if (summary != nullptr) {
+    auto const history = std::ranges::find_if(
+        summary->commands,
+        [](auto const& command) { return command.id == "history"; });
+    has_history = history != summary->commands.end() &&
+                  history->intent.kind == IntentKind::open_details;
+  }
+  passed &= expect(has_history,
+                   "guided summary must expose a typed history and logs entry");
+  return passed;
+}
+
 [[nodiscard]] bool verify_advanced_view_preference_fallback() {
   bool passed = true;
   auto store = std::make_shared<InMemoryAdvancedViewPreferenceStore>();
@@ -504,6 +579,7 @@ int main() {
   passed &= verify_fixture_contract();
   passed &= verify_offline_package_cache_projection();
   passed &= verify_software_selection_empty_catalog_projection();
+  passed &= verify_guided_initialization_projection();
   passed &= verify_advanced_view_preference_fallback();
   if (!passed) {
     return EXIT_FAILURE;

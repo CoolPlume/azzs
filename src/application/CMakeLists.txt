@@ -67,3 +67,5 @@ add_subdirectory(software-optimization-batch-runner)
 add_subdirectory(history-and-logs)
 
 add_subdirectory(settings_catalog)
+
+add_subdirectory(guided-initialization)
