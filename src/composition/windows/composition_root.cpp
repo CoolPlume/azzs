@@ -573,7 +573,7 @@ class WindowsWorkbenchServices final
       clock_, application_updates_, platform_info_, hardware_overview_,
       software_catalog_, log_, installation_batches_,
       software_optimization_batches_, system_settings_apply_,
-      software_selection_};
+      software_selection_, nullptr, &restart_resume_};
 };
 
 }  // namespace

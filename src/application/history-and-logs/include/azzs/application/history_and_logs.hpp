@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "azzs/application/execution_log.hpp"
@@ -25,6 +27,10 @@ namespace software_selection {
 class SoftwareSelectionLifecycle;
 }
 
+namespace restart_resume {
+class RestartResumeService;
+}
+
 namespace software_catalog {
 class SoftwareCatalogLifecycle;
 }
@@ -32,8 +38,44 @@ class SoftwareCatalogLifecycle;
 enum class HistoryEntryKind {
   installation_batch,
   software_optimization_batch,
+  system_setting_apply,
   system_setting_recovery,
   external_install_handoff,
+  restart_resume,
+  application_update,
+};
+
+// A history fact is either a retained, already-observed value or an explicit
+// statement that the owning subsystem could not provide it. Consumers must
+// never replace a missing fact with a guessed value.
+enum class HistoryFactDisposition {
+  obtained,
+  not_obtained,
+};
+
+struct HistoryFactProjection final {
+  std::string key;
+  std::string value;
+  HistoryFactDisposition disposition{HistoryFactDisposition::not_obtained};
+  std::string reason;
+};
+
+enum class HistoryTimelineKind {
+  snapshot,
+  user_command,
+  state_transition,
+  adapter_result,
+  recovery,
+  external_handoff,
+  coverage_gap,
+};
+
+struct HistoryTimelineProjection final {
+  HistoryTimelineKind kind{HistoryTimelineKind::snapshot};
+  std::optional<std::int64_t> recorded_at_milliseconds;
+  std::string state;
+  std::string detail;
+  std::vector<HistoryFactProjection> facts;
 };
 
 struct HistoryEntryProjection final {
@@ -42,11 +84,38 @@ struct HistoryEntryProjection final {
   std::string state;
   std::string detail;
   bool retry{false};
+  std::vector<HistoryFactProjection> facts;
+  std::vector<HistoryTimelineProjection> timeline;
+};
+
+// Issue 32 owns the editable debug preference. History only consumes this
+// projection so turning debug mode off cannot erase previously persisted logs.
+struct DebugLogStatusProjection final {
+  bool available{false};
+  bool enabled{false};
+  std::string granularity;
+  std::string detail;
+};
+
+class DebugLogStatusSource {
+ public:
+  virtual ~DebugLogStatusSource() = default;
+  [[nodiscard]] virtual DebugLogStatusProjection snapshot() const = 0;
+};
+
+struct HistoryAndLogsFilter final {
+  std::string query;
+  std::optional<HistoryEntryKind> history_kind;
+  std::optional<ExecutionEventKind> event_kind;
+  std::optional<ExecutionResult> event_result;
+  std::string correlation_id;
 };
 
 struct HistoryAndLogsSnapshot final {
   std::vector<HistoryEntryProjection> history;
   ExecutionLogSnapshot log;
+  DebugLogStatusProjection debug;
+  HistoryAndLogsFilter applied_filter;
   std::string detail;
 };
 
@@ -78,9 +147,14 @@ class HistoryAndLogsService final {
       software_optimization_batch::SoftwareOptimizationBatchService&
           software_optimization_batches,
       SystemSettingsApplyService& system_settings,
-      software_selection::SoftwareSelectionLifecycle& software_selection);
+      software_selection::SoftwareSelectionLifecycle& software_selection,
+      DebugLogStatusSource const* debug_log_status = nullptr,
+      restart_resume::RestartResumeService const* restart_resume = nullptr);
 
   [[nodiscard]] HistoryAndLogsSnapshot refresh();
+  [[nodiscard]] HistoryAndLogsSnapshot refresh(
+      HistoryAndLogsFilter const& filter);
+  [[nodiscard]] HistoryAndLogsSnapshot locate(std::string_view stable_id);
   [[nodiscard]] HistoryAndLogsActionResult clear_logs();
   [[nodiscard]] HistoryAndLogsActionResult export_diagnostic();
 
@@ -99,8 +173,12 @@ class HistoryAndLogsService final {
       software_optimization_batches_;
   SystemSettingsApplyService& system_settings_;
   software_selection::SoftwareSelectionLifecycle& software_selection_;
+  DebugLogStatusSource const* debug_log_status_{};
+  restart_resume::RestartResumeService const* restart_resume_{};
 };
 
 [[nodiscard]] char const* to_string(HistoryEntryKind value) noexcept;
+[[nodiscard]] char const* to_string(HistoryFactDisposition value) noexcept;
+[[nodiscard]] char const* to_string(HistoryTimelineKind value) noexcept;
 
 }  // namespace azzs::application

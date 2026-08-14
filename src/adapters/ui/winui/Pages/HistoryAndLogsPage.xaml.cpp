@@ -22,8 +22,10 @@ namespace {
 using azzs::application::ExecutionEventKind;
 using azzs::application::ExecutionResult;
 using azzs::application::HistoryAndLogsActionCode;
+using azzs::application::HistoryAndLogsFilter;
 using azzs::application::HistoryAndLogsSnapshot;
 using azzs::application::HistoryEntryKind;
+using azzs::application::HistoryFactDisposition;
 using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
@@ -59,11 +61,17 @@ void replace_token(std::wstring& value, std::wstring_view token,
     case HistoryEntryKind::software_optimization_batch:
       return resource_string(
           L"HistoryAndLogsHistoryKindSoftwareOptimizationBatch");
+    case HistoryEntryKind::system_setting_apply:
+      return resource_string(L"HistoryAndLogsHistoryKindSystemSettingApply");
     case HistoryEntryKind::system_setting_recovery:
       return resource_string(
           L"HistoryAndLogsHistoryKindSystemSettingRecovery");
     case HistoryEntryKind::external_install_handoff:
       return resource_string(L"HistoryAndLogsHistoryKindExternalInstallHandoff");
+    case HistoryEntryKind::restart_resume:
+      return resource_string(L"HistoryAndLogsHistoryKindRestartResume");
+    case HistoryEntryKind::application_update:
+      return resource_string(L"HistoryAndLogsHistoryKindApplicationUpdate");
   }
   return resource_string(L"HistoryAndLogsHistoryKindUnknown");
 }
@@ -122,6 +130,47 @@ void append_row(StackPanel const& target, winrt::hstring const& title,
   target.Children().Append(row);
 }
 
+[[nodiscard]] std::string history_detail_text(
+    azzs::application::HistoryEntryProjection const& entry) {
+  std::string detail = entry.detail;
+  auto append_line = [&](std::string const& line) {
+    if (!detail.empty()) {
+      detail += "\n";
+    }
+    detail += line;
+  };
+  auto append_fact = [&](azzs::application::HistoryFactProjection const& fact) {
+    auto line = fact.key + ": ";
+    if (fact.disposition == HistoryFactDisposition::obtained) {
+      line += fact.value;
+    } else {
+      line += winrt::to_string(resource_string(L"HistoryAndLogsNotObtained"));
+      if (!fact.reason.empty()) {
+        line += " (" + fact.reason + ")";
+      }
+    }
+    append_line(line);
+  };
+  for (auto const& fact : entry.facts) {
+    append_fact(fact);
+  }
+  for (auto const& timeline : entry.timeline) {
+    auto line = std::string{azzs::application::to_string(timeline.kind)} +
+                " | " + timeline.state;
+    if (timeline.recorded_at_milliseconds.has_value()) {
+      line += " | " + std::to_string(*timeline.recorded_at_milliseconds);
+    }
+    if (!timeline.detail.empty()) {
+      line += " | " + timeline.detail;
+    }
+    append_line(line);
+    for (auto const& fact : timeline.facts) {
+      append_fact(fact);
+    }
+  }
+  return detail;
+}
+
 }  // namespace
 
 HistoryAndLogsPage::HistoryAndLogsPage() {
@@ -138,7 +187,17 @@ void HistoryAndLogsPage::OnRefresh(
     winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
   if (service_ != nullptr) {
-    project(service_->refresh());
+    project(service_->refresh(
+        HistoryAndLogsFilter{.query = winrt::to_string(FilterTextBox().Text())}));
+  }
+}
+
+void HistoryAndLogsPage::OnFilterChanged(
+    winrt::Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&) {
+  if (service_ != nullptr) {
+    project(service_->refresh(
+        HistoryAndLogsFilter{.query = winrt::to_string(FilterTextBox().Text())}));
   }
 }
 
@@ -221,7 +280,7 @@ void HistoryAndLogsPage::project(HistoryAndLogsSnapshot const& snapshot) {
       state += std::wstring{resource_string(L"HistoryAndLogsRetrySuffix")};
     }
     append_row(HistoryItems(), winrt::hstring{title}, winrt::hstring{state},
-               winrt::to_hstring(entry.detail));
+               winrt::to_hstring(history_detail_text(entry)));
   }
   HistoryEmptyText().Visibility(
       snapshot.history.empty() ? Microsoft::UI::Xaml::Visibility::Visible
@@ -258,6 +317,22 @@ void HistoryAndLogsPage::project(HistoryAndLogsSnapshot const& snapshot) {
                 std::to_wstring(snapshot.log.durable_bytes));
   replace_token(preview, L"{gaps}",
                 std::to_wstring(snapshot.log.coverage_gap_count));
+  preview += L"\n";
+  preview += std::wstring{resource_string(L"HistoryAndLogsDebugStatus")};
+  replace_token(preview, L"{state}",
+                snapshot.debug.available
+                    ? (snapshot.debug.enabled
+                           ? std::wstring{resource_string(
+                                 L"HistoryAndLogsDebugEnabled")}
+                           : std::wstring{resource_string(
+                                 L"HistoryAndLogsDebugDisabled")})
+                    : std::wstring{resource_string(
+                          L"HistoryAndLogsNotObtained")});
+  replace_token(preview, L"{granularity}",
+                snapshot.debug.granularity.empty()
+                    ? std::wstring{resource_string(L"HistoryAndLogsNotObtained")}
+                    : std::wstring{winrt::to_hstring(snapshot.debug.granularity)
+                                       .c_str()});
   DiagnosticPreviewText().Text(winrt::hstring{preview});
   AutomationProperties::SetName(DiagnosticPreviewText(), winrt::hstring{preview});
   for (auto const& event : snapshot.log.events) {
