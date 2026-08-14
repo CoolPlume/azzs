@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "azzs/application/software_optimization_discovery.hpp"
+#include "azzs/application/restart_resume.hpp"
 #include "azzs/domain/software_optimization_batch.hpp"
 
 namespace azzs::application {
@@ -208,7 +209,8 @@ class SoftwareOptimizationBatchService final {
       DeviceStateStore& states, SharedOperationOccupancy& occupancy,
       ExecutionLog& log, SoftwareOptimizationBatchPlanSource& plans,
       SoftwareOptimizationStepExecutor& executor,
-      SoftwareOptimizationWithdrawalAuthorization& withdrawals);
+      SoftwareOptimizationWithdrawalAuthorization& withdrawals,
+      restart_resume::RestartResumeService* restart_resume = nullptr);
   ~SoftwareOptimizationBatchService();
 
   [[nodiscard]] OptimizationBatchActionResult restore();
