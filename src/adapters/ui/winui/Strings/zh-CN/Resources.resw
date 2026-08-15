@@ -73,7 +73,9 @@
   <data name="FixedDriverEntrypointsDescription.Text" xml:space="preserve"><value>这些入口只会交接到官方页面；硬件未识别时仍可使用。</value></data>
   <data name="RescueToolFoldersTitle.Text" xml:space="preserve"><value>离线救援工具目录</value></data>
   <data name="RescueToolFoldersDescription.Text" xml:space="preserve"><value>只打开工作台旁的固定目录；完成外部操作后，请返回记录实际结果。</value></data>
+  <data name="GenericNetworkDriverRescueDisplayName.Text" xml:space="preserve"><value>通用网卡驱动救援工具</value></data>
   <data name="GenericNetworkDriverRescueButton.Text" xml:space="preserve"><value>打开通用网卡驱动工具目录</value></data>
+  <data name="OfflineNetworkDiagnosticsRescueDisplayName.Text" xml:space="preserve"><value>断网诊断与修复工具</value></data>
   <data name="OfflineNetworkDiagnosticsRescueButton.Text" xml:space="preserve"><value>打开断网诊断工具目录</value></data>
   <data name="DriverAssistantTitle.Text" xml:space="preserve"><value>精选驱动助手</value></data>
   <data name="DriverAssistantDescription.Text" xml:space="preserve"><value>AMD Software 由其官方页面或本机已安装程序接手。工作台不下载、匹配或安装驱动包。</value></data>

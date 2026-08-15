@@ -189,6 +189,7 @@
                 <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
                     <TextBlock x:Uid="RescueToolFoldersTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
                     <TextBlock x:Uid="RescueToolFoldersDescription" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="GenericNetworkDriverRescueDisplayName" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                     <Button
                         x:Name="GenericNetworkDriverRescueButton"
                         AutomationProperties.AutomationId="AzzsGenericNetworkDriverRescueFolder"
@@ -196,6 +197,7 @@
                         Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
                         <TextBlock x:Uid="GenericNetworkDriverRescueButton" />
                     </Button>
+                    <TextBlock x:Uid="OfflineNetworkDiagnosticsRescueDisplayName" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                     <Button
                         x:Name="OfflineNetworkDiagnosticsRescueButton"
                         AutomationProperties.AutomationId="AzzsOfflineNetworkDiagnosticsRescueFolder"
