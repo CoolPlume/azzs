@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "MainWindow.g.h"
+#include <winrt/Microsoft.UI.Windowing.h>
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/workbench.hpp"
 
@@ -14,6 +15,9 @@ class MotionPreferences;
 namespace azzs::application {
 class AdvancedViewPreferences;
 class SystemSettingsApplyService;
+namespace software_catalog {
+struct CatalogActionResult;
+}
 }
 
 namespace winrt::Azzs::Ui::implementation {
@@ -32,6 +36,12 @@ struct MainWindow : MainWindowT<MainWindow> {
       Microsoft::UI::Xaml::Controls::NavigationView const&,
       Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&
           args);
+  void OnWindowClosing(
+      Microsoft::UI::Windowing::AppWindow const&,
+      Microsoft::UI::Windowing::AppWindowClosingEventArgs const& args);
+  void OnContinueRecoveredCatalogEditorClick(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
 
  private:
   [[nodiscard]] std::optional<azzs::application::PageId> page_for_item(
@@ -46,6 +56,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   void project_drivers_page(
       azzs::application::driver_acquisition::DriverAcquisitionSnapshot const&
           driver_snapshot);
+  winrt::fire_and_forget confirm_catalog_close();
+  void restore_catalog_editor_after_close(
+      azzs::application::software_catalog::CatalogActionResult const& result);
   [[nodiscard]] bool set_advanced_view(bool enabled);
   void project(azzs::application::WorkbenchSnapshot const& snapshot);
 
@@ -56,6 +69,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::shared_ptr<azzs::application::AdvancedViewPreferences>
       advanced_view_preferences_;
   bool advanced_view_{false};
+  bool catalog_close_dialog_open_{false};
+  bool allow_window_close_{false};
+  std::optional<azzs::application::PageId> displayed_page_;
 };
 
 }  // namespace winrt::Azzs::Ui::implementation

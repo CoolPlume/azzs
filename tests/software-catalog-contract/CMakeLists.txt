@@ -15,6 +15,7 @@ azzs_project_target(
     azzs::software_catalog_application
     azzs::software_catalog_domain
     azzs::application
+    azzs::application_settings_application
     azzs::test_support
 )
 

@@ -147,6 +147,26 @@ struct ExecutionLogReceipt final {
   std::string error;
 };
 
+// Logging remains centralized even when a caller requests the richer debug
+// projection. Adapters that cannot change their diagnostic detail report that
+// fact instead of letting a settings surface infer a successful request.
+enum class ExecutionLogDebugModeStatus {
+  applied,
+  unavailable,
+};
+
+struct ExecutionLogDebugModeResult final {
+  ExecutionLogDebugModeStatus status{ExecutionLogDebugModeStatus::unavailable};
+  bool enabled{false};
+  std::string error;
+};
+
+struct ExecutionLogDebugModeRead final {
+  bool available{false};
+  bool enabled{false};
+  std::string error;
+};
+
 struct ExecutionLogClearReceipt final {
   bool cleared{false};
   std::uint64_t cutoff_segment{0};
@@ -222,6 +242,14 @@ class ExecutionLog {
   [[nodiscard]] virtual CorrelationId begin_correlation() = 0;
   [[nodiscard]] virtual ExecutionLogReceipt append(
       CorrelationId const& correlation, ExecutionEvent const& event) = 0;
+  [[nodiscard]] virtual ExecutionLogDebugModeResult set_debug_mode(
+      bool enabled) {
+    return {.enabled = enabled,
+            .error = "execution log debug-mode control is unavailable"};
+  }
+  [[nodiscard]] virtual ExecutionLogDebugModeRead debug_mode() const {
+    return {.error = "execution log debug-mode state is unavailable"};
+  }
   // Test fakes that only record writes may retain the empty default. Production
   // adapters override it with a parsed, centrally redacted projection.
   [[nodiscard]] virtual ExecutionLogSnapshot snapshot() { return {}; }

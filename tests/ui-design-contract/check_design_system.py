@@ -289,7 +289,7 @@ def verify_app_and_pages(root: Path) -> None:
             "App.xaml must merge the design dictionary after framework resources")
 
     page_paths = sorted((ui_root / "Pages").glob("*.xaml"))
-    require(len(page_paths) == 7, "the shared design contract expects seven pages")
+    require(len(page_paths) == 8, "the shared design contract expects eight pages")
     for page_path in page_paths:
         text = read(page_path)
         require("AzzsPageScrollViewerStyle" in text and
@@ -737,6 +737,29 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     require(required_settings_resources <= resource_names,
             "application settings must retain localized section and confirmation text")
 
+    required_catalog_editor_resources = {
+        "SoftwareCatalogEditorNewCategory",
+        "SoftwareCatalogEditorNewSoftware",
+        "SoftwareCatalogEditorNewSoftwareBranch",
+        "SoftwareCatalogEditorSourcePurposeUnassigned",
+        "SoftwareCatalogEditorDisabledSuffix",
+        "SoftwareCatalogEditorImportPreviewFailed",
+        "SoftwareCatalogEditorImportPreviewPath",
+        "SoftwareCatalogEditorImportPreviewRevision",
+        "SoftwareCatalogEditorImportPreviewItemCount",
+        "SoftwareCatalogEditorImportPreviewFutureOperations",
+        "SoftwareCatalogEditorImportPreviewDowngrade",
+        "SoftwareCatalogEditorImportPreviewAffectedItems",
+        "SoftwareCatalogEditorActionSucceeded",
+        "SoftwareCatalogEditorActionDebugModeRequired",
+        "SoftwareCatalogEditorIssueMalformedToml",
+        "MainWindowRecoveredCatalogEditor.Title",
+        "MainWindowRecoveredCatalogEditor.Message",
+        "MainWindowContinueRecoveredCatalogEditor.Content",
+    }
+    require(required_catalog_editor_resources <= resource_names,
+            "catalog-editor and recovered-editor text must remain localized")
+
     fixture_xaml = read(root / (
         "src/adapters/ui/winui/DesignSystem/Fixtures/"
         "DesignSystemFixturePage.xaml"
@@ -754,13 +777,27 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "src/application/application-settings/include/azzs/application/"
         "application_settings.hpp"
     ))
+    debug_editor_header = read(root / (
+        "src/application/application-settings/include/azzs/application/"
+        "debug_mode_catalog_editor.hpp"
+    ))
+    debug_editor_cpp = read(root / (
+        "src/application/application-settings/src/debug_mode_catalog_editor.cpp"
+    ))
     settings_service_cpp = read(root / (
         "src/application/application-settings/src/application_settings.cpp"
     ))
     workbench_services_header = read(root / (
         "src/application/include/azzs/application/workbench_services.hpp"
     ))
+    main_window_xaml = read(root / "src/adapters/ui/winui/MainWindow.xaml")
     main_window_cpp = read(root / "src/adapters/ui/winui/MainWindow.xaml.cpp")
+    catalog_editor_xaml = read(root / (
+        "src/adapters/ui/winui/Pages/SoftwareCatalogEditorPage.xaml"
+    ))
+    catalog_editor_cpp = read(root / (
+        "src/adapters/ui/winui/Pages/SoftwareCatalogEditorPage.xaml.cpp"
+    ))
     composition_root_cpp = read(root / "src/composition/windows/composition_root.cpp")
     view_preferences_cpp = read(root / (
         "src/adapters/windows/src/windows_view_preferences.cpp"
@@ -811,11 +848,54 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
                 "Storyboard", "ConnectedAnimation", "CompositionAnimation")),
             "application settings must keep high-frequency settings changes static")
     require("ApplicationSettingsDebugProvider" in settings_service_header and
-            "UnavailableApplicationSettingsDebugProvider" in composition_root_cpp and
-            "application_settings()" in workbench_services_header and
-            "application_settings()" in main_window_cpp and
+            "DebugModeCatalogEditor final" in debug_editor_header and
+            "public ApplicationSettingsDebugProvider" in debug_editor_header and
+            "std::make_shared<application::DebugModeCatalogEditor>" in composition_root_cpp and
+            "debug_mode_catalog_editor_.get()" in composition_root_cpp and
+            "bind_catalog_lifecycle(software_catalog_)" in composition_root_cpp and
+            "debug_mode_catalog_editor()" in workbench_services_header and
+            "debug_mode_catalog_editor()" in main_window_cpp and
             "requires_explicit_confirmation" in settings_service_cpp,
-            "settings must use injected debug ownership and application confirmation gates")
+            "settings must use one injected debug owner and application confirmation gates")
+    require("enum class CatalogEditorTemporaryAccessReason" in debug_editor_header and
+            "recovered_unsaved_continue" in debug_editor_header and
+            "close_return" in debug_editor_header and
+            "lifecycle_ == nullptr" in debug_editor_cpp and
+            "begin_temporary_close_recovery" in main_window_cpp and
+            "end_temporary_close_recovery()" in main_window_cpp and
+            main_window_cpp.count("end_temporary_close_recovery()") >= 2,
+            "temporary catalog authority must be typed, lifecycle-bound, and revoked on close or navigation")
+    require("RecoveredCatalogEditorInfoBar" in main_window_xaml and
+            "AzzsRecoveredCatalogEditorInfoBar" in main_window_xaml and
+            "AzzsContinueRecoveredCatalogEditor" in main_window_xaml and
+            "OnContinueRecoveredCatalogEditorClick" in main_window_xaml and
+            "recovered_unsaved_continue" in main_window_cpp and
+            "recovered_editor_available" in main_window_cpp and
+            "!debug.enabled" in main_window_cpp,
+            "a hidden debug editor must expose only a static recovered-draft continuation entry")
+    require("TextChanged=\"OnImportPathChanged\"" in catalog_editor_xaml and
+            "AzzsSoftwareCatalogEditorImportPreview" in catalog_editor_xaml and
+            "clear_import_preview()" in catalog_editor_cpp and
+            "pending_import_token_.clear()" in catalog_editor_cpp and
+            "preview_manual_import" in catalog_editor_cpp and
+            "project_import_preview" in catalog_editor_cpp,
+            "catalog import preview must be invalidated when its path or result changes")
+    require("catalog_action_key(result.code)" in catalog_editor_cpp and
+            "set_status(winrt::to_hstring(result.message)" not in catalog_editor_cpp and
+            "SoftwareCatalogEditorSourcePurposeUnassigned" in catalog_editor_cpp and
+            "SoftwareCatalogEditorDisabledSuffix" in catalog_editor_cpp and
+            "auto const selected_id = selected_software_id();" in catalog_editor_cpp and
+            catalog_editor_cpp.index("auto const selected_id = selected_software_id();") <
+            catalog_editor_cpp.index("document_ = source;") and
+            "project_document(selected_id);" in catalog_editor_cpp and
+            "project_document(selected_software_id());" in catalog_editor_cpp and
+            "document_index < document_->software.size()" in catalog_editor_cpp and
+            "selected_category_id" in catalog_editor_cpp,
+            "catalog editor projection must preserve stable selections and localize core action text")
+    require(not any(token in main_window_xaml or token in main_window_cpp or
+                    token in catalog_editor_xaml or token in catalog_editor_cpp
+                    for token in ("Storyboard", "ConnectedAnimation", "CompositionAnimation")),
+            "catalog editor recovery and high-frequency editing must remain static")
 
 
 def main() -> int:

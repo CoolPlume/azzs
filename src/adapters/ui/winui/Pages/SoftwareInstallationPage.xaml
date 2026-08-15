@@ -23,6 +23,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="SoftwareInstallationPageTitle"
@@ -31,15 +32,25 @@
                 AutomationProperties.HeadingLevel="Level1"
                 Style="{StaticResource AzzsPageTitleTextStyle}"
                 TextWrapping="Wrap" />
+            <InfoBar
+                x:Name="LocalTrialInfoBar"
+                x:Uid="SoftwareInstallationLocalTrial"
+                Grid.Row="1"
+                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
+                AutomationProperties.AutomationId="AzzsSoftwareInstallationLocalTrial"
+                IsClosable="False"
+                IsOpen="False"
+                Severity="Warning"
+                Style="{StaticResource AzzsWarningStatusBandStyle}" />
             <controls:ReadOnlyPresentationSurface
                 x:Name="SoftwareSelectionStatus"
-                Grid.Row="1" />
-            <controls:ReadOnlyPresentationSurface
-                x:Name="OfflinePackageCacheStatus"
                 Grid.Row="2" />
             <controls:ReadOnlyPresentationSurface
-                x:Name="InstallationBatchStatus"
+                x:Name="OfflinePackageCacheStatus"
                 Grid.Row="3" />
+            <controls:ReadOnlyPresentationSurface
+                x:Name="InstallationBatchStatus"
+                Grid.Row="4" />
         </Grid>
     </ScrollViewer>
 </Page>

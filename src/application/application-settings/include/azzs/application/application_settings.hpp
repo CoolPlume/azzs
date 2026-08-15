@@ -8,6 +8,7 @@
 
 #include "azzs/application/application_settings_preferences.hpp"
 #include "azzs/application/architecture_selection.hpp"
+#include "azzs/application/debug_log_policy/debug_log_policy.hpp"
 #include "azzs/application/history_and_logs.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
@@ -24,6 +25,8 @@ struct ApplicationSettingsDebugSnapshot final {
   bool enabled{false};
   bool catalog_editor_available{false};
   bool manual_catalog_import_available{false};
+  DebugLogGranularity log_granularity{DebugLogGranularity::unavailable};
+  bool temporary_close_recovery{false};
   std::string detail;
 };
 
