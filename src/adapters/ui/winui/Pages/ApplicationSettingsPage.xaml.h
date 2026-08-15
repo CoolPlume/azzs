@@ -14,13 +14,15 @@ namespace winrt::Azzs::Ui::Pages::implementation {
 struct ApplicationSettingsPage
     : ApplicationSettingsPageT<ApplicationSettingsPage> {
   using AdvancedViewChangedHandler = std::function<bool(bool)>;
+  using CatalogEditorRequestedHandler = std::function<void()>;
 
   ApplicationSettingsPage();
 
   void bind(std::shared_ptr<azzs::application::Workbench> workbench,
             azzs::application::ApplicationSettingsService& settings,
             bool advanced_view,
-            AdvancedViewChangedHandler advanced_view_changed);
+            AdvancedViewChangedHandler advanced_view_changed,
+            CatalogEditorRequestedHandler catalog_editor_requested);
   void OnAdvancedViewToggled(
        Windows::Foundation::IInspectable const&,
        Microsoft::UI::Xaml::RoutedEventArgs const&);
@@ -51,6 +53,9 @@ struct ApplicationSettingsPage
   void OnDebugModeToggled(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnOpenCatalogEditorClick(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnApplicationUpdateCommandClick(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
@@ -79,6 +84,7 @@ struct ApplicationSettingsPage
   std::shared_ptr<azzs::application::Workbench> workbench_;
   azzs::application::ApplicationSettingsService* settings_{};
   AdvancedViewChangedHandler advanced_view_changed_;
+  CatalogEditorRequestedHandler catalog_editor_requested_;
   std::vector<azzs::application::SystemSettingsRecoveryRecord>
       recovery_records_;
   bool advanced_view_{false};

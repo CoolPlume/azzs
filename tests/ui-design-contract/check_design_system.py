@@ -289,7 +289,7 @@ def verify_app_and_pages(root: Path) -> None:
             "App.xaml must merge the design dictionary after framework resources")
 
     page_paths = sorted((ui_root / "Pages").glob("*.xaml"))
-    require(len(page_paths) == 7, "the shared design contract expects seven pages")
+    require(len(page_paths) == 8, "the shared design contract expects eight pages")
     for page_path in page_paths:
         text = read(page_path)
         require("AzzsPageScrollViewerStyle" in text and
@@ -737,6 +737,14 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     require(required_settings_resources <= resource_names,
             "application settings must retain localized section and confirmation text")
 
+    required_catalog_editor_resources = {
+        "SoftwareCatalogEditorNewCategory",
+        "SoftwareCatalogEditorNewSoftware",
+        "SoftwareCatalogEditorNewSoftwareBranch",
+    }
+    require(required_catalog_editor_resources <= resource_names,
+            "catalog-editor default names must remain localized")
+
     fixture_xaml = read(root / (
         "src/adapters/ui/winui/DesignSystem/Fixtures/"
         "DesignSystemFixturePage.xaml"
@@ -753,6 +761,10 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     settings_service_header = read(root / (
         "src/application/application-settings/include/azzs/application/"
         "application_settings.hpp"
+    ))
+    debug_editor_header = read(root / (
+        "src/application/application-settings/include/azzs/application/"
+        "debug_mode_catalog_editor.hpp"
     ))
     settings_service_cpp = read(root / (
         "src/application/application-settings/src/application_settings.cpp"
@@ -811,11 +823,15 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
                 "Storyboard", "ConnectedAnimation", "CompositionAnimation")),
             "application settings must keep high-frequency settings changes static")
     require("ApplicationSettingsDebugProvider" in settings_service_header and
-            "UnavailableApplicationSettingsDebugProvider" in composition_root_cpp and
-            "application_settings()" in workbench_services_header and
-            "application_settings()" in main_window_cpp and
+            "DebugModeCatalogEditor final" in debug_editor_header and
+            "public ApplicationSettingsDebugProvider" in debug_editor_header and
+            "std::make_shared<application::DebugModeCatalogEditor>" in composition_root_cpp and
+            "debug_mode_catalog_editor_.get()" in composition_root_cpp and
+            "bind_catalog_lifecycle(software_catalog_)" in composition_root_cpp and
+            "debug_mode_catalog_editor()" in workbench_services_header and
+            "debug_mode_catalog_editor()" in main_window_cpp and
             "requires_explicit_confirmation" in settings_service_cpp,
-            "settings must use injected debug ownership and application confirmation gates")
+            "settings must use one injected debug owner and application confirmation gates")
 
 
 def main() -> int:
