@@ -26,6 +26,7 @@ add_subdirectory(emergency-withdrawal-contract)
 add_subdirectory(guided-initialization-contract)
 add_subdirectory(ui-design-contract)
 add_subdirectory(product-identity-contract)
+add_subdirectory(portable-package-contract)
 
 if(WIN32)
   add_subdirectory(windows-device-data-contract)
