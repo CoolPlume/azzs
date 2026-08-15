@@ -30,7 +30,14 @@ if (Test-Path -LiteralPath $stagingDirectory) {
 }
 New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory -Force | Out-Null
 Copy-Item -Path (Join-Path $payloadDirectory "*") -Destination $stagingDirectory -Recurse -Force
-Get-ChildItem -LiteralPath $stagingDirectory -File -Recurse -Include *.pdb, *.ilk, *.iobj, *.ipdb, *.exp, *.lib | Remove-Item -Force
+$excludedExtensions = @(".pdb", ".ilk", ".iobj", ".ipdb", ".exp", ".lib")
+$excludedFiles = @(
+    Get-ChildItem -LiteralPath $stagingDirectory -File -Recurse |
+        Where-Object { $excludedExtensions -contains $_.Extension.ToLowerInvariant() }
+)
+if ($excludedFiles.Count -gt 0) {
+    $excludedFiles | Remove-Item -Force
+}
 
 if (Test-Path -LiteralPath $packagePath) {
     Remove-Item -LiteralPath $packagePath -Force
@@ -38,5 +45,6 @@ if (Test-Path -LiteralPath $packagePath) {
 Compress-Archive -Path (Join-Path $stagingDirectory "*") -DestinationPath $packagePath -CompressionLevel Optimal
 
 & (Join-Path $PSScriptRoot "write-package-manifest.ps1") -Kind portable -Architecture $Architecture -RepositoryRoot $repositoryRoot -PayloadDirectory $stagingDirectory -PackagePath $packagePath -OutputPath $manifestPath
+& (Join-Path $PSScriptRoot "verify-portable-package.ps1") -Architecture $Architecture -StagingDirectory $stagingDirectory -PackagePath $packagePath -ManifestPath $manifestPath
 Write-Host "Portable package: $packagePath"
 Write-Host "Package manifest: $manifestPath"
