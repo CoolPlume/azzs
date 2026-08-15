@@ -884,9 +884,14 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             "set_status(winrt::to_hstring(result.message)" not in catalog_editor_cpp and
             "SoftwareCatalogEditorSourcePurposeUnassigned" in catalog_editor_cpp and
             "SoftwareCatalogEditorDisabledSuffix" in catalog_editor_cpp and
-            "selected_id" in catalog_editor_cpp and
+            "auto const selected_id = selected_software_id();" in catalog_editor_cpp and
+            catalog_editor_cpp.index("auto const selected_id = selected_software_id();") <
+            catalog_editor_cpp.index("document_ = source;") and
+            "project_document(selected_id);" in catalog_editor_cpp and
+            "project_document(selected_software_id());" in catalog_editor_cpp and
+            "document_index < document_->software.size()" in catalog_editor_cpp and
             "selected_category_id" in catalog_editor_cpp,
-            "catalog editor projection must preserve selection and localize core action text")
+            "catalog editor projection must preserve stable selections and localize core action text")
     require(not any(token in main_window_xaml or token in main_window_cpp or
                     token in catalog_editor_xaml or token in catalog_editor_cpp
                     for token in ("Storyboard", "ConnectedAnimation", "CompositionAnimation")),

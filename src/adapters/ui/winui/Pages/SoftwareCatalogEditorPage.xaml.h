@@ -102,7 +102,7 @@ struct SoftwareCatalogEditorPage
  private:
   void refresh();
   void project(azzs::application::DebugModeCatalogEditorSnapshot const& snapshot);
-  void project_document();
+  void project_document(std::optional<std::string> selected_id = {});
   void project_selected_software();
   void project_categories();
   void project_selected_category();
@@ -128,6 +128,7 @@ struct SoftwareCatalogEditorPage
   void set_status(winrt::hstring const& message,
                   Microsoft::UI::Xaml::Controls::InfoBarSeverity severity);
   [[nodiscard]] std::optional<std::size_t> selected_software_index();
+  [[nodiscard]] std::optional<std::string> selected_software_id();
   [[nodiscard]] std::optional<std::size_t> selected_category_index();
   [[nodiscard]] std::optional<std::size_t>
   selected_category_localization_index();
