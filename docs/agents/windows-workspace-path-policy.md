@@ -4,12 +4,13 @@
 
 ## 1. 路径结论
 
-- `D:\azzs` 是主工作树和调度入口。它用于读取基线、查看状态和执行协调，不作为并行执行会话的共享写入目录。
-- 新建执行 worktree 默认放在 `D:\azzs-codex\worktrees\<feature-slug>`。`D:\azzs-codex` 是 worktree 容器，不是第二个独立仓库。
-- Windows Git 支持把主工作树和 linked worktree 放在不同盘符。`D:\azzs`、`D:\azzs-codex\worktrees\...` 与 `C:\...` 在 Git 语义上没有优先级差异；跨盘符不会改变分支、对象库或提交关系。
-- 同盘的 `D:` 路径是默认选择，因为它缩短路径、减少构建和临时文件的路径差异，并避免把日常工作树埋在较长的用户目录下。`C:` worktree 只要路径稳定、权限正常且没有未记录的环境差异，也可以继续使用。
-- 不把 worktree 放在网络共享、临时盘、同步盘、映射盘或会自动改变路径的目录中。不要用 junction、subst 或符号链接伪造仓库根路径来绕过本策略。
-- Windows 路径在命令和交接记录中使用可解析的绝对路径。脚本可接受 `/`，但记录时统一使用 `D:\...` 或 `C:\...`，避免同一 worktree 出现多个拼写。
+- 项目源根目录是 `D:/azzs`。它仅承载项目源和调度入口；代理不得将其作为代理产物或并行执行会话的共享写入目录。
+- 代理拥有的 worktree、日志、缓存、提示词、临时输出和构建输出只能位于 `D:/azzs-codex` 下；新建执行 worktree 使用 `D:/azzs-codex/worktrees/<feature-slug>`。
+- 代理绝不允许在 `C:/` 或 `D:/` 根目录创建目录或文件；代理不得把项目源根目录当作代理产物位置，所有代理产物必须位于 `D:/azzs-codex` 下。
+- 代理绝不允许创建或使用任何盘符映射或等效别名，包括 `subst`、`net use` 映射、挂载点盘符以及其他等效方式；始终使用完整的 `D:/azzs-codex/...` 路径。
+- 不把 worktree 放在网络共享、临时盘、同步盘或会自动改变路径的目录中；不得使用 junction、符号链接或其他别名伪造仓库根路径。
+- 既有用户拥有的路径不得因代理工作而移动或删除，且不得以清理、迁移或接管为由改变其内容或位置。
+- Windows 路径在命令和交接记录中使用可解析的完整绝对路径。脚本可接受 `/`，但记录时统一使用 `D:\azzs\...` 或 `D:\azzs-codex\...`，避免同一 worktree 出现多个拼写。
 
 Git linked worktree 共享同一个 Git 对象库和引用数据库；每个 worktree 有自己的 `HEAD`、索引和工作文件。`.git` 文件中的链接指向共同 Git 元数据，因此移动或删除目录不能按普通文件夹操作。需要迁移时使用 `git worktree move`，确认废弃后才使用 `git worktree remove`；`git worktree prune` 只用于已确认失联的元数据。
 
@@ -33,7 +34,7 @@ git -C D:\azzs-codex\worktrees\<feature-slug> rev-parse HEAD
 
 `<feature-slug>` 应同时用于目录和分支的可识别部分，例如目录 `workspace-path-policy` 对应分支 `codex/chore-workspace-path-policy`。一个分支只能绑定一个 worktree；一个执行会话不能与另一个会话共用工作树或同时修改同一组文件。
 
-接管已有工作时，先检查 `git worktree list --porcelain`、目标 worktree 的 `status`、分支 HEAD、远端分支和 PR head，再决定恢复、继续或新建 worktree。不要因为路径在 `C:` 或 `D:` 就重新实现或覆盖已有成果。
+接管已有工作时，先检查 `git worktree list --porcelain`、目标 worktree 的 `status`、分支 HEAD、远端分支和 PR head，再决定恢复、继续或新建 worktree。既有用户拥有的路径不得因接管而移动、删除、重新实现或覆盖。
 
 ## 3. 编辑、验证与证据
 
@@ -57,4 +58,4 @@ git -C D:\azzs-codex\worktrees\<feature-slug> rev-parse HEAD
 4. 默认只把 PR 普通合入 `codex/v1-integration`。未经维护者明确授权，不合入 `main`，不创建 tag 或 GitHub Release，不上传发行制品，也不接受 WiX 条款。
 5. 已推送提交不使用 `--amend`；修复用新的提交保持远端 SHA 和 PR 证据可追溯。完成后报告 feature head SHA、PR/CI 状态和 integration merge SHA。
 
-worktree 的盘符不会改变这些边界：Git 操作的安全性由分支、精确 SHA、工作树隔离和证据链决定，而不是由 `C:` 或 `D:` 决定。
+路径边界不会改变 Git 操作的安全性：安全性由分支、精确 SHA、工作树隔离和证据链决定；代理路径始终使用 `D:\azzs` 与 `D:\azzs-codex` 的完整路径。
