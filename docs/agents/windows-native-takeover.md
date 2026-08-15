@@ -59,7 +59,7 @@
 
 ## 7. 总调度运行方式
 
-- Windows 路径和 linked worktree 规则见 `docs/agents/windows-workspace-path-policy.md`。默认从 `origin/codex/v1-integration` 在 `D:\azzs-codex\worktrees\<feature-slug>` 创建独立 worktree；`C:` worktree 只有在路径稳定且状态已核对时继续使用。
+- Windows 路径和 linked worktree 必须遵循 `docs/agents/windows-workspace-path-policy.md`。从 `origin/codex/v1-integration` 在 `D:\azzs-codex\worktrees\<feature-slug>` 创建独立 worktree，并使用完整的 `D:\azzs-codex\...` 路径；不得使用 `C:` worktree 或任何盘符映射、挂载点盘符和等效别名。
 - 总调度使用 GPT-5.6 Sol Ultra，只负责依赖、分发、集成、阻断和总进度；实现交给独立执行会话。
 - 执行会话最低使用已验证连通的 GPT-5.6 Luna，且 Luna 仅用于固定、可重复、低风险的机械 Git/文档、日志摘取和状态采样；局部实现、定向测试和 PR 收口用 GPT-5.6 Terra XHigh，普通复杂实现用 Terra Max，共享状态、连续 Windows 根因或复杂冲突用 Terra Ultra。
 - 初始并发 2 至 3 条执行链；稳定时一次增加一条，429、并发上限或工作树竞争时立即收缩。不要为了占满并发启动审查或重复验证。
