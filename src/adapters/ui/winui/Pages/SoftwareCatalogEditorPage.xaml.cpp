@@ -160,16 +160,28 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   }
 }
 
-[[nodiscard]] std::string source_label(catalog::CatalogSource const& source) {
-  std::string purpose = "unassigned";
-  if (source.purpose == catalog::SourcePurpose::primary) {
-    purpose = "primary";
-  } else if (source.purpose == catalog::SourcePurpose::alternative) {
-    purpose = "alternative";
-  } else if (source.purpose == catalog::SourcePurpose::project_backup) {
-    purpose = "project backup";
+[[nodiscard]] wchar_t const* source_purpose_key(
+    std::optional<catalog::SourcePurpose> purpose) {
+  if (purpose == catalog::SourcePurpose::primary) {
+    return L"SoftwareCatalogEditorSourcePrimary.Content";
   }
-  return purpose + " - " + source.address;
+  if (purpose == catalog::SourcePurpose::alternative) {
+    return L"SoftwareCatalogEditorSourceAlternative.Content";
+  }
+  if (purpose == catalog::SourcePurpose::project_backup) {
+    return L"SoftwareCatalogEditorSourceProjectBackup.Content";
+  }
+  return L"SoftwareCatalogEditorSourcePurposeUnassigned";
+}
+
+[[nodiscard]] winrt::hstring source_label(
+    catalog::CatalogSource const& source) {
+  auto label = std::wstring{resource_string(source_purpose_key(source.purpose))};
+  if (!source.address.empty()) {
+    label += L" - ";
+    label += winrt::to_hstring(source.address).c_str();
+  }
+  return winrt::hstring{std::move(label)};
 }
 
 [[nodiscard]] bool catalog_action_succeeded(
@@ -198,20 +210,105 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   return resource_string(L"SoftwareCatalogEditorDraftNone");
 }
 
+[[nodiscard]] wchar_t const* catalog_issue_key(catalog::CatalogIssueCode code) {
+  switch (code) {
+    case catalog::CatalogIssueCode::malformed_toml:
+      return L"SoftwareCatalogEditorIssueMalformedToml";
+    case catalog::CatalogIssueCode::unsupported_schema:
+      return L"SoftwareCatalogEditorIssueUnsupportedSchema";
+    case catalog::CatalogIssueCode::missing_required_field:
+      return L"SoftwareCatalogEditorIssueMissingRequiredField";
+    case catalog::CatalogIssueCode::invalid_field:
+      return L"SoftwareCatalogEditorIssueInvalidField";
+    case catalog::CatalogIssueCode::duplicate_field:
+      return L"SoftwareCatalogEditorIssueDuplicateField";
+    case catalog::CatalogIssueCode::duplicate_stable_id:
+      return L"SoftwareCatalogEditorIssueDuplicateStableId";
+    case catalog::CatalogIssueCode::stable_id_reused:
+      return L"SoftwareCatalogEditorIssueStableIdReused";
+    case catalog::CatalogIssueCode::unknown_execution_semantics:
+      return L"SoftwareCatalogEditorIssueUnknownExecutionSemantics";
+    case catalog::CatalogIssueCode::invalid_reference:
+      return L"SoftwareCatalogEditorIssueInvalidReference";
+    case catalog::CatalogIssueCode::missing_dependency:
+      return L"SoftwareCatalogEditorIssueMissingDependency";
+    case catalog::CatalogIssueCode::dependency_cycle:
+      return L"SoftwareCatalogEditorIssueDependencyCycle";
+    case catalog::CatalogIssueCode::unavailable_dependency:
+      return L"SoftwareCatalogEditorIssueUnavailableDependency";
+    case catalog::CatalogIssueCode::draft_release_state:
+      return L"SoftwareCatalogEditorIssueDraftReleaseState";
+    case catalog::CatalogIssueCode::required_item_missing:
+      return L"SoftwareCatalogEditorIssueRequiredItemMissing";
+    case catalog::CatalogIssueCode::required_item_disabled:
+      return L"SoftwareCatalogEditorIssueRequiredItemDisabled";
+    case catalog::CatalogIssueCode::release_revision_regression:
+      return L"SoftwareCatalogEditorIssueReleaseRevisionRegression";
+    case catalog::CatalogIssueCode::release_revision_conflict:
+      return L"SoftwareCatalogEditorIssueReleaseRevisionConflict";
+    case catalog::CatalogIssueCode::release_dependency_error:
+      return L"SoftwareCatalogEditorIssueReleaseDependencyError";
+    case catalog::CatalogIssueCode::install_profile_unavailable:
+      return L"SoftwareCatalogEditorIssueInstallProfileUnavailable";
+    case catalog::CatalogIssueCode::install_profile_not_release_ready:
+      return L"SoftwareCatalogEditorIssueInstallProfileNotReleaseReady";
+    case catalog::CatalogIssueCode::prohibited_content:
+      return L"SoftwareCatalogEditorIssueProhibitedContent";
+  }
+  return L"SoftwareCatalogEditorIssueUnknown";
+}
+
+[[nodiscard]] wchar_t const* catalog_action_key(
+    catalog_app::CatalogActionCode code) {
+  switch (code) {
+    case catalog_app::CatalogActionCode::succeeded:
+      return L"SoftwareCatalogEditorActionSucceeded";
+    case catalog_app::CatalogActionCode::no_change:
+      return L"SoftwareCatalogEditorActionNoChange";
+    case catalog_app::CatalogActionCode::rejected:
+      return L"SoftwareCatalogEditorActionRejected";
+    case catalog_app::CatalogActionCode::debug_mode_required:
+      return L"SoftwareCatalogEditorActionDebugModeRequired";
+    case catalog_app::CatalogActionCode::not_restored:
+      return L"SoftwareCatalogEditorActionNotRestored";
+    case catalog_app::CatalogActionCode::unavailable:
+      return L"SoftwareCatalogEditorActionUnavailable";
+    case catalog_app::CatalogActionCode::occupied:
+      return L"SoftwareCatalogEditorActionOccupied";
+    case catalog_app::CatalogActionCode::conflict:
+      return L"SoftwareCatalogEditorActionConflict";
+    case catalog_app::CatalogActionCode::read_only:
+      return L"SoftwareCatalogEditorActionReadOnly";
+    case catalog_app::CatalogActionCode::persistence_failed:
+      return L"SoftwareCatalogEditorActionPersistenceFailed";
+    case catalog_app::CatalogActionCode::outcome_unknown:
+      return L"SoftwareCatalogEditorActionOutcomeUnknown";
+    case catalog_app::CatalogActionCode::saved_cleanup_pending:
+      return L"SoftwareCatalogEditorActionSavedCleanupPending";
+    case catalog_app::CatalogActionCode::applied_cleanup_pending:
+      return L"SoftwareCatalogEditorActionAppliedCleanupPending";
+    case catalog_app::CatalogActionCode::applied_log_incomplete:
+      return L"SoftwareCatalogEditorActionAppliedLogIncomplete";
+    case catalog_app::CatalogActionCode::returned_to_editor:
+      return L"SoftwareCatalogEditorActionReturnedToEditor";
+  }
+  return L"SoftwareCatalogEditorActionUnavailable";
+}
+
 [[nodiscard]] winrt::hstring issue_text(
     std::vector<catalog::CatalogIssue> const& issues) {
-  std::string text;
+  std::wstring text;
   for (auto const& issue : issues) {
     if (!text.empty()) {
-      text += '\n';
+      text += L'\n';
     }
     if (!issue.location.empty()) {
-      text += issue.location;
-      text += ": ";
+      text += winrt::to_hstring(issue.location).c_str();
+      text += L": ";
     }
-    text += issue.message;
+    text += resource_string(catalog_issue_key(issue.code)).c_str();
   }
-  return winrt::to_hstring(text);
+  return winrt::hstring{std::move(text)};
 }
 
 }  // namespace
@@ -596,11 +693,22 @@ void SoftwareCatalogEditorPage::OnPreviewImport(
                                         : std::string{};
   ApplyImportButton().IsEnabled(!pending_import_token_.empty());
   if (preview.ready) {
+    project_import_preview(preview);
     set_status(resource_string(L"SoftwareCatalogEditorImportReady"),
                InfoBarSeverity::Informational);
     return;
   }
-  set_status(winrt::to_hstring(preview.error), InfoBarSeverity::Error);
+  clear_import_preview();
+  set_status(resource_string(L"SoftwareCatalogEditorImportPreviewFailed"),
+             InfoBarSeverity::Error);
+}
+
+void SoftwareCatalogEditorPage::OnImportPathChanged(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&) {
+  if (!projecting_) {
+    clear_import_preview();
+  }
 }
 
 void SoftwareCatalogEditorPage::OnApplyImport(
@@ -610,7 +718,11 @@ void SoftwareCatalogEditorPage::OnApplyImport(
     return;
   }
   auto const token = std::exchange(pending_import_token_, {});
-  project_action(editor_->apply_preview(token));
+  auto const result = editor_->apply_preview(token);
+  if (result.succeeded()) {
+    clear_import_preview();
+  }
+  project_action(result);
 }
 
 void SoftwareCatalogEditorPage::refresh() {
@@ -709,13 +821,66 @@ void SoftwareCatalogEditorPage::project_validation_issues(
                                 !release_issues->empty());
 }
 
+void SoftwareCatalogEditorPage::project_import_preview(
+    catalog_app::CatalogCandidatePreview const& preview) {
+  std::wstring text;
+  auto append_line = [&text](winrt::hstring const& label,
+                             std::wstring_view value) {
+    if (!text.empty()) {
+      text += L'\n';
+    }
+    text += label.c_str();
+    text += L": ";
+    text += value;
+  };
+  auto append_message = [&text](winrt::hstring const& message) {
+    if (!text.empty()) {
+      text += L'\n';
+    }
+    text += message.c_str();
+  };
+
+  append_line(resource_string(L"SoftwareCatalogEditorImportPreviewPath"),
+              winrt::to_hstring(preview.path).c_str());
+  append_line(resource_string(L"SoftwareCatalogEditorImportPreviewRevision"),
+              std::to_wstring(preview.revision));
+  append_line(resource_string(L"SoftwareCatalogEditorImportPreviewItemCount"),
+              std::to_wstring(preview.item_count));
+  append_message(resource_string(L"SoftwareCatalogEditorImportPreviewFutureOperations"));
+
+  if (preview.downgrade) {
+    std::vector<std::string> affected = preview.selection_impact.removed;
+    affected.insert(affected.end(), preview.selection_impact.changed.begin(),
+                    preview.selection_impact.changed.end());
+    std::ranges::sort(affected);
+    affected.erase(std::unique(affected.begin(), affected.end()), affected.end());
+    append_message(resource_string(L"SoftwareCatalogEditorImportPreviewDowngrade"));
+    if (affected.empty()) {
+      append_message(
+          resource_string(L"SoftwareCatalogEditorImportPreviewDowngradeNoItems"));
+    } else {
+      append_line(resource_string(L"SoftwareCatalogEditorImportPreviewAffectedItems"),
+                  winrt::to_hstring(join_values(affected)).c_str());
+    }
+  }
+
+  ImportPreviewText().Text(winrt::hstring{std::move(text)});
+}
+
 void SoftwareCatalogEditorPage::project_document() {
-  if (projecting_ && document_.has_value()) {
-    // The selected item is projected after the list has a stable item map.
+  auto const was_projecting = std::exchange(projecting_, true);
+  std::optional<std::string> selected_id;
+  if (auto const selected = selected_software_index(); selected.has_value() &&
+      document_.has_value()) {
+    selected_id = document_->software[*selected].id;
   }
   visible_software_indices_.clear();
   SoftwareList().Items().Clear();
   if (!document_.has_value()) {
+    projecting_ = was_projecting;
+    if (!was_projecting) {
+      project_selected_software();
+    }
     return;
   }
   auto const filter = lower_ascii(winrt::to_string(SearchTextBox().Text()));
@@ -727,13 +892,28 @@ void SoftwareCatalogEditorPage::project_document() {
     }
     auto label = software.id + " - " + software.name;
     if (!software.enabled) {
-      label += " (disabled)";
+      label += winrt::to_string(
+          resource_string(L"SoftwareCatalogEditorDisabledSuffix"));
     }
     visible_software_indices_.push_back(index);
     SoftwareList().Items().Append(winrt::box_value(winrt::to_hstring(label)));
   }
   if (!visible_software_indices_.empty()) {
-    SoftwareList().SelectedIndex(0);
+    auto selected = std::find_if(
+        visible_software_indices_.begin(), visible_software_indices_.end(),
+        [&](std::size_t index) {
+          return selected_id.has_value() &&
+                 document_->software[index].id == *selected_id;
+        });
+    SoftwareList().SelectedIndex(
+        selected == visible_software_indices_.end()
+            ? 0
+            : static_cast<int>(std::distance(visible_software_indices_.begin(),
+                                             selected)));
+  }
+  projecting_ = was_projecting;
+  if (!was_projecting) {
+    project_selected_software();
   }
 }
 
@@ -793,6 +973,11 @@ void SoftwareCatalogEditorPage::project_selected_software() {
 
 void SoftwareCatalogEditorPage::project_categories() {
   auto const was_projecting = std::exchange(projecting_, true);
+  std::optional<std::string> selected_category_id;
+  if (auto const selected = selected_category_index(); selected.has_value() &&
+      document_.has_value()) {
+    selected_category_id = document_->categories[*selected].id;
+  }
   CategoryList().Items().Clear();
   SoftwareCategoryComboBox().Items().Clear();
   auto const editable = editing_enabled_ && document_.has_value();
@@ -810,19 +995,27 @@ void SoftwareCatalogEditorPage::project_categories() {
 
   auto const software = selected_software_index();
   auto selected_category = -1;
+  auto software_category = -1;
   for (std::size_t index = 0; index < document_->categories.size(); ++index) {
     auto const& category = document_->categories[index];
     CategoryList().Items().Append(winrt::box_value(
         winrt::to_hstring(category.id + " - " + category.name)));
     SoftwareCategoryComboBox().Items().Append(
         winrt::box_value(winrt::to_hstring(category.id)));
-    if (software.has_value() &&
-        document_->software[*software].category_id == category.id) {
+    if (selected_category_id.has_value() &&
+        *selected_category_id == category.id) {
       selected_category = static_cast<int>(index);
     }
+    if (software.has_value() &&
+        document_->software[*software].category_id == category.id) {
+      software_category = static_cast<int>(index);
+    }
+  }
+  if (selected_category < 0) {
+    selected_category = software_category;
   }
   CategoryList().SelectedIndex(selected_category);
-  SoftwareCategoryComboBox().SelectedIndex(selected_category);
+  SoftwareCategoryComboBox().SelectedIndex(software_category);
   project_selected_category();
   project_category_localizations();
   projecting_ = was_projecting;
@@ -848,6 +1041,7 @@ void SoftwareCatalogEditorPage::project_selected_category() {
 
 void SoftwareCatalogEditorPage::project_category_localizations() {
   auto const was_projecting = std::exchange(projecting_, true);
+  auto const selected_index = CategoryLocalizationList().SelectedIndex();
   CategoryLocalizationList().Items().Clear();
   auto const category = selected_category_index();
   auto const enabled = editing_enabled_ && category.has_value() &&
@@ -861,8 +1055,10 @@ void SoftwareCatalogEditorPage::project_category_localizations() {
     }
   }
   CategoryLocalizationList().IsEnabled(enabled);
+  auto const size = CategoryLocalizationList().Items().Size();
   CategoryLocalizationList().SelectedIndex(
-      CategoryLocalizationList().Items().Size() == 0 ? -1 : 0);
+      size == 0 ? -1 : std::min<int>(selected_index < 0 ? 0 : selected_index,
+                                     static_cast<int>(size) - 1));
   project_selected_category_localization();
   projecting_ = was_projecting;
 }
@@ -892,6 +1088,7 @@ void SoftwareCatalogEditorPage::project_selected_category_localization() {
 
 void SoftwareCatalogEditorPage::project_sources() {
   auto const was_projecting = std::exchange(projecting_, true);
+  auto const selected_index = SourceList().SelectedIndex();
   SourceList().Items().Clear();
   auto const software = selected_software_index();
   auto const enabled = editing_enabled_ && software.has_value() &&
@@ -904,7 +1101,10 @@ void SoftwareCatalogEditorPage::project_sources() {
     }
   }
   SourceList().IsEnabled(enabled);
-  SourceList().SelectedIndex(SourceList().Items().Size() == 0 ? -1 : 0);
+  auto const size = SourceList().Items().Size();
+  SourceList().SelectedIndex(
+      size == 0 ? -1 : std::min<int>(selected_index < 0 ? 0 : selected_index,
+                                     static_cast<int>(size) - 1));
   project_selected_source();
   projecting_ = was_projecting;
 }
@@ -935,6 +1135,7 @@ void SoftwareCatalogEditorPage::project_selected_source() {
 
 void SoftwareCatalogEditorPage::project_localizations() {
   auto const was_projecting = std::exchange(projecting_, true);
+  auto const selected_index = LocalizationList().SelectedIndex();
   LocalizationList().Items().Clear();
   auto const software = selected_software_index();
   auto const enabled = editing_enabled_ && software.has_value() &&
@@ -947,8 +1148,10 @@ void SoftwareCatalogEditorPage::project_localizations() {
     }
   }
   LocalizationList().IsEnabled(enabled);
+  auto const size = LocalizationList().Items().Size();
   LocalizationList().SelectedIndex(
-      LocalizationList().Items().Size() == 0 ? -1 : 0);
+      size == 0 ? -1 : std::min<int>(selected_index < 0 ? 0 : selected_index,
+                                     static_cast<int>(size) - 1));
   project_selected_localization();
   projecting_ = was_projecting;
 }
@@ -1108,10 +1311,17 @@ void SoftwareCatalogEditorPage::commit_document() {
 void SoftwareCatalogEditorPage::project_action(
     catalog_app::CatalogActionResult const& result) {
   refresh();
-  set_status(winrt::to_hstring(result.message), catalog_action_severity(result));
+  set_status(resource_string(catalog_action_key(result.code)),
+             catalog_action_severity(result));
   if (catalog_action_succeeded(result) && result.current_changed) {
     ApplySavedDraftButton().Focus(Microsoft::UI::Xaml::FocusState::Programmatic);
   }
+}
+
+void SoftwareCatalogEditorPage::clear_import_preview() {
+  pending_import_token_.clear();
+  ImportPreviewText().Text({});
+  ApplyImportButton().IsEnabled(false);
 }
 
 void SoftwareCatalogEditorPage::set_status(

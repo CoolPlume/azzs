@@ -268,16 +268,16 @@ class RecordingDebugLog final : public ExecutionLog {
               DebugLogGranularity::unavailable,
       "a logging control failure must be exposed instead of claiming a granularity");
 
-  editor.begin_temporary_close_recovery();
+  auto const unbound_temporary_recovery =
+      editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::
+              recovered_unsaved_continue);
   passed &= expect(
-      editor.editor_access() == azzs::application::software_catalog::
-                                    CatalogEditorAccess::temporary_close_recovery,
-      "a disabled debug mode may expose only the temporary close-recovery access");
-  editor.end_temporary_close_recovery();
-  passed &= expect(
-      editor.editor_access() ==
-          azzs::application::software_catalog::CatalogEditorAccess::unavailable,
-      "ending temporary recovery must restore the hidden editor boundary");
+      !unbound_temporary_recovery &&
+          editor.editor_access() ==
+              azzs::application::software_catalog::CatalogEditorAccess::
+                  unavailable,
+      "an unbound catalog lifecycle must not grant temporary editor authority");
 
   auto unavailable_preferences = std::make_shared<InMemoryDebugModePreferenceStore>();
   unavailable_preferences->read.status = DebugModePreferenceReadStatus::unavailable;

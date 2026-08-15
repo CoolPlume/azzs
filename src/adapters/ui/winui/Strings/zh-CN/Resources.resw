@@ -348,6 +348,10 @@
   <data name="ApplicationSettingsDebugGranularityUnavailable" xml:space="preserve"><value>日志粒度：当前未取得。</value></data>
   <data name="ApplicationSettingsOpenCatalogEditor.Content" xml:space="preserve"><value>打开软件目录编辑器</value></data>
   <data name="ApplicationSettingsOpenCatalogEditorLabel.Text" xml:space="preserve"><value>打开软件目录编辑器</value></data>
+  <data name="MainWindowRecoveredCatalogEditor.Title" xml:space="preserve"><value>发现恢复的未保存修改</value></data>
+  <data name="MainWindowRecoveredCatalogEditor.Message" xml:space="preserve"><value>它尚未保存或应用。继续编辑可保存草稿或放弃未保存修改。</value></data>
+  <data name="MainWindowContinueRecoveredCatalogEditor.Content" xml:space="preserve"><value>继续编辑恢复的未保存修改</value></data>
+  <data name="MainWindowContinueRecoveredCatalogEditorLabel.Text" xml:space="preserve"><value>继续编辑恢复的未保存修改</value></data>
   <data name="ApplicationSettingsActionCompleted" xml:space="preserve"><value>设置已更新。</value></data>
   <data name="ApplicationSettingsActionConfirmationRequired" xml:space="preserve"><value>此操作需要明确确认。</value></data>
   <data name="ApplicationSettingsActionNoChange" xml:space="preserve"><value>当前没有需要变更的内容。</value></data>
@@ -433,6 +437,7 @@
   <data name="SoftwareCatalogEditorSourcePrimary.Content" xml:space="preserve"><value>首选来源</value></data>
   <data name="SoftwareCatalogEditorSourceAlternative.Content" xml:space="preserve"><value>备选来源</value></data>
   <data name="SoftwareCatalogEditorSourceProjectBackup.Content" xml:space="preserve"><value>项目备用包</value></data>
+  <data name="SoftwareCatalogEditorSourcePurposeUnassigned" xml:space="preserve"><value>未指定用途</value></data>
   <data name="SoftwareCatalogEditorSourceAddress.Header" xml:space="preserve"><value>原始地址</value></data>
   <data name="SoftwareCatalogEditorSourceVersion.Header" xml:space="preserve"><value>来源版本</value></data>
   <data name="SoftwareCatalogEditorLocalizationListTitle.Text" xml:space="preserve"><value>本地化</value></data>
@@ -452,6 +457,52 @@
   <data name="SoftwareCatalogEditorNewSoftwareBranch" xml:space="preserve"><value>维护中</value></data>
   <data name="SoftwareCatalogEditorUnavailable" xml:space="preserve"><value>请先明确开启调试模式；编辑器和手动导入入口当前不可用。</value></data>
   <data name="SoftwareCatalogEditorImportReady" xml:space="preserve"><value>目录导入已通过预览；请明确应用。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewFailed" xml:space="preserve"><value>无法预览目录导入；当前目录和草稿未被更改。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewPath" xml:space="preserve"><value>导入路径</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewRevision" xml:space="preserve"><value>目录修订</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewItemCount" xml:space="preserve"><value>软件项目数</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewFutureOperations" xml:space="preserve"><value>应用后，后续软件列表、规划和新建批次将使用此目录；已有批次和历史不变。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewDowngrade" xml:space="preserve"><value>此目录修订低于当前目录，继续前请核对受影响选择。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewDowngradeNoItems" xml:space="preserve"><value>未检测到被移除或语义变化的软件项目。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewAffectedItems" xml:space="preserve"><value>受影响的软件项目</value></data>
+  <data name="SoftwareCatalogEditorDisabledSuffix" xml:space="preserve"><value>（未启用）</value></data>
+  <data name="SoftwareCatalogEditorActionSucceeded" xml:space="preserve"><value>操作已完成。</value></data>
+  <data name="SoftwareCatalogEditorActionNoChange" xml:space="preserve"><value>当前没有需要变更的内容。</value></data>
+  <data name="SoftwareCatalogEditorActionRejected" xml:space="preserve"><value>当前状态不接受此操作。</value></data>
+  <data name="SoftwareCatalogEditorActionDebugModeRequired" xml:space="preserve"><value>请先明确开启调试模式。</value></data>
+  <data name="SoftwareCatalogEditorActionNotRestored" xml:space="preserve"><value>目录状态尚未恢复完成。</value></data>
+  <data name="SoftwareCatalogEditorActionUnavailable" xml:space="preserve"><value>当前目录编辑功能不可用。</value></data>
+  <data name="SoftwareCatalogEditorActionOccupied" xml:space="preserve"><value>目录状态正在被其他操作使用。</value></data>
+  <data name="SoftwareCatalogEditorActionConflict" xml:space="preserve"><value>目录状态存在冲突；现有内容已保留。</value></data>
+  <data name="SoftwareCatalogEditorActionReadOnly" xml:space="preserve"><value>当前目录状态为只读，无法执行此操作。</value></data>
+  <data name="SoftwareCatalogEditorActionPersistenceFailed" xml:space="preserve"><value>操作未保存；现有状态已保留。</value></data>
+  <data name="SoftwareCatalogEditorActionOutcomeUnknown" xml:space="preserve"><value>操作结果尚未确认；请查看目录状态。</value></data>
+  <data name="SoftwareCatalogEditorActionSavedCleanupPending" xml:space="preserve"><value>草稿已保存，但旧恢复记录仍待清理。</value></data>
+  <data name="SoftwareCatalogEditorActionAppliedCleanupPending" xml:space="preserve"><value>目录已应用，但旧草稿记录仍待清理。</value></data>
+  <data name="SoftwareCatalogEditorActionAppliedLogIncomplete" xml:space="preserve"><value>目录已应用，但本机诊断记录未完整写入。</value></data>
+  <data name="SoftwareCatalogEditorActionReturnedToEditor" xml:space="preserve"><value>已保留未保存修改，可继续编辑。</value></data>
+  <data name="SoftwareCatalogEditorIssueMalformedToml" xml:space="preserve"><value>目录文件格式无效。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnsupportedSchema" xml:space="preserve"><value>目录版本不受支持。</value></data>
+  <data name="SoftwareCatalogEditorIssueMissingRequiredField" xml:space="preserve"><value>缺少必填字段。</value></data>
+  <data name="SoftwareCatalogEditorIssueInvalidField" xml:space="preserve"><value>字段值无效。</value></data>
+  <data name="SoftwareCatalogEditorIssueDuplicateField" xml:space="preserve"><value>存在重复字段。</value></data>
+  <data name="SoftwareCatalogEditorIssueDuplicateStableId" xml:space="preserve"><value>稳定标识重复。</value></data>
+  <data name="SoftwareCatalogEditorIssueStableIdReused" xml:space="preserve"><value>稳定标识不得重复使用。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnknownExecutionSemantics" xml:space="preserve"><value>存在无法识别的受控执行语义。</value></data>
+  <data name="SoftwareCatalogEditorIssueInvalidReference" xml:space="preserve"><value>引用的项目不存在。</value></data>
+  <data name="SoftwareCatalogEditorIssueMissingDependency" xml:space="preserve"><value>缺少依赖项。</value></data>
+  <data name="SoftwareCatalogEditorIssueDependencyCycle" xml:space="preserve"><value>依赖关系形成循环。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnavailableDependency" xml:space="preserve"><value>依赖项不可用。</value></data>
+  <data name="SoftwareCatalogEditorIssueDraftReleaseState" xml:space="preserve"><value>维护目录仍处于草稿发布状态。</value></data>
+  <data name="SoftwareCatalogEditorIssueRequiredItemMissing" xml:space="preserve"><value>缺少首版必达项。</value></data>
+  <data name="SoftwareCatalogEditorIssueRequiredItemDisabled" xml:space="preserve"><value>首版必达项处于未启用状态。</value></data>
+  <data name="SoftwareCatalogEditorIssueReleaseRevisionRegression" xml:space="preserve"><value>发布修订号倒退。</value></data>
+  <data name="SoftwareCatalogEditorIssueReleaseRevisionConflict" xml:space="preserve"><value>发布修订号冲突。</value></data>
+  <data name="SoftwareCatalogEditorIssueReleaseDependencyError" xml:space="preserve"><value>正式发布依赖无效。</value></data>
+  <data name="SoftwareCatalogEditorIssueInstallProfileUnavailable" xml:space="preserve"><value>受控安装档案不可用。</value></data>
+  <data name="SoftwareCatalogEditorIssueInstallProfileNotReleaseReady" xml:space="preserve"><value>受控安装档案未达到发布条件。</value></data>
+  <data name="SoftwareCatalogEditorIssueProhibitedContent" xml:space="preserve"><value>包含受限内容。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnknown" xml:space="preserve"><value>未识别的目录问题。</value></data>
   <data name="SoftwareCatalogEditorLocalizationLimit" xml:space="preserve"><value>请先修改或删除已有本地化条目，再添加新的语言。</value></data>
   <data name="SoftwareCatalogEditorDeleteTitle" xml:space="preserve"><value>删除软件条目</value></data>
   <data name="SoftwareCatalogEditorDeleteContent" xml:space="preserve"><value>删除只影响当前目录编辑草稿；当前有效目录、既有任务和历史不会被更改。</value></data>

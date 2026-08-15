@@ -39,6 +39,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   void OnWindowClosing(
       Microsoft::UI::Windowing::AppWindow const&,
       Microsoft::UI::Windowing::AppWindowClosingEventArgs const& args);
+  void OnContinueRecoveredCatalogEditorClick(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
 
  private:
   [[nodiscard]] std::optional<azzs::application::PageId> page_for_item(
@@ -68,6 +71,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   bool advanced_view_{false};
   bool catalog_close_dialog_open_{false};
   bool allow_window_close_{false};
+  std::optional<azzs::application::PageId> displayed_page_;
 };
 
 }  // namespace winrt::Azzs::Ui::implementation

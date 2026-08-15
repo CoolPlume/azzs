@@ -899,6 +899,95 @@ void replace_once(std::string& bytes, std::string_view original,
                 "control bytes must be encoded before persistence");
 }
 
+[[nodiscard]] bool verify_debug_mode_changes_future_record_detail() {
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'404'625}}};
+  InMemoryLogStorage storage;
+  StructuredExecutionLog log{storage, clock};
+  auto const correlation = log.begin_correlation();
+  auto event = [] {
+    return ExecutionEvent{
+        .kind = ExecutionEventKind::adapter_result,
+        .component = "diagnostic-adapter",
+        .stage = "retry",
+        .result = ExecutionResult::failed,
+        .error = ExecutionError{.source = "adapter",
+                                .code = 5,
+                                .message =
+                                    "Authorization: Bearer debug-secret"},
+        .last_trusted_state = LastTrustedState{
+            .generation = 8,
+            .summary = "last stable catalog revision"},
+        .criticality = ExecutionLogCriticality::noncritical,
+        .fields = {
+            DiagnosticField{"detail", "phase=resolve;reason=timeout",
+                            DiagnosticValueDisposition::retain},
+            DiagnosticField{"password", "debug-secret",
+                            DiagnosticValueDisposition::retain},
+            DiagnosticField{"context-subject-42", "kept",
+                            DiagnosticValueDisposition::retain},
+        },
+        .sensitive_values = {"debug-secret", "subject-42"},
+    };
+  };
+  auto has_field = [](auto const& recorded, std::string_view key,
+                      std::string_view value = {}) {
+    return std::ranges::any_of(recorded.fields, [&](auto const& field) {
+      return field.key == key && (value.empty() || field.value == value);
+    });
+  };
+
+  auto const normal = log.append(correlation, event());
+  auto const normal_snapshot = log.snapshot();
+  auto const enabled = log.set_debug_mode(true);
+  auto const detailed = log.append(correlation, event());
+  auto const detailed_snapshot = log.snapshot();
+  auto const disabled = log.set_debug_mode(false);
+  auto const returned_to_normal = log.append(correlation, event());
+  auto const final_snapshot = log.snapshot();
+  auto const bytes = storage.bytes();
+
+  return expect(normal.persisted && normal_snapshot.events.size() == 1 &&
+                    !has_field(normal_snapshot.events.front(),
+                               "debug_event_criticality"),
+                "normal logging must omit debug-only metadata") &&
+         expect(bytes.find("detail=phase%3Dresolve%3Breason%3Dtimeout") !=
+                    std::string_view::npos &&
+                    bytes.find("debug-secret") == std::string_view::npos,
+                "detailed field delimiters and secrets must be safe before persistence") &&
+         expect(enabled.status == azzs::application::ExecutionLogDebugModeStatus::applied &&
+                    enabled.enabled && detailed.persisted &&
+                    detailed_snapshot.events.size() == 2 &&
+                    has_field(detailed_snapshot.events.back(),
+                              "debug_event_criticality", "noncritical") &&
+                    has_field(detailed_snapshot.events.back(),
+                              "debug_retained_field_count", "1") &&
+                    has_field(detailed_snapshot.events.back(),
+                              "debug_redacted_field_count", "2") &&
+                    has_field(detailed_snapshot.events.back(),
+                              "debug_sensitive_fragment_count", "2") &&
+                    has_field(detailed_snapshot.events.back(), "debug_has_error",
+                              "true") &&
+                    has_field(detailed_snapshot.events.back(),
+                              "debug_has_last_trusted_state", "true") &&
+                    has_field(detailed_snapshot.events.back(),
+                              "debug_has_coverage_gap", "false") &&
+                    has_field(detailed_snapshot.events.back(), "detail",
+                              "phase=resolve;reason=timeout") &&
+                    has_field(detailed_snapshot.events.back(), "password",
+                              "[redacted]") &&
+                    has_field(detailed_snapshot.events.back(),
+                              "context-[redacted]", "kept") &&
+                    bytes.find("subject-42") == std::string_view::npos,
+                "enabled debug mode must add redacted structural detail to new records") &&
+         expect(disabled.status == azzs::application::ExecutionLogDebugModeStatus::applied &&
+                    !disabled.enabled && returned_to_normal.persisted &&
+                    final_snapshot.events.size() == 3 &&
+                    !has_field(final_snapshot.events.back(),
+                               "debug_event_criticality") &&
+                    has_field(final_snapshot.events[1], "debug_event_criticality"),
+                "disabling debug mode must restore normal detail without deleting prior records");
+}
+
 [[nodiscard]] bool verify_redaction_defaults_and_stable_event_tokens() {
   FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'404'750}}};
   InMemoryLogStorage storage;
@@ -1623,6 +1712,7 @@ int main() {
       !verify_read_errors_fail_closed_and_export_gaps() ||
       !verify_user_paths_with_spaces_are_redacted() ||
       !verify_central_redaction_and_correlation_validation() ||
+      !verify_debug_mode_changes_future_record_detail() ||
       !verify_redaction_defaults_and_stable_event_tokens() ||
       !verify_single_file_export_is_self_contained() ||
       !verify_diagnostic_export_failure_is_explicit() ||

@@ -114,7 +114,8 @@
                     <TextBox
                         x:Name="ImportPathTextBox"
                         x:Uid="SoftwareCatalogEditorImportPath"
-                        AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorImportPath" />
+                        AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorImportPath"
+                        TextChanged="OnImportPathChanged" />
                     <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
                         <Button x:Name="PreviewImportButton" x:Uid="SoftwareCatalogEditorPreviewImport" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorPreviewImport" Click="OnPreviewImport">
                             <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Folder" /><TextBlock x:Uid="SoftwareCatalogEditorPreviewImportLabel" /></StackPanel></Button.Content>
@@ -123,6 +124,12 @@
                             <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Upload" /><TextBlock x:Uid="SoftwareCatalogEditorApplyImportLabel" /></StackPanel></Button.Content>
                         </Button>
                     </StackPanel>
+                    <TextBlock
+                        x:Name="ImportPreviewText"
+                        AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorImportPreview"
+                        AutomationProperties.LiveSetting="Polite"
+                        Style="{StaticResource AzzsMetadataTextStyle}"
+                        TextWrapping="Wrap" />
                 </StackPanel>
             </Grid>
             <Grid

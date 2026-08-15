@@ -397,10 +397,28 @@ catalog_app::CatalogActionResult DebugModeCatalogEditor::apply_preview(
              : lifecycle_->apply_preview(confirmation_token);
 }
 
-void DebugModeCatalogEditor::begin_temporary_close_recovery() noexcept {
-  if (!enabled_) {
-    temporary_close_recovery_ = true;
+bool DebugModeCatalogEditor::begin_temporary_close_recovery(
+    CatalogEditorTemporaryAccessReason reason) {
+  if (enabled_ || lifecycle_ == nullptr) {
+    return false;
   }
+
+  auto const snapshot = lifecycle_->snapshot();
+  if (!is_ready(snapshot)) {
+    return false;
+  }
+  auto const state = snapshot.draft.state;
+  auto const permitted =
+      reason == CatalogEditorTemporaryAccessReason::recovered_unsaved_continue
+          ? state == catalog_app::DraftWorkState::recovered_unsaved
+          : state == catalog_app::DraftWorkState::recovered_unsaved ||
+                state == catalog_app::DraftWorkState::unsaved_changes;
+  if (!permitted) {
+    return false;
+  }
+
+  temporary_close_recovery_ = true;
+  return true;
 }
 
 void DebugModeCatalogEditor::end_temporary_close_recovery() noexcept {
