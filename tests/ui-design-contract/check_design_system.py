@@ -805,6 +805,13 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     system_optimization_cpp = read(root / (
         "src/adapters/ui/winui/Pages/SystemOptimizationPage.xaml.cpp"
     ))
+    drivers_xaml = read(root / "src/adapters/ui/winui/Pages/DriversPage.xaml")
+    drivers_cpp = read(root / "src/adapters/ui/winui/Pages/DriversPage.xaml.cpp")
+    drivers_header = read(root / "src/adapters/ui/winui/Pages/DriversPage.xaml.h")
+    workbench_header = read(root / (
+        "src/application/include/azzs/application/workbench.hpp"
+    ))
+    workbench_cpp = read(root / "src/application/src/workbench.cpp")
     require("AzzsApplicationAdvancedView" in settings_xaml and
             "OnAdvancedViewToggled" in settings_cpp,
             "application settings must own the advanced-view toggle")
@@ -847,6 +854,53 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     require(not any(token in settings_xaml or token in settings_cpp for token in (
                 "Storyboard", "ConnectedAnimation", "CompositionAnimation")),
             "application settings must keep high-frequency settings changes static")
+    rescue_resources = {
+        "RescueToolFoldersTitle.Text",
+        "RescueToolFoldersDescription.Text",
+        "GenericNetworkDriverRescueButton.Text",
+        "OfflineNetworkDiagnosticsRescueButton.Text",
+        "RescueHandoffInProgressTitle",
+        "RescueHandoffInProgressBody",
+        "DriverExternalFlowReturnedButton.Text",
+        "DriverCompletedButton.Text",
+        "DriverRestartRequiredButton.Text",
+        "DriverSkipButton.Text",
+    }
+    require(rescue_resources <= resource_names,
+            "driver rescue handoff commands and decisions must remain localized")
+    for automation_id in (
+        "AzzsFixedRescueToolFolders",
+        "AzzsGenericNetworkDriverRescueFolder",
+        "AzzsOfflineNetworkDiagnosticsRescueFolder",
+        "AzzsDriverExternalFlowReturned",
+        "AzzsDriverResultCompleted",
+        "AzzsDriverResultRestart",
+        "AzzsDriverResultSkip",
+    ):
+        require(automation_id in drivers_xaml,
+                f"driver rescue handoff is missing AutomationId {automation_id}")
+    require("OnGenericNetworkDriverRescueClicked" in drivers_xaml and
+            "OnOfflineNetworkDiagnosticsRescueClicked" in drivers_xaml and
+            "RescueHandoffHandler" in drivers_header and
+            "RescueToolTarget" in drivers_header and
+            "request_rescue_handoff" in drivers_cpp and
+            "generic_network_driver" in drivers_cpp and
+            "offline_network_diagnostics" in drivers_cpp and
+            "begin_rescue_folder_handoff" in main_window_cpp and
+            "begin_rescue_folder_handoff" in workbench_header and
+            "begin_external_rescue_handoff" in workbench_cpp,
+            "driver page must relay only typed fixed rescue targets through the workbench")
+    require("open_rescue_folder" not in drivers_xaml and
+            "open_rescue_folder" not in drivers_cpp and
+            not any(token in drivers_xaml or token in drivers_cpp for token in (
+                "ShellExecute", "CreateProcess", "std::filesystem", "std::fstream")),
+            "driver UI must not inspect paths or launch rescue executables directly")
+    require("driver_handoff_platform_{}" in composition_root_cpp and
+            "driver_acquisition_(states_, hardware_overview_, driver_handoff_platform_" in composition_root_cpp,
+            "the Windows composition root must remain the only production driver platform assembly")
+    require(not any(token in drivers_xaml or token in drivers_cpp for token in (
+                "Storyboard", "ConnectedAnimation", "CompositionAnimation")),
+            "driver rescue handoff commands must remain static and immediate")
     require("ApplicationSettingsDebugProvider" in settings_service_header and
             "DebugModeCatalogEditor final" in debug_editor_header and
             "public ApplicationSettingsDebugProvider" in debug_editor_header and

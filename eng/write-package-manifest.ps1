@@ -34,6 +34,56 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
 
+function ConvertTo-CanonicalRepositoryPackagePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath
+    )
+
+    $repositoryItem = Get-Item -LiteralPath $RepositoryRoot -ErrorAction Stop
+    if (-not $repositoryItem.PSIsContainer) {
+        throw "Package manifest repository root must be a directory."
+    }
+    $packageItem = Get-Item -LiteralPath $PackagePath -ErrorAction Stop
+    if ($packageItem.PSIsContainer) {
+        throw "Package manifest package path must name a file."
+    }
+
+    $repository = (Get-ExistingNonReparsePath -Path $repositoryItem.FullName -Context "Package manifest repository root").TrimEnd([char[]]@('\', '/'))
+    $package = Get-ExistingNonReparsePath -Path $packageItem.FullName -Context "Package manifest package path"
+    $repositoryPrefix = "$repository$([System.IO.Path]::DirectorySeparatorChar)"
+    if (-not $package.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Package manifest package path must be strictly inside the repository."
+    }
+
+    $relative = $package.Substring($repositoryPrefix.Length)
+    if ([string]::IsNullOrWhiteSpace($relative) -or
+        [System.IO.Path]::IsPathRooted($relative) -or
+        $relative -match "^[A-Za-z]:") {
+        throw "Package manifest package path must be a non-rooted repository-relative path."
+    }
+    $segments = $relative.Split([char[]]@('\', '/'))
+    if ($segments.Count -eq 0 -or @($segments | Where-Object {
+            [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".."
+        }).Count -gt 0) {
+        throw "Package manifest package path contains an unsafe relative segment."
+    }
+
+    return [pscustomobject]@{
+        repository = $repository
+        package = $package
+        relativePackage = ($segments -join "/")
+        packageItem = $packageItem
+    }
+}
+
+$canonicalPaths = ConvertTo-CanonicalRepositoryPackagePath -RepositoryRoot $RepositoryRoot -PackagePath $PackagePath
+$RepositoryRoot = $canonicalPaths.repository
+$PackagePath = $canonicalPaths.package
+
 $payload = @(
     Get-ChildItem -LiteralPath $PayloadDirectory -File -Recurse |
         Sort-Object FullName |
@@ -53,8 +103,8 @@ $manifest = [ordered]@{
     kind = $Kind
     architecture = $Architecture
     package = [ordered]@{
-        path = $PackagePath
-        bytes = (Get-Item -LiteralPath $PackagePath).Length
+        path = $canonicalPaths.relativePackage
+        bytes = $canonicalPaths.packageItem.Length
     }
     payload = $payload
 }

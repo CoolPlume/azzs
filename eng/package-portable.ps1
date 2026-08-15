@@ -33,12 +33,25 @@ $packageDirectory = Join-Path $repositoryRoot "out/packages"
 $architectureToken = $architecture.ToLowerInvariant()
 $packagePath = Join-Path $packageDirectory "Azzs-$($artifact.edition)-$architectureToken-portable.zip"
 $manifestPath = Join-Path $repositoryRoot "out/manifests/package-$($artifact.edition)-$architectureToken-portable.json"
+$fixedRescueFolderNames = @(
+    "generic-network-driver",
+    "offline-network-diagnostics"
+)
 
 function Remove-PortableCandidate {
+    Assert-PortableCandidatePaths
     foreach ($candidatePath in @($stagingDirectory, $packagePath, $manifestPath)) {
         if (Test-Path -LiteralPath $candidatePath) {
             Remove-Item -LiteralPath $candidatePath -Recurse -Force
         }
+    }
+}
+
+function Assert-PortableCandidatePaths {
+    foreach ($candidatePath in @($stagingDirectory, $packagePath, $manifestPath)) {
+        Assert-PathChainWithoutReparsePoint `
+            -Path $candidatePath `
+            -Context "Portable packaging candidate '$candidatePath'"
     }
 }
 
@@ -61,7 +74,9 @@ try {
         throw "Portable packaging requires a completed $architecture Release build."
     }
 
+    Assert-PortableCandidatePaths
     New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory -Force | Out-Null
+    Assert-PortableCandidatePaths
     Copy-Item -Path (Join-Path $payloadDirectory "*") -Destination $stagingDirectory -Recurse -Force
     $excludedExtensions = @(".pdb", ".ilk", ".iobj", ".ipdb", ".exp", ".lib")
     $excludedFiles = @(
@@ -92,7 +107,18 @@ try {
         Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
     }
 
-    Compress-Archive -Path (Join-Path $stagingDirectory "*") -DestinationPath $packagePath -CompressionLevel Optimal
+    # These two directories are fixed external handoff destinations. They are
+    # deliberately empty and do not make any rescue artifact an input.
+    foreach ($folderName in $fixedRescueFolderNames) {
+        New-Item -ItemType Directory -Path (Join-Path $stagingDirectory "rescue-tools/$folderName") -Force | Out-Null
+    }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+        $stagingRoot,
+        $packagePath,
+        [System.IO.Compression.CompressionLevel]::Optimal,
+        $false)
 
     & (Join-Path $PSScriptRoot "write-package-manifest.ps1") `
         -Kind portable `

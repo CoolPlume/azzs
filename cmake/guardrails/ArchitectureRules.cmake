@@ -135,6 +135,7 @@ set(AZZS_ARCHITECTURE_EXTERNAL_CMAKE_TARGETS
   "wbemuuid|external:windows-platform|platform_runtime"
   "winhttp|external:windows-platform|platform_runtime"
   "wtsapi32|external:windows-platform|platform_runtime"
+  "windowsapp|external:windows-platform|platform_runtime"
 )
 set(AZZS_ARCHITECTURE_EXTERNAL_LINK_ITEM_PATTERNS
   "^-pthread$"

@@ -35,6 +35,73 @@ function Get-Sha256Hex {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Get-ExistingNonReparsePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        throw "$Context must exist."
+    }
+    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        throw "$Context must be an absolute path."
+    }
+
+    $current = $root
+    foreach ($segment in $fullPath.Substring($root.Length).Split(
+            [char[]]@('\', '/'),
+            [System.StringSplitOptions]::RemoveEmptyEntries)) {
+        $current = Join-Path $current $segment
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "$Context must not pass through a reparse point."
+        }
+    }
+    return $fullPath
+}
+
+function Assert-PathChainWithoutReparsePoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        throw "$Context must be an absolute path."
+    }
+
+    $current = $root
+    foreach ($segment in $fullPath.Substring($root.Length).Split(
+            [char[]]@('\', '/'),
+            [System.StringSplitOptions]::RemoveEmptyEntries)) {
+        $current = Join-Path $current $segment
+        try {
+            $attributes = [System.IO.File]::GetAttributes($current)
+        }
+        catch [System.IO.FileNotFoundException] {
+            break
+        }
+        catch [System.IO.DirectoryNotFoundException] {
+            break
+        }
+        if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "$Context must not pass through a reparse point."
+        }
+    }
+    return $fullPath
+}
+
 function Resolve-RepositoryRelativePath {
     param(
         [Parameter(Mandatory = $true)]
@@ -125,8 +192,8 @@ function ConvertTo-RepositoryRelativePath {
         [string]$Context
     )
 
-    $root = (Resolve-Path -LiteralPath $RepositoryRoot).Path.TrimEnd("\", "/")
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $root = (Get-ExistingNonReparsePath -Path $RepositoryRoot -Context "Repository root").TrimEnd("\", "/")
+    $fullPath = Get-ExistingNonReparsePath -Path $Path -Context $Context
     $rootWithSeparator = "$root$([System.IO.Path]::DirectorySeparatorChar)"
     if (-not $fullPath.StartsWith($rootWithSeparator, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "$Context is outside the repository."
