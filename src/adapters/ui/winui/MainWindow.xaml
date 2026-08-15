@@ -71,6 +71,7 @@
         <Grid Background="{ThemeResource AzzsSurfaceRootBrush}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <InfoBar
@@ -82,9 +83,30 @@
                 Margin="{StaticResource AzzsShellStatusMargin}"
                 Severity="Warning"
                 Style="{StaticResource AzzsStatusBandStyle}" />
+            <InfoBar
+                x:Name="RecoveredCatalogEditorInfoBar"
+                Grid.Row="1"
+                x:Uid="MainWindowRecoveredCatalogEditor"
+                AutomationProperties.AutomationId="AzzsRecoveredCatalogEditorInfoBar"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False"
+                Margin="{StaticResource AzzsShellStatusMargin}"
+                Severity="Warning"
+                Style="{StaticResource AzzsStatusBandStyle}">
+                <InfoBar.ActionButton>
+                    <Button
+                        x:Name="ContinueRecoveredCatalogEditorButton"
+                        x:Uid="MainWindowContinueRecoveredCatalogEditor"
+                        AutomationProperties.AutomationId="AzzsContinueRecoveredCatalogEditor"
+                        Click="OnContinueRecoveredCatalogEditorClick">
+                        <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Edit" /><TextBlock x:Uid="MainWindowContinueRecoveredCatalogEditorLabel" /></StackPanel></Button.Content>
+                    </Button>
+                </InfoBar.ActionButton>
+            </InfoBar>
             <Frame
                 x:Name="ContentFrame"
-                Grid.Row="1"
+                Grid.Row="2"
                 AutomationProperties.AutomationId="AzzsContentFrame"
                 IsNavigationStackEnabled="False" />
         </Grid>

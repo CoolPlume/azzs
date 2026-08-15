@@ -318,7 +318,8 @@ struct ParsedLog final {
   std::string encoded;
   encoded.reserve(value.size());
   for (unsigned char const byte : value) {
-    if (byte == '%' || byte < 0x20 || byte == 0x7f) {
+    if (byte == '%' || byte == ';' || byte == '=' || byte < 0x20 ||
+        byte == 0x7f) {
       encoded.push_back('%');
       encoded.push_back(kHex[(byte >> 4U) & 0x0FU]);
       encoded.push_back(kHex[byte & 0x0FU]);
@@ -705,32 +706,63 @@ parse_event_projection(std::string_view line) {
   return count;
 }
 
-[[nodiscard]] std::string serialize_fields(
-    application::ExecutionEvent const& event) {
-  std::string fields;
-  for (auto const& field : event.fields) {
-    auto const key = redact(field.key, event.sensitive_values);
-    auto const value =
-        field.disposition ==
-                    application::DiagnosticValueDisposition::sensitive ||
-                is_sensitive_key(field.key)
-            ? std::string{"[redacted]"}
-            : redact(field.value, event.sensitive_values);
-    fields += percent_encode(key) + "=" + percent_encode(value) + ";";
-  }
-  return fields;
-}
-
 [[nodiscard]] bool is_critical(application::ExecutionEvent const& event) {
   return event.criticality == application::ExecutionLogCriticality::critical ||
          event.kind == application::ExecutionEventKind::state_transition ||
          event.kind == application::ExecutionEventKind::coverage_gap;
 }
 
+[[nodiscard]] std::string serialize_fields(
+    application::ExecutionEvent const& event, bool include_debug_metadata) {
+  std::string fields;
+  std::size_t retained_field_count{};
+  std::size_t redacted_field_count{};
+  for (auto const& field : event.fields) {
+    auto const key = redact(field.key, event.sensitive_values);
+    auto const sensitive =
+        field.disposition == application::DiagnosticValueDisposition::sensitive ||
+        is_sensitive_key(field.key);
+    auto const value = sensitive ? std::string{"[redacted]"}
+                                 : redact(field.value, event.sensitive_values);
+    if (sensitive || key != field.key || value != field.value) {
+      ++redacted_field_count;
+    } else {
+      ++retained_field_count;
+    }
+    fields += percent_encode(key) + "=" + percent_encode(value) + ";";
+  }
+
+  if (!include_debug_metadata) {
+    return fields;
+  }
+
+  auto append_metadata = [&fields](std::string_view key,
+                                   std::string value) {
+    fields += percent_encode(key) + "=" + percent_encode(value) + ";";
+  };
+  auto const sensitive_fragment_count = std::count_if(
+      event.sensitive_values.begin(), event.sensitive_values.end(),
+      [](std::string const& value) { return !value.empty(); });
+  append_metadata("debug_event_criticality",
+                  is_critical(event) ? "critical" : "noncritical");
+  append_metadata("debug_retained_field_count",
+                  std::to_string(retained_field_count));
+  append_metadata("debug_redacted_field_count",
+                  std::to_string(redacted_field_count));
+  append_metadata("debug_sensitive_fragment_count",
+                  std::to_string(sensitive_fragment_count));
+  append_metadata("debug_has_error", event.error.has_value() ? "true" : "false");
+  append_metadata("debug_has_last_trusted_state",
+                  event.last_trusted_state.has_value() ? "true" : "false");
+  append_metadata("debug_has_coverage_gap",
+                  event.coverage_gap.has_value() ? "true" : "false");
+  return fields;
+}
+
 [[nodiscard]] std::string serialize_event(
     Counters const& counters, application::CorrelationId const& correlation,
     application::ExecutionEvent const& event,
-    application::Clock const& clock) {
+    application::Clock const& clock, bool include_debug_metadata) {
   auto const& sensitive = event.sensitive_values;
   return "EVENT\t" + std::to_string(counters.segment) + "\t" +
          std::to_string(counters.sequence) + "\t" +
@@ -780,7 +812,7 @@ parse_event_projection(std::string_view line) {
                                    ? event.coverage_gap->reason
                                    : std::string_view{},
                                sensitive)) +
-         "\t" + serialize_fields(event) + "\n";
+         "\t" + serialize_fields(event, include_debug_metadata) + "\n";
 }
 
 [[nodiscard]] application::ExecutionEvent capacity_recovery_event(
@@ -1017,10 +1049,11 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
     ++counters.sequence;
     records += serialize_event(counters, correlation,
                                capacity_recovery_event(recovered_dropped_count),
-                               clock_);
+                               clock_, debug_mode_enabled_);
   }
   ++counters.sequence;
-  records += serialize_event(counters, correlation, event, clock_);
+  records += serialize_event(counters, correlation, event, clock_,
+                             debug_mode_enabled_);
 
   auto result = transaction->replace(serialize(counters, records));
   std::string recovery_annotation_error;
@@ -1033,7 +1066,8 @@ application::ExecutionLogReceipt StructuredExecutionLog::append(
     counters = parsed.counters;
     records = std::string{parsed.records};
     ++counters.sequence;
-    records += serialize_event(counters, correlation, event, clock_);
+    records += serialize_event(counters, correlation, event, clock_,
+                               debug_mode_enabled_);
     include_recovery_gap = false;
     result = transaction->replace(serialize(counters, records));
   }

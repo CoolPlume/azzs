@@ -183,10 +183,16 @@ winrt::fire_and_forget MainWindow::confirm_catalog_close() {
         CatalogCloseChoice::discard_unsaved_and_close;
   }
 
+  auto const debug = editor.editor_snapshot().settings;
+  if (!debug.enabled) {
+    static_cast<void>(editor.begin_temporary_close_recovery(
+        azzs::application::CatalogEditorTemporaryAccessReason::close_return));
+  }
   auto const result = editor.handle_close(choice);
   if (choice != azzs::application::software_catalog::
                     CatalogCloseChoice::return_to_editor &&
       result.succeeded()) {
+    editor.end_temporary_close_recovery();
     allow_window_close_ = true;
     Close();
     co_return;
@@ -204,7 +210,13 @@ void MainWindow::restore_catalog_editor_after_close(
     return;
   }
 
-  services->debug_mode_catalog_editor().begin_temporary_close_recovery();
+  auto& editor = services->debug_mode_catalog_editor();
+  if (!editor.editor_snapshot().settings.enabled &&
+      !editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::close_return)) {
+    project(workbench_->snapshot());
+    return;
+  }
   workbench_->navigate(PageId::software_catalog_editor);
   auto const snapshot = workbench_->snapshot();
   project(snapshot);
@@ -214,6 +226,28 @@ void MainWindow::restore_catalog_editor_after_close(
     winrt::get_self<Pages::implementation::SoftwareCatalogEditorPage>(page)
         ->show_action_result(result);
   }
+}
+
+void MainWindow::OnContinueRecoveredCatalogEditorClick(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (!workbench_) {
+    return;
+  }
+  auto const services = workbench_->services();
+  if (!services || !services->debug_mode_catalog_editor()
+                        .begin_temporary_close_recovery(
+                            azzs::application::
+                                CatalogEditorTemporaryAccessReason::
+                                    recovered_unsaved_continue)) {
+    project(workbench_->snapshot());
+    return;
+  }
+
+  workbench_->navigate(PageId::software_catalog_editor);
+  auto const snapshot = workbench_->snapshot();
+  project(snapshot);
+  navigate_to(snapshot.current_page);
 }
 
 std::optional<PageId> MainWindow::page_for_item(
@@ -251,6 +285,13 @@ void MainWindow::navigate_to(PageId page) {
       SuppressNavigationTransitionInfo;
 
   auto const transition = SuppressNavigationTransitionInfo{};
+  if (displayed_page_ == PageId::software_catalog_editor &&
+      page != PageId::software_catalog_editor) {
+    if (auto const services = workbench_->services()) {
+      services->debug_mode_catalog_editor().end_temporary_close_recovery();
+      project(workbench_->snapshot());
+    }
+  }
   switch (page) {
     case PageId::overview:
       ContentFrame().Navigate(xaml_typename<Pages::OverviewPage>(), nullptr,
@@ -375,6 +416,7 @@ void MainWindow::navigate_to(PageId page) {
       }
       break;
   }
+  displayed_page_ = page;
 }
 
 bool MainWindow::set_advanced_view(bool enabled) {
@@ -444,11 +486,24 @@ void MainWindow::project(
 
   auto const resources = ResourceLoader{};
   if (auto const services = workbench_ ? workbench_->services() : nullptr) {
-    auto const debug = services->application_settings().snapshot().debug;
+    auto const editor_snapshot =
+        services->debug_mode_catalog_editor().editor_snapshot();
+    auto const debug = editor_snapshot.settings;
     SoftwareCatalogEditorItem().Visibility(
         debug.catalog_editor_available
             ? winrt::Microsoft::UI::Xaml::Visibility::Visible
             : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+    auto const recovered_editor_available =
+        !debug.enabled && !debug.temporary_close_recovery &&
+        editor_snapshot.catalog.draft.state ==
+            azzs::application::software_catalog::
+                DraftWorkState::recovered_unsaved;
+    RecoveredCatalogEditorInfoBar().IsOpen(recovered_editor_available);
+    ContinueRecoveredCatalogEditorButton().IsEnabled(
+        recovered_editor_available);
+  } else {
+    RecoveredCatalogEditorInfoBar().IsOpen(false);
+    ContinueRecoveredCatalogEditorButton().IsEnabled(false);
   }
   auto const risk_title = resources.GetString(L"VersionRiskTitle");
   AutomationProperties::SetName(VersionRiskInfoBar(), risk_title);

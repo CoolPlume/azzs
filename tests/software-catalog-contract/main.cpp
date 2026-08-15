@@ -2805,55 +2805,84 @@ display_locale = "English driver"
   return passed;
 }
 
-[[nodiscard]] bool temporary_debug_editor_recovery_allows_only_close_choices() {
+[[nodiscard]] bool temporary_debug_editor_recovery_is_reason_scoped_and_revocable() {
   DebugModeCatalogEditorFixture fixture;
-  auto catalog_lifecycle = fixture.make_lifecycle();
-  fixture.editor.bind_catalog_lifecycle(*catalog_lifecycle);
+  auto first = fixture.make_lifecycle();
+  fixture.editor.bind_catalog_lifecycle(*first);
 
   bool passed = true;
-  passed &= expect(catalog_lifecycle->restore().succeeded() &&
-                       fixture.editor.set_enabled(true).code ==
-                           azzs::application::ApplicationSettingsDebugActionCode::
-                               updated,
-                   "temporary debug editor fixture must restore with debug mode enabled");
-  auto saved_document = fixture.codec.decode(
-      one_item_catalog(1, "draft", "Saved Before Close Recovery"));
-  passed &= expect(saved_document.document.has_value() &&
-                       fixture.editor.edit_document(*saved_document.document)
-                           .succeeded() &&
-                       fixture.editor.save_draft().succeeded(),
-                   "temporary debug editor fixture must establish a saved draft");
   passed &= expect(
-      fixture.editor.set_enabled(false).code ==
-          azzs::application::ApplicationSettingsDebugActionCode::updated,
-      "temporary recovery must start after debug mode is hidden");
-  fixture.editor.begin_temporary_close_recovery();
+      first->restore().succeeded() &&
+          fixture.editor.set_enabled(true).code ==
+              azzs::application::ApplicationSettingsDebugActionCode::updated,
+      "temporary debug editor fixture must restore with debug mode enabled");
+  auto recovered_document = fixture.codec.decode(
+      one_item_catalog(1, "draft", "Recovered Before Temporary Access"));
+  passed &= expect(
+      recovered_document.document.has_value() &&
+          fixture.editor.edit_document(*recovered_document.document).succeeded() &&
+          first->snapshot().draft.state == lifecycle::DraftWorkState::unsaved_changes,
+      "the fixture must establish checkpointed unsaved editor content");
 
-  auto temporary_document = fixture.codec.decode(
-      one_item_catalog(2, "draft", "Saved From Close Recovery"));
+  first.reset();
+  auto recovered = fixture.make_lifecycle();
+  fixture.editor.bind_catalog_lifecycle(*recovered);
   passed &= expect(
-      fixture.editor.editor_snapshot().settings.temporary_close_recovery &&
-          temporary_document.document.has_value() &&
-          fixture.editor.edit_document(*temporary_document.document)
-              .succeeded() &&
+      recovered->restore().succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::recovered_unsaved &&
+          fixture.editor.set_enabled(false).code ==
+              azzs::application::ApplicationSettingsDebugActionCode::updated,
+      "the hidden editor fixture must restore recovered unsaved content");
+
+  passed &= expect(
+      fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::close_return) &&
+          fixture.editor.editor_snapshot().settings.temporary_close_recovery,
+      "a close-return flow may temporarily reopen recovered unsaved content");
+  fixture.editor.end_temporary_close_recovery();
+
+  passed &= expect(
+      fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::
+              recovered_unsaved_continue),
+      "the startup recovery action must accept only recovered unsaved content");
+  auto edited_document = fixture.codec.decode(
+      one_item_catalog(2, "draft", "Edited From Recovered Content"));
+  passed &= expect(
+      edited_document.document.has_value() &&
+          fixture.editor.edit_document(*edited_document.document).succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::unsaved_changes,
+      "editing recovered content must transition it to ordinary unsaved changes");
+  fixture.editor.end_temporary_close_recovery();
+
+  passed &= expect(
+      !fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::
+              recovered_unsaved_continue) &&
+          fixture.editor.editor_access() ==
+              lifecycle::CatalogEditorAccess::unavailable,
+      "the startup recovery action must reject ordinary unsaved changes");
+  passed &= expect(
+      fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::close_return) &&
           fixture.editor.checkpoint_unsaved().code ==
               lifecycle::CatalogActionCode::rejected &&
           fixture.editor.apply_saved_draft().code ==
               lifecycle::CatalogActionCode::rejected &&
-          fixture.editor.save_draft().succeeded(),
-      "temporary recovery may edit and save but must reject checkpoint and apply");
-
-  auto discarded_document = fixture.codec.decode(
-      one_item_catalog(3, "draft", "Discarded From Close Recovery"));
-  passed &= expect(
-      discarded_document.document.has_value() &&
-          fixture.editor.edit_document(*discarded_document.document).succeeded() &&
-          fixture.editor.discard_unsaved().succeeded() &&
-          catalog_lifecycle->snapshot().draft.state ==
-              lifecycle::DraftWorkState::saved_not_applied &&
-          catalog_lifecycle->snapshot().draft.document == temporary_document.document,
-      "temporary recovery may discard edits while preserving its saved draft");
+          fixture.editor.save_draft().succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::saved_not_applied,
+      "a close-return flow may save but cannot checkpoint or apply ordinary unsaved changes");
   fixture.editor.end_temporary_close_recovery();
+
+  auto const denied_after_end = fixture.editor.edit_document(*edited_document.document);
+  passed &= expect(
+      denied_after_end.code == lifecycle::CatalogActionCode::debug_mode_required &&
+          fixture.editor.editor_access() ==
+              lifecycle::CatalogEditorAccess::unavailable,
+      "ending temporary recovery must restore the hidden editor boundary");
   return passed;
 }
 
@@ -2955,7 +2984,7 @@ int main() {
   passed &= checkpoint_conflicts_preserve_other_instance_edits();
   passed &= temporary_recovery_session_cannot_delete_or_apply();
   passed &= debug_mode_editor_checkpoints_and_recovers_unsaved_edits();
-  passed &= temporary_debug_editor_recovery_allows_only_close_choices();
+  passed &= temporary_debug_editor_recovery_is_reason_scoped_and_revocable();
   passed &= execution_log_receipts_gate_and_qualify_application();
   if (!passed) {
     return EXIT_FAILURE;

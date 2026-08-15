@@ -93,6 +93,9 @@ struct SoftwareCatalogEditorPage
                         Microsoft::UI::Xaml::RoutedEventArgs const& args);
   void OnPreviewImport(Windows::Foundation::IInspectable const& sender,
                        Microsoft::UI::Xaml::RoutedEventArgs const& args);
+  void OnImportPathChanged(
+      Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::Controls::TextChangedEventArgs const& args);
   void OnApplyImport(Windows::Foundation::IInspectable const& sender,
                      Microsoft::UI::Xaml::RoutedEventArgs const& args);
 
@@ -117,8 +120,11 @@ struct SoftwareCatalogEditorPage
   void commit_document();
   void project_validation_issues(
       azzs::application::DebugModeCatalogEditorSnapshot const& snapshot);
+  void project_import_preview(
+      azzs::application::software_catalog::CatalogCandidatePreview const& preview);
   void project_action(
       azzs::application::software_catalog::CatalogActionResult const& result);
+  void clear_import_preview();
   void set_status(winrt::hstring const& message,
                   Microsoft::UI::Xaml::Controls::InfoBarSeverity severity);
   [[nodiscard]] std::optional<std::size_t> selected_software_index();

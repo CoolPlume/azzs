@@ -21,6 +21,14 @@ struct DebugModeCatalogEditorSnapshot final {
   software_catalog::SoftwareCatalogLifecycleSnapshot catalog;
 };
 
+// A temporary editor session is narrowly scoped to an already-retained
+// unsaved draft. The coordinator rechecks the lifecycle state before granting
+// either reason so a stale shell projection cannot recreate editor authority.
+enum class CatalogEditorTemporaryAccessReason {
+  recovered_unsaved_continue,
+  close_return,
+};
+
 class DebugModeCatalogEditor final
     : public ApplicationSettingsDebugProvider,
       public DebugLogPolicyProvider,
@@ -80,9 +88,11 @@ class DebugModeCatalogEditor final
   [[nodiscard]] software_catalog::CatalogActionResult apply_preview(
       std::string_view confirmation_token);
 
-  // This is only entered by the workbench-close flow after the user explicitly
-  // asks to return to the editor or a save fails while debug mode is hidden.
-  void begin_temporary_close_recovery() noexcept;
+  // This is only entered by the recovered-draft shell action or by the
+  // workbench-close flow after the user explicitly asks to return to the
+  // editor or a save fails while debug mode is hidden.
+  [[nodiscard]] bool begin_temporary_close_recovery(
+      CatalogEditorTemporaryAccessReason reason);
   void end_temporary_close_recovery() noexcept;
 
  private:
