@@ -45,6 +45,7 @@
 #include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
+#include "azzs/application/debug_mode_catalog_editor.hpp"
 #include "azzs/application/debug_log_policy/debug_log_policy.hpp"
 #include "azzs/application/driver_acquisition.hpp"
 #include "azzs/application/guided_initialization.hpp"
@@ -78,48 +79,11 @@ class ProductionSettingsCatalogImportAuthorization final
   }
 };
 
-class ProductionCatalogMaintenanceAccess final
-    : public application::software_catalog::CatalogMaintenanceAccess {
- public:
-  [[nodiscard]] application::software_catalog::CatalogEditorAccess
-  editor_access() const noexcept override {
-    return application::software_catalog::CatalogEditorAccess::unavailable;
-  }
-};
-
 class ProductionSoftwareOptimizationCatalogDebugAuthorization final
     : public application::SoftwareOptimizationCatalogDebugAuthorization {
  public:
   [[nodiscard]] bool local_import_allowed() const noexcept override {
     return false;
-  }
-};
-
-class UnavailableDebugLogPolicyProvider final
-    : public application::DebugLogPolicyProvider {
- public:
-  [[nodiscard]] application::DebugLogPolicyRead read_debug_log_policy()
-      const override {
-    return {.not_obtained_reason =
-                "the Windows composition root has no debug log policy provider"};
-  }
-};
-
-class UnavailableApplicationSettingsDebugProvider final
-    : public application::ApplicationSettingsDebugProvider {
- public:
-  [[nodiscard]] application::ApplicationSettingsDebugSnapshot snapshot()
-      override {
-    return {.detail =
-                "the Windows composition root has no debug settings provider"};
-  }
-
-  [[nodiscard]] application::ApplicationSettingsDebugActionResult set_enabled(
-      bool) override {
-    auto current = snapshot();
-    return {.code = application::ApplicationSettingsDebugActionCode::unavailable,
-            .snapshot = std::move(current),
-            .detail = "the Windows composition root has no debug settings provider"};
   }
 };
 
@@ -564,7 +528,9 @@ class WindowsWorkbenchServices final
       std::shared_ptr<application::ArchitecturePreferences>
           architecture_preferences,
       std::shared_ptr<application::CacheRetentionPreferences>
-          cache_retention_preferences)
+          cache_retention_preferences,
+      std::shared_ptr<application::DebugModePreferenceStore>
+          debug_mode_preferences)
       : state_subject_{environment.subject_id},
         clock_{},
         hardware_observer_{},
@@ -575,6 +541,7 @@ class WindowsWorkbenchServices final
         restart_resume_(states_, restart_resume_registration_),
         log_storage_(environment.root_utf8, environment.subject_id),
         log_(log_storage_, clock_),
+        debug_mode_preferences_(std::move(debug_mode_preferences)),
         driver_handoff_platform_{},
         driver_network_{},
         driver_acquisition_(states_, hardware_overview_, driver_handoff_platform_,
@@ -615,6 +582,9 @@ class WindowsWorkbenchServices final
                 ? architecture_preferences_->preference()
                 : application::architecture_selection::selection_domain::
                       ArchitecturePreference::prefer_arm64_prompt_fallback),
+        debug_mode_catalog_editor_(
+            std::make_shared<application::DebugModeCatalogEditor>(
+                log_, debug_mode_preferences_)),
         cache_root_{.kind = domain::offline_package_cache::
                             CacheLocationKind::system_directory,
                     .id = "program-data"},
@@ -658,8 +628,7 @@ class WindowsWorkbenchServices final
             states_, occupancy_, log_, software_optimization_batch_plans_,
             software_optimization_batch_executor_,
             software_optimization_batch_withdrawals_, &restart_resume_),
-        debug_log_policy_provider_(
-            std::make_shared<UnavailableDebugLogPolicyProvider>()),
+        debug_log_policy_provider_(debug_mode_catalog_editor_),
         debug_log_policy_(debug_log_policy_provider_),
         software_optimization_catalog_update_source_(
             optimization_catalog_file_,
@@ -673,7 +642,8 @@ class WindowsWorkbenchServices final
             software_selection_, software_optimization_discovery_,
             &settings_catalog_update_source_,
             &software_optimization_catalog_update_source_,
-            &application_settings_debug_provider_) {
+            debug_mode_catalog_editor_.get()) {
+    debug_mode_catalog_editor_->bind_catalog_lifecycle(software_catalog_);
     static_cast<void>(settings_catalog_.initialize_builtin(
         application::settings_catalog::initial_settings_catalog()));
     static_cast<void>(system_settings_apply_.refresh());
@@ -766,6 +736,11 @@ class WindowsWorkbenchServices final
   [[nodiscard]] application::ApplicationSettingsService& application_settings()
       noexcept override {
     return application_settings_;
+  }
+
+  [[nodiscard]] application::DebugModeCatalogEditor&
+  debug_mode_catalog_editor() noexcept override {
+    return *debug_mode_catalog_editor_;
   }
 
   [[nodiscard]] application::SharedOperationOccupancy& operation_occupancy()
@@ -912,6 +887,8 @@ class WindowsWorkbenchServices final
   application::restart_resume::RestartResumeService restart_resume_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;
   adapters::infrastructure::StructuredExecutionLog log_;
+  std::shared_ptr<application::DebugModePreferenceStore>
+      debug_mode_preferences_;
   adapters::windows::WindowsDriverHandoffPlatform driver_handoff_platform_;
   adapters::windows::WindowsDriverNetworkObserver driver_network_;
   application::driver_acquisition::DriverAcquisitionService driver_acquisition_;
@@ -972,14 +949,15 @@ class WindowsWorkbenchServices final
       cache_retention_preferences_;
   application::architecture_selection::ArchitectureSelectionLifecycle
       architecture_selection_;
+  std::shared_ptr<application::DebugModeCatalogEditor>
+      debug_mode_catalog_editor_;
   adapters::infrastructure::LocalSoftwareCatalogFileReader software_catalog_file_{
       utf8_from_path(repository_catalog_path())};
   adapters::infrastructure::TomlSoftwareCatalogCodec software_catalog_codec_;
-  ProductionCatalogMaintenanceAccess software_catalog_maintenance_access_;
   application::software_catalog::SoftwareCatalogLifecycle software_catalog_{
       states_, log_, occupancy_, software_catalog_file_, software_catalog_codec_,
       domain::software_catalog::initial_software_catalog_policy(),
-      software_catalog_maintenance_access_, state_subject_};
+      *debug_mode_catalog_editor_, state_subject_};
   UnavailableControlledSourceResolver source_resolver_;
   OfflineNetworkObserver network_;
   application::offline_package_cache::ControlledCacheRoot cache_root_;
@@ -1038,7 +1016,6 @@ class WindowsWorkbenchServices final
       software_catalog_, log_, installation_batches_,
       software_optimization_batches_, system_settings_apply_,
       software_selection_, &debug_log_policy_, &restart_resume_};
-  UnavailableApplicationSettingsDebugProvider application_settings_debug_provider_;
   EmbeddedSettingsCatalogUpdateSource settings_catalog_update_source_;
   EmbeddedSoftwareOptimizationCatalogUpdateSource
       software_optimization_catalog_update_source_;
@@ -1070,9 +1047,14 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
       std::make_shared<application::ArchitecturePreferences>(view_preferences);
   auto cache_retention_preferences =
       std::make_shared<application::CacheRetentionPreferences>(view_preferences);
+  auto debug_mode_preferences =
+      std::shared_ptr<application::DebugModePreferenceStore>(
+          view_preferences,
+          static_cast<application::DebugModePreferenceStore*>(
+              view_preferences.get()));
   auto services = std::make_shared<WindowsWorkbenchServices>(
-      std::move(*environment.environment), std::move(architecture_preferences),
-      std::move(cache_retention_preferences));
+       std::move(*environment.environment), std::move(architecture_preferences),
+       std::move(cache_retention_preferences), std::move(debug_mode_preferences));
   auto workbench = std::make_shared<application::Workbench>(
       services->platform_info(), services);
   auto system_settings = services->system_settings_apply_shared();

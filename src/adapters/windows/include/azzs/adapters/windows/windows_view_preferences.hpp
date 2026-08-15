@@ -8,7 +8,8 @@ namespace azzs::adapters::windows {
 class WindowsViewPreferences final
     : public application::AdvancedViewPreferenceStore,
       public application::ArchitecturePreferenceStore,
-      public application::CacheRetentionPreferenceStore {
+      public application::CacheRetentionPreferenceStore,
+      public application::DebugModePreferenceStore {
  public:
   [[nodiscard]] application::AdvancedViewPreferenceRead read_advanced_view()
       override;
@@ -24,6 +25,9 @@ class WindowsViewPreferences final
   [[nodiscard]] application::CacheRetentionPreferenceWriteStatus
   write_cache_retention(
       domain::offline_package_cache::CacheRetentionPolicy retention) override;
+  [[nodiscard]] application::DebugModePreferenceRead read_debug_mode() override;
+  [[nodiscard]] application::DebugModePreferenceWriteStatus write_debug_mode(
+      bool enabled) override;
 };
 
 }  // namespace azzs::adapters::windows

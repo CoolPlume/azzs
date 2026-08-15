@@ -919,6 +919,20 @@ StructuredExecutionLog::StructuredExecutionLog(LogStorage& storage,
                                                application::Clock const& clock)
     : storage_(storage), clock_(clock) {}
 
+application::ExecutionLogDebugModeResult
+StructuredExecutionLog::set_debug_mode(bool enabled) {
+  std::scoped_lock state_lock{state_mutex_};
+  debug_mode_enabled_ = enabled;
+  return {.status = application::ExecutionLogDebugModeStatus::applied,
+          .enabled = debug_mode_enabled_};
+}
+
+application::ExecutionLogDebugModeRead StructuredExecutionLog::debug_mode()
+    const {
+  std::scoped_lock state_lock{state_mutex_};
+  return {.available = true, .enabled = debug_mode_enabled_};
+}
+
 application::CorrelationId StructuredExecutionLog::begin_correlation() {
   auto transaction = storage_.begin_transaction();
   if (!transaction->read_error().empty()) {

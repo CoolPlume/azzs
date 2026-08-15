@@ -13,6 +13,7 @@ namespace {
 constexpr wchar_t kAdvancedViewPreference[] = L"AzzsAdvancedView";
 constexpr wchar_t kArchitecturePreference[] = L"AzzsArchitecturePreference";
 constexpr wchar_t kCacheRetentionPreference[] = L"AzzsCacheRetentionPreference";
+constexpr wchar_t kDebugModePreference[] = L"AzzsDebugMode";
 
 [[nodiscard]] std::optional<std::int32_t> read_int32(
     wchar_t const* key) {
@@ -126,6 +127,38 @@ WindowsViewPreferences::write_cache_retention(
     return application::CacheRetentionPreferenceWriteStatus::saved;
   } catch (...) {
     return application::CacheRetentionPreferenceWriteStatus::unavailable;
+  }
+}
+
+application::DebugModePreferenceRead WindowsViewPreferences::read_debug_mode() {
+  try {
+    auto const value = winrt::Windows::Storage::ApplicationData::Current()
+                           .LocalSettings()
+                           .Values()
+                           .TryLookup(kDebugModePreference);
+    auto const property_value =
+        value.try_as<winrt::Windows::Foundation::IPropertyValue>();
+    if (!property_value || property_value.Type() !=
+                               winrt::Windows::Foundation::PropertyType::Boolean) {
+      return {.status = application::DebugModePreferenceReadStatus::loaded};
+    }
+    return {.status = application::DebugModePreferenceReadStatus::loaded,
+            .enabled = winrt::unbox_value<bool>(value)};
+  } catch (...) {
+    return {};
+  }
+}
+
+application::DebugModePreferenceWriteStatus
+WindowsViewPreferences::write_debug_mode(bool enabled) {
+  try {
+    winrt::Windows::Storage::ApplicationData::Current()
+        .LocalSettings()
+        .Values()
+        .Insert(kDebugModePreference, winrt::box_value(enabled));
+    return application::DebugModePreferenceWriteStatus::saved;
+  } catch (...) {
+    return application::DebugModePreferenceWriteStatus::unavailable;
   }
 }
 

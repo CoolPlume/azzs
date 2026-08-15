@@ -106,4 +106,31 @@ class CacheRetentionPreferences final {
       domain::offline_package_cache::CacheRetentionPolicy::retain_seven_days};
 };
 
+// Debug mode is owned by the issue-32 application coordinator, while the
+// preference bytes remain behind the issue-02 persistence seam.
+enum class DebugModePreferenceReadStatus {
+  loaded,
+  unavailable,
+};
+
+struct DebugModePreferenceRead final {
+  DebugModePreferenceReadStatus status{
+      DebugModePreferenceReadStatus::unavailable};
+  bool enabled{false};
+};
+
+enum class DebugModePreferenceWriteStatus {
+  saved,
+  unavailable,
+};
+
+class DebugModePreferenceStore {
+ public:
+  virtual ~DebugModePreferenceStore() = default;
+
+  [[nodiscard]] virtual DebugModePreferenceRead read_debug_mode() = 0;
+  [[nodiscard]] virtual DebugModePreferenceWriteStatus write_debug_mode(
+      bool enabled) = 0;
+};
+
 }  // namespace azzs::application

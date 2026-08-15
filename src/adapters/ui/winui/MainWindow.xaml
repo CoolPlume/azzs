@@ -58,6 +58,14 @@
                 TabIndex="6">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
             </NavigationViewItem>
+            <NavigationViewItem
+                x:Name="SoftwareCatalogEditorItem"
+                x:Uid="NavigationSoftwareCatalogEditor"
+                AutomationProperties.AutomationId="AzzsNavigationSoftwareCatalogEditor"
+                TabIndex="7"
+                Visibility="Collapsed">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
         </NavigationView.MenuItems>
 
         <Grid Background="{ThemeResource AzzsSurfaceRootBrush}">

@@ -66,6 +66,10 @@ class StructuredExecutionLog final : public application::ExecutionLog {
   [[nodiscard]] application::ExecutionLogReceipt append(
       application::CorrelationId const& correlation,
       application::ExecutionEvent const& event) override;
+  [[nodiscard]] application::ExecutionLogDebugModeResult set_debug_mode(
+      bool enabled) override;
+  [[nodiscard]] application::ExecutionLogDebugModeRead debug_mode()
+      const override;
   [[nodiscard]] application::ExecutionLogSnapshot snapshot() override;
   [[nodiscard]] application::ExecutionLogClearReceipt clear() override;
   [[nodiscard]] application::DiagnosticExportReceipt export_diagnostic(
@@ -74,7 +78,8 @@ class StructuredExecutionLog final : public application::ExecutionLog {
  private:
   LogStorage& storage_;
   application::Clock const& clock_;
-  std::mutex state_mutex_;
+  mutable std::mutex state_mutex_;
+  bool debug_mode_enabled_{false};
   application::ExecutionLogCapacityState capacity_state_{
       application::ExecutionLogCapacityState::available};
   std::uint64_t pending_noncritical_dropped_count_{0};

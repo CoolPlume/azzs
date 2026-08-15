@@ -162,11 +162,13 @@ ApplicationSettingsPage::ApplicationSettingsPage() {
 void ApplicationSettingsPage::bind(
     std::shared_ptr<azzs::application::Workbench> workbench,
     azzs::application::ApplicationSettingsService& settings, bool advanced_view,
-    AdvancedViewChangedHandler advanced_view_changed) {
+    AdvancedViewChangedHandler advanced_view_changed,
+    CatalogEditorRequestedHandler catalog_editor_requested) {
   workbench_ = std::move(workbench);
   settings_ = std::addressof(settings);
   advanced_view_ = advanced_view;
   advanced_view_changed_ = std::move(advanced_view_changed);
+  catalog_editor_requested_ = std::move(catalog_editor_requested);
   if (workbench_) {
     project_update(workbench_->snapshot().update);
   }
@@ -379,6 +381,28 @@ void ApplicationSettingsPage::OnDebugModeToggled(
   }
 }
 
+[[nodiscard]] winrt::hstring debug_granularity_text(
+    azzs::application::DebugLogGranularity value) {
+  using Granularity = azzs::application::DebugLogGranularity;
+  switch (value) {
+    case Granularity::maximum:
+      return resource_string(L"ApplicationSettingsDebugGranularityMaximum");
+    case Granularity::normal:
+      return resource_string(L"ApplicationSettingsDebugGranularityNormal");
+    case Granularity::unavailable:
+      return resource_string(L"ApplicationSettingsDebugGranularityUnavailable");
+  }
+  return resource_string(L"ApplicationSettingsDebugGranularityUnavailable");
+}
+
+void ApplicationSettingsPage::OnOpenCatalogEditorClick(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (catalog_editor_requested_) {
+    catalog_editor_requested_();
+  }
+}
+
 void ApplicationSettingsPage::OnApplicationUpdateCommandClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
@@ -470,6 +494,11 @@ void ApplicationSettingsPage::project(
       !snapshot.software_optimization_catalog.current.has_value()) {
     catalog_message = resource_string(L"ApplicationSettingsCatalogUnavailable");
     CatalogStatus().Severity(InfoBarSeverity::Warning);
+  } else if (snapshot.software_catalog.current->identity ==
+             azzs::application::software_catalog::EffectiveCatalogIdentity::
+                 local_trial) {
+    catalog_message = resource_string(L"ApplicationSettingsCatalogLocalTrial");
+    CatalogStatus().Severity(InfoBarSeverity::Warning);
   } else {
     CatalogStatus().Severity(InfoBarSeverity::Informational);
   }
@@ -505,12 +534,19 @@ void ApplicationSettingsPage::project(
 
   DebugModeToggle().IsEnabled(snapshot.debug.available);
   DebugModeToggle().IsOn(snapshot.debug.enabled);
-  DebugModeStatusText().Text(
+  auto debug_status = std::wstring{
       !snapshot.debug.available
           ? resource_string(L"ApplicationSettingsDebugUnavailable")
           : snapshot.debug.enabled
                 ? resource_string(L"ApplicationSettingsDebugEnabled")
-                : resource_string(L"ApplicationSettingsDebugDisabled"));
+                : resource_string(L"ApplicationSettingsDebugDisabled")};
+  debug_status += L" " + std::wstring{debug_granularity_text(
+                                  snapshot.debug.log_granularity)};
+  DebugModeStatusText().Text(winrt::hstring{debug_status});
+  OpenCatalogEditorButton().Visibility(
+      snapshot.debug.catalog_editor_available ? Visibility::Visible
+                                               : Visibility::Collapsed);
+  OpenCatalogEditorButton().IsEnabled(snapshot.debug.catalog_editor_available);
   projecting_ = false;
 }
 
