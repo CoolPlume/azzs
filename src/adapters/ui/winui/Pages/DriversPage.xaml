@@ -25,6 +25,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Grid ColumnSpacing="{StaticResource AzzsSpaceStandard}">
                 <Grid.ColumnDefinitions>
@@ -178,6 +179,29 @@
                     </Button>
                     <Button x:Name="AsusSupportButton" AutomationProperties.AutomationId="AzzsAsusSupportEntrypoint" Click="OnAsusSupportClicked" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
                         <TextBlock x:Uid="DriverAsusButton" />
+                    </Button>
+                </StackPanel>
+            </Border>
+            <Border
+                Grid.Row="7"
+                AutomationProperties.AutomationId="AzzsFixedRescueToolFolders"
+                Style="{StaticResource AzzsSectionSurfaceStyle}">
+                <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                    <TextBlock x:Uid="RescueToolFoldersTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                    <TextBlock x:Uid="RescueToolFoldersDescription" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
+                    <Button
+                        x:Name="GenericNetworkDriverRescueButton"
+                        AutomationProperties.AutomationId="AzzsGenericNetworkDriverRescueFolder"
+                        Click="OnGenericNetworkDriverRescueClicked"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="GenericNetworkDriverRescueButton" />
+                    </Button>
+                    <Button
+                        x:Name="OfflineNetworkDiagnosticsRescueButton"
+                        AutomationProperties.AutomationId="AzzsOfflineNetworkDiagnosticsRescueFolder"
+                        Click="OnOfflineNetworkDiagnosticsRescueClicked"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="OfflineNetworkDiagnosticsRescueButton" />
                     </Button>
                 </StackPanel>
             </Border>

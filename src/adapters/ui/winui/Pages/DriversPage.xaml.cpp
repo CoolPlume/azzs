@@ -77,9 +77,11 @@ void DriversPage::bind(
     azzs::application::driver_acquisition::DriverAcquisitionSnapshot const&
         driver_snapshot,
     RefreshHandler refresh_handler, HandoffHandler handoff_handler,
+    RescueHandoffHandler rescue_handoff_handler,
     ReturnedHandler returned_handler, DecisionHandler decision_handler) {
   refresh_handler_ = std::move(refresh_handler);
   handoff_handler_ = std::move(handoff_handler);
+  rescue_handoff_handler_ = std::move(rescue_handoff_handler);
   returned_handler_ = std::move(returned_handler);
   decision_handler_ = std::move(decision_handler);
   project(snapshot, driver_snapshot);
@@ -132,6 +134,8 @@ void DriversPage::project(
   HpSupportButton().IsEnabled(can_start);
   LenovoSupportButton().IsEnabled(can_start);
   AsusSupportButton().IsEnabled(can_start);
+  GenericNetworkDriverRescueButton().IsEnabled(can_start);
+  OfflineNetworkDiagnosticsRescueButton().IsEnabled(can_start);
   DriverAssistantActionText().Text(resources.GetString(
       driver_snapshot.assistant_installed ? L"DriverAssistantLaunchButton"
                                           : L"DriverAssistantInstallButton"));
@@ -153,8 +157,13 @@ void DriversPage::project(
   if (driver_snapshot.state == DriverAcquisitionState::handoff_in_progress) {
     show_surface = true;
     show_returned = true;
-    DriverHandoffHeadline().Text(resources.GetString(L"DriverHandoffInProgressTitle"));
-    DriverHandoffDescription().Text(resources.GetString(L"DriverHandoffInProgressBody"));
+    auto const rescue_handoff = driver_snapshot.active_rescue_target.has_value();
+    DriverHandoffHeadline().Text(resources.GetString(
+        rescue_handoff ? L"RescueHandoffInProgressTitle"
+                       : L"DriverHandoffInProgressTitle"));
+    DriverHandoffDescription().Text(resources.GetString(
+        rescue_handoff ? L"RescueHandoffInProgressBody"
+                       : L"DriverHandoffInProgressBody"));
   } else if (driver_snapshot.state == DriverAcquisitionState::awaiting_user_decision) {
     show_surface = true;
     show_decisions = true;
@@ -192,6 +201,13 @@ void DriversPage::request_handoff(
     azzs::application::driver_acquisition::DriverEntrypoint entrypoint) {
   if (handoff_handler_) {
     handoff_handler_(entrypoint);
+  }
+}
+
+void DriversPage::request_rescue_handoff(
+    azzs::application::driver_acquisition::RescueToolTarget target) {
+  if (rescue_handoff_handler_) {
+    rescue_handoff_handler_(target);
   }
 }
 
@@ -235,6 +251,20 @@ void DriversPage::OnAsusSupportClicked(
     winrt::Windows::Foundation::IInspectable const&,
     winrt::Microsoft::UI::Xaml::RoutedEventArgs const&) {
   request_handoff(azzs::application::driver_acquisition::DriverEntrypoint::asus_support);
+}
+
+void DriversPage::OnGenericNetworkDriverRescueClicked(
+    winrt::Windows::Foundation::IInspectable const&,
+    winrt::Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  request_rescue_handoff(
+      azzs::application::driver_acquisition::RescueToolTarget::generic_network_driver);
+}
+
+void DriversPage::OnOfflineNetworkDiagnosticsRescueClicked(
+    winrt::Windows::Foundation::IInspectable const&,
+    winrt::Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  request_rescue_handoff(
+      azzs::application::driver_acquisition::RescueToolTarget::offline_network_diagnostics);
 }
 
 void DriversPage::OnExternalFlowReturnedClicked(

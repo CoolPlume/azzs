@@ -328,6 +328,10 @@ void MainWindow::navigate_to(PageId page) {
               if (auto self = weak_this.get()) {
                 self->begin_driver_handoff(entrypoint);
               }
+            }, [weak_this](auto target) {
+              if (auto self = weak_this.get()) {
+                self->begin_rescue_folder_handoff(target);
+              }
             }, [weak_this] {
               if (auto self = weak_this.get()) {
                 self->driver_flow_returned();
@@ -444,6 +448,15 @@ void MainWindow::begin_driver_handoff(
     return;
   }
   auto const result = workbench_->begin_driver_handoff(entrypoint);
+  project_drivers_page(result.snapshot);
+}
+
+void MainWindow::begin_rescue_folder_handoff(
+    azzs::application::driver_acquisition::RescueToolTarget target) {
+  if (!workbench_) {
+    return;
+  }
+  auto const result = workbench_->begin_rescue_folder_handoff(target);
   project_drivers_page(result.snapshot);
 }
 

@@ -179,6 +179,19 @@ if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
 }
 
 $stagingRoot = (Resolve-Path -LiteralPath $StagingDirectory).Path.TrimEnd('\', '/')
+$fixedRescueFolderPaths = @(
+    "rescue-tools/generic-network-driver",
+    "rescue-tools/offline-network-diagnostics"
+)
+foreach ($relativeFolder in $fixedRescueFolderPaths) {
+    $folderPath = Join-Path $stagingRoot ($relativeFolder.Replace("/", "\"))
+    if (-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
+        throw "Portable package staging directory is missing fixed rescue folder '$relativeFolder'."
+    }
+    if (@(Get-ChildItem -LiteralPath $folderPath -Force).Count -ne 0) {
+        throw "Portable package fixed rescue folder '$relativeFolder' must remain empty."
+    }
+}
 $stagedPayload = @(
     Get-ChildItem -LiteralPath $stagingRoot -File -Recurse |
         ForEach-Object {
@@ -229,9 +242,12 @@ if ([System.BitConverter]::ToUInt16($executableBytes, $peOffset + 4) -ne $expect
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($PackagePath)
 try {
+    $archiveEntries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
     $archivePayload = @(
         $archive.Entries |
-            Where-Object { -not $_.FullName.EndsWith("/", [StringComparison]::Ordinal) } |
+            Where-Object {
+                -not $_.FullName.Replace('\', '/').EndsWith("/", [StringComparison]::Ordinal)
+            } |
             ForEach-Object {
                 [ordered]@{
                     path = $_.FullName.Replace('\', '/')
@@ -244,6 +260,17 @@ try {
 finally {
     $archive.Dispose()
 }
+foreach ($relativeFolder in $fixedRescueFolderPaths) {
+    $directoryEntry = "$relativeFolder/"
+    if (@($archiveEntries | Where-Object { $_ -eq $directoryEntry }).Count -ne 1) {
+        throw "Portable package ZIP must contain exactly one fixed empty rescue folder '$relativeFolder'."
+    }
+    if (@($archiveEntries | Where-Object {
+                $_ -ne $directoryEntry -and $_.StartsWith($directoryEntry, [StringComparison]::OrdinalIgnoreCase)
+            }).Count -ne 0) {
+        throw "Portable package ZIP fixed rescue folder '$relativeFolder' must not contain additional entries."
+    }
+}
 
 $stagedPayloadMap = ConvertTo-PayloadMap -Payload $stagedPayload -Name "Portable package staging payload"
 $archivePayloadMap = ConvertTo-PayloadMap -Payload $archivePayload -Name "Portable package ZIP payload"
@@ -255,6 +282,19 @@ Assert-PayloadHashMapMatches -Expected $stagedPayloadHashMap -Actual $archivePay
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($manifest.kind -ne "portable" -or $manifest.architecture -ne $Architecture) {
     throw "Portable package manifest kind or architecture does not match the requested package."
+}
+$manifestPackagePath = [string](Get-RequiredProperty -Object $manifest.package -Name "path" -Context "Portable package manifest package")
+$expectedPackageRelativePath = ConvertTo-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -Path $PackagePath -Context "Portable package ZIP"
+$packageSegments = $manifestPackagePath.Split("/")
+if ([string]::IsNullOrWhiteSpace($manifestPackagePath) -or
+    [System.IO.Path]::IsPathRooted($manifestPackagePath) -or
+    $manifestPackagePath.Contains("\") -or
+    $manifestPackagePath -match "^[A-Za-z]:" -or
+    @($packageSegments | Where-Object {
+        [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".."
+    }).Count -gt 0 -or
+    $manifestPackagePath -ne $expectedPackageRelativePath) {
+    throw "Portable package manifest package path is not the canonical repository-relative ZIP path."
 }
 $expectedContentManifestPath = ConvertTo-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -Path $definition.ContentManifestPath -Context "Artifact content manifest"
 if ($manifest.schemaVersion -ne 1 -or

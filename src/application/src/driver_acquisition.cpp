@@ -22,8 +22,15 @@ constexpr std::array<std::byte, 8> k_magic{
     std::byte{'A'}, std::byte{'Z'}, std::byte{'Z'}, std::byte{'S'},
     std::byte{'D'}, std::byte{'R'}, std::byte{'V'}, std::byte{'1'},
 };
-constexpr std::uint32_t k_format_version = 1;
-constexpr std::uint8_t k_no_entrypoint = 0xff;
+constexpr std::uint32_t k_format_version = 2;
+constexpr std::uint32_t k_legacy_format_version = 1;
+constexpr std::uint8_t k_no_handoff_target = 0xff;
+
+enum class PersistedHandoffTargetKind : std::uint8_t {
+  none = 0,
+  driver_entrypoint = 1,
+  rescue_tool = 2,
+};
 
 class Encoder final {
  public:
@@ -90,6 +97,11 @@ class Decoder final {
   return value <= static_cast<std::uint8_t>(DriverEntrypoint::asus_support);
 }
 
+[[nodiscard]] bool valid_rescue_target(std::uint8_t value) noexcept {
+  return value <=
+         static_cast<std::uint8_t>(RescueToolTarget::offline_network_diagnostics);
+}
+
 [[nodiscard]] bool supported_entrypoint(DriverEntrypoint value) noexcept {
   switch (value) {
     case DriverEntrypoint::amd_software:
@@ -101,6 +113,18 @@ class Decoder final {
     case DriverEntrypoint::asus_support: return true;
   }
   return false;
+}
+
+[[nodiscard]] bool supported_rescue_target(RescueToolTarget value) noexcept {
+  switch (value) {
+    case RescueToolTarget::generic_network_driver:
+    case RescueToolTarget::offline_network_diagnostics: return true;
+  }
+  return false;
+}
+
+[[nodiscard]] bool valid_target_kind(std::uint8_t value) noexcept {
+  return value <= static_cast<std::uint8_t>(PersistedHandoffTargetKind::rescue_tool);
 }
 
 [[nodiscard]] bool supported_decision(DriverHandoffDecision value) noexcept {
@@ -116,6 +140,13 @@ class Decoder final {
   return value >= static_cast<std::uint8_t>(DriverAcquisitionState::ready) &&
          value <= static_cast<std::uint8_t>(
                       DriverAcquisitionState::waiting_for_restart);
+}
+
+[[nodiscard]] bool state_requires_handoff_target(
+    DriverAcquisitionState value) noexcept {
+  return value == DriverAcquisitionState::handoff_in_progress ||
+         value == DriverAcquisitionState::awaiting_user_decision ||
+         value == DriverAcquisitionState::waiting_for_restart;
 }
 
 [[nodiscard]] char const* hardware_state_text(HardwareOverviewState value) noexcept {
@@ -260,11 +291,11 @@ class DriverAcquisitionService::Impl final {
         state_ = DriverAcquisitionState::read_only;
         writable_ = false;
         log_event("restore-missing-restart-barrier", ExecutionResult::unknown,
-                  active_entrypoint_, detail_);
+                  active_entrypoint_, detail_, {}, active_rescue_target_);
         return result(DriverActionCode::persistence_failed, detail_);
       }
       log_event("restore-missing-restart-barrier", ExecutionResult::unknown,
-                active_entrypoint_, detail_);
+                active_entrypoint_, detail_, {}, active_rescue_target_);
     }
     if (state_ == DriverAcquisitionState::handoff_in_progress) {
       // A browser or assistant has no reliable completion signal. A later
@@ -273,11 +304,12 @@ class DriverAcquisitionService::Impl final {
       if (!persist()) {
         state_ = DriverAcquisitionState::read_only;
         writable_ = false;
-        log_event("restore-return-boundary", ExecutionResult::unknown, {}, detail_);
+        log_event("restore-return-boundary", ExecutionResult::unknown,
+                  active_entrypoint_, detail_, {}, active_rescue_target_);
         return result(DriverActionCode::persistence_failed, detail_);
       }
       log_event("restore-return-boundary", ExecutionResult::unknown,
-                active_entrypoint_);
+                active_entrypoint_, {}, {}, active_rescue_target_);
     }
     log_event("restore", ExecutionResult::succeeded);
     return result(DriverActionCode::succeeded);
@@ -345,6 +377,56 @@ class DriverAcquisitionService::Impl final {
     return result(DriverActionCode::succeeded);
   }
 
+  [[nodiscard]] DriverActionResult begin_external_rescue_handoff(
+      RescueToolTarget target) {
+    std::scoped_lock lock{mutex_};
+    if (!ready()) {
+      return result(state_ == DriverAcquisitionState::read_only
+                        ? DriverActionCode::read_only
+                        : DriverActionCode::not_restored);
+    }
+    if (state_ != DriverAcquisitionState::ready) {
+      return result(DriverActionCode::rejected,
+                    "a previous driver handoff still needs an explicit decision");
+    }
+    if (!supported_rescue_target(target)) {
+      return result(DriverActionCode::rejected,
+                    "the requested rescue folder is not product-controlled");
+    }
+
+    active_rescue_target_ = target;
+    state_ = DriverAcquisitionState::handoff_in_progress;
+    detail_.clear();
+    if (!persist()) {
+      state_ = DriverAcquisitionState::ready;
+      active_rescue_target_.reset();
+      return result(DriverActionCode::persistence_failed, detail_);
+    }
+    log_event("rescue-folder-handoff-prepared", ExecutionResult::started, {}, {},
+              {}, active_rescue_target_);
+
+    std::string error;
+    if (!platform_.open_rescue_folder(target, error)) {
+      auto const failure = error.empty()
+                               ? "the fixed external rescue folder could not open"
+                               : std::move(error);
+      state_ = DriverAcquisitionState::ready;
+      active_rescue_target_.reset();
+      if (!persist()) {
+        state_ = DriverAcquisitionState::read_only;
+        writable_ = false;
+        return result(DriverActionCode::persistence_failed, detail_);
+      }
+      detail_ = failure;
+      log_event("external-rescue-folder-opened", ExecutionResult::failed, {}, {},
+                {}, target);
+      return result(DriverActionCode::launcher_failed, detail_);
+    }
+    log_event("external-rescue-folder-opened", ExecutionResult::started, {}, {},
+              {}, active_rescue_target_);
+    return result(DriverActionCode::succeeded);
+  }
+
   [[nodiscard]] DriverActionResult external_flow_returned() {
     std::scoped_lock lock{mutex_};
     if (!ready()) {
@@ -362,7 +444,8 @@ class DriverAcquisitionService::Impl final {
       state_ = DriverAcquisitionState::handoff_in_progress;
       return result(DriverActionCode::persistence_failed, detail_);
     }
-    log_event("external-returned", ExecutionResult::unknown, active_entrypoint_);
+    log_event("external-returned", ExecutionResult::unknown, active_entrypoint_,
+              {}, {}, active_rescue_target_);
     return result(DriverActionCode::succeeded);
   }
 
@@ -381,6 +464,20 @@ class DriverAcquisitionService::Impl final {
       return result(DriverActionCode::rejected,
                     "the requested driver handoff decision is not supported");
     }
+
+    auto const completed_entrypoint = active_entrypoint_;
+    auto const completed_rescue_target = active_rescue_target_;
+    auto const pending_state = state_;
+    auto const pending_observation = last_observation_;
+    auto const restore_pending_decision = [this, pending_state,
+                                           completed_entrypoint,
+                                           completed_rescue_target,
+                                           pending_observation] {
+      state_ = pending_state;
+      active_entrypoint_ = completed_entrypoint;
+      active_rescue_target_ = completed_rescue_target;
+      last_observation_ = pending_observation;
+    };
 
     auto const restart = restart_resume_.snapshot();
     auto const owns_restart_barrier = is_driver_restart_checkpoint(restart);
@@ -411,13 +508,15 @@ class DriverAcquisitionService::Impl final {
     if (decision == DriverHandoffDecision::skip_for_now) {
       state_ = DriverAcquisitionState::ready;
       active_entrypoint_.reset();
+      active_rescue_target_.reset();
       detail_.clear();
       if (!persist()) {
-        state_ = DriverAcquisitionState::awaiting_user_decision;
+        restore_pending_decision();
         return result(DriverActionCode::persistence_failed, detail_);
       }
-      log_event("user-result-confirmation", ExecutionResult::cancelled, {},
-                "user selected skip");
+      log_event("user-result-confirmation", ExecutionResult::cancelled,
+                completed_entrypoint, "user selected skip", {},
+                completed_rescue_target);
       return result(DriverActionCode::succeeded);
     }
 
@@ -428,14 +527,16 @@ class DriverAcquisitionService::Impl final {
     };
     state_ = DriverAcquisitionState::ready;
     active_entrypoint_.reset();
+    active_rescue_target_.reset();
     detail_.clear();
     if (!persist()) {
-      state_ = DriverAcquisitionState::awaiting_user_decision;
+      restore_pending_decision();
       return result(DriverActionCode::persistence_failed, detail_);
     }
-    log_event("user-result-confirmation", ExecutionResult::unknown, {},
+    log_event("user-result-confirmation", ExecutionResult::unknown,
+              completed_entrypoint,
               "user reported external completion; driver success remains unverified",
-              *last_observation_);
+              *last_observation_, completed_rescue_target);
     auto action = result(DriverActionCode::succeeded);
     action.refreshed_hardware = hardware;
     return action;
@@ -460,7 +561,7 @@ class DriverAcquisitionService::Impl final {
       return result(DriverActionCode::persistence_failed, detail_);
     }
     log_event("restart-read-only-recovery", ExecutionResult::unknown,
-              active_entrypoint_);
+              active_entrypoint_, {}, {}, active_rescue_target_);
     return result(DriverActionCode::succeeded);
   }
 
@@ -503,19 +604,29 @@ class DriverAcquisitionService::Impl final {
         !valid_persisted_state(static_cast<std::uint8_t>(state_))) {
       return std::nullopt;
     }
-    if ((state_ == DriverAcquisitionState::handoff_in_progress ||
-         state_ == DriverAcquisitionState::awaiting_user_decision ||
-         state_ == DriverAcquisitionState::waiting_for_restart) &&
-        !active_entrypoint_.has_value()) {
+    if (active_entrypoint_.has_value() && active_rescue_target_.has_value()) {
       return std::nullopt;
+    }
+    auto const has_target = active_entrypoint_.has_value() ||
+                            active_rescue_target_.has_value();
+    if (state_requires_handoff_target(state_) != has_target) {
+      return std::nullopt;
+    }
+    auto target_kind = PersistedHandoffTargetKind::none;
+    auto target_value = k_no_handoff_target;
+    if (active_entrypoint_.has_value()) {
+      target_kind = PersistedHandoffTargetKind::driver_entrypoint;
+      target_value = static_cast<std::uint8_t>(*active_entrypoint_);
+    } else if (active_rescue_target_.has_value()) {
+      target_kind = PersistedHandoffTargetKind::rescue_tool;
+      target_value = static_cast<std::uint8_t>(*active_rescue_target_);
     }
     Encoder encoder;
     encoder.raw(k_magic);
     encoder.u32(k_format_version);
     encoder.u8(static_cast<std::uint8_t>(state_));
-    encoder.u8(active_entrypoint_.has_value()
-                   ? static_cast<std::uint8_t>(*active_entrypoint_)
-                   : k_no_entrypoint);
+    encoder.u8(static_cast<std::uint8_t>(target_kind));
+    encoder.u8(target_value);
     encoder.u8(last_observation_.has_value() ? 1 : 0);
     if (last_observation_.has_value()) {
       encoder.u8(static_cast<std::uint8_t>(last_observation_->hardware_state));
@@ -528,14 +639,24 @@ class DriverAcquisitionService::Impl final {
     Decoder decoder{bytes};
     std::array<std::byte, k_magic.size()> magic{};
     std::uint32_t version{};
+    if (!decoder.raw(magic) || magic != k_magic || !decoder.u32(version)) {
+      return false;
+    }
+    if (version == k_legacy_format_version) {
+      return decode_legacy_v1(decoder);
+    }
+    if (version != k_format_version) {
+      return false;
+    }
+
     std::uint8_t state{};
-    std::uint8_t entrypoint{};
+    std::uint8_t target_kind{};
+    std::uint8_t target_value{};
     std::uint8_t has_observation{};
-    if (!decoder.raw(magic) || magic != k_magic || !decoder.u32(version) ||
-        version != k_format_version || !decoder.u8(state) ||
-        !valid_persisted_state(state) || !decoder.u8(entrypoint) ||
-        (entrypoint != k_no_entrypoint && !valid_entrypoint(entrypoint)) ||
-        !decoder.u8(has_observation) || has_observation > 1) {
+    if (!decoder.u8(state) || !valid_persisted_state(state) ||
+        !decoder.u8(target_kind) || !valid_target_kind(target_kind) ||
+        !decoder.u8(target_value) || !decoder.u8(has_observation) ||
+        has_observation > 1) {
       return false;
     }
     std::optional<DriverPostHandoffObservation> observation;
@@ -553,19 +674,78 @@ class DriverAcquisitionService::Impl final {
       };
     }
     auto const decoded_state = static_cast<DriverAcquisitionState>(state);
-    auto const active = entrypoint == k_no_entrypoint
+    auto const target = static_cast<PersistedHandoffTargetKind>(target_kind);
+    std::optional<DriverEntrypoint> entrypoint;
+    std::optional<RescueToolTarget> rescue_target;
+    switch (target) {
+      case PersistedHandoffTargetKind::none:
+        if (target_value != k_no_handoff_target) {
+          return false;
+        }
+        break;
+      case PersistedHandoffTargetKind::driver_entrypoint:
+        if (!valid_entrypoint(target_value)) {
+          return false;
+        }
+        entrypoint = static_cast<DriverEntrypoint>(target_value);
+        break;
+      case PersistedHandoffTargetKind::rescue_tool:
+        if (!valid_rescue_target(target_value)) {
+          return false;
+        }
+        rescue_target = static_cast<RescueToolTarget>(target_value);
+        break;
+    }
+    if (state_requires_handoff_target(decoded_state) !=
+            (entrypoint.has_value() || rescue_target.has_value()) ||
+        !decoder.complete()) {
+      return false;
+    }
+    state_ = decoded_state;
+    active_entrypoint_ = entrypoint;
+    active_rescue_target_ = rescue_target;
+    last_observation_ = observation;
+    detail_.clear();
+    return true;
+  }
+
+  [[nodiscard]] bool decode_legacy_v1(Decoder& decoder) {
+    std::uint8_t state{};
+    std::uint8_t entrypoint{};
+    std::uint8_t has_observation{};
+    if (!decoder.u8(state) || !valid_persisted_state(state) ||
+        !decoder.u8(entrypoint) ||
+        (entrypoint != k_no_handoff_target && !valid_entrypoint(entrypoint)) ||
+        !decoder.u8(has_observation) || has_observation > 1) {
+      return false;
+    }
+    std::optional<DriverPostHandoffObservation> observation;
+    if (has_observation == 1) {
+      std::uint8_t hardware_state{};
+      std::uint8_t network_available{};
+      if (!decoder.u8(hardware_state) ||
+          hardware_state >
+              static_cast<std::uint8_t>(HardwareOverviewState::unrecognized) ||
+          !decoder.u8(network_available) || network_available > 1) {
+        return false;
+      }
+      observation = DriverPostHandoffObservation{
+          .hardware_state = static_cast<HardwareOverviewState>(hardware_state),
+          .network_available = network_available == 1,
+      };
+    }
+    auto const decoded_state = static_cast<DriverAcquisitionState>(state);
+    auto const active = entrypoint == k_no_handoff_target
                             ? std::optional<DriverEntrypoint>{}
                             : std::optional<DriverEntrypoint>{
                                   static_cast<DriverEntrypoint>(entrypoint)};
-    if ((decoded_state == DriverAcquisitionState::handoff_in_progress ||
-         decoded_state == DriverAcquisitionState::awaiting_user_decision ||
-         decoded_state == DriverAcquisitionState::waiting_for_restart) !=
-            active.has_value() ||
+    if (state_requires_handoff_target(decoded_state) != active.has_value() ||
         !decoder.complete()) {
       return false;
     }
     state_ = decoded_state;
     active_entrypoint_ = active;
+    active_rescue_target_.reset();
     last_observation_ = observation;
     detail_.clear();
     return true;
@@ -596,7 +776,7 @@ class DriverAcquisitionService::Impl final {
         // a second external-return decision against a still-pending barrier.
         detail_ = message;
         log_event("restart-barrier", ExecutionResult::failed, active_entrypoint_,
-                  message);
+                  message, {}, active_rescue_target_);
         return result(DriverActionCode::restart_barrier_failed, message);
       }
       state_ = DriverAcquisitionState::awaiting_user_decision;
@@ -609,14 +789,15 @@ class DriverAcquisitionService::Impl final {
           detail_ += ": " + persistence_error;
         }
         log_event("restart-barrier", ExecutionResult::failed, active_entrypoint_,
-                  detail_);
+                  detail_, {}, active_rescue_target_);
         return result(DriverActionCode::persistence_failed, detail_);
       }
       log_event("restart-barrier", ExecutionResult::failed, active_entrypoint_,
-                message);
+                message, {}, active_rescue_target_);
       return result(DriverActionCode::restart_barrier_failed, message);
     }
-    log_event("restart-barrier", ExecutionResult::started, active_entrypoint_);
+    log_event("restart-barrier", ExecutionResult::started, active_entrypoint_,
+              {}, {}, active_rescue_target_);
     return result(DriverActionCode::succeeded);
   }
 
@@ -626,6 +807,7 @@ class DriverAcquisitionService::Impl final {
         .writable = writable_,
         .assistant_installed = platform_.assistant_installed(),
         .active_entrypoint = active_entrypoint_,
+        .active_rescue_target = active_rescue_target_,
         .recommended_entrypoints = recommendations_for(hardware_.snapshot()),
         .last_observation = last_observation_,
         .detail = detail_,
@@ -642,11 +824,17 @@ class DriverAcquisitionService::Impl final {
   void log_event(std::string_view stage, ExecutionResult result,
                  std::optional<DriverEntrypoint> entrypoint = {},
                  std::string_view detail = {},
-                 std::optional<DriverPostHandoffObservation> observation = {}) {
+                 std::optional<DriverPostHandoffObservation> observation = {},
+                 std::optional<RescueToolTarget> rescue_target = {}) {
     std::vector<DiagnosticField> fields;
     if (entrypoint.has_value()) {
       fields.push_back({.key = "entrypoint",
                         .value = to_string(*entrypoint),
+                        .disposition = DiagnosticValueDisposition::retain});
+    }
+    if (rescue_target.has_value()) {
+      fields.push_back({.key = "rescue_target",
+                        .value = to_string(*rescue_target),
                         .disposition = DiagnosticValueDisposition::retain});
     }
     if (!detail.empty()) {
@@ -686,6 +874,7 @@ class DriverAcquisitionService::Impl final {
   DriverAcquisitionState state_{DriverAcquisitionState::not_restored};
   bool writable_{false};
   std::optional<DriverEntrypoint> active_entrypoint_;
+  std::optional<RescueToolTarget> active_rescue_target_;
   std::optional<DriverPostHandoffObservation> last_observation_;
   std::string detail_;
   mutable std::mutex mutex_;
@@ -711,6 +900,11 @@ DriverActionResult DriverAcquisitionService::begin_external_handoff(
   return impl_->begin_external_handoff(entrypoint);
 }
 
+DriverActionResult DriverAcquisitionService::begin_external_rescue_handoff(
+    RescueToolTarget target) {
+  return impl_->begin_external_rescue_handoff(target);
+}
+
 DriverActionResult DriverAcquisitionService::external_flow_returned() {
   return impl_->external_flow_returned();
 }
@@ -732,6 +926,16 @@ char const* to_string(DriverEntrypoint value) noexcept {
     case DriverEntrypoint::hp_support: return "hp-support";
     case DriverEntrypoint::lenovo_support: return "lenovo-support";
     case DriverEntrypoint::asus_support: return "asus-support";
+  }
+  return "unknown";
+}
+
+char const* to_string(RescueToolTarget value) noexcept {
+  switch (value) {
+    case RescueToolTarget::generic_network_driver:
+      return "generic-network-driver";
+    case RescueToolTarget::offline_network_diagnostics:
+      return "offline-network-diagnostics";
   }
   return "unknown";
 }
