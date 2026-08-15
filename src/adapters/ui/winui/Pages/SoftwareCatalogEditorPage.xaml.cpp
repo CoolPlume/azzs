@@ -332,7 +332,7 @@ void SoftwareCatalogEditorPage::OnSearchChanged(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&) {
   if (!projecting_) {
-    project_document();
+    project_document(selected_software_id());
   }
 }
 
@@ -735,6 +735,7 @@ void SoftwareCatalogEditorPage::refresh() {
 void SoftwareCatalogEditorPage::project(
     azzs::application::DebugModeCatalogEditorSnapshot const& snapshot) {
   projecting_ = true;
+  auto const selected_id = selected_software_id();
   auto const can_edit = snapshot.settings.catalog_editor_available ||
                         snapshot.settings.temporary_close_recovery;
   auto const can_import = snapshot.settings.manual_catalog_import_available;
@@ -755,7 +756,7 @@ void SoftwareCatalogEditorPage::project(
                           : snapshot.catalog.current_document;
   document_ = source;
   project_validation_issues(snapshot);
-  project_document();
+  project_document(selected_id);
   auto const has_selection = selected_software_index().has_value();
   AddSoftwareButton().IsEnabled(can_edit && document_.has_value());
   AddCategoryButton().IsEnabled(can_edit && document_.has_value());
@@ -867,13 +868,9 @@ void SoftwareCatalogEditorPage::project_import_preview(
   ImportPreviewText().Text(winrt::hstring{std::move(text)});
 }
 
-void SoftwareCatalogEditorPage::project_document() {
+void SoftwareCatalogEditorPage::project_document(
+    std::optional<std::string> selected_id) {
   auto const was_projecting = std::exchange(projecting_, true);
-  std::optional<std::string> selected_id;
-  if (auto const selected = selected_software_index(); selected.has_value() &&
-      document_.has_value()) {
-    selected_id = document_->software[*selected].id;
-  }
   visible_software_indices_.clear();
   SoftwareList().Items().Clear();
   if (!document_.has_value()) {
@@ -1334,11 +1331,22 @@ void SoftwareCatalogEditorPage::set_status(
 
 std::optional<std::size_t> SoftwareCatalogEditorPage::selected_software_index() {
   auto const selected = SoftwareList().SelectedIndex();
-  if (selected < 0 ||
+  if (!document_.has_value() || selected < 0 ||
       static_cast<std::size_t>(selected) >= visible_software_indices_.size()) {
     return std::nullopt;
   }
-  return visible_software_indices_[static_cast<std::size_t>(selected)];
+  auto const document_index =
+      visible_software_indices_[static_cast<std::size_t>(selected)];
+  return document_index < document_->software.size()
+             ? std::optional<std::size_t>{document_index}
+             : std::nullopt;
+}
+
+std::optional<std::string> SoftwareCatalogEditorPage::selected_software_id() {
+  auto const selected = selected_software_index();
+  return selected.has_value()
+             ? std::optional<std::string>{document_->software[*selected].id}
+             : std::nullopt;
 }
 
 std::optional<std::size_t> SoftwareCatalogEditorPage::selected_category_index() {
