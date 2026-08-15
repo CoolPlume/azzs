@@ -89,6 +89,7 @@ OpenAI 的 prompt caching 资料说明缓存按请求起始前缀匹配，因此
 
 ## 7. Windows 原生主执行环境
 
+- Windows worktree 的盘符、推荐根目录、创建/迁移/清理和证据边界遵循 `docs/agents/windows-workspace-path-policy.md`；默认使用 `D:\azzs-codex\worktrees\<feature-slug>`，不在主工作树并行写入。
 - 从 2026-08-13 起，新的总调度和后续执行默认在维护者的 Windows 11 25H2 原生环境进行；GitHub 是跨会话状态的权威中转，不再把 macOS 或虚拟机作为日常执行端。
 - Windows 总调度从 `origin/codex/v1-integration` 克隆或更新，先阅读 `docs/agents/windows-native-takeover.md`，再使用独立 worktree 分发任务。执行会话直接完成实现、x64 最小验证、提交、推送、PR 和集成，不把普通操作交回维护者。
 - 减少人工 UI 验收。只有结果会改变 x64 发布决策且无法由无界面合同或自动化替代时才请求维护者操作；相邻 UAC、Explorer、安装器和 UIA 场景集中到同一个接近发行候选的验收批次。
