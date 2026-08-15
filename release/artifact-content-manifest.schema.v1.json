@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://coolplume.github.io/azzs/release/artifact-content-manifest.schema.v1.json",
+  "title": "Windows Initial Setup Workbench artifact content manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifactId",
+          "edition",
+          "packageKind",
+          "architecture",
+          "inputs"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "edition": {
+            "enum": [
+              "standard",
+              "rescue",
+              "large-offline"
+            ]
+          },
+          "packageKind": {
+            "const": "portable"
+          },
+          "architecture": {
+            "const": "x64"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "role",
+                "version",
+                "architecture",
+                "relativePath",
+                "packagePath",
+                "bytes",
+                "sha256",
+                "license",
+                "source",
+                "securityClassification"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "architecture": {
+                  "const": "x64"
+                },
+                "relativePath": {
+                  "type": "string",
+                  "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                },
+                "packagePath": {
+                  "type": "string",
+                  "pattern": "^content/(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[A-Fa-f0-9]{64}$"
+                },
+                "license": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "securityClassification": {
+                  "enum": [
+                    "allowed"
+                  ]
+                },
+                "rescueEvidence": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sourcePath",
+                    "reproducibleBuildPath",
+                    "minimalSmokePath",
+                    "processTokenContractPath"
+                  ],
+                  "properties": {
+                    "sourcePath": {
+                      "type": "string",
+                      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                    },
+                    "reproducibleBuildPath": {
+                      "type": "string",
+                      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                    },
+                    "minimalSmokePath": {
+                      "type": "string",
+                      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                    },
+                    "processTokenContractPath": {
+                      "type": "string",
+                      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                    }
+                  }
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "role": {
+                        "const": "rescue-companion-tool"
+                      }
+                    },
+                    "required": [
+                      "role"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "rescueEvidence"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "rescueGate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "adrId",
+              "relativePath",
+              "requiredStatus"
+            ],
+            "properties": {
+              "adrId": {
+                "const": "ADR-0030"
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "requiredStatus": {
+                "const": "accepted"
+              }
+            }
+          },
+          "releaseDirectoryGate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "relativePath",
+              "requiredReleaseState"
+            ],
+            "properties": {
+              "relativePath": {
+                "type": "string"
+              },
+              "requiredReleaseState": {
+                "const": "release"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

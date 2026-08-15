@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "artifactId": "standard-x64-portable",
+      "edition": "standard",
+      "packageKind": "portable",
+      "architecture": "x64",
+      "inputs": []
+    },
+    {
+      "artifactId": "rescue-x64-portable",
+      "edition": "rescue",
+      "packageKind": "portable",
+      "architecture": "x64",
+      "inputs": [],
+      "rescueGate": {
+        "adrId": "ADR-0030",
+        "relativePath": "docs/adr/0030-controlled-rescue-tool-release-boundary.md",
+        "requiredStatus": "accepted"
+      }
+    },
+    {
+      "artifactId": "large-offline-x64-portable",
+      "edition": "large-offline",
+      "packageKind": "portable",
+      "architecture": "x64",
+      "inputs": [],
+      "rescueGate": {
+        "adrId": "ADR-0030",
+        "relativePath": "docs/adr/0030-controlled-rescue-tool-release-boundary.md",
+        "requiredStatus": "accepted"
+      },
+      "releaseDirectoryGate": {
+        "relativePath": "catalog/software-catalog.toml",
+        "requiredReleaseState": "release"
+      }
+    }
+  ]
+}
