@@ -2,12 +2,12 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 02, 03, 15, 18, 24, 31
 Owner: issue-32
 Consumers: 21, 22
 Verification: 目录编辑状态机、TOML 往返、保存、恢复、应用负例、脱敏诊断及 UI 与架构合同测试。
-Evidence freshness: 绑定当前提交、目录、日志、导出模式和 WinUI 环境；相关状态或格式变化后重跑。
+Evidence freshness: 绑定功能提交 `243c87d086d18da879dd21f064ba59a23b631da1`、合入提交 `afeae28de01398b65bb4ec334753172595f5e192`、Windows x64 CI run `31871993806` / job `94981984535`、目录/日志/导出模式及 WinUI 环境；相关状态、格式或组合根变化后重跑。
 
 ## Goal
 
@@ -40,6 +40,18 @@ Evidence freshness: 绑定当前提交、目录、日志、导出模式和 WinUI
 
 `CAT-42` 至 `CAT-52`、`DBG-01` 至 `DBG-10`、`LOG-01` 至 `LOG-13`、`UI-11` 至 `UI-19`、`UI-41` 至 `UI-58`、ADR-0014、ADR-0028、[架构与代码质量](../../../docs/engineering/architecture-and-code-quality.md)、[WinUI 3 的 Apple 风格适配](../../../docs/design/winui3-apple-inspired.md)
 
+## Answer
+
+- 功能分支 `codex/issue-32-debug-mode-catalog-editor` 的最终 feature SHA 为 `243c87d086d18da879dd21f064ba59a23b631da1`。PR [#58](https://github.com/CoolPlume/azzs/pull/58) 已普通合入 `codex/v1-integration`，产品合入提交为 `afeae28de01398b65bb4ec334753172595f5e192`；该 merge 的第二父提交即为上述 feature SHA。
+- Windows 原生 x64 上，`.\eng\build.ps1 -Architecture x64 -SkipCoreSmoke` 的 Release 构建通过，CMake/MSBuild 为 0 警告、0 错误。`software-catalog.contract`、`application-settings.contract`、`ui.presentation.contract`、`ui.design.contract` 和 `product.identity.contract` 通过，覆盖目录编辑状态与 TOML 往返、应用设置投影、WinUI 呈现/设计边界及产品身份合同。
+- GitHub Actions [Windows read-only validation run 31871993806](https://github.com/CoolPlume/azzs/actions/runs/31871993806) 的 [x64 Release job 94981984535](https://github.com/CoolPlume/azzs/actions/runs/31871993806/job/94981984535) 为 `success`，绑定上述最终 feature SHA，并完成 Release 的构建与测试步骤。
+- 同一普通 token Windows host 的 `cmake --workflow --preset host-guardrails` 为 31/33 通过。剩余两项不是通过证据：`execution-log.contract` 缺少完整性 ACL 根前置，`windows-device-data.contract` 缺少隔离设备/reparse/ACL 根前置；未通过请求 UAC、修改产品代码或夹具把这两个 host 前置条件伪装为产品通过。
+- ARM64 在本会话未运行，按当前 x64 优先策略延期；同一 CI run 自动产生的 ARM64 结果仅作信息，不外推为 ARM64 本机验收或八个发行制品完成。真实 Windows UIA、DPI/多显示器、安装生命周期及发行制品验收也未在本事项结票中声明为已通过。
+
+据此，事项 32 的实现验收与 x64 证据已经闭合，`Resolution` 标记为 `completed`；未验证的平台、host 与发行边界继续保持未验证状态。
+
 ## Comments
 
 - 2026-08-10：恢复内容启动呈现已按 Q1 固定，持久化主体与状态边界已由 ADR-0029 冻结；Q16 已确认目录导入仅限调试模式，Q18 已确认未知执行语义拒绝整包。事项边界已经完整，等待依赖事项实现。
+
+- 2026-08-15：PR #58 已普通合入 integration；基于最终 feature 的 x64 Release 构建、五项合同、GitHub x64 Release job 与 host guardrails 证据完成结票。普通 token host 的 ACL/reparse 前置和 ARM64 延期均未写作通过。
