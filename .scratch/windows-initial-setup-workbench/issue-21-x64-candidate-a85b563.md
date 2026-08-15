@@ -2,13 +2,14 @@
 
 日期：2026-08-15  
 事项：21 - 构建 GitHub 发行制品  
-候选输入：`8d0f21bdbca7ebaf61f1c9f00a9c5925f12416e5`  
+候选输入：`a85b5631a69218d55037a5c26a5625bab65067e3`  
 候选范围：仅标准版 x64 便携包；此记录是开发者证据，不是用户发行资产或 GitHub Release 文案。
 
 ## 结论
 
-- `out/manifests/windows-x64-release.json` 记录 x64/Release 构建 `result=succeeded`、`source.dirty=false`，并绑定上述输入提交。
-- 修复便携打包时误删 staging 文件的问题后，`out/packages/Azzs-standard-x64-portable.zip`、`out/manifests/package-standard-x64-portable.json` 与 x64 staging payload 已通过定向合同核对。合同要求非空 payload、`Azzs.WinUI.exe`、自包含 WinUI 运行时、正确 PE x64 架构、无调试构建文件，且 ZIP 与 manifest 的文件名和长度一致。
+- `out/manifests/windows-x64-release.json` 记录 x64/Release 构建 `result=succeeded`、`source.commit=a85b5631a69218d55037a5c26a5625bab65067e3`、`source.dirty=false`。
+- `out/manifests/package-standard-x64-portable.json` 记录 `kind=portable`、`architecture=x64` 和同一 `sourceCommit`。该 package manifest schema 不记录 `dirty`，不以缺失字段推断其他状态。
+- `out/packages/Azzs-standard-x64-portable.zip` 包含 300 个文件、45,094,598 bytes。它与 x64 staging payload 已通过定向合同和独立候选门禁核对；合同要求非空 payload、`Azzs.WinUI.exe`、自包含 WinUI 运行时、正确 PE x64 架构、无调试构建文件，且 ZIP 与 manifest 的文件名和长度一致。
 - 这只是 x64 临时候选，不能视为事项 21 的八制品候选或外部发布成功。事项 21 保持 `Resolution: open`。
 
 ## 设计与实现
@@ -21,10 +22,11 @@
 
 | 检查 | 结果 | 说明 |
 | --- | --- | --- |
-| 初始 `eng/package-portable.ps1 -Architecture x64` | 未通过完整 CTest | 33 项中 `execution-log.contract` 缺少 prepared ACL root、`windows-device-data.contract` 缺少目录符号链接；保留原始失败证据。 |
-| 从零 `eng/build.ps1 -Architecture x64 -SkipCoreSmoke` | 通过 | 生成上述 x64 Release manifest；该命令跳过 CTest，不能替代完整合同通过。 |
-| `eng/package-portable.ps1 -Architecture x64 -SkipBuild` | 通过 | 定向便携包合同在打包后通过。 |
+| 从零 `eng/build.ps1 -Architecture x64 -SkipCoreSmoke` | 通过 | 生成上述干净 x64 Release manifest；该命令跳过 CTest，不能替代完整合同通过。 |
+| `eng/package-portable.ps1 -Architecture x64 -SkipBuild` | 通过 | 生成上述 portable manifest 和 ZIP，定向便携包合同在打包后通过。 |
 | `eng/verify-portable-package.ps1` | 通过 | 独立复核 staging、ZIP 与 package manifest。 |
+| 独立 x64 candidate gate | 通过 | 复核当前 a85 候选的 build/package manifest、ZIP 文件集和运行时边界。 |
+| 历史完整 CTest 宿主边界（`8d0f21b`） | 31/33 | `execution-log.contract` 缺少 prepared ACL root，`windows-device-data.contract` 缺少目录符号链接；本候选未将这些失败写成通过，也未重跑完整 CTest。 |
 | `eng/package-installer.ps1 -Architecture x64`，未传 `-AcceptWixEula` | 预期条款保护 | 以要求显式 WiX 7 条款决定的错误退出；没有生成 MSI。 |
 
 保留的失败证据：
@@ -38,7 +40,7 @@
 
 ## 未完成边界
 
-- 未生成 ARM64 便携包、x64/ARM64 机器级安装包、断网救援包或超大离线包；八制品矩阵未完成。
+- 本轮未执行 ARM64；未生成 ARM64 便携包、x64/ARM64 机器级安装包、断网救援包或超大离线包；八制品矩阵未完成。
 - WiX 条款未接受；未执行 MSI、机器级安装、Repair、卸载、升级或 x64 到 ARM64 迁移。
 - 未完成正式目录、发行、签名/SmartScreen 风险说明或事项 22 的真实环境验收。
 - 未创建 tag、GitHub Release 或上传应用二进制。
