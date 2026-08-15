@@ -713,6 +713,10 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     resource_names = {
         element.attrib["name"] for element in resources.findall("data")
     }
+    resource_values = {
+        element.attrib["name"]: element.findtext("value", default="")
+        for element in resources.findall("data")
+    }
     for required in (
         "MainWindowTitle",
         "NavigationOverview.Content",
@@ -857,7 +861,9 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     rescue_resources = {
         "RescueToolFoldersTitle.Text",
         "RescueToolFoldersDescription.Text",
+        "GenericNetworkDriverRescueDisplayName.Text",
         "GenericNetworkDriverRescueButton.Text",
+        "OfflineNetworkDiagnosticsRescueDisplayName.Text",
         "OfflineNetworkDiagnosticsRescueButton.Text",
         "RescueHandoffInProgressTitle",
         "RescueHandoffInProgressBody",
@@ -868,6 +874,13 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     }
     require(rescue_resources <= resource_names,
             "driver rescue handoff commands and decisions must remain localized")
+    require(
+        resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
+        "通用网卡驱动救援工具" and
+        resource_values.get("OfflineNetworkDiagnosticsRescueDisplayName.Text") ==
+        "断网诊断与修复工具",
+        "driver rescue slots must expose the frozen display names",
+    )
     for automation_id in (
         "AzzsFixedRescueToolFolders",
         "AzzsGenericNetworkDriverRescueFolder",
@@ -881,6 +894,8 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
                 f"driver rescue handoff is missing AutomationId {automation_id}")
     require("OnGenericNetworkDriverRescueClicked" in drivers_xaml and
             "OnOfflineNetworkDiagnosticsRescueClicked" in drivers_xaml and
+            'x:Uid="GenericNetworkDriverRescueDisplayName"' in drivers_xaml and
+            'x:Uid="OfflineNetworkDiagnosticsRescueDisplayName"' in drivers_xaml and
             "RescueHandoffHandler" in drivers_header and
             "RescueToolTarget" in drivers_header and
             "request_rescue_handoff" in drivers_cpp and
