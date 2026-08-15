@@ -46,6 +46,8 @@ class Workbench final {
       std::stop_token cancellation = {});
   [[nodiscard]] driver_acquisition::DriverActionResult begin_driver_handoff(
       driver_acquisition::DriverEntrypoint entrypoint);
+  [[nodiscard]] driver_acquisition::DriverActionResult begin_rescue_folder_handoff(
+      driver_acquisition::RescueToolTarget target);
   [[nodiscard]] driver_acquisition::DriverActionResult driver_flow_returned();
   [[nodiscard]] driver_acquisition::DriverActionResult decide_driver_handoff(
       driver_acquisition::DriverHandoffDecision decision);

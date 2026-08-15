@@ -16,6 +16,8 @@ struct DriversPage : DriversPageT<DriversPage> {
   using RefreshHandler = std::function<void()>;
   using HandoffHandler = std::function<void(
       azzs::application::driver_acquisition::DriverEntrypoint)>;
+  using RescueHandoffHandler = std::function<void(
+      azzs::application::driver_acquisition::RescueToolTarget)>;
   using ReturnedHandler = std::function<void()>;
   using DecisionHandler = std::function<void(
       azzs::application::driver_acquisition::DriverHandoffDecision)>;
@@ -25,6 +27,7 @@ struct DriversPage : DriversPageT<DriversPage> {
             azzs::application::driver_acquisition::DriverAcquisitionSnapshot
                 const& driver_snapshot,
             RefreshHandler refresh_handler, HandoffHandler handoff_handler,
+            RescueHandoffHandler rescue_handoff_handler,
             ReturnedHandler returned_handler, DecisionHandler decision_handler);
   void project(azzs::application::HardwareOverviewSnapshot const& snapshot);
   void project(azzs::application::HardwareOverviewSnapshot const& snapshot,
@@ -54,6 +57,12 @@ struct DriversPage : DriversPageT<DriversPage> {
   void OnAsusSupportClicked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnGenericNetworkDriverRescueClicked(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnOfflineNetworkDiagnosticsRescueClicked(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnExternalFlowReturnedClicked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
@@ -70,8 +79,11 @@ struct DriversPage : DriversPageT<DriversPage> {
  private:
   void request_handoff(
       azzs::application::driver_acquisition::DriverEntrypoint entrypoint);
+  void request_rescue_handoff(
+      azzs::application::driver_acquisition::RescueToolTarget target);
   RefreshHandler refresh_handler_;
   HandoffHandler handoff_handler_;
+  RescueHandoffHandler rescue_handoff_handler_;
   ReturnedHandler returned_handler_;
   DecisionHandler decision_handler_;
 };

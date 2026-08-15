@@ -91,6 +91,18 @@ driver_acquisition::DriverActionResult Workbench::begin_driver_handoff(
   return result;
 }
 
+driver_acquisition::DriverActionResult Workbench::begin_rescue_folder_handoff(
+    driver_acquisition::RescueToolTarget target) {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().begin_external_rescue_handoff(target);
+  snapshot_.driver_acquisition = result.snapshot;
+  return result;
+}
+
 driver_acquisition::DriverActionResult Workbench::driver_flow_returned() {
   if (!services_) {
     return {.code = driver_acquisition::DriverActionCode::not_restored,
