@@ -23,6 +23,50 @@ function Require {
     }
 }
 
+function Require-EmptyFixedRescueFolders {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    foreach ($relativeFolder in @(
+            "rescue-tools/generic-network-driver",
+            "rescue-tools/offline-network-diagnostics"
+        )) {
+        $folder = Join-Path $Root ($relativeFolder.Replace("/", "\"))
+        Require (Test-Path -LiteralPath $folder -PathType Container) "$Context is missing $relativeFolder"
+        Require (@(Get-ChildItem -LiteralPath $folder -Force).Count -eq 0) "$Context must keep $relativeFolder empty"
+    }
+}
+
+function Require-ZipFixedRescueFolders {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath
+    )
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($PackagePath)
+    try {
+        $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace("\", "/") })
+        foreach ($relativeFolder in @(
+                "rescue-tools/generic-network-driver/",
+                "rescue-tools/offline-network-diagnostics/"
+            )) {
+            $matchingEntries = @($entries | Where-Object {
+                    $_.StartsWith($relativeFolder, [StringComparison]::OrdinalIgnoreCase)
+                })
+            Require ($matchingEntries.Count -eq 1 -and $matchingEntries[0] -eq $relativeFolder) "portable ZIP must keep $relativeFolder empty"
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
 function Write-JsonFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -256,6 +300,34 @@ function Require-PackageFailure {
     Require-NoCandidate -FixtureRoot $FixtureRoot -ArtifactId $ArtifactId
 }
 
+function Require-PortableVerificationFailure {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FixtureRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Scenario
+    )
+
+    $candidates = Get-CandidatePaths -FixtureRoot $FixtureRoot -ArtifactId $ArtifactId
+    $failed = $false
+    try {
+        & (Join-Path $FixtureRoot "eng/verify-portable-package.ps1") `
+            -ArtifactId $ArtifactId `
+            -RepositoryRoot $FixtureRoot `
+            -StagingDirectory $candidates[0] `
+            -PackagePath $candidates[1] `
+            -ManifestPath $candidates[2]
+    }
+    catch {
+        $failed = $true
+    }
+    Require $failed "$Scenario unexpectedly passed portable verification"
+}
+
 function New-LockedInput {
     param(
         [Parameter(Mandatory = $true)]
@@ -336,6 +408,12 @@ function Set-ReleaseDirectoryState {
 }
 
 try {
+    $sourceContentManifest = Get-Content -LiteralPath (Join-Path $RepositoryRoot "release/artifact-content-manifest.v1.json") -Raw | ConvertFrom-Json
+    foreach ($artifactId in @("rescue-x64-portable", "large-offline-x64-portable")) {
+        $sourceArtifact = Get-ArtifactContent -Manifest $sourceContentManifest -ArtifactId $artifactId
+        Require (@($sourceArtifact.inputs).Count -eq 0) "$artifactId must remain fail-closed without locked rescue or large inputs"
+    }
+
     $standardFixture = New-FixtureRoot
     Invoke-Package -FixtureRoot $standardFixture -ArtifactId "standard-x64-portable"
     $standardCandidates = Get-CandidatePaths -FixtureRoot $standardFixture -ArtifactId "standard-x64-portable"
@@ -349,6 +427,134 @@ try {
     Require ($null -ne $standardManifest.contentManifest) "package manifest lacks contentManifest"
     Require (@($standardManifest.inputs).Count -eq 0) "standard package must not claim external content inputs"
     Require (-not ((Get-Content -LiteralPath $standardCandidates[2] -Raw).Contains($standardFixture))) "package manifest leaked an absolute fixture path"
+    Require ($standardManifest.package.path -eq "out/packages/Azzs-standard-x64-portable.zip") "package manifest must use the canonical repository-relative ZIP path"
+    Require (-not [System.IO.Path]::IsPathRooted([string]$standardManifest.package.path)) "package manifest package.path must not be rooted"
+    Require (-not ([string]$standardManifest.package.path).Contains("\")) "package manifest package.path must use POSIX separators"
+    Require (-not (([string]$standardManifest.package.path).Split("/") -contains "..")) "package manifest package.path must not traverse outside the repository"
+    Require-EmptyFixedRescueFolders -Root $standardCandidates[0] -Context "standard staging"
+    Require-ZipFixedRescueFolders -PackagePath $standardCandidates[1]
+    $extractedStandardDirectory = Join-Path $standardFixture "out/extracted/standard-x64-portable"
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($standardCandidates[1], $extractedStandardDirectory)
+    Require-EmptyFixedRescueFolders -Root $extractedStandardDirectory -Context "extracted standard ZIP"
+
+    $tamperedArchive = [System.IO.Compression.ZipFile]::Open(
+        $standardCandidates[1],
+        [System.IO.Compression.ZipArchiveMode]::Update
+    )
+    try {
+        $null = $tamperedArchive.CreateEntry("rescue-tools/generic-network-driver/unexpected/")
+    }
+    finally {
+        $tamperedArchive.Dispose()
+    }
+    Require-PortableVerificationFailure -FixtureRoot $standardFixture -ArtifactId "standard-x64-portable" -Scenario "a ZIP rescue subdirectory"
+
+    $caseVariantFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $caseVariantFixture -ArtifactId "standard-x64-portable"
+    $caseVariantCandidates = Get-CandidatePaths -FixtureRoot $caseVariantFixture -ArtifactId "standard-x64-portable"
+    $caseVariantArchive = [System.IO.Compression.ZipFile]::Open(
+        $caseVariantCandidates[1],
+        [System.IO.Compression.ZipArchiveMode]::Update
+    )
+    try {
+        $null = $caseVariantArchive.CreateEntry("rescue-tools/GENERIC-network-driver/unexpected/")
+    }
+    finally {
+        $caseVariantArchive.Dispose()
+    }
+    Require-PortableVerificationFailure -FixtureRoot $caseVariantFixture -ArtifactId "standard-x64-portable" -Scenario "a case-variant ZIP rescue subdirectory"
+
+    $externalPackagePath = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-external-package-" + [Guid]::NewGuid().ToString("N") + ".zip")
+    try {
+        [System.IO.File]::WriteAllBytes($externalPackagePath, [byte[]](0, 1, 2, 3))
+        $externalManifestPath = Join-Path $standardFixture "out/manifests/external-package.json"
+        $externalPackageRejected = $false
+        try {
+            & (Join-Path $standardFixture "eng/write-package-manifest.ps1") `
+                -Kind portable `
+                -Architecture x64 `
+                -RepositoryRoot $standardFixture `
+                -PayloadDirectory $standardCandidates[0] `
+                -PackagePath $externalPackagePath `
+                -OutputPath $externalManifestPath
+        }
+        catch {
+            $externalPackageRejected = $true
+        }
+        Require $externalPackageRejected "an external package path must fail closed"
+        Require (-not (Test-Path -LiteralPath $externalManifestPath)) "an external package path must not write a manifest"
+    }
+    finally {
+        if (Test-Path -LiteralPath $externalPackagePath) {
+            Remove-Item -LiteralPath $externalPackagePath -Force
+        }
+    }
+
+    $reparsePackageFixture = New-FixtureRoot
+    $reparsePackageLink = Join-Path $reparsePackageFixture "out/packages"
+    $outsidePackageDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-external-package-directory-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        New-Item -ItemType Directory -Path $outsidePackageDirectory -Force | Out-Null
+        New-Item -ItemType Junction -Path $reparsePackageLink -Target $outsidePackageDirectory | Out-Null
+        $reparsePackagePath = Join-Path $reparsePackageLink "Azzs-standard-x64-portable.zip"
+        [System.IO.File]::WriteAllBytes($reparsePackagePath, [byte[]](0, 1, 2, 3))
+        $reparseManifestPath = Join-Path $reparsePackageFixture "out/manifests/reparse-package.json"
+        $reparsePackageRejected = $false
+        try {
+            & (Join-Path $reparsePackageFixture "eng/write-package-manifest.ps1") `
+                -Kind portable `
+                -Architecture x64 `
+                -RepositoryRoot $reparsePackageFixture `
+                -PayloadDirectory (Join-Path $reparsePackageFixture "out/windows/x64/Release") `
+                -PackagePath $reparsePackagePath `
+                -OutputPath $reparseManifestPath
+        }
+        catch {
+            $reparsePackageRejected = $true
+        }
+        Require $reparsePackageRejected "a package path below a reparse parent must fail closed"
+        Require (-not (Test-Path -LiteralPath $reparseManifestPath)) "a reparse package path must not write a manifest"
+    }
+    finally {
+        if (Test-Path -LiteralPath $reparsePackageLink) {
+            [System.IO.Directory]::Delete($reparsePackageLink)
+        }
+        if (Test-Path -LiteralPath $outsidePackageDirectory) {
+            Remove-Item -LiteralPath $outsidePackageDirectory -Recurse -Force
+        }
+    }
+
+    $reparseCleanupFixture = New-FixtureRoot
+    $reparseCleanupLink = Join-Path $reparseCleanupFixture "out/packages"
+    $outsideCleanupDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-external-package-cleanup-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        New-Item -ItemType Directory -Path $outsideCleanupDirectory -Force | Out-Null
+        New-Item -ItemType Junction -Path $reparseCleanupLink -Target $outsideCleanupDirectory | Out-Null
+        $sentinelPackagePath = Join-Path $outsideCleanupDirectory "Azzs-standard-x64-portable.zip"
+        [System.IO.File]::WriteAllBytes($sentinelPackagePath, [byte[]](0, 1, 2, 3))
+        $sentinelHash = (Get-FileHash -LiteralPath $sentinelPackagePath -Algorithm SHA256).Hash
+        $cleanupPackagingFailed = $false
+        try {
+            Invoke-Package -FixtureRoot $reparseCleanupFixture -ArtifactId "standard-x64-portable"
+        }
+        catch {
+            $cleanupPackagingFailed = $true
+        }
+        Require $cleanupPackagingFailed "a package destination below a reparse parent must fail before cleanup"
+        Require (Test-Path -LiteralPath $sentinelPackagePath -PathType Leaf) "a package cleanup must not delete an external sentinel"
+        Require ((Get-FileHash -LiteralPath $sentinelPackagePath -Algorithm SHA256).Hash -eq $sentinelHash) "a package cleanup must not replace an external sentinel"
+        $cleanupCandidates = Get-CandidatePaths -FixtureRoot $reparseCleanupFixture -ArtifactId "standard-x64-portable"
+        Require (-not (Test-Path -LiteralPath $cleanupCandidates[0])) "a rejected reparse package destination must not create staging output"
+        Require (-not (Test-Path -LiteralPath $cleanupCandidates[2])) "a rejected reparse package destination must not create a manifest"
+    }
+    finally {
+        if (Test-Path -LiteralPath $reparseCleanupLink) {
+            [System.IO.Directory]::Delete($reparseCleanupLink)
+        }
+        if (Test-Path -LiteralPath $outsideCleanupDirectory) {
+            Remove-Item -LiteralPath $outsideCleanupDirectory -Recurse -Force
+        }
+    }
 
     $rescueSuccessFixture = New-FixtureRoot
     $rescueSuccessInput = New-LockedInput -FixtureRoot $rescueSuccessFixture -Id "rescue-tool" -Role "rescue-companion-tool" -RelativePath "release-inputs/rescue-tool.bin"

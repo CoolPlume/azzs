@@ -50,6 +50,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   void refresh_drivers_page();
   void begin_driver_handoff(
       azzs::application::driver_acquisition::DriverEntrypoint entrypoint);
+  void begin_rescue_folder_handoff(
+      azzs::application::driver_acquisition::RescueToolTarget target);
   void driver_flow_returned();
   void decide_driver_handoff(
       azzs::application::driver_acquisition::DriverHandoffDecision decision);

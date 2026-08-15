@@ -30,6 +30,14 @@ enum class DriverEntrypoint {
   asus_support,
 };
 
+// These targets are deliberately separate from DriverEntrypoint. They name
+// only the two product-owned folders that an external user may open; neither
+// the UI nor a catalog can supply a path, filename, or command.
+enum class RescueToolTarget {
+  generic_network_driver,
+  offline_network_diagnostics,
+};
+
 enum class DriverAssistantAction {
   open_page,
   install,
@@ -71,6 +79,7 @@ struct DriverAcquisitionSnapshot final {
   bool writable{false};
   bool assistant_installed{false};
   std::optional<DriverEntrypoint> active_entrypoint;
+  std::optional<RescueToolTarget> active_rescue_target;
   std::vector<DriverEntrypoint> recommended_entrypoints;
   std::optional<DriverPostHandoffObservation> last_observation;
   std::string detail;
@@ -97,6 +106,8 @@ class DriverHandoffPlatform {
   [[nodiscard]] virtual bool open(DriverEntrypoint entrypoint,
                                   DriverAssistantAction action,
                                   std::string& error) = 0;
+  [[nodiscard]] virtual bool open_rescue_folder(RescueToolTarget target,
+                                                std::string& error) = 0;
 };
 
 // This is an observation seam only. It must not initiate a connection or
@@ -122,6 +133,8 @@ class DriverAcquisitionService final {
   [[nodiscard]] DriverAcquisitionSnapshot snapshot() const;
   [[nodiscard]] DriverActionResult begin_external_handoff(
       DriverEntrypoint entrypoint);
+  [[nodiscard]] DriverActionResult begin_external_rescue_handoff(
+      RescueToolTarget target);
   [[nodiscard]] DriverActionResult external_flow_returned();
   [[nodiscard]] DriverActionResult decide(DriverHandoffDecision decision);
   // Called only during the existing restart-resume service's read-only
@@ -134,6 +147,7 @@ class DriverAcquisitionService final {
 };
 
 [[nodiscard]] char const* to_string(DriverEntrypoint value) noexcept;
+[[nodiscard]] char const* to_string(RescueToolTarget value) noexcept;
 [[nodiscard]] char const* to_string(DriverAcquisitionState value) noexcept;
 [[nodiscard]] char const* to_string(DriverActionCode value) noexcept;
 
