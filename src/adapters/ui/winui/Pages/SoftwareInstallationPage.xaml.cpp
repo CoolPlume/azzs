@@ -245,6 +245,11 @@ void SoftwareInstallationPage::project(
     azzs::domain::installation_batch::InstallationBatchSnapshot const& batch) {
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   auto const resources = ResourceLoader{};
+  LocalTrialInfoBar().IsOpen(
+      snapshot.active_catalog.has_value() &&
+      snapshot.active_catalog->identity ==
+          azzs::application::software_catalog::EffectiveCatalogIdentity::
+              local_trial);
   auto text = azzs::ui::presentation::SoftwareSelectionPresentationText{
       .accessible_name = winrt::to_string(
           resources.GetString(L"SoftwareSelectionStatusAccessibleName")),

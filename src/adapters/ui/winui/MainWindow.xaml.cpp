@@ -4,6 +4,7 @@
 
 #include <string>
 #include <string_view>
+#include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 
 #include "DesignSystem/motion_preferences.hpp"
@@ -12,11 +13,14 @@
 #include "Pages/HistoryAndLogsPage.xaml.h"
 #include "Pages/OverviewPage.xaml.h"
 #include "Pages/SoftwareInstallationPage.xaml.h"
+#include "Pages/SoftwareCatalogEditorPage.xaml.h"
 #include "azzs/application/installation_batch.hpp"
 #include "azzs/application/driver_acquisition.hpp"
 #include "Pages/SoftwareOptimizationPage.xaml.h"
 #include "Pages/SystemOptimizationPage.xaml.h"
 #include "azzs/application/advanced_view_preferences.hpp"
+#include "azzs/application/application_settings.hpp"
+#include "azzs/application/debug_mode_catalog_editor.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench_services.hpp"
@@ -29,6 +33,10 @@ namespace {
 
 using azzs::application::PageId;
 using azzs::domain::SystemVersion;
+using winrt::Microsoft::UI::Windowing::AppWindowClosingEventArgs;
+using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
+using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
+using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
 using winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem;
 
 [[nodiscard]] std::wstring version_text(SystemVersion const version) {
@@ -55,6 +63,7 @@ MainWindow::MainWindow() {
   InitializeComponent();
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   Title(ResourceLoader{}.GetString(L"MainWindowTitle"));
+  AppWindow().Closing({this, &MainWindow::OnWindowClosing});
 }
 
 void MainWindow::bind(
@@ -109,6 +118,138 @@ void MainWindow::OnNavigationSelectionChanged(
   navigate_to(snapshot.current_page);
 }
 
+void MainWindow::OnWindowClosing(
+    winrt::Microsoft::UI::Windowing::AppWindow const&,
+                                 AppWindowClosingEventArgs const& args) {
+  if (allow_window_close_ || catalog_close_dialog_open_ || !workbench_) {
+    if (catalog_close_dialog_open_) {
+      args.Cancel(true);
+    }
+    return;
+  }
+
+  auto const services = workbench_->services();
+  if (!services) {
+    return;
+  }
+  auto const draft_state =
+      services->debug_mode_catalog_editor().editor_snapshot().catalog.draft.state;
+  if (draft_state != azzs::application::software_catalog::
+                         DraftWorkState::unsaved_changes &&
+      draft_state != azzs::application::software_catalog::
+                         DraftWorkState::recovered_unsaved) {
+    return;
+  }
+
+  args.Cancel(true);
+  catalog_close_dialog_open_ = true;
+  confirm_catalog_close();
+}
+
+winrt::fire_and_forget MainWindow::confirm_catalog_close() {
+  auto lifetime = get_strong();
+  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+
+  ContentDialog dialog;
+  dialog.XamlRoot(ContentFrame().XamlRoot());
+  auto const resources = ResourceLoader{};
+  dialog.Title(winrt::box_value(resources.GetString(L"CatalogCloseDialogTitle")));
+  dialog.Content(
+      winrt::box_value(resources.GetString(L"CatalogCloseDialogContent")));
+  dialog.PrimaryButtonText(resources.GetString(L"CatalogCloseSaveAndClose"));
+  dialog.SecondaryButtonText(
+      resources.GetString(L"CatalogCloseDiscardAndClose"));
+  dialog.CloseButtonText(resources.GetString(L"CatalogCloseReturnToEditor"));
+  dialog.DefaultButton(ContentDialogButton::Close);
+
+  auto const response = co_await dialog.ShowAsync();
+  catalog_close_dialog_open_ = false;
+  if (!workbench_) {
+    co_return;
+  }
+  auto const services = workbench_->services();
+  if (!services) {
+    co_return;
+  }
+
+  auto& editor = services->debug_mode_catalog_editor();
+  auto choice = azzs::application::software_catalog::
+      CatalogCloseChoice::return_to_editor;
+  if (response == ContentDialogResult::Primary) {
+    choice = azzs::application::software_catalog::
+        CatalogCloseChoice::save_draft_and_close;
+  } else if (response == ContentDialogResult::Secondary) {
+    choice = azzs::application::software_catalog::
+        CatalogCloseChoice::discard_unsaved_and_close;
+  }
+
+  auto const debug = editor.editor_snapshot().settings;
+  if (!debug.enabled) {
+    static_cast<void>(editor.begin_temporary_close_recovery(
+        azzs::application::CatalogEditorTemporaryAccessReason::close_return));
+  }
+  auto const result = editor.handle_close(choice);
+  if (choice != azzs::application::software_catalog::
+                    CatalogCloseChoice::return_to_editor &&
+      result.succeeded()) {
+    editor.end_temporary_close_recovery();
+    allow_window_close_ = true;
+    Close();
+    co_return;
+  }
+  restore_catalog_editor_after_close(result);
+}
+
+void MainWindow::restore_catalog_editor_after_close(
+    azzs::application::software_catalog::CatalogActionResult const& result) {
+  if (!workbench_) {
+    return;
+  }
+  auto const services = workbench_->services();
+  if (!services) {
+    return;
+  }
+
+  auto& editor = services->debug_mode_catalog_editor();
+  if (!editor.editor_snapshot().settings.enabled &&
+      !editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::close_return)) {
+    project(workbench_->snapshot());
+    return;
+  }
+  workbench_->navigate(PageId::software_catalog_editor);
+  auto const snapshot = workbench_->snapshot();
+  project(snapshot);
+  navigate_to(snapshot.current_page);
+  if (auto page = ContentFrame().Content().try_as<
+          Pages::SoftwareCatalogEditorPage>()) {
+    winrt::get_self<Pages::implementation::SoftwareCatalogEditorPage>(page)
+        ->show_action_result(result);
+  }
+}
+
+void MainWindow::OnContinueRecoveredCatalogEditorClick(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (!workbench_) {
+    return;
+  }
+  auto const services = workbench_->services();
+  if (!services || !services->debug_mode_catalog_editor()
+                        .begin_temporary_close_recovery(
+                            azzs::application::
+                                CatalogEditorTemporaryAccessReason::
+                                    recovered_unsaved_continue)) {
+    project(workbench_->snapshot());
+    return;
+  }
+
+  workbench_->navigate(PageId::software_catalog_editor);
+  auto const snapshot = workbench_->snapshot();
+  project(snapshot);
+  navigate_to(snapshot.current_page);
+}
+
 std::optional<PageId> MainWindow::page_for_item(
     NavigationViewItem const& item) {
   if (item == OverviewItem()) {
@@ -132,6 +273,9 @@ std::optional<PageId> MainWindow::page_for_item(
   if (item == ApplicationSettingsItem()) {
     return PageId::application_settings;
   }
+  if (item == SoftwareCatalogEditorItem()) {
+    return PageId::software_catalog_editor;
+  }
 
   return std::nullopt;
 }
@@ -141,6 +285,13 @@ void MainWindow::navigate_to(PageId page) {
       SuppressNavigationTransitionInfo;
 
   auto const transition = SuppressNavigationTransitionInfo{};
+  if (displayed_page_ == PageId::software_catalog_editor &&
+      page != PageId::software_catalog_editor) {
+    if (auto const services = workbench_->services()) {
+      services->debug_mode_catalog_editor().end_temporary_close_recovery();
+      project(workbench_->snapshot());
+    }
+  }
   switch (page) {
     case PageId::overview:
       ContentFrame().Navigate(xaml_typename<Pages::OverviewPage>(), nullptr,
@@ -244,10 +395,28 @@ void MainWindow::navigate_to(PageId page) {
                  return self->set_advanced_view(enabled);
                }
               return false;
+            }, [weak_this = get_weak()] {
+              if (auto self = weak_this.get(); self && self->workbench_) {
+                self->workbench_->navigate(PageId::software_catalog_editor);
+                auto const snapshot = self->workbench_->snapshot();
+                self->project(snapshot);
+                self->navigate_to(snapshot.current_page);
+              }
             });
       }
       break;
+    case PageId::software_catalog_editor:
+      ContentFrame().Navigate(xaml_typename<Pages::SoftwareCatalogEditorPage>(),
+                              nullptr, transition);
+      if (auto page = ContentFrame().Content().try_as<
+              Pages::SoftwareCatalogEditorPage>();
+          page && workbench_->services()) {
+        winrt::get_self<Pages::implementation::SoftwareCatalogEditorPage>(page)
+            ->bind(workbench_->services()->debug_mode_catalog_editor());
+      }
+      break;
   }
+  displayed_page_ = page;
 }
 
 bool MainWindow::set_advanced_view(bool enabled) {
@@ -316,6 +485,26 @@ void MainWindow::project(
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
   auto const resources = ResourceLoader{};
+  if (auto const services = workbench_ ? workbench_->services() : nullptr) {
+    auto const editor_snapshot =
+        services->debug_mode_catalog_editor().editor_snapshot();
+    auto const debug = editor_snapshot.settings;
+    SoftwareCatalogEditorItem().Visibility(
+        debug.catalog_editor_available
+            ? winrt::Microsoft::UI::Xaml::Visibility::Visible
+            : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+    auto const recovered_editor_available =
+        !debug.enabled && !debug.temporary_close_recovery &&
+        editor_snapshot.catalog.draft.state ==
+            azzs::application::software_catalog::
+                DraftWorkState::recovered_unsaved;
+    RecoveredCatalogEditorInfoBar().IsOpen(recovered_editor_available);
+    ContinueRecoveredCatalogEditorButton().IsEnabled(
+        recovered_editor_available);
+  } else {
+    RecoveredCatalogEditorInfoBar().IsOpen(false);
+    ContinueRecoveredCatalogEditorButton().IsEnabled(false);
+  }
   auto const risk_title = resources.GetString(L"VersionRiskTitle");
   AutomationProperties::SetName(VersionRiskInfoBar(), risk_title);
 

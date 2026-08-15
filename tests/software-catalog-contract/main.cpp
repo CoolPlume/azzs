@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "azzs/adapters/infrastructure/software_catalog_file.hpp"
+#include "azzs/application/debug_mode_catalog_editor.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
 #include "azzs/domain/controlled_install_profiles.hpp"
 #include "azzs/testing/fixed_clock.hpp"
@@ -27,11 +29,19 @@ namespace lifecycle = azzs::application::software_catalog;
 using azzs::adapters::infrastructure::LocalSoftwareCatalogFileReader;
 using azzs::adapters::infrastructure::TomlSoftwareCatalogCodec;
 using azzs::application::CorrelationId;
+using azzs::application::DebugModeCatalogEditor;
+using azzs::application::DebugModePreferenceRead;
+using azzs::application::DebugModePreferenceReadStatus;
+using azzs::application::DebugModePreferenceStore;
+using azzs::application::DebugModePreferenceWriteStatus;
 using azzs::application::DiagnosticContext;
 using azzs::application::DiagnosticExportReceipt;
 using azzs::application::ExecutionEvent;
 using azzs::application::ExecutionLog;
 using azzs::application::ExecutionLogClearReceipt;
+using azzs::application::ExecutionLogDebugModeRead;
+using azzs::application::ExecutionLogDebugModeResult;
+using azzs::application::ExecutionLogDebugModeStatus;
 using azzs::application::ExecutionLogReceipt;
 using azzs::application::SharedOperationOccupancy;
 using azzs::application::WallClockTime;
@@ -278,6 +288,17 @@ class RecordingExecutionLog final : public ExecutionLog {
     return {.persisted = true, .segment = 1, .sequence = next_++};
   }
 
+  [[nodiscard]] ExecutionLogDebugModeResult set_debug_mode(
+      bool enabled) override {
+    debug_mode_enabled = enabled;
+    return {.status = ExecutionLogDebugModeStatus::applied,
+            .enabled = debug_mode_enabled};
+  }
+
+  [[nodiscard]] ExecutionLogDebugModeRead debug_mode() const override {
+    return {.available = true, .enabled = debug_mode_enabled};
+  }
+
   void fail_next_append(std::string error) {
     fail_after_appends(0, std::move(error));
   }
@@ -303,6 +324,7 @@ class RecordingExecutionLog final : public ExecutionLog {
 
   std::vector<ExecutionEvent> events;
   std::vector<std::string> correlations;
+  bool debug_mode_enabled{false};
 
  private:
   struct PendingAppendFailure final {
@@ -312,6 +334,26 @@ class RecordingExecutionLog final : public ExecutionLog {
 
   std::optional<PendingAppendFailure> append_failure_;
   std::uint64_t next_{1};
+};
+
+class InMemoryDebugModePreferenceStore final : public DebugModePreferenceStore {
+ public:
+  [[nodiscard]] DebugModePreferenceRead read_debug_mode() override {
+    return read;
+  }
+
+  [[nodiscard]] DebugModePreferenceWriteStatus write_debug_mode(
+      bool enabled) override {
+    if (write_status == DebugModePreferenceWriteStatus::saved) {
+      read.enabled = enabled;
+    }
+    return write_status;
+  }
+
+  DebugModePreferenceRead read{
+      .status = DebugModePreferenceReadStatus::loaded};
+  DebugModePreferenceWriteStatus write_status{
+      DebugModePreferenceWriteStatus::saved};
 };
 
 class MemoryCatalogFiles final : public lifecycle::SoftwareCatalogFileReader {
@@ -417,6 +459,36 @@ struct LifecycleFixture final {
   catalog::SoftwareCatalogPolicy policy;
   MutableCatalogMaintenanceAccess maintenance_access;
   lifecycle::SoftwareCatalogLifecycle catalog_lifecycle;
+};
+
+struct DebugModeCatalogEditorFixture final {
+  DebugModeCatalogEditorFixture()
+      : states(state_files, clock),
+        tokens("catalog-editor-lease-"),
+        occupancy(occupancy_storage, tokens),
+        preferences(std::make_shared<InMemoryDebugModePreferenceStore>()),
+        editor(log, preferences),
+        policy(default_policy()) {}
+
+  [[nodiscard]] std::unique_ptr<lifecycle::SoftwareCatalogLifecycle>
+  make_lifecycle() {
+    return std::make_unique<lifecycle::SoftwareCatalogLifecycle>(
+        states, log, occupancy, files, codec, policy, editor,
+        StateSubject{"catalog-test-user"});
+  }
+
+  InMemoryStateFileSystem state_files;
+  FixedClock clock{WallClockTime{1234ms}};
+  DeviceStateStore states;
+  InMemoryOperationOccupancyStorage occupancy_storage;
+  SequenceLeaseTokenSource tokens;
+  SharedOperationOccupancy occupancy;
+  RecordingExecutionLog log;
+  std::shared_ptr<InMemoryDebugModePreferenceStore> preferences;
+  DebugModeCatalogEditor editor;
+  MemoryCatalogFiles files;
+  TomlSoftwareCatalogCodec codec;
+  catalog::SoftwareCatalogPolicy policy;
 };
 
 [[nodiscard]] lifecycle::CatalogCandidatePreview preview_built_in(
@@ -883,6 +955,7 @@ revision = 7
 release_state = "release"
 default_locale = "zh-CN"
 x_display_banner = "预览"
+x_display_sections = ["目录", "维护"]
 
 [[categories]]
 id = "tools"
@@ -891,37 +964,54 @@ display_hint = ["推荐", "稳定"]
 
 [categories.localizations."en-US"]
 name = "Tools"
+display_caption = "Tool category"
 
 [[software]]
-id = "unicode-tool"
+id = "core"
 enabled = true
 name = "工具\n套件"
-tier = "normal"
+tier = "basic"
 category_id = "tools"
 branch = "Windows 个人版"
-version_policy = "latest_stable_with_history"
+version_policy = "fixed"
+fixed_version = "2.0.0"
 dependencies = []
 bundled_editions = ["large_offline"]
 notice = 'literal # text'
+optimization_note = "关闭自启动"
+install_profile = "profile-v1"
 display_badge = "推荐"
+display_tags = ["维护", "离线"]
 
 [[software.sources]]
 purpose = "primary"
 address = "https://example.test/tool"
+version = "2.0.0"
+display_source = "官方"
 
 [[software.sources.history]]
 version = "1.0"
 address = "https://example.test/tool/1.0"
 reason = "兼容旧系统"
 visible = false
+display_history = ["旧版"]
+
+[[software.sources]]
+purpose = "alternative"
+address = "https://mirror.example.test/tool"
+display_source = "镜像"
 
 [software.education]
 address = "https://example.test/education"
 description = "教育版说明"
+display_education = "了解更多"
 
 [software.localizations."en-US"]
 name = "Unicode Tool"
 notice = "Notice"
+optimization_note = "Disable startup"
+education_description = "Education description"
+display_locale = ["English"]
 
 [[drivers]]
 id = "vendor-gpu"
@@ -930,15 +1020,28 @@ name = "显卡厂商页"
 entry_type = "vendor_page"
 hardware_kinds = ["gpu"]
 branch = "official portal"
-version_policy = "maintainer_provided"
+version_policy = "fixed"
+fixed_version = "600.1"
 notice = "由厂商页面处理"
+display_driver = ["推荐"]
 
 [[drivers.sources]]
 purpose = "primary"
 address = "https://example.test/gpu"
+version = "600.1"
+display_source = "驱动官方"
+
+[[drivers.sources.history]]
+version = "599.0"
+address = "https://example.test/gpu/599.0"
+reason = "回退"
+visible = true
+display_history = "历史驱动"
 
 [drivers.localizations."en-US"]
 name = "GPU vendor page"
+notice = "Vendor handles installation"
+display_locale = "English driver"
 )toml";
 
   TomlSoftwareCatalogCodec codec;
@@ -967,6 +1070,26 @@ name = "GPU vendor page"
                             .visible &&
                        !decoded.document->display_extensions.empty(),
                    "Unicode, escapes, history and display extensions must survive");
+  auto const& category = decoded.document->categories.front();
+  auto const& software = decoded.document->software.front();
+  auto const& driver = decoded.document->drivers.front();
+  passed &= expect(
+      decoded.document->display_extensions.size() == 2 &&
+          category.localizations.front().display_extensions.front().text ==
+              "Tool category" &&
+          software.fixed_version == "2.0.0" &&
+          software.optimization_note == "关闭自启动" &&
+          software.install_profile == "profile-v1" &&
+          software.sources.size() == 2 &&
+          software.sources.front().version == "2.0.0" &&
+          software.education->display_extensions.front().text == "了解更多" &&
+          software.localizations.front().education_description ==
+              "Education description" &&
+          driver.fixed_version == "600.1" &&
+          driver.sources.front().history.front().reason == "回退" &&
+          driver.localizations.front().notice ==
+              "Vendor handles installation",
+      "the TOML document must retain every editable catalog field family");
   auto encoded = codec.encode(*decoded.document);
   auto again = codec.decode(encoded);
   passed &= expect(again.issues.empty() && again.document == decoded.document,
@@ -2602,6 +2725,167 @@ name = "GPU vendor page"
   return passed;
 }
 
+[[nodiscard]] bool debug_mode_editor_checkpoints_and_recovers_unsaved_edits() {
+  DebugModeCatalogEditorFixture fixture;
+  fixture.files.files["built-in"] =
+      one_item_catalog(1, "release", "Current Catalog");
+  auto first = fixture.make_lifecycle();
+  fixture.editor.bind_catalog_lifecycle(*first);
+
+  bool passed = true;
+  passed &= expect(first->restore().succeeded(),
+                   "debug editor checkpoint fixture must restore");
+  auto built = preview_built_in(*first, fixture.files, "built-in");
+  passed &= expect(
+      built.ready && first->apply_preview(built.confirmation_token).succeeded(),
+      "debug editor checkpoint fixture must establish the current catalog");
+  passed &= expect(
+      fixture.editor.set_enabled(true).code ==
+          azzs::application::ApplicationSettingsDebugActionCode::updated,
+      "debug editor checkpoint fixture must enable debug mode");
+
+  auto typed_edit = fixture.codec.decode(
+      one_item_catalog(2, "draft", "Recovered Typed Draft"));
+  passed &= expect(typed_edit.document.has_value(),
+                   "debug editor checkpoint fixture must decode typed content");
+  if (!typed_edit.document.has_value()) {
+    return false;
+  }
+  passed &= expect(
+      fixture.editor.edit_document(*typed_edit.document).succeeded() &&
+          first->snapshot().draft.state ==
+              lifecycle::DraftWorkState::unsaved_changes &&
+          first->snapshot().current->revision == 1,
+      "typed debug edits must remain unsaved without replacing current catalog");
+
+  first.reset();
+  auto recovered = fixture.make_lifecycle();
+  fixture.editor.bind_catalog_lifecycle(*recovered);
+  passed &= expect(
+      recovered->restore().succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::recovered_unsaved &&
+          recovered->snapshot().draft.document == typed_edit.document &&
+          recovered->snapshot().current->revision == 1,
+      "debug editor edits must automatically checkpoint and recover without changing current catalog");
+  passed &= expect(
+      fixture.editor
+              .handle_close(lifecycle::CatalogCloseChoice::return_to_editor)
+              .code == lifecycle::CatalogActionCode::returned_to_editor &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::recovered_unsaved,
+      "returning to the editor must retain recovered unsaved content");
+  passed &= expect(
+      fixture.editor
+              .handle_close(
+                  lifecycle::CatalogCloseChoice::save_draft_and_close)
+              .succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::saved_not_applied &&
+          recovered->snapshot().draft.saved_present &&
+          recovered->snapshot().current->revision == 1,
+      "save-and-close must persist a draft without applying it");
+
+  auto later_edit = fixture.codec.decode(
+      one_item_catalog(3, "draft", "Discarded Typed Draft"));
+  passed &= expect(later_edit.document.has_value() &&
+                       fixture.editor.edit_document(*later_edit.document)
+                           .succeeded(),
+                   "discard-close fixture must establish later unsaved typed content");
+  passed &= expect(
+      fixture.editor
+              .handle_close(
+                  lifecycle::CatalogCloseChoice::discard_unsaved_and_close)
+              .succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::saved_not_applied &&
+          recovered->snapshot().draft.document == typed_edit.document &&
+          recovered->snapshot().current->revision == 1,
+      "discard-and-close must restore the saved draft without applying either edit");
+  return passed;
+}
+
+[[nodiscard]] bool temporary_debug_editor_recovery_is_reason_scoped_and_revocable() {
+  DebugModeCatalogEditorFixture fixture;
+  auto first = fixture.make_lifecycle();
+  fixture.editor.bind_catalog_lifecycle(*first);
+
+  bool passed = true;
+  passed &= expect(
+      first->restore().succeeded() &&
+          fixture.editor.set_enabled(true).code ==
+              azzs::application::ApplicationSettingsDebugActionCode::updated,
+      "temporary debug editor fixture must restore with debug mode enabled");
+  auto recovered_document = fixture.codec.decode(
+      one_item_catalog(1, "draft", "Recovered Before Temporary Access"));
+  passed &= expect(
+      recovered_document.document.has_value() &&
+          fixture.editor.edit_document(*recovered_document.document).succeeded() &&
+          first->snapshot().draft.state == lifecycle::DraftWorkState::unsaved_changes,
+      "the fixture must establish checkpointed unsaved editor content");
+
+  first.reset();
+  auto recovered = fixture.make_lifecycle();
+  fixture.editor.bind_catalog_lifecycle(*recovered);
+  passed &= expect(
+      recovered->restore().succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::recovered_unsaved &&
+          fixture.editor.set_enabled(false).code ==
+              azzs::application::ApplicationSettingsDebugActionCode::updated,
+      "the hidden editor fixture must restore recovered unsaved content");
+
+  passed &= expect(
+      fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::close_return) &&
+          fixture.editor.editor_snapshot().settings.temporary_close_recovery,
+      "a close-return flow may temporarily reopen recovered unsaved content");
+  fixture.editor.end_temporary_close_recovery();
+
+  passed &= expect(
+      fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::
+              recovered_unsaved_continue),
+      "the startup recovery action must accept only recovered unsaved content");
+  auto edited_document = fixture.codec.decode(
+      one_item_catalog(2, "draft", "Edited From Recovered Content"));
+  passed &= expect(
+      edited_document.document.has_value() &&
+          fixture.editor.edit_document(*edited_document.document).succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::unsaved_changes,
+      "editing recovered content must transition it to ordinary unsaved changes");
+  fixture.editor.end_temporary_close_recovery();
+
+  passed &= expect(
+      !fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::
+              recovered_unsaved_continue) &&
+          fixture.editor.editor_access() ==
+              lifecycle::CatalogEditorAccess::unavailable,
+      "the startup recovery action must reject ordinary unsaved changes");
+  passed &= expect(
+      fixture.editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::close_return) &&
+          fixture.editor.checkpoint_unsaved().code ==
+              lifecycle::CatalogActionCode::rejected &&
+          fixture.editor.apply_saved_draft().code ==
+              lifecycle::CatalogActionCode::rejected &&
+          fixture.editor.save_draft().succeeded() &&
+          recovered->snapshot().draft.state ==
+              lifecycle::DraftWorkState::saved_not_applied,
+      "a close-return flow may save but cannot checkpoint or apply ordinary unsaved changes");
+  fixture.editor.end_temporary_close_recovery();
+
+  auto const denied_after_end = fixture.editor.edit_document(*edited_document.document);
+  passed &= expect(
+      denied_after_end.code == lifecycle::CatalogActionCode::debug_mode_required &&
+          fixture.editor.editor_access() ==
+              lifecycle::CatalogEditorAccess::unavailable,
+      "ending temporary recovery must restore the hidden editor boundary");
+  return passed;
+}
+
 [[nodiscard]] bool execution_log_receipts_gate_and_qualify_application() {
   LifecycleFixture preview_failure;
   preview_failure.files.files["release-1"] =
@@ -2699,6 +2983,8 @@ int main() {
   passed &= restored_unknown_catalog_mode_fails_closed_for_writes();
   passed &= checkpoint_conflicts_preserve_other_instance_edits();
   passed &= temporary_recovery_session_cannot_delete_or_apply();
+  passed &= debug_mode_editor_checkpoints_and_recovers_unsaved_edits();
+  passed &= temporary_debug_editor_recovery_is_reason_scoped_and_revocable();
   passed &= execution_log_receipts_gate_and_qualify_application();
   if (!passed) {
     return EXIT_FAILURE;

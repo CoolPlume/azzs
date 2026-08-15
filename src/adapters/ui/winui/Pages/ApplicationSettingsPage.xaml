@@ -245,6 +245,15 @@
                             AutomationProperties.AutomationId="AzzsApplicationDebugMode"
                             Toggled="OnDebugModeToggled" />
                         <TextBlock x:Name="DebugModeStatusText" Style="{StaticResource AzzsDisabledReasonTextStyle}" />
+                        <Button
+                            x:Name="OpenCatalogEditorButton"
+                            x:Uid="ApplicationSettingsOpenCatalogEditor"
+                            AutomationProperties.AutomationId="AzzsApplicationOpenCatalogEditor"
+                            Click="OnOpenCatalogEditorClick"
+                            HorizontalAlignment="Left"
+                            Visibility="Collapsed">
+                            <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Edit" /><TextBlock x:Uid="ApplicationSettingsOpenCatalogEditorLabel" /></StackPanel></Button.Content>
+                        </Button>
                     </StackPanel>
                 </Border>
             </StackPanel>

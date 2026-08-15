@@ -41,6 +41,7 @@ class DriverAcquisitionService;
 class HardwareOverviewService;
 class HistoryAndLogsService;
 class ApplicationSettingsService;
+class DebugModeCatalogEditor;
 
 class DeviceStateStore;
 class EmergencyWithdrawalService;
@@ -70,6 +71,8 @@ class WorkbenchServices {
   [[nodiscard]] virtual ExecutionLog& execution_log() noexcept = 0;
   [[nodiscard]] virtual HistoryAndLogsService& history_and_logs() noexcept = 0;
   [[nodiscard]] virtual ApplicationSettingsService& application_settings()
+      noexcept = 0;
+  [[nodiscard]] virtual DebugModeCatalogEditor& debug_mode_catalog_editor()
       noexcept = 0;
   [[nodiscard]] virtual SharedOperationOccupancy& operation_occupancy()
       noexcept = 0;

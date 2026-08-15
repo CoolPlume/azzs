@@ -1,5 +1,6 @@
 add_library(azzs_application_settings_application STATIC
   src/application_settings.cpp
+  src/debug_mode_catalog_editor.cpp
 )
 
 add_library(azzs::application_settings_application ALIAS
@@ -18,6 +19,7 @@ azzs_project_target(
     azzs::architecture_selection_application
     azzs::offline_package_cache_application
     azzs::history_and_logs_application
+    azzs::debug_log_policy_application
     azzs::settings_catalog_lifecycle
     azzs::software_catalog_application
     azzs::software_selection_application

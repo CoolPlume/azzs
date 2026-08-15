@@ -10,6 +10,7 @@ enum class PageId {
   software_optimization,
   history_and_logs,
   application_settings,
+  software_catalog_editor,
 };
 
 }  // namespace azzs::application

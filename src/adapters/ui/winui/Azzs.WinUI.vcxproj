@@ -129,6 +129,7 @@
     <Page Include="Pages\HistoryAndLogsPage.xaml" />
     <Page Include="Pages\OverviewPage.xaml" />
     <Page Include="Pages\SoftwareInstallationPage.xaml" />
+    <Page Include="Pages\SoftwareCatalogEditorPage.xaml" />
     <Page Include="Pages\SoftwareOptimizationPage.xaml" />
     <Page Include="Pages\SystemOptimizationPage.xaml" />
     <Page Include="Themes\DesignSystem.xaml" />
@@ -168,6 +169,9 @@
     <ClInclude Include="Pages\SoftwareInstallationPage.xaml.h">
       <DependentUpon>SoftwareInstallationPage.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="Pages\SoftwareCatalogEditorPage.xaml.h">
+      <DependentUpon>SoftwareCatalogEditorPage.xaml</DependentUpon>
+    </ClInclude>
     <ClInclude Include="Pages\SoftwareOptimizationPage.xaml.h">
       <DependentUpon>SoftwareOptimizationPage.xaml</DependentUpon>
     </ClInclude>
@@ -203,6 +207,7 @@
     <ClCompile Include="Pages\HistoryAndLogsPage.xaml.cpp" />
     <ClCompile Include="Pages\OverviewPage.xaml.cpp" />
     <ClCompile Include="Pages\SoftwareInstallationPage.xaml.cpp" />
+    <ClCompile Include="Pages\SoftwareCatalogEditorPage.xaml.cpp" />
     <ClCompile Include="Pages\SoftwareOptimizationPage.xaml.cpp" />
     <ClCompile Include="Pages\SystemOptimizationPage.xaml.cpp" />
     <ClCompile Include="..\..\..\composition\windows\composition_root.cpp" />
@@ -216,6 +221,7 @@
     <Midl Include="Pages\HistoryAndLogsPage.idl" />
     <Midl Include="Pages\OverviewPage.idl" />
     <Midl Include="Pages\SoftwareInstallationPage.idl" />
+    <Midl Include="Pages\SoftwareCatalogEditorPage.idl" />
     <Midl Include="Pages\SoftwareOptimizationPage.idl" />
     <Midl Include="Pages\SystemOptimizationPage.idl" />
   </ItemGroup>
