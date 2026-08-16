@@ -47,41 +47,13 @@ if (-not (Test-Path -LiteralPath $vswherePath)) {
     throw "vswhere.exe was not found. Install Visual Studio 2026 before building."
 }
 
-$baseVisualStudioComponents = @(
-    "Microsoft.Component.MSBuild",
-    "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-    "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
-    "Microsoft.VisualStudio.Component.VC.CMake.Project"
-)
-$uwpVisualStudioComponents = @(
-    "Microsoft.VisualStudio.ComponentGroup.UWP.VC",
-    "Microsoft.VisualStudio.ComponentGroup.UWP.VC.v142"
-)
-$visualStudioInstances = @()
-foreach ($uwpVisualStudioComponent in $uwpVisualStudioComponents) {
-    $requiredVisualStudioComponents = $baseVisualStudioComponents + $uwpVisualStudioComponent
-    $instanceJson = & $vswherePath -latest -products * -version "[18.8,18.9)" -requires $requiredVisualStudioComponents -format json -utf8
-    if ($LASTEXITCODE -ne 0) {
-        throw "vswhere.exe failed while locating Visual Studio 2026."
-    }
-    $visualStudioInstances = @(
-        if ($instanceJson) {
-            ConvertFrom-Json ($instanceJson -join [Environment]::NewLine)
-        }
-    )
-    if ($visualStudioInstances.Count -gt 0) {
-        break
-    }
+$selectVisualStudio = Join-Path $PSScriptRoot "select-visual-studio.ps1"
+if (-not (Test-Path -LiteralPath $selectVisualStudio)) {
+    throw "The Visual Studio selection helper was not found: $selectVisualStudio"
 }
-if ($visualStudioInstances.Count -eq 0) {
-    throw "Visual Studio 2026 Stable 18.8.2 with x64, ARM64, CMake, and UWP C++ components was not found."
-}
-$visualStudioInstance = $visualStudioInstances[0]
+$visualStudioInstance = & $selectVisualStudio -VswherePath $vswherePath -Architecture $Architecture
 $visualStudioPath = $visualStudioInstance.installationPath
 $visualStudioVersion = $visualStudioInstance.catalog.productDisplayVersion
-if ([string]::IsNullOrWhiteSpace($visualStudioVersion)) {
-    throw "The selected Visual Studio instance did not report a product version."
-}
 $msbuildPath = Join-Path $visualStudioPath "MSBuild/Current/Bin/MSBuild.exe"
 if (-not (Test-Path -LiteralPath $msbuildPath)) {
     throw "MSBuild.exe was not found in the selected Visual Studio instance."

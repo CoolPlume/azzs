@@ -1,5 +1,6 @@
 add_subdirectory(support)
 add_subdirectory(core-smoke)
+add_subdirectory(build-toolchain-contract)
 add_subdirectory(hardware-overview-contract)
 add_subdirectory(driver-acquisition-contract)
 add_subdirectory(architecture-selection-contract)
