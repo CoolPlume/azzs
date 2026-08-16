@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 #include <winrt/Microsoft.UI.Dispatching.h>
@@ -22,6 +23,7 @@ class MotionPreferences final
   using CancellationHandler = std::function<void()>;
 
   [[nodiscard]] static std::shared_ptr<MotionPreferences> create();
+  [[nodiscard]] static std::shared_ptr<MotionPreferences> create_static();
 
   MotionPreferences(MotionPreferences const&) = delete;
   MotionPreferences& operator=(MotionPreferences const&) = delete;
@@ -37,13 +39,13 @@ class MotionPreferences final
   void unregister_cancellation_handler(std::size_t token) noexcept;
 
  private:
-  MotionPreferences();
+  explicit MotionPreferences(bool static_presentation);
 
   void start_listening();
   void on_animations_enabled_changed(bool enabled) noexcept;
   void apply_animations_enabled(bool enabled);
 
-  winrt::Windows::UI::ViewManagement::UISettings settings_;
+  std::optional<winrt::Windows::UI::ViewManagement::UISettings> settings_;
   winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher_queue_;
   winrt::event_token animations_enabled_changed_token_{};
   std::atomic_bool animations_enabled_{true};
