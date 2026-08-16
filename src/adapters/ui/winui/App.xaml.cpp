@@ -3,6 +3,8 @@
 #include "App.xaml.h"
 #include "../../../composition/windows/composition_root.hpp"
 
+#include <utility>
+
 #if __has_include("App.g.cpp")
 #include "App.g.cpp"
 #endif
@@ -14,8 +16,8 @@ App::App() {
 }
 
 void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
-  window_ = azzs::composition::windows::create_main_window();
-  window_.Activate();
+  auto startup = azzs::composition::windows::assemble_startup();
+  window_ = std::move(startup.window);
 }
 
 }  // namespace winrt::Azzs::Ui::implementation

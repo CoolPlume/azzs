@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <algorithm>
 #include <thread>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -67,6 +66,8 @@
 #include "azzs/application/workbench_services.hpp"
 #include "azzs/settings_catalog/initial_settings_catalog.hpp"
 #include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
+
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
 
 namespace azzs::composition::windows {
 namespace {
@@ -541,6 +542,7 @@ class WindowsWorkbenchServices final
         restart_resume_(states_, restart_resume_registration_),
         log_storage_(environment.root_utf8, environment.subject_id),
         log_(log_storage_, clock_),
+        emergency_preflight_correlation_(log_.begin_correlation()),
         debug_mode_preferences_(std::move(debug_mode_preferences)),
         driver_handoff_platform_{},
         driver_network_{},
@@ -549,7 +551,7 @@ class WindowsWorkbenchServices final
         emergency_notice_source_(),
         emergency_withdrawals_(
             states_, clock_, emergency_notice_source_,
-            {.log = &log_, .correlation = log_.begin_correlation()}),
+            {.log = &log_, .correlation = emergency_preflight_correlation_}),
         occupancy_storage_(states_),
         occupancy_(occupancy_storage_, lease_tokens_),
         sogou_optimization_adapter_{},
@@ -694,18 +696,25 @@ class WindowsWorkbenchServices final
     }
   }
 
-  void start_emergency_preflight() {
+  [[nodiscard]] startup::EmergencyPreflightStartResult
+  start_emergency_preflight() {
     std::call_once(emergency_preflight_started_, [this] {
       auto self = shared_from_this();
-      std::thread([self = std::move(self)] {
-        try {
-          (void)self->emergency_withdrawals_.preflight_check();
-        } catch (...) {
-          // The service owns the typed failure path; the adapter boundary must
-          // never terminate the workbench because a startup check threw.
-        }
-      }).detach();
+      emergency_preflight_start_ = startup::start_emergency_preflight(
+          [self = std::move(self)] {
+            std::thread([self] {
+              (void)self->emergency_withdrawals_.preflight_check();
+            }).detach();
+          });
     });
+    return emergency_preflight_start_;
+  }
+
+  [[nodiscard]] startup::StartupDiagnosticAvailability
+  startup_diagnostic_availability() {
+    return log_.snapshot().available
+               ? startup::StartupDiagnosticAvailability::available
+               : startup::StartupDiagnosticAvailability::unavailable;
   }
 
   [[nodiscard]] domain::StateSubject const& state_subject()
@@ -887,12 +896,14 @@ class WindowsWorkbenchServices final
   application::restart_resume::RestartResumeService restart_resume_;
   adapters::infrastructure::LocalFileLogStorage log_storage_;
   adapters::infrastructure::StructuredExecutionLog log_;
+  application::CorrelationId emergency_preflight_correlation_;
   std::shared_ptr<application::DebugModePreferenceStore>
       debug_mode_preferences_;
   adapters::windows::WindowsDriverHandoffPlatform driver_handoff_platform_;
   adapters::windows::WindowsDriverNetworkObserver driver_network_;
   application::driver_acquisition::DriverAcquisitionService driver_acquisition_;
   std::once_flag emergency_preflight_started_;
+  startup::EmergencyPreflightStartResult emergency_preflight_start_;
   adapters::windows::WindowsEmergencyWithdrawalNoticeSource
       emergency_notice_source_;
   application::EmergencyWithdrawalService emergency_withdrawals_;
@@ -1029,15 +1040,52 @@ class WindowsWorkbenchServices final
       guided_initialization_{states_, clock_, guided_evidence_source_};
 };
 
+[[nodiscard]] winrt::Microsoft::UI::Xaml::Window
+create_static_startup_failure_window(
+    startup::StartupAssemblyFailure const& failure) {
+  using winrt::Microsoft::UI::Xaml::Controls::StackPanel;
+  using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
+  using winrt::Microsoft::UI::Xaml::TextWrapping;
+
+  auto window = winrt::Microsoft::UI::Xaml::Window{};
+  window.Title(L"无法进入工作台");
+  auto content = StackPanel{};
+  content.Spacing(12);
+  auto title = TextBlock{};
+  title.Text(L"无法进入工作台");
+  title.FontSize(22);
+  auto message = TextBlock{};
+  message.Text(winrt::hstring{failure.public_statement});
+  message.TextWrapping(TextWrapping::WrapWholeWords);
+  content.Children().Append(title);
+  content.Children().Append(message);
+  window.Content(content);
+  window.Activate();
+  return window;
+}
+
+[[nodiscard]] StartupAssemblyResult startup_failure(
+    startup::StartupAssemblyStatus status,
+    std::optional<adapters::windows::DeviceDataEnvironmentResult>
+        device_data_environment_failure = std::nullopt) {
+  auto failure_window = create_static_startup_failure_window(*status.failure);
+  return {.window = std::move(failure_window),
+          .status = std::move(status),
+          .device_data_environment_failure =
+              std::move(device_data_environment_failure)};
+}
+
 }  // namespace
 
-winrt::Microsoft::UI::Xaml::Window create_main_window() {
+StartupAssemblyResult assemble_startup() {
   auto environment =
       adapters::windows::WindowsDeviceDataEnvironment::prepare();
   if (!environment) {
-    throw std::runtime_error(
-        "device data environment preparation failed (raw=" +
-        std::to_string(environment.raw_error) + "): " + environment.detail);
+    auto failure = std::move(environment);
+    return startup_failure(
+        startup::startup_assembly_failed(
+            startup::StartupAssemblyStage::device_data_environment),
+        std::move(failure));
   }
   auto view_preferences =
       std::make_shared<adapters::windows::WindowsViewPreferences>();
@@ -1058,17 +1106,75 @@ winrt::Microsoft::UI::Xaml::Window create_main_window() {
   auto workbench = std::make_shared<application::Workbench>(
       services->platform_info(), services);
   auto system_settings = services->system_settings_apply_shared();
-  services->start_emergency_preflight();
-  auto motion_preferences = ui::winui::MotionPreferences::create();
-  auto window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
-  window->bind(std::move(workbench), std::move(motion_preferences),
-               std::move(system_settings),
-               std::move(advanced_view_preferences));
-  auto result = window.as<winrt::Microsoft::UI::Xaml::Window>();
-  result.Closed([services](auto&&, auto&&) {
+  auto const diagnostic_availability =
+      services->startup_diagnostic_availability();
+  if (diagnostic_availability !=
+      startup::StartupDiagnosticAvailability::available) {
+    return startup_failure(startup::startup_assembly_failed(
+        startup::StartupAssemblyStage::core_records_unreadable,
+        startup::StartupDiagnosticAvailability::unavailable));
+  }
+  startup::EmergencyPreflightStartResult emergency_preflight;
+
+  std::shared_ptr<ui::winui::MotionPreferences> motion_preferences;
+  try {
+    motion_preferences = ui::winui::MotionPreferences::create();
+  } catch (winrt::hresult_error const&) {
+    motion_preferences = ui::winui::MotionPreferences::create_static();
+  }
+
+  winrt::com_ptr<winrt::Azzs::Ui::implementation::MainWindow> window;
+  winrt::Microsoft::UI::Xaml::Window result{nullptr};
+  try {
+    window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
+    result = window.as<winrt::Microsoft::UI::Xaml::Window>();
+  } catch (winrt::hresult_error const&) {
     services->shutdown();
-  });
-  return result;
+    return startup_failure(startup::startup_assembly_failed(
+        startup::StartupAssemblyStage::main_window_initialization,
+        diagnostic_availability,
+        emergency_preflight));
+  }
+
+  try {
+    window->bind(std::move(workbench), std::move(motion_preferences),
+                 std::move(system_settings),
+                 std::move(advanced_view_preferences));
+    result.Closed([services](auto&&, auto&&) {
+      services->shutdown();
+    });
+  } catch (winrt::hresult_error const&) {
+    services->shutdown();
+    return startup_failure(startup::startup_assembly_failed(
+        startup::StartupAssemblyStage::main_window_binding,
+        diagnostic_availability,
+        emergency_preflight));
+  }
+
+  try {
+    window->show_initial_page();
+  } catch (winrt::hresult_error const&) {
+    services->shutdown();
+    return startup_failure(startup::startup_assembly_failed(
+        startup::StartupAssemblyStage::main_window_navigation,
+        diagnostic_availability,
+        emergency_preflight));
+  }
+
+  try {
+    result.Activate();
+  } catch (winrt::hresult_error const&) {
+    services->shutdown();
+    return startup_failure(startup::startup_assembly_failed(
+        startup::StartupAssemblyStage::main_window_activation,
+        diagnostic_availability,
+        emergency_preflight));
+  }
+
+  window->confirm_started_healthy();
+  emergency_preflight = services->start_emergency_preflight();
+  return {.window = std::move(result),
+          .status = startup::startup_assembly_ready(emergency_preflight)};
 }
 
 }  // namespace azzs::composition::windows

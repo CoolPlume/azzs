@@ -32,6 +32,8 @@ struct MainWindow : MainWindowT<MainWindow> {
           system_settings,
       std::shared_ptr<azzs::application::AdvancedViewPreferences>
           advanced_view_preferences);
+  void show_initial_page();
+  void confirm_started_healthy();
   void OnNavigationSelectionChanged(
       Microsoft::UI::Xaml::Controls::NavigationView const&,
       Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&
