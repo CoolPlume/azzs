@@ -85,6 +85,11 @@ function ConvertTo-CanonicalRepositoryPackagePath {
 $canonicalPaths = ConvertTo-CanonicalRepositoryPackagePath -RepositoryRoot $RepositoryRoot -PackagePath $PackagePath
 $RepositoryRoot = $canonicalPaths.repository
 $PackagePath = $canonicalPaths.package
+$payloadItem = Get-Item -LiteralPath $PayloadDirectory -ErrorAction Stop
+if (-not $payloadItem.PSIsContainer) {
+    throw "Package manifest payload directory must be a directory."
+}
+$PayloadDirectory = (Get-ExistingNonReparsePath -Path $payloadItem.FullName -Context "Package manifest payload directory").TrimEnd([char[]]@('\', '/'))
 
 $payload = @(
     Get-ChildItem -LiteralPath $PayloadDirectory -File -Recurse |
