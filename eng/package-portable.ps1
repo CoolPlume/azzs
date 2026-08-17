@@ -53,6 +53,9 @@ function Remove-PortableCandidate {
         if (-not $stagingItem.PSIsContainer) {
             throw "Portable packaging staging candidate must be a directory: $stagingDirectory"
         }
+        Assert-NoReparsePointsBelow `
+            -Path $stagingDirectory `
+            -Context "Portable packaging staging candidate"
     }
     foreach ($fileCandidatePath in @($packagePath, $manifestPath)) {
         if (Test-Path -LiteralPath $fileCandidatePath) {
