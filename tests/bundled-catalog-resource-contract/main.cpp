@@ -102,6 +102,25 @@ class Fixture final {
          expect(!read, "a digest mismatch must reject the resource bytes");
 }
 
+[[nodiscard]] bool unsafe_relative_path_is_rejected() {
+  Fixture fixture;
+  auto const written = write_file(fixture.catalog_file(), "abc");
+  WindowsBundledCatalogResourceReader reader{fixture.root()};
+  auto const absolute =
+      reader.read(fixture.catalog_file(), kAbcExpectation);
+  auto const parent = reader.read(L"../outside.toml", kAbcExpectation);
+  auto const dot =
+      reader.read(L"catalog/./software-catalog.toml", kAbcExpectation);
+  auto const empty = reader.read(std::filesystem::path{}, kAbcExpectation);
+
+  return expect(fixture.ready() && written,
+                "the unsafe path fixture must be writable") &&
+         expect(!absolute, "an absolute resource path must be rejected") &&
+         expect(!parent, "a parent traversal resource path must be rejected") &&
+         expect(!dot, "a dot-segment resource path must be rejected") &&
+         expect(!empty, "an empty resource path must be rejected");
+}
+
 [[nodiscard]] bool reparse_point_is_rejected() {
   Fixture fixture;
   auto const target = fixture.root() / L"outside.toml";
@@ -197,6 +216,7 @@ int main() {
   bool passed = true;
   passed &= missing_resource_is_rejected();
   passed &= digest_mismatch_is_rejected();
+  passed &= unsafe_relative_path_is_rejected();
   passed &= reparse_point_is_rejected();
   passed &= nested_reparse_point_is_rejected();
   passed &= verified_snapshot_survives_path_replacement();
