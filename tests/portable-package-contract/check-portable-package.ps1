@@ -193,6 +193,17 @@ function Write-ValidBuildManifest {
     )
 
     $commit = (& git -C $FixtureRoot rev-parse HEAD).Trim()
+    $payloadDirectory = Join-Path $FixtureRoot "out/windows/x64/Release"
+    $artifacts = @(
+        Get-ChildItem -LiteralPath $payloadDirectory -File -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+                [ordered]@{
+                    path = $_.FullName.Substring($payloadDirectory.Length).TrimStart("\", "/").Replace("\", "/")
+                    bytes = $_.Length
+                }
+            }
+    )
     Write-JsonFile -Value ([ordered]@{
             schemaVersion = 1
             result = "succeeded"
@@ -204,6 +215,7 @@ function Write-ValidBuildManifest {
                 architecture = "x64"
                 configuration = "Release"
             }
+            artifacts = $artifacts
         }) -Path (Get-BuildManifestPath -FixtureRoot $FixtureRoot)
 }
 
@@ -236,7 +248,8 @@ function New-FixtureRoot {
     foreach ($runtimeFile in @(
             "Microsoft.ui.xaml.dll",
             "Microsoft.WindowsAppRuntime.Bootstrap.dll",
-            "Microsoft.WindowsAppRuntime.dll"
+            "Microsoft.WindowsAppRuntime.dll",
+            "Microsoft.UI.Xaml.Controls.dll"
         )) {
         Set-Content -LiteralPath (Join-Path $payloadDirectory $runtimeFile) -Value "fixture runtime $runtimeFile" -Encoding ASCII
     }
@@ -599,6 +612,27 @@ try {
     [System.IO.Compression.ZipFile]::ExtractToDirectory($standardCandidates[1], $extractedStandardDirectory)
     Require-EmptyFixedRescueFolders -Root $extractedStandardDirectory -Context "extracted standard ZIP"
     Require-BundledCatalogResources -Root $extractedStandardDirectory -Resources @($standardManifest.bundledCatalogResources) -Context "extracted standard ZIP"
+
+    $missingRuntimeFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $missingRuntimeFixture -ArtifactId "standard-x64-portable"
+    $missingRuntimeCandidates = Get-CandidatePaths -FixtureRoot $missingRuntimeFixture -ArtifactId "standard-x64-portable"
+    Remove-Item -LiteralPath (Join-Path $missingRuntimeCandidates[0] "Microsoft.UI.Xaml.Controls.dll") -Force
+    $missingRuntimeArchive = [System.IO.Compression.ZipFile]::Open(
+        $missingRuntimeCandidates[1],
+        [System.IO.Compression.ZipArchiveMode]::Update
+    )
+    try {
+        $missingRuntimeEntry = $missingRuntimeArchive.GetEntry("Microsoft.UI.Xaml.Controls.dll")
+        Require ($null -ne $missingRuntimeEntry) "fixture ZIP lacks the secondary runtime dependency"
+        $missingRuntimeEntry.Delete()
+    }
+    finally {
+        $missingRuntimeArchive.Dispose()
+    }
+    Require-PortableVerificationFailure `
+        -FixtureRoot $missingRuntimeFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "a missing non-minimal WinUI runtime dependency"
 
     $missingCatalogFixture = New-FixtureRoot
     Invoke-Package -FixtureRoot $missingCatalogFixture -ArtifactId "standard-x64-portable"

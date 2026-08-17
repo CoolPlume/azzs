@@ -46,7 +46,7 @@ if ($artifact.edition -eq "large-offline") {
     $rescueInputs = Test-PortableArtifactInputs -Definition $rescueDefinition -RepositoryRoot $RepositoryRoot
     Test-LargeOfflineArtifactContent -LargeDefinition $definition -LargeInputs $contentInputs -RescueInputs $rescueInputs -RepositoryRoot $RepositoryRoot
 }
-Test-PortableBuildManifest -RepositoryRoot $RepositoryRoot -Architecture $Architecture | Out-Null
+$buildManifest = Test-PortableBuildManifest -RepositoryRoot $RepositoryRoot -Architecture $Architecture
 
 function ConvertTo-SafePayloadPath {
     param(
@@ -244,6 +244,38 @@ if (@($stagedPayload | Where-Object {
             $excludedExtensions -contains [System.IO.Path]::GetExtension($_.path).ToLowerInvariant()
         }).Count -gt 0) {
     throw "Portable package staging payload contains excluded build artifacts."
+}
+
+# Keep the verifier tied to the exact self-contained output that was built.
+$buildArtifactsProperty = $buildManifest.PSObject.Properties["artifacts"]
+if ($null -eq $buildArtifactsProperty -or $null -eq $buildArtifactsProperty.Value) {
+    throw "Portable build manifest lacks the output artifact list required for package verification."
+}
+$buildPayloadMap = [System.Collections.Generic.Dictionary[string, Int64]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+)
+foreach ($buildArtifact in @($buildArtifactsProperty.Value)) {
+    $buildArtifactPath = ConvertTo-SafePayloadPath `
+        -Value ([string](Get-RequiredProperty -Object $buildArtifact -Name "path" -Context "Portable build manifest artifact")) `
+        -Context "Portable build manifest artifact"
+    if ($excludedExtensions -contains [System.IO.Path]::GetExtension($buildArtifactPath).ToLowerInvariant()) {
+        continue
+    }
+    if ($buildPayloadMap.ContainsKey($buildArtifactPath)) {
+        throw "Portable build manifest contains duplicate output artifact '$buildArtifactPath'."
+    }
+    $buildPayloadMap.Add(
+        $buildArtifactPath,
+        [Int64](Get-RequiredProperty -Object $buildArtifact -Name "bytes" -Context "Portable build manifest artifact '$buildArtifactPath'"))
+}
+$stagedPayloadMap = ConvertTo-PayloadMap -Payload $stagedPayload -Name "Portable package staging payload"
+foreach ($buildArtifact in $buildPayloadMap.GetEnumerator()) {
+    if (-not $stagedPayloadMap.ContainsKey($buildArtifact.Key)) {
+        throw "Portable package staging payload is missing build output '$($buildArtifact.Key)'."
+    }
+    if ($stagedPayloadMap[$buildArtifact.Key] -ne $buildArtifact.Value) {
+        throw "Portable package staging payload byte count does not match build output '$($buildArtifact.Key)'."
+    }
 }
 
 $requiredRuntimeFiles = @(
