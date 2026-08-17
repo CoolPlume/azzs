@@ -12,11 +12,28 @@
 namespace winrt::Azzs::Ui::implementation {
 namespace {
 
-void show_last_resort_startup_failure(wchar_t const* message) noexcept {
-  ::OutputDebugStringW(message);
-  ::OutputDebugStringW(L"\n");
-  (void)::MessageBoxW(nullptr, message, L"无法进入工作台",
-                      MB_OK | MB_ICONERROR | MB_TOPMOST);
+void show_last_resort_startup_failure(wchar_t const* message_key) noexcept {
+  try {
+    using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+
+    auto const resources = ResourceLoader{};
+    auto const title = resources.GetString(L"AppStartupFailureTitle");
+    auto const message = resources.GetString(message_key);
+    if (!title.empty() && !message.empty()) {
+      ::OutputDebugStringW(message.c_str());
+      ::OutputDebugStringW(L"\n");
+      (void)::MessageBoxW(nullptr, message.c_str(), title.c_str(),
+                          MB_OK | MB_ICONERROR | MB_TOPMOST);
+      return;
+    }
+  } catch (...) {
+    // Resource loading can fail while the application is still bootstrapping.
+    // Keep this last-resort boundary no-throw and independent of WinUI assets.
+    ::OutputDebugStringW(L"Startup failure.\n");
+    (void)::MessageBoxW(nullptr, L"Startup failure.",
+                        L"Windows Initial Setup Workbench",
+                        MB_OK | MB_ICONERROR | MB_TOPMOST);
+  }
 }
 
 void record_unexpected_startup_failure(
@@ -44,8 +61,7 @@ App::App() {
 
 void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
   if (bootstrap_failed_) {
-    show_last_resort_startup_failure(
-        L"界面资源初始化失败。请重新启动工作台；如果问题持续，请收集诊断资料。");
+    show_last_resort_startup_failure(L"AppStartupFailureResources");
     return;
   }
 
@@ -54,8 +70,7 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
     startup_status_ = std::move(startup.status);
     window_ = std::move(startup.window);
     if (!window_) {
-      show_last_resort_startup_failure(
-          L"工作台未能创建启动窗口。请重新启动工作台；如果问题持续，请收集诊断资料。");
+      show_last_resort_startup_failure(L"AppStartupFailureWindow");
     }
   } catch (...) {
     // The composition root normally converts failures to a static failure
@@ -63,8 +78,7 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
     // no-throw platform-level signal instead of returning with no active window.
     record_unexpected_startup_failure(startup_status_);
     window_ = nullptr;
-    show_last_resort_startup_failure(
-        L"工作台启动失败。请重新启动工作台；如果问题持续，请收集诊断资料。");
+    show_last_resort_startup_failure(L"AppStartupFailureUnexpected");
   }
 }
 
