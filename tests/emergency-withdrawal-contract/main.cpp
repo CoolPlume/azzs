@@ -4,6 +4,7 @@
 #include <future>
 #include <iostream>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,6 +31,7 @@ using azzs::application::ExecutionEvent;
 using azzs::application::ExecutionLog;
 using azzs::application::ExecutionLogClearReceipt;
 using azzs::application::ExecutionLogReceipt;
+using azzs::application::ExecutionResult;
 using azzs::application::OperationAuthorizationCode;
 using azzs::application::OperationAuthorizationResult;
 using azzs::application::NoticeFetchResult;
@@ -76,6 +78,16 @@ class BlockingNoticeSource final : public EmergencyWithdrawalNoticeSource {
  private:
   std::shared_future<void> release_;
   std::promise<void>& entered_;
+};
+
+class ThrowingNoticeSource final : public EmergencyWithdrawalNoticeSource {
+ public:
+  [[nodiscard]] NoticeFetchResult fetch() override {
+    ++calls;
+    throw std::runtime_error{"simulated emergency withdrawal source failure"};
+  }
+
+  unsigned calls{};
 };
 
 class RecordingLog final : public ExecutionLog {
@@ -410,6 +422,38 @@ struct Fixture final {
   return passed;
 }
 
+[[nodiscard]] bool preflight_exception_boundary_contract() {
+  InMemoryStateFileSystem files;
+  FixedClock clock{azzs::application::WallClockTime{
+      std::chrono::milliseconds{1'786'422'500'000}}};
+  DeviceStateStore states{files, clock};
+  ThrowingNoticeSource source;
+  RecordingLog log;
+  EmergencyWithdrawalService service{
+      states, clock, source,
+      {.log = &log, .correlation = log.begin_correlation()}};
+
+  auto preflight = std::async(std::launch::async, [&] {
+    return service.preflight_check();
+  });
+  auto const result = preflight.get();
+  auto const logged = std::ranges::find_if(
+      log.events, [](ExecutionEvent const& event) {
+        return event.component == "emergency-withdrawal" &&
+               event.stage == "preflight-exception";
+      });
+
+  return expect(
+      source.calls == 1 && result.code == EmergencyWithdrawalCheckCode::failed &&
+          result.snapshot.state == EmergencyWithdrawalServiceState::failed &&
+          result.snapshot.possibly_stale &&
+          result.error == "emergency withdrawal preflight raised an exception" &&
+          result.snapshot.error == result.error && logged != log.events.end() &&
+          logged->result == ExecutionResult::failed && logged->error.has_value() &&
+          logged->error->source == "emergency-withdrawal",
+      "a thrown notice-source exception must remain inside the background preflight boundary");
+}
+
 [[nodiscard]] bool structured_logging_contract() {
   InMemoryStateFileSystem files;
   FixedClock clock{azzs::application::WallClockTime{
@@ -648,6 +692,7 @@ int main() {
   passed &= independent_sources_and_observation_contract();
   passed &= offline_and_first_failure_contract();
   passed &= cross_category_contract();
+  passed &= preflight_exception_boundary_contract();
   passed &= structured_logging_contract();
   passed &= persistence_and_corruption_contract();
   passed &= persistence_limits_contract();
