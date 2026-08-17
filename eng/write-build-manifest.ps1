@@ -35,7 +35,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
+
 $projectPath = Join-Path $RepositoryRoot "src/adapters/ui/winui/Azzs.WinUI.vcxproj"
+$projectPath = Get-ExistingNonReparsePath `
+    -Path $projectPath `
+    -Context "Build manifest project file"
 $projectXml = [xml](Get-Content -LiteralPath $projectPath -Raw)
 $namespaces = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
 $namespaces.AddNamespace("msb", $projectXml.DocumentElement.NamespaceURI)
@@ -71,7 +76,10 @@ $clVersion = if (Test-Path -LiteralPath $clPath) {
 
 $payloadDirectory = Join-Path $RepositoryRoot "out/windows/$Architecture/Release"
 $artifacts = @()
-if (Test-Path -LiteralPath $payloadDirectory) {
+if (Test-Path -LiteralPath $payloadDirectory -PathType Container) {
+    Assert-NoReparsePointsBelow `
+        -Path $payloadDirectory `
+        -Context "Build manifest payload"
     $artifacts = @(
         Get-ChildItem -LiteralPath $payloadDirectory -File -Recurse |
             Sort-Object FullName |
@@ -128,6 +136,29 @@ $manifest = [ordered]@{
     failure = $FailureMessage
 }
 
+$outputFullPath = [System.IO.Path]::GetFullPath($OutputPath)
+$repositoryFullPath = (Get-ExistingNonReparsePath `
+        -Path $RepositoryRoot `
+        -Context "Build manifest repository root").TrimEnd([char[]]@('\', '/'))
+$repositoryPrefix = "$repositoryFullPath$([System.IO.Path]::DirectorySeparatorChar)"
+if (-not $outputFullPath.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Build manifest output path must be strictly inside the repository."
+}
+$OutputPath = Assert-PathChainWithoutReparsePoint `
+    -Path $outputFullPath `
+    -Context "Build manifest output path"
 $outputDirectory = Split-Path -Parent $OutputPath
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+$outputDirectory = Get-ExistingNonReparsePath `
+    -Path $outputDirectory `
+    -Context "Build manifest output directory"
+if (Test-Path -LiteralPath $OutputPath) {
+    $outputItem = Get-Item -LiteralPath $OutputPath -Force -ErrorAction Stop
+    if ($outputItem.PSIsContainer) {
+        throw "Build manifest output path must name a file."
+    }
+    $OutputPath = Get-ExistingNonReparsePath `
+        -Path $outputItem.FullName `
+        -Context "Build manifest output path"
+}
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding UTF8

@@ -664,6 +664,9 @@ function Test-PortableBuildManifest {
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
         throw "Portable packaging requires a completed $Architecture build manifest."
     }
+    $manifestPath = Get-ExistingNonReparsePath `
+        -Path $manifestPath `
+        -Context "Portable build manifest"
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $commit = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
     if ($manifest.schemaVersion -ne 1 -or $manifest.result -ne "succeeded" -or
