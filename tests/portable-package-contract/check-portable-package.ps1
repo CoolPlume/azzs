@@ -252,6 +252,83 @@ function New-FixtureRoot {
     return $fixtureRoot
 }
 
+function New-PackageManifestFixture {
+    $fixtureRoot = New-FixtureRoot
+    $packagePath = Join-Path $fixtureRoot "out/packages/Azzs-standard-x64-portable.zip"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $packagePath) -Force | Out-Null
+    [System.IO.File]::WriteAllBytes($packagePath, [byte[]](0, 1, 2, 3))
+    return [pscustomobject]@{
+        Root = $fixtureRoot
+        PackagePath = $packagePath
+        PayloadDirectory = Join-Path $fixtureRoot "out/windows/x64/Release"
+    }
+}
+
+function New-DirectoryReparsePoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Junction", "SymbolicLink")]
+        [string]$ItemType
+    )
+
+    New-Item -ItemType $ItemType -Path $Path -Target $Target | Out-Null
+    $attributes = [System.IO.File]::GetAttributes($Path)
+    Require (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) "reparse fixture $Path was not created as a reparse point"
+}
+
+function Remove-DirectoryReparsePoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (Test-Path -LiteralPath $Path) {
+        [System.IO.Directory]::Delete($Path)
+    }
+}
+
+function Require-PackageManifestFailure {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FixtureRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PayloadDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Scenario
+    )
+
+    Require (-not (Test-Path -LiteralPath $OutputPath)) "$Scenario fixture manifest output already exists"
+    $failed = $false
+    try {
+        & (Join-Path $FixtureRoot "eng/write-package-manifest.ps1") `
+            -Kind portable `
+            -Architecture x64 `
+            -RepositoryRoot $FixtureRoot `
+            -PayloadDirectory $PayloadDirectory `
+            -PackagePath $PackagePath `
+            -OutputPath $OutputPath
+    }
+    catch {
+        $failed = $true
+    }
+    Require $failed "$Scenario unexpectedly produced a package manifest"
+    Require (-not (Test-Path -LiteralPath $OutputPath)) "$Scenario must not write a package manifest"
+}
+
 function Get-CandidatePaths {
     param(
         [Parameter(Mandatory = $true)]
@@ -602,6 +679,84 @@ try {
     finally {
         if (Test-Path -LiteralPath $externalPackagePath) {
             Remove-Item -LiteralPath $externalPackagePath -Force
+        }
+    }
+
+    $payloadFileFixture = New-PackageManifestFixture
+    Require-PackageManifestFailure `
+        -FixtureRoot $payloadFileFixture.Root `
+        -PayloadDirectory (Join-Path $payloadFileFixture.PayloadDirectory "Azzs.WinUI.exe") `
+        -PackagePath $payloadFileFixture.PackagePath `
+        -OutputPath (Join-Path $payloadFileFixture.Root "out/manifests/payload-file.json") `
+        -Scenario "a payload parameter naming a file"
+
+    $payloadJunctionFixture = New-PackageManifestFixture
+    $payloadJunctionTarget = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-payload-junction-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        New-Item -ItemType Directory -Path $payloadJunctionTarget -Force | Out-Null
+        Remove-Item -LiteralPath $payloadJunctionFixture.PayloadDirectory -Recurse -Force
+        New-DirectoryReparsePoint `
+            -Path $payloadJunctionFixture.PayloadDirectory `
+            -Target $payloadJunctionTarget `
+            -ItemType Junction
+        Require-PackageManifestFailure `
+            -FixtureRoot $payloadJunctionFixture.Root `
+            -PayloadDirectory $payloadJunctionFixture.PayloadDirectory `
+            -PackagePath $payloadJunctionFixture.PackagePath `
+            -OutputPath (Join-Path $payloadJunctionFixture.Root "out/manifests/payload-junction.json") `
+            -Scenario "a payload root junction"
+    }
+    finally {
+        Remove-DirectoryReparsePoint -Path $payloadJunctionFixture.PayloadDirectory
+        if (Test-Path -LiteralPath $payloadJunctionTarget) {
+            Remove-Item -LiteralPath $payloadJunctionTarget -Recurse -Force
+        }
+    }
+
+    $payloadSymlinkFixture = New-PackageManifestFixture
+    $payloadSymlinkTarget = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-payload-symlink-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        New-Item -ItemType Directory -Path $payloadSymlinkTarget -Force | Out-Null
+        Remove-Item -LiteralPath $payloadSymlinkFixture.PayloadDirectory -Recurse -Force
+        New-DirectoryReparsePoint `
+            -Path $payloadSymlinkFixture.PayloadDirectory `
+            -Target $payloadSymlinkTarget `
+            -ItemType SymbolicLink
+        Require-PackageManifestFailure `
+            -FixtureRoot $payloadSymlinkFixture.Root `
+            -PayloadDirectory $payloadSymlinkFixture.PayloadDirectory `
+            -PackagePath $payloadSymlinkFixture.PackagePath `
+            -OutputPath (Join-Path $payloadSymlinkFixture.Root "out/manifests/payload-symlink.json") `
+            -Scenario "a payload root symbolic link"
+    }
+    finally {
+        Remove-DirectoryReparsePoint -Path $payloadSymlinkFixture.PayloadDirectory
+        if (Test-Path -LiteralPath $payloadSymlinkTarget) {
+            Remove-Item -LiteralPath $payloadSymlinkTarget -Recurse -Force
+        }
+    }
+
+    $nestedPayloadReparseFixture = New-PackageManifestFixture
+    $nestedPayloadTarget = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-nested-payload-reparse-" + [Guid]::NewGuid().ToString("N"))
+    $nestedPayloadLink = Join-Path $nestedPayloadReparseFixture.PayloadDirectory "nested-reparse"
+    try {
+        New-Item -ItemType Directory -Path $nestedPayloadTarget -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $nestedPayloadTarget "unexpected.dll") -Value "external payload" -Encoding ASCII
+        New-DirectoryReparsePoint `
+            -Path $nestedPayloadLink `
+            -Target $nestedPayloadTarget `
+            -ItemType Junction
+        Require-PackageManifestFailure `
+            -FixtureRoot $nestedPayloadReparseFixture.Root `
+            -PayloadDirectory $nestedPayloadReparseFixture.PayloadDirectory `
+            -PackagePath $nestedPayloadReparseFixture.PackagePath `
+            -OutputPath (Join-Path $nestedPayloadReparseFixture.Root "out/manifests/nested-payload-reparse.json") `
+            -Scenario "a payload subtree containing a reparse point"
+    }
+    finally {
+        Remove-DirectoryReparsePoint -Path $nestedPayloadLink
+        if (Test-Path -LiteralPath $nestedPayloadTarget) {
+            Remove-Item -LiteralPath $nestedPayloadTarget -Recurse -Force
         }
     }
 
