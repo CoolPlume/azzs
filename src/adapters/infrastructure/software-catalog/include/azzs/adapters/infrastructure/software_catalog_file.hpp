@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -12,6 +13,11 @@ class LocalSoftwareCatalogFileReader final
  public:
   LocalSoftwareCatalogFileReader(std::string built_in_path = {},
                                  std::string update_path = {});
+
+  // The composition root supplies this only after validating the packaged
+  // resource through a handle-backed snapshot reader.
+  [[nodiscard]] static LocalSoftwareCatalogFileReader
+  from_verified_built_in(std::string bytes);
 
   [[nodiscard]] application::software_catalog::CatalogFileRead read_built_in()
       const override;
@@ -29,6 +35,7 @@ class LocalSoftwareCatalogFileReader final
  private:
   std::string built_in_path_;
   std::string update_path_;
+  std::optional<std::string> verified_built_in_bytes_;
 };
 
 class TomlSoftwareCatalogCodec final
