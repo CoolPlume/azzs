@@ -14,6 +14,7 @@
 #include <limits>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace azzs::adapters::windows {
 namespace {
@@ -102,19 +103,27 @@ class ScopedHandle final {
 }
 
 [[nodiscard]] std::optional<std::wstring> final_path(HANDLE handle) {
-  auto const length = ::GetFinalPathNameByHandleW(
-      handle, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-  if (length == 0) {
-    return std::nullopt;
+  std::vector<wchar_t> buffer(256);
+  for (;;) {
+    auto const written = ::GetFinalPathNameByHandleW(
+        handle, buffer.data(), static_cast<DWORD>(buffer.size()),
+        FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+    if (written == 0) {
+      return std::nullopt;
+    }
+    // A successful result is shorter than the supplied buffer. If the API
+    // reports the required size instead, grow and retry without relying on
+    // whether that size includes the terminating null character.
+    if (written < buffer.size()) {
+      return std::wstring{buffer.data(), written};
+    }
+    if (buffer.size() >= 32768) {
+      return std::nullopt;
+    }
+    auto const next_size = std::max<std::size_t>(
+        buffer.size() * 2, static_cast<std::size_t>(written) + 1);
+    buffer.resize(std::min<std::size_t>(next_size, 32768));
   }
-  std::wstring path(length, L'\0');
-  auto const written = ::GetFinalPathNameByHandleW(
-      handle, path.data(), length, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-  if (written == 0 || written >= length) {
-    return std::nullopt;
-  }
-  path.resize(written);
-  return path;
 }
 
 [[nodiscard]] bool resource_is_within_open_root(
