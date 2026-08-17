@@ -125,7 +125,7 @@ constexpr wchar_t k_asus_support_url[] = L"https://www.asus.com/support";
       error = "the workbench module location is unavailable";
       return std::nullopt;
     }
-    if (length < buffer.size() - 1) {
+    if (length < buffer.size()) {
       std::wstring module{buffer.data(), length};
       auto const separator = module.find_last_of(L"\\/");
       if (separator == std::wstring::npos || separator == 0) {
