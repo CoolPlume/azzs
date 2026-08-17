@@ -422,7 +422,7 @@ struct Fixture final {
   return passed;
 }
 
-[[nodiscard]] bool preflight_exception_boundary_contract() {
+[[nodiscard]] bool preflight_service_exception_boundary_contract() {
   InMemoryStateFileSystem files;
   FixedClock clock{azzs::application::WallClockTime{
       std::chrono::milliseconds{1'786'422'500'000}}};
@@ -433,6 +433,8 @@ struct Fixture final {
       states, clock, source,
       {.log = &log, .correlation = log.begin_correlation()}};
 
+  // This contract covers the service boundary only. The composition-root
+  // detached catch is covered by static source review and is not invoked here.
   auto preflight = std::async(std::launch::async, [&] {
     return service.preflight_check();
   });
@@ -451,7 +453,7 @@ struct Fixture final {
           result.snapshot.error == result.error && logged != log.events.end() &&
           logged->result == ExecutionResult::failed && logged->error.has_value() &&
           logged->error->source == "emergency-withdrawal",
-      "a thrown notice-source exception must remain inside the background preflight boundary");
+      "a thrown notice-source exception must become a typed service preflight failure");
 }
 
 [[nodiscard]] bool structured_logging_contract() {
@@ -692,7 +694,7 @@ int main() {
   passed &= independent_sources_and_observation_contract();
   passed &= offline_and_first_failure_contract();
   passed &= cross_category_contract();
-  passed &= preflight_exception_boundary_contract();
+  passed &= preflight_service_exception_boundary_contract();
   passed &= structured_logging_contract();
   passed &= persistence_and_corruption_contract();
   passed &= persistence_limits_contract();
