@@ -90,6 +90,14 @@ if (-not $payloadItem.PSIsContainer) {
     throw "Package manifest payload directory must be a directory."
 }
 $PayloadDirectory = (Get-ExistingNonReparsePath -Path $payloadItem.FullName -Context "Package manifest payload directory").TrimEnd([char[]]@('\', '/'))
+$outputFullPath = [System.IO.Path]::GetFullPath($OutputPath)
+$repositoryPrefix = "$RepositoryRoot$([System.IO.Path]::DirectorySeparatorChar)"
+if (-not $outputFullPath.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Package manifest output path must be strictly inside the repository."
+}
+$OutputPath = Assert-PathChainWithoutReparsePoint `
+    -Path $outputFullPath `
+    -Context "Package manifest output path"
 
 $payload = @(
     Get-ChildItem -LiteralPath $PayloadDirectory -File -Recurse |
@@ -123,6 +131,9 @@ if (-not [string]::IsNullOrWhiteSpace($ArtifactId)) {
     if (-not (Test-Path -LiteralPath $ContentManifestPath -PathType Leaf)) {
         throw "Artifact content manifest is missing: $ContentManifestPath"
     }
+    $ContentManifestPath = Get-ExistingNonReparsePath `
+        -Path $ContentManifestPath `
+        -Context "Artifact content manifest"
     $contentManifest = Get-Content -LiteralPath $ContentManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($contentManifest.schemaVersion -ne 1) {
         throw "Artifact content manifest schemaVersion must be 1."
@@ -176,4 +187,16 @@ if (-not [string]::IsNullOrWhiteSpace($ArtifactId)) {
 
 $outputDirectory = Split-Path -Parent $OutputPath
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+$outputDirectory = Get-ExistingNonReparsePath `
+    -Path $outputDirectory `
+    -Context "Package manifest output directory"
+if (Test-Path -LiteralPath $OutputPath) {
+    $outputItem = Get-Item -LiteralPath $OutputPath -Force -ErrorAction Stop
+    if ($outputItem.PSIsContainer) {
+        throw "Package manifest output path must name a file."
+    }
+    $OutputPath = Get-ExistingNonReparsePath `
+        -Path $outputItem.FullName `
+        -Context "Package manifest output path"
+}
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding UTF8

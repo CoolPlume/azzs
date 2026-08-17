@@ -102,6 +102,33 @@ function Assert-PathChainWithoutReparsePoint {
     return $fullPath
 }
 
+function Assert-NoReparsePointsBelow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $root = Assert-PathChainWithoutReparsePoint -Path $Path -Context $Context
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push($root)
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        foreach ($entry in [System.IO.Directory]::EnumerateFileSystemEntries($current)) {
+            $attributes = [System.IO.File]::GetAttributes($entry)
+            if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "$Context must not contain a reparse point."
+            }
+            if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+                $pending.Push($entry)
+            }
+        }
+    }
+    return $root
+}
+
 function Resolve-RepositoryRelativePath {
     param(
         [Parameter(Mandatory = $true)]

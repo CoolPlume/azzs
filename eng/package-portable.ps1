@@ -101,11 +101,17 @@ try {
     if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
         throw "Portable packaging requires a completed $architecture Release build."
     }
+    Assert-NoReparsePointsBelow `
+        -Path $payloadDirectory `
+        -Context "Portable build payload"
 
     Assert-PortableCandidatePaths
     New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory -Force | Out-Null
     Assert-PortableCandidatePaths
     Copy-Item -Path (Join-Path $payloadDirectory "*") -Destination $stagingDirectory -Recurse -Force
+    Assert-NoReparsePointsBelow `
+        -Path $stagingDirectory `
+        -Context "Portable staging payload"
     $excludedExtensions = @(".pdb", ".ilk", ".iobj", ".ipdb", ".exp", ".lib")
     $excludedFiles = @(
         Get-ChildItem -LiteralPath $stagingDirectory -File -Recurse |
