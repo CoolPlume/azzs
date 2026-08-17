@@ -9,21 +9,32 @@ namespace azzs::ui::winui {
 
 std::shared_ptr<MotionPreferences> MotionPreferences::create() {
   auto preferences =
-      std::shared_ptr<MotionPreferences>{new MotionPreferences{}};
+      std::shared_ptr<MotionPreferences>{new MotionPreferences{false}};
   preferences->start_listening();
   return preferences;
 }
 
-MotionPreferences::MotionPreferences()
-    : dispatcher_queue_{
-          winrt::Microsoft::UI::Dispatching::DispatcherQueue::
-              GetForCurrentThread()},
-      animations_enabled_{settings_.AnimationsEnabled()} {}
+std::shared_ptr<MotionPreferences> MotionPreferences::create_static() {
+  return std::shared_ptr<MotionPreferences>{new MotionPreferences{true}};
+}
+
+MotionPreferences::MotionPreferences(bool static_presentation)
+    : animations_enabled_{!static_presentation} {
+  if (static_presentation) {
+    return;
+  }
+
+  settings_.emplace();
+  dispatcher_queue_ =
+      winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
+  animations_enabled_.store(settings_->AnimationsEnabled(),
+                            std::memory_order_relaxed);
+}
 
 MotionPreferences::~MotionPreferences() {
   try {
-    if (animations_enabled_changed_token_.value != 0) {
-      settings_.AnimationsEnabledChanged(animations_enabled_changed_token_);
+    if (settings_.has_value() && animations_enabled_changed_token_.value != 0) {
+      settings_->AnimationsEnabledChanged(animations_enabled_changed_token_);
     }
   } catch (...) {
   }
@@ -60,7 +71,7 @@ void MotionPreferences::unregister_cancellation_handler(
 
 void MotionPreferences::start_listening() {
   std::weak_ptr<MotionPreferences> weak_preferences{shared_from_this()};
-  animations_enabled_changed_token_ = settings_.AnimationsEnabledChanged(
+  animations_enabled_changed_token_ = settings_->AnimationsEnabledChanged(
       [weak_preferences](auto const& sender, auto const&) noexcept {
         try {
           if (auto preferences = weak_preferences.lock()) {

@@ -80,17 +80,28 @@ void MainWindow::bind(
   advanced_view_ = advanced_view_preferences_
                        ? advanced_view_preferences_->enabled()
                        : false;
-  auto snapshot = workbench_->snapshot();
+  project(workbench_->snapshot());
+}
+
+void MainWindow::show_initial_page() {
+  if (workbench_) {
+    navigate_to(workbench_->snapshot().current_page);
+  }
+}
+
+void MainWindow::confirm_started_healthy() {
+  if (!workbench_) {
+    return;
+  }
+
+  auto const snapshot = workbench_->snapshot();
   if (snapshot.update.state ==
           azzs::application::UpdateState::candidate_pending_start_health ||
       snapshot.update.state ==
           azzs::application::UpdateState::previous_pending_start_health) {
     static_cast<void>(workbench_->handle_update(
         azzs::application::UpdateUserIntent::confirm_started_healthy));
-    snapshot = workbench_->snapshot();
   }
-  project(snapshot);
-  navigate_to(snapshot.current_page);
 }
 
 void MainWindow::OnNavigationSelectionChanged(
