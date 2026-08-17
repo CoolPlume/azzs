@@ -69,6 +69,11 @@ function(configure_cmake_project scenario build_testing
     list(APPEND configure_command
       "-DCMAKE_GENERATOR_INSTANCE=${AZZS_CMAKE_GENERATOR_INSTANCE}")
   endif()
+  if(DEFINED AZZS_CMAKE_MAKE_PROGRAM AND
+     NOT AZZS_CMAKE_MAKE_PROGRAM STREQUAL "")
+    list(APPEND configure_command
+      "-DCMAKE_MAKE_PROGRAM=${AZZS_CMAKE_MAKE_PROGRAM}")
+  endif()
 
   execute_process(
     COMMAND ${configure_command}
