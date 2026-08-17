@@ -9,9 +9,10 @@
 
 #include <windows.h>
 
-#include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace azzs::adapters::windows {
 namespace {
@@ -20,6 +21,26 @@ constexpr wchar_t k_run_once_key[] =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce";
 constexpr wchar_t k_run_once_value[] = L"AzzsRestartResume";
 constexpr wchar_t k_resume_token[] = L"--azzs-resume-after-restart";
+
+[[nodiscard]] std::optional<std::wstring> workbench_module_path() {
+  std::vector<wchar_t> buffer(512);
+  for (;;) {
+    auto const length = ::GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0) {
+      return std::nullopt;
+    }
+    // A complete path may use the final character slot; truncation is
+    // reported by returning the buffer size.
+    if (length < buffer.size()) {
+      return std::wstring{buffer.data(), length};
+    }
+    if (buffer.size() >= 32768) {
+      return std::nullopt;
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+}
 
 [[nodiscard]] application::restart_resume::LoginResumeRegistrationResult
 failure(char const* detail) {
@@ -31,14 +52,12 @@ failure(char const* detail) {
 
 application::restart_resume::LoginResumeRegistrationResult
 WindowsLoginResumeRegistration::register_once() {
-  wchar_t module_path[MAX_PATH]{};
-  auto const length = ::GetModuleFileNameW(
-      nullptr, module_path, static_cast<DWORD>(std::size(module_path)));
-  if (length == 0 || length >= std::size(module_path)) {
+  auto module_path = workbench_module_path();
+  if (!module_path.has_value()) {
     return failure("the workbench executable path could not be determined");
   }
   std::wstring command{L"\""};
-  command.append(module_path, length);
+  command.append(*module_path);
   command.append(L"\" ");
   command.append(k_resume_token);
 
