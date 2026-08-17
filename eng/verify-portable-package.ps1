@@ -313,15 +313,15 @@ $stagedPayloadHashMap = ConvertTo-PayloadHashMap -Payload $stagedPayload -Name "
 $archivePayloadHashMap = ConvertTo-PayloadHashMap -Payload $archivePayload -Name "Portable package ZIP payload"
 Assert-PayloadHashMapMatches -Expected $stagedPayloadHashMap -Actual $archivePayloadHashMap -ExpectedName "staging payload" -ActualName "Portable package ZIP"
 foreach ($resource in $bundledCatalogResources) {
-    $packagePath = [string]$resource.packagePath
-    if (-not $stagedPayloadMap.ContainsKey($packagePath) -or
-        $stagedPayloadMap[$packagePath] -ne [Int64]$resource.bytes -or
-        -not $stagedPayloadHashMap.ContainsKey($packagePath) -or
-        $stagedPayloadHashMap[$packagePath] -ne $resource.sha256 -or
-        -not $archivePayloadMap.ContainsKey($packagePath) -or
-        $archivePayloadMap[$packagePath] -ne [Int64]$resource.bytes -or
-        -not $archivePayloadHashMap.ContainsKey($packagePath) -or
-        $archivePayloadHashMap[$packagePath] -ne $resource.sha256) {
+    $resourcePackagePath = [string]$resource.packagePath
+    if (-not $stagedPayloadMap.ContainsKey($resourcePackagePath) -or
+        $stagedPayloadMap[$resourcePackagePath] -ne [Int64]$resource.bytes -or
+        -not $stagedPayloadHashMap.ContainsKey($resourcePackagePath) -or
+        $stagedPayloadHashMap[$resourcePackagePath] -ne $resource.sha256 -or
+        -not $archivePayloadMap.ContainsKey($resourcePackagePath) -or
+        $archivePayloadMap[$resourcePackagePath] -ne [Int64]$resource.bytes -or
+        -not $archivePayloadHashMap.ContainsKey($resourcePackagePath) -or
+        $archivePayloadHashMap[$resourcePackagePath] -ne $resource.sha256) {
         throw "Portable package bundled catalog resource '$($resource.id)' is missing or does not match its locked content."
     }
 }
