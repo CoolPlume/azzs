@@ -68,3 +68,4 @@ Evidence freshness: 绑定当前提交、项目配置、工具链和模式；代
 - 2026-08-09：维护者通过 `grill-with-docs` 确认低耦合、高内聚、前后端分离、局部扩展、无界面核心测试和架构自动检查均为发布硬门槛；最新技术不得以牺牲维护性为代价。
 
 - 2026-08-11：事项 31 在普通 merge 吸收事项 02/24 后完成统一目标/CTest 注册、UI 合同测试库、Windows/基础设施外部依赖登记和 fixture 同步；由 Windows 静态库 `$<LINK_ONLY:...>` 暴露的空依赖解析失败已收敛为独立 `if/elseif` 捕获修复。最终 head `da506374d78e66d42a3e1fed80bc51a33270c789` 通过 host `cmake --workflow --preset host-guardrails` 10/10、`BUILD_TESTING=OFF` 配置与构建、forced-include 定向负例组、`git diff --check` 和 GitNexus 门禁；Windows read-only validation run `31482733757` 的 x64 Release 与 ARM64 Release 均为 SUCCESS。PR #5 已 Squash 合入为 `829282e5c9981a7673fa36cc96e8ceaa04517e56`，据此标记 `Resolution: completed`。该结论是架构、合同与双架构构建证据，不替代各 consumer owner 的业务场景或真实设备验收。
+- 2026-08-17：integration `31779f7` 修复架构负例驱动未向嵌套 CMake 配置传递父配置的 `CMAKE_MAKE_PROGRAM`，避免普通 CTest 会话因找不到 Ninja 而掩盖预期负例诊断；D 盘 host-debug 的架构项目图、反向/循环组与测试支持/装配绕过组现为 3/3 通过。事项 31 的 `Resolution: completed` 不变。
