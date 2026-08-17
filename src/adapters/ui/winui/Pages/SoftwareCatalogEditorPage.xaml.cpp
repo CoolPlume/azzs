@@ -614,24 +614,37 @@ void SoftwareCatalogEditorPage::OnDuplicateSoftware(
 winrt::fire_and_forget SoftwareCatalogEditorPage::OnDeleteSoftware(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (editor_ == nullptr || !document_.has_value()) {
-    co_return;
-  }
-  auto const selected = selected_software_index();
-  if (!selected.has_value()) {
-    co_return;
-  }
-  auto const id = document_->software[*selected].id;
-  ContentDialog dialog;
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(resource_string(L"SoftwareCatalogEditorDeleteTitle")));
-  dialog.Content(
-      winrt::box_value(resource_string(L"SoftwareCatalogEditorDeleteContent")));
-  dialog.PrimaryButtonText(resource_string(L"SoftwareCatalogEditorDeleteConfirm"));
-  dialog.CloseButtonText(resource_string(L"SoftwareCatalogEditorDeleteCancel"));
-  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-    project_action(editor_->remove_software(id));
+  try {
+    auto lifetime = get_strong();
+    if (editor_ == nullptr || !document_.has_value() ||
+        confirmation_dialog_open_) {
+      co_return;
+    }
+    auto const selected = selected_software_index();
+    if (!selected.has_value()) {
+      co_return;
+    }
+    auto const id = document_->software[*selected].id;
+    confirmation_dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(
+        winrt::box_value(resource_string(L"SoftwareCatalogEditorDeleteTitle")));
+    dialog.Content(
+        winrt::box_value(resource_string(L"SoftwareCatalogEditorDeleteContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"SoftwareCatalogEditorDeleteConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"SoftwareCatalogEditorDeleteCancel"));
+    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      project_action(editor_->remove_software(id));
+    } else {
+      confirmation_dialog_open_ = false;
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI catalog delete dialog failed.\n");
   }
 }
 
@@ -646,22 +659,31 @@ void SoftwareCatalogEditorPage::OnSaveDraft(
 winrt::fire_and_forget SoftwareCatalogEditorPage::OnDeleteSavedDraft(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (editor_ == nullptr) {
-    co_return;
-  }
-  ContentDialog dialog;
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(
-      resource_string(L"SoftwareCatalogEditorDeleteSavedDraftTitle")));
-  dialog.Content(winrt::box_value(
-      resource_string(L"SoftwareCatalogEditorDeleteSavedDraftContent")));
-  dialog.PrimaryButtonText(
-      resource_string(L"SoftwareCatalogEditorDeleteSavedDraftConfirm"));
-  dialog.CloseButtonText(
-      resource_string(L"SoftwareCatalogEditorDeleteSavedDraftCancel"));
-  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-    project_action(editor_->delete_saved_draft());
+  try {
+    auto lifetime = get_strong();
+    if (editor_ == nullptr || confirmation_dialog_open_) {
+      co_return;
+    }
+    confirmation_dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(winrt::box_value(
+        resource_string(L"SoftwareCatalogEditorDeleteSavedDraftTitle")));
+    dialog.Content(winrt::box_value(
+        resource_string(L"SoftwareCatalogEditorDeleteSavedDraftContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"SoftwareCatalogEditorDeleteSavedDraftConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"SoftwareCatalogEditorDeleteSavedDraftCancel"));
+    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      project_action(editor_->delete_saved_draft());
+    } else {
+      confirmation_dialog_open_ = false;
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI saved-draft delete dialog failed.\n");
   }
 }
 

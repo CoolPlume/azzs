@@ -89,6 +89,7 @@ struct ApplicationSettingsPage
       recovery_records_;
   bool advanced_view_{false};
   bool projecting_{false};
+  bool confirmation_dialog_open_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation
