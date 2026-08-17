@@ -26,3 +26,12 @@ azzs_register_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/check_design_system.py
     ${PROJECT_SOURCE_DIR}
 )
+
+azzs_register_test(
+  NAME ui.winui.async.contract
+  LABELS headless contract
+  COMMAND
+    ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/check_winui_async_contract.py
+    ${PROJECT_SOURCE_DIR}
+)

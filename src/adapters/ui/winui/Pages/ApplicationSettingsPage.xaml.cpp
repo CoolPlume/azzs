@@ -218,54 +218,72 @@ void ApplicationSettingsPage::OnArchitecturePreferenceSelectionChanged(
 winrt::fire_and_forget ApplicationSettingsPage::OnClearCacheClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (settings_ == nullptr) {
-    co_return;
-  }
-  auto proposed = settings_->clear_cache(false);
-  if (proposed.code != ApplicationSettingsActionCode::confirmation_required) {
-    project_action(proposed);
-    co_return;
-  }
-  ContentDialog dialog;
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(
-      resource_string(L"ApplicationSettingsClearCacheDialogTitle")));
-  dialog.Content(winrt::box_value(
-      resource_string(L"ApplicationSettingsClearCacheDialogContent")));
-  dialog.PrimaryButtonText(
-      resource_string(L"ApplicationSettingsClearCacheDialogConfirm"));
-  dialog.CloseButtonText(
-      resource_string(L"ApplicationSettingsClearCacheDialogCancel"));
-  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-    project_action(settings_->clear_cache(true));
+  try {
+    auto lifetime = get_strong();
+    if (settings_ == nullptr || confirmation_dialog_open_) {
+      co_return;
+    }
+    auto proposed = settings_->clear_cache(false);
+    if (proposed.code != ApplicationSettingsActionCode::confirmation_required) {
+      project_action(proposed);
+      co_return;
+    }
+    confirmation_dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(winrt::box_value(
+        resource_string(L"ApplicationSettingsClearCacheDialogTitle")));
+    dialog.Content(winrt::box_value(
+        resource_string(L"ApplicationSettingsClearCacheDialogContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"ApplicationSettingsClearCacheDialogConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"ApplicationSettingsClearCacheDialogCancel"));
+    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      project_action(settings_->clear_cache(true));
+    } else {
+      confirmation_dialog_open_ = false;
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI clear-cache dialog failed.\n");
   }
 }
 
 winrt::fire_and_forget ApplicationSettingsPage::OnClearLogsClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (settings_ == nullptr) {
-    co_return;
-  }
-  auto proposed = settings_->clear_logs(false);
-  if (proposed.code != ApplicationSettingsActionCode::confirmation_required) {
-    project_action(proposed);
-    co_return;
-  }
-  ContentDialog dialog;
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(
-      resource_string(L"ApplicationSettingsClearLogsDialogTitle")));
-  dialog.Content(winrt::box_value(
-      resource_string(L"ApplicationSettingsClearLogsDialogContent")));
-  dialog.PrimaryButtonText(
-      resource_string(L"ApplicationSettingsClearLogsDialogConfirm"));
-  dialog.CloseButtonText(
-      resource_string(L"ApplicationSettingsClearLogsDialogCancel"));
-  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-    project_action(settings_->clear_logs(true));
+  try {
+    auto lifetime = get_strong();
+    if (settings_ == nullptr || confirmation_dialog_open_) {
+      co_return;
+    }
+    auto proposed = settings_->clear_logs(false);
+    if (proposed.code != ApplicationSettingsActionCode::confirmation_required) {
+      project_action(proposed);
+      co_return;
+    }
+    confirmation_dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(winrt::box_value(
+        resource_string(L"ApplicationSettingsClearLogsDialogTitle")));
+    dialog.Content(winrt::box_value(
+        resource_string(L"ApplicationSettingsClearLogsDialogContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"ApplicationSettingsClearLogsDialogConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"ApplicationSettingsClearLogsDialogCancel"));
+    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      project_action(settings_->clear_logs(true));
+    } else {
+      confirmation_dialog_open_ = false;
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI clear-logs dialog failed.\n");
   }
 }
 
@@ -288,88 +306,106 @@ void ApplicationSettingsPage::OnRecoveryRecordSelectionChanged(
 winrt::fire_and_forget ApplicationSettingsPage::OnDeleteRecoveryRecordClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (settings_ == nullptr) {
-    co_return;
-  }
-  auto const record_id = selected_recovery_record();
-  if (!record_id.has_value()) {
-    co_return;
-  }
-  auto proposed = settings_->delete_recovery_record(*record_id, false);
-  if (proposed.code != ApplicationSettingsActionCode::confirmation_required) {
-    project_action(proposed);
-    co_return;
-  }
-  ContentDialog dialog;
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(
-      resource_string(L"ApplicationSettingsDeleteRecoveryDialogTitle")));
-  dialog.Content(winrt::box_value(
-      resource_string(L"ApplicationSettingsDeleteRecoveryDialogContent")));
-  dialog.PrimaryButtonText(
-      resource_string(L"ApplicationSettingsDeleteRecoveryDialogConfirm"));
-  dialog.CloseButtonText(
-      resource_string(L"ApplicationSettingsDeleteRecoveryDialogCancel"));
-  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-    project_action(settings_->delete_recovery_record(*record_id, true));
+  try {
+    auto lifetime = get_strong();
+    if (settings_ == nullptr || confirmation_dialog_open_) {
+      co_return;
+    }
+    auto const record_id = selected_recovery_record();
+    if (!record_id.has_value()) {
+      co_return;
+    }
+    auto proposed = settings_->delete_recovery_record(*record_id, false);
+    if (proposed.code != ApplicationSettingsActionCode::confirmation_required) {
+      project_action(proposed);
+      co_return;
+    }
+    confirmation_dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(winrt::box_value(
+        resource_string(L"ApplicationSettingsDeleteRecoveryDialogTitle")));
+    dialog.Content(winrt::box_value(
+        resource_string(L"ApplicationSettingsDeleteRecoveryDialogContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"ApplicationSettingsDeleteRecoveryDialogConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"ApplicationSettingsDeleteRecoveryDialogCancel"));
+    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      project_action(settings_->delete_recovery_record(*record_id, true));
+    } else {
+      confirmation_dialog_open_ = false;
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI recovery-record dialog failed.\n");
   }
 }
 
 winrt::fire_and_forget ApplicationSettingsPage::OnCatalogActionClick(
     Windows::Foundation::IInspectable const& sender,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (settings_ == nullptr) {
-    co_return;
-  }
-  auto const tag = winrt::unbox_value<winrt::hstring>(
-      sender.as<Microsoft::UI::Xaml::Controls::Button>().Tag());
-  std::optional<ApplicationSettingsCatalog> catalog;
-  std::optional<ApplicationSettingsCatalogAction> action;
-  if (tag == L"software-update") {
-    catalog = ApplicationSettingsCatalog::software_and_drivers;
-    action = ApplicationSettingsCatalogAction::update;
-  } else if (tag == L"software-rollback") {
-    catalog = ApplicationSettingsCatalog::software_and_drivers;
-    action = ApplicationSettingsCatalogAction::rollback;
-  } else if (tag == L"system-update") {
-    catalog = ApplicationSettingsCatalog::system_settings;
-    action = ApplicationSettingsCatalogAction::update;
-  } else if (tag == L"system-rollback") {
-    catalog = ApplicationSettingsCatalog::system_settings;
-    action = ApplicationSettingsCatalogAction::rollback;
-  } else if (tag == L"optimization-update") {
-    catalog = ApplicationSettingsCatalog::software_optimization;
-    action = ApplicationSettingsCatalogAction::update;
-  } else if (tag == L"optimization-rollback") {
-    catalog = ApplicationSettingsCatalog::software_optimization;
-    action = ApplicationSettingsCatalogAction::rollback;
-  }
-  if (!catalog.has_value() || !action.has_value()) {
-    co_return;
-  }
+  try {
+    auto lifetime = get_strong();
+    if (settings_ == nullptr || confirmation_dialog_open_) {
+      co_return;
+    }
+    auto const tag = winrt::unbox_value<winrt::hstring>(
+        sender.as<Microsoft::UI::Xaml::Controls::Button>().Tag());
+    std::optional<ApplicationSettingsCatalog> catalog;
+    std::optional<ApplicationSettingsCatalogAction> action;
+    if (tag == L"software-update") {
+      catalog = ApplicationSettingsCatalog::software_and_drivers;
+      action = ApplicationSettingsCatalogAction::update;
+    } else if (tag == L"software-rollback") {
+      catalog = ApplicationSettingsCatalog::software_and_drivers;
+      action = ApplicationSettingsCatalogAction::rollback;
+    } else if (tag == L"system-update") {
+      catalog = ApplicationSettingsCatalog::system_settings;
+      action = ApplicationSettingsCatalogAction::update;
+    } else if (tag == L"system-rollback") {
+      catalog = ApplicationSettingsCatalog::system_settings;
+      action = ApplicationSettingsCatalogAction::rollback;
+    } else if (tag == L"optimization-update") {
+      catalog = ApplicationSettingsCatalog::software_optimization;
+      action = ApplicationSettingsCatalogAction::update;
+    } else if (tag == L"optimization-rollback") {
+      catalog = ApplicationSettingsCatalog::software_optimization;
+      action = ApplicationSettingsCatalogAction::rollback;
+    }
+    if (!catalog.has_value() || !action.has_value()) {
+      co_return;
+    }
 
-  auto proposed = settings_->prepare_catalog_change(*catalog, *action);
-  if (proposed.code != ApplicationSettingsActionCode::confirmation_required ||
-      !proposed.catalog_change.has_value()) {
-    project_action(proposed);
-    co_return;
-  }
+    auto proposed = settings_->prepare_catalog_change(*catalog, *action);
+    if (proposed.code != ApplicationSettingsActionCode::confirmation_required ||
+        !proposed.catalog_change.has_value()) {
+      project_action(proposed);
+      co_return;
+    }
 
-  ContentDialog dialog;
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(
-      resource_string(L"ApplicationSettingsCatalogDialogTitle")));
-  dialog.Content(winrt::box_value(
-      resource_string(L"ApplicationSettingsCatalogDialogContent")));
-  dialog.PrimaryButtonText(
-      resource_string(L"ApplicationSettingsCatalogDialogConfirm"));
-  dialog.CloseButtonText(
-      resource_string(L"ApplicationSettingsCatalogDialogCancel"));
-  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-    project_action(settings_->confirm_catalog_change(
-        proposed.catalog_change->confirmation_token));
+    confirmation_dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(winrt::box_value(
+        resource_string(L"ApplicationSettingsCatalogDialogTitle")));
+    dialog.Content(winrt::box_value(
+        resource_string(L"ApplicationSettingsCatalogDialogContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"ApplicationSettingsCatalogDialogConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"ApplicationSettingsCatalogDialogCancel"));
+    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      project_action(settings_->confirm_catalog_change(
+          proposed.catalog_change->confirmation_token));
+    } else {
+      confirmation_dialog_open_ = false;
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI catalog action dialog failed.\n");
   }
 }
 

@@ -241,34 +241,42 @@ void HistoryAndLogsPage::OnExportDiagnostic(
 winrt::fire_and_forget HistoryAndLogsPage::OnClearLogs(
     winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (service_ == nullptr) {
-    co_return;
-  }
-  ContentDialog dialog;
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(
-      resource_string(L"HistoryAndLogsClearConfirmationTitle")));
-  dialog.Content(winrt::box_value(
-      resource_string(L"HistoryAndLogsClearConfirmationContent")));
-  dialog.PrimaryButtonText(
-      resource_string(L"HistoryAndLogsClearConfirmationConfirm"));
-  dialog.CloseButtonText(
-      resource_string(L"HistoryAndLogsClearConfirmationCancel"));
-  if (co_await dialog.ShowAsync() != ContentDialogResult::Primary) {
-    co_return;
-  }
-  auto result = service_->clear_logs();
-  project(result.snapshot);
-  if (result.code == HistoryAndLogsActionCode::succeeded) {
-    set_status(resource_string(L"HistoryAndLogsClearSucceeded"),
-               InfoBarSeverity::Success);
-  } else if (result.snapshot.log.pending_clear.has_value()) {
-    set_status(resource_string(L"HistoryAndLogsClearCompletionPending"),
-               InfoBarSeverity::Warning);
-  } else {
-    set_status(resource_string(L"HistoryAndLogsClearFailed"),
-               InfoBarSeverity::Error);
+  try {
+    auto lifetime = get_strong();
+    if (service_ == nullptr || confirmation_dialog_open_) {
+      co_return;
+    }
+    confirmation_dialog_open_ = true;
+    ContentDialog dialog;
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(winrt::box_value(
+        resource_string(L"HistoryAndLogsClearConfirmationTitle")));
+    dialog.Content(winrt::box_value(
+        resource_string(L"HistoryAndLogsClearConfirmationContent")));
+    dialog.PrimaryButtonText(
+        resource_string(L"HistoryAndLogsClearConfirmationConfirm"));
+    dialog.CloseButtonText(
+        resource_string(L"HistoryAndLogsClearConfirmationCancel"));
+    if (co_await dialog.ShowAsync() != ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      co_return;
+    }
+    confirmation_dialog_open_ = false;
+    auto result = service_->clear_logs();
+    project(result.snapshot);
+    if (result.code == HistoryAndLogsActionCode::succeeded) {
+      set_status(resource_string(L"HistoryAndLogsClearSucceeded"),
+                 InfoBarSeverity::Success);
+    } else if (result.snapshot.log.pending_clear.has_value()) {
+      set_status(resource_string(L"HistoryAndLogsClearCompletionPending"),
+                 InfoBarSeverity::Warning);
+    } else {
+      set_status(resource_string(L"HistoryAndLogsClearFailed"),
+                 InfoBarSeverity::Error);
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI history clear dialog failed.\n");
   }
 }
 

@@ -33,6 +33,7 @@ struct HistoryAndLogsPage : HistoryAndLogsPageT<HistoryAndLogsPage> {
                   Microsoft::UI::Xaml::Controls::InfoBarSeverity severity);
 
   azzs::application::HistoryAndLogsService* service_{};
+  bool confirmation_dialog_open_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation

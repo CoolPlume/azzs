@@ -51,6 +51,7 @@ struct SystemOptimizationPage : SystemOptimizationPageT<SystemOptimizationPage> 
   bool advanced_view_{false};
   std::optional<std::uint64_t> pending_recovery_record_deletion_;
   std::wstring recovery_deletion_notice_;
+  bool confirmation_dialog_open_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation
