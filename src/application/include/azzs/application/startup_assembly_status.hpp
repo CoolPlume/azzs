@@ -29,6 +29,9 @@ struct StartupAssemblyFailure final {
   bool retry_on_next_process_start{true};
   StartupDiagnosticAvailability diagnostic_availability{
       StartupDiagnosticAvailability::unavailable};
+  // Optional redacted platform code retained for diagnostics. It is never
+  // copied into public_statement or otherwise shown in the failure window.
+  std::uint32_t raw_error_code{0};
   // This is the only text allowed into the startup failure window. It must not
   // be populated from platform error text, paths, identities, or HRESULT data.
   std::wstring public_statement;
@@ -59,11 +62,13 @@ struct StartupAssemblyStatus final {
 [[nodiscard]] inline StartupAssemblyStatus startup_assembly_failed(
     StartupAssemblyStage stage,
     StartupDiagnosticAvailability diagnostic_availability =
-        StartupDiagnosticAvailability::unavailable) {
+        StartupDiagnosticAvailability::unavailable,
+    std::uint32_t raw_error_code = 0) {
   return {.failure = StartupAssemblyFailure{
               .stage = stage,
               .retry_on_next_process_start = true,
               .diagnostic_availability = diagnostic_availability,
+              .raw_error_code = raw_error_code,
               .public_statement =
                   stage == StartupAssemblyStage::device_data_environment
                       ? L"应用数据尚未准备完成。请关闭后重新打开应用。"
