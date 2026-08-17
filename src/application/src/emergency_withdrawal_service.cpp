@@ -840,9 +840,47 @@ EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check_locked() {
   return result;
 }
 
+EmergencyWithdrawalCheckResult
+EmergencyWithdrawalService::preflight_execution_failure() noexcept {
+  EmergencyWithdrawalCheckResult result{
+      .code = EmergencyWithdrawalCheckCode::failed,
+      .snapshot = {.state = EmergencyWithdrawalServiceState::failed,
+                   .possibly_stale = true},
+  };
+  try {
+    result.error = "emergency withdrawal preflight raised an exception";
+    result.snapshot.error = result.error;
+    if (log_ != nullptr) {
+      static_cast<void>(log_->append(
+          correlation_,
+          ExecutionEvent{.kind = ExecutionEventKind::adapter_result,
+                         .component = "emergency-withdrawal",
+                         .stage = "preflight-exception",
+                         .result = ExecutionResult::failed,
+                         .error = ExecutionError{
+                             .source = "emergency-withdrawal",
+                             .message = result.error},
+                         .fields = {{"notice_check", "failed",
+                                     DiagnosticValueDisposition::retain}}}));
+    }
+  } catch (...) {
+    // Preserve the typed failure even when diagnostic recording also fails.
+  }
+  return result;
+}
+
 EmergencyWithdrawalCheckResult EmergencyWithdrawalService::preflight_check() {
-  std::scoped_lock lock{mutex_};
-  return check_locked();
+  try {
+    std::scoped_lock lock{mutex_};
+    return check_locked();
+  } catch (...) {
+    return preflight_execution_failure();
+  }
+}
+
+EmergencyWithdrawalCheckResult
+EmergencyWithdrawalService::report_preflight_execution_exception() noexcept {
+  return preflight_execution_failure();
 }
 
 EmergencyWithdrawalCheckResult EmergencyWithdrawalService::check() {

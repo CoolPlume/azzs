@@ -99,6 +99,10 @@ class EmergencyWithdrawalService final {
   // Consumers call this for startup and each create/execute/retry/resume
   // boundary; the returned authorization is for one not-yet-started operation.
   [[nodiscard]] EmergencyWithdrawalCheckResult preflight_check();
+  // Used only by the detached-thread final boundary if an unexpected exception
+  // escapes before preflight_check() can return its typed result.
+  [[nodiscard]] EmergencyWithdrawalCheckResult
+  report_preflight_execution_exception() noexcept;
   [[nodiscard]] EmergencyWithdrawalCheckResult check();
   [[nodiscard]] EmergencyWithdrawalSnapshot snapshot();
   [[nodiscard]] OperationAuthorizationResult authorize(
@@ -142,6 +146,8 @@ class EmergencyWithdrawalService final {
   [[nodiscard]] EmergencyWithdrawalCheckResult persist_notice(
       domain::emergency_withdrawal::EmergencyWithdrawalNotice notice);
   [[nodiscard]] EmergencyWithdrawalCheckResult check_locked();
+  [[nodiscard]] EmergencyWithdrawalCheckResult
+  preflight_execution_failure() noexcept;
 
   DeviceStateStore& states_;
   Clock const& clock_;
