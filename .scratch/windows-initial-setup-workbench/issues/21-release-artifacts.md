@@ -49,6 +49,8 @@ Evidence freshness: 仅对当前候选提交、锁定工具链与输入和本次
 
 ## Comments
 
+- 2026-08-17：构建证据路径增量 `4350339` 让 `eng/build.ps1` 在创建日志、MSBuild 日志、binlog、manifest 和 CTest XML 前复用统一路径链检查，发现父路径或目标为 reparse point 时 fail-closed。仅完成源码、Git diff/diff-check 静态核对，未运行构建、CTest、EXE、调试器或任何 C 盘写入；事项 21 的 `Status`、`Resolution`、`Blocked by` 与八制品门禁保持不变。
+
 - 2026-08-10：维护者确认 Q4 不设项目级信任门槛，Q8 不以真实设备证据阻断公开发行但必须记录“未实机验证”，Q9 允许当前及以后候选资源随包和公开发布，Q10 继续不提供摘要、源码关联或 provenance。Q7 已固定三档八制品矩阵：标准版同时提供便携和安装形态，断网救援版和超大离线版仅提供便携形态。Q11a-b、Q12-Q15 与 ADR-0043 已冻结原生 ARM64 安装链、机器级作用域、Repair、普通卸载、固定构建器差异说明及 x64 到 ARM64 的受控互斥迁移。WiX 仅在实际条款适用性得到书面确认后才可进入样机，未因此默认接受任何 EULA。产品和制品合同已经闭合，本事项改为 `ready-for-agent`；具体构建输入与实际门禁结果仍须在结票前形成，不能把当前状态误读为可发布。
 - 2026-08-15：标准版 x64 便携临时候选记录见 [issue-21-x64-candidate-a85b563.md](../issue-21-x64-candidate-a85b563.md)，绑定干净构建和 package manifest 的 `a85b5631a69218d55037a5c26a5625bab65067e3`。当前 ZIP 为 300 个文件、45,094,598 bytes，定向合同与独立候选门禁通过；历史完整 CTest 的两个宿主前置失败仍保留为未通过。本轮 ARM64 未执行；一次未接受条款的 x64 WiX 入口检查按预期被条款保护拒绝，未生成 MSI。八制品、安装生命周期和本候选实机验证均未完成；`Resolution: open` 不变。
 - 2026-08-15：x64 便携内容包候选记录见 [issue-21-x64-content-candidate-b557e70.md](../issue-21-x64-content-candidate-b557e70.md)，绑定 `b557e70dd507ee0bae0c1e54287dfafdf0c423c6` 的干净 x64 构建、内容清单和标准版便携 ZIP。ZIP 为 300 个文件、45,094,553 bytes，portable 内容合同、打包与独立 verifier 通过；标准候选没有锁定内容输入。ARM64、八制品、WiX/MSI 和安装生命周期、完整 CTest/host 及本候选实机验证均未执行；`Resolution: open` 不变。
