@@ -98,8 +98,8 @@ def verify_resource_dictionary(root: Path) -> None:
         require(key is not None, "each theme dictionary needs x:Key")
         require(key not in themes, f"duplicate theme dictionary: {key}")
         themes[key] = dictionary
-    require(set(themes) == {"Light", "Dark", "HighContrast"},
-            "Light, Dark, and HighContrast themes must all exist")
+    require(set(themes) == {"Default", "Light", "Dark", "HighContrast"},
+            "Default, Light, Dark, and HighContrast themes must all exist")
 
     required_theme_keys = {
         "AzzsSurfaceRootBrush",
@@ -154,7 +154,7 @@ def verify_resource_dictionary(root: Path) -> None:
         ("AzzsCommandOnAccentBrush", "AzzsCommandPrimaryBrush"),
         ("AzzsCommandOnDangerBrush", "AzzsCommandDangerBrush"),
     )
-    for theme_name in ("Light", "Dark"):
+    for theme_name in ("Light", "Dark", "Default"):
         for foreground, background in contrast_pairs:
             require(contrast_ratio(theme_colors[theme_name][foreground],
                                    theme_colors[theme_name][background]) >= 4.5,
