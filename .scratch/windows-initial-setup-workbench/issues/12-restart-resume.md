@@ -45,3 +45,5 @@ Evidence freshness: 绑定当前提交、检查点与存储模式和具体 Windo
 - 未执行真实 Windows 重启、登录后实机交互、DPI/辅助功能、安装生命周期、签名、WiX 或发布验收。ARM64 未在本机执行，且未作为 PR 合入门禁；GitHub ARM64 job 的状态不外推为 ARM64 本机验证，ARM64 硬件验证延期。
 
 ## Comments
+
+- 2026-08-17：PR [#95](https://github.com/CoolPlume/azzs/pull/95) 的 feature `9de76facc30a48bd0682d3beafb06eafe5944566` 已由普通 merge `b65dc23` 合入 `codex/v1-integration`。`windows_restart_resume_registration.cpp` 的 `GetModuleFileNameW` 读取从固定 `MAX_PATH` 改为 512 至 32768 的增长缓冲，接受合法的最后字符槽位并在上限处 fail-closed；RunOnce 注册、命令行 token、注册失败回滚和清理语义未改动。证据仅为源码、Git diff、PR 范围和空白静态核对，未运行构建、重启恢复合同、EXE、调试器或真实 Windows 长路径；事项 12 的 `Resolution: completed` 依据既有证据保持不变。
