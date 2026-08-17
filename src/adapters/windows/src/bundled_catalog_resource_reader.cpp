@@ -134,8 +134,16 @@ class ScopedHandle final {
   if (!root_path.has_value() || !resource_path.has_value()) {
     return false;
   }
-  auto const expected_path =
-      (std::filesystem::path{*root_path} / relative_path).wstring();
+  // Keep the extended-path prefix returned by GetFinalPathNameByHandleW.
+  // Constructing a std::filesystem::path from that string can normalize away
+  // the prefix before comparison, making every valid resource look external.
+  auto expected_path = *root_path;
+  if (expected_path.empty() || expected_path.back() != L'\\') {
+    expected_path.push_back(L'\\');
+  }
+  auto relative_native = relative_path.native();
+  std::replace(relative_native.begin(), relative_native.end(), L'/', L'\\');
+  expected_path.append(relative_native);
   return ::CompareStringOrdinal(
              expected_path.c_str(), static_cast<int>(expected_path.size()),
              resource_path->c_str(), static_cast<int>(resource_path->size()),
