@@ -580,7 +580,7 @@ function Test-LargeOfflineArtifactContent {
         throw "Large offline release directory is missing."
     }
     $directory = Get-Content -LiteralPath $directoryPath -Raw -Encoding UTF8
-    $state = [regex]::Match($directory, "(?m)^\\s*release_state\\s*=\\s*`"([^`"]+)`"\\s*$")
+    $state = [regex]::Match($directory, "(?m)^\s*release_state\s*=\s*`"([^`"]+)`"\s*$")
     if (-not $state.Success -or $state.Groups[1].Value -ne "release") {
         throw "Large offline release directory is not release_state = `"release`"."
     }
