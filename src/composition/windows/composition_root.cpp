@@ -917,25 +917,30 @@ class WindowsWorkbenchServices final
   }
 
   void shutdown() noexcept {
-    std::call_once(shutdown_started_, [this] {
-      // Persist the runner's close boundary before discarding its batch-owned
-      // cache session. A later launch can then recover read-only rather than
-      // treating a closing batch as safe to continue.
-      try {
-        static_cast<void>(software_optimization_batches_.request_close());
-      } catch (...) {
-        // The persisted batch state remains fail-closed for issue 12 recovery.
-      }
-      try {
-        static_cast<void>(installation_batches_.request_close());
-      } catch (...) {
-        // Restore never auto-continues an active batch. If the best-effort
-        // close receipt cannot be produced, the persisted state remains
-        // fail-closed for the explicit recovery path on the next launch.
-      }
-      live_offline_package_cache_.shutdown();
-      batch_offline_package_cache_.shutdown();
-    });
+    try {
+      std::call_once(shutdown_started_, [this] {
+        // Persist the runner's close boundary before discarding its batch-owned
+        // cache session. A later launch can then recover read-only rather than
+        // treating a closing batch as safe to continue.
+        try {
+          static_cast<void>(software_optimization_batches_.request_close());
+        } catch (...) {
+          // The persisted batch state remains fail-closed for issue 12 recovery.
+        }
+        try {
+          static_cast<void>(installation_batches_.request_close());
+        } catch (...) {
+          // Restore never auto-continues an active batch. If the best-effort
+          // close receipt cannot be produced, the persisted state remains
+          // fail-closed for the explicit recovery path on the next launch.
+        }
+        live_offline_package_cache_.shutdown();
+        batch_offline_package_cache_.shutdown();
+      });
+    } catch (...) {
+      // Keep the shutdown boundary noexcept; a later close or destruction can
+      // retry if call_once cannot enter its callable.
+    }
   }
 
   [[nodiscard]] application::installation_batch::InstallationBatchService&
