@@ -135,7 +135,7 @@ function Resolve-RepositoryRelativePath {
     if (-not $resolvedCandidate.StartsWith($rootWithSeparator, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "$Context resolves outside the repository."
     }
-    return $resolvedCandidate
+    return Get-ExistingNonReparsePath -Path $resolvedCandidate -Context $Context
 }
 
 function Resolve-PortablePackagePath {
