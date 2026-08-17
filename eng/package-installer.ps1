@@ -62,7 +62,15 @@ if (Test-Path -LiteralPath $intermediateDirectory) {
     }
 }
 if (Test-Path -LiteralPath $stagingDirectory) {
+    Assert-NoReparsePointsBelow `
+        -Path $stagingDirectory `
+        -Context "Installer packaging staging candidate"
     Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
+}
+if (Test-Path -LiteralPath $intermediateDirectory) {
+    Assert-NoReparsePointsBelow `
+        -Path $intermediateDirectory `
+        -Context "Installer packaging intermediate candidate"
 }
 New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory, $intermediateDirectory -Force | Out-Null
 Assert-NoReparsePointsBelow `
