@@ -231,6 +231,10 @@
     <ResourceCompile Include="app.rc" />
   </ItemGroup>
   <ItemGroup>
+    <AzzsBundledCatalogResource Include="$(MSBuildThisFileDirectory)..\..\..\..\catalog\software-catalog.toml" />
+    <AzzsBundledCatalogResource Include="$(MSBuildThisFileDirectory)..\..\..\..\catalog\software-optimization-catalog.toml" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
     <PackageReference Include="Microsoft.Windows.CppWinRT" Version="3.0.260715.1" />
   </ItemGroup>
@@ -266,5 +270,10 @@
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_installation_batch_runner_domain.lib')" Text="The CMake installation batch runner domain has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_batch_runner_application.lib')" Text="The CMake software optimization batch runner application has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_batch_runner_domain.lib')" Text="The CMake software optimization batch runner domain has not been built for $(Platform)|$(Configuration)." />
+  </Target>
+  <Target Name="CopyAzzsBundledCatalogResources" AfterTargets="Build">
+    <Error Condition="!Exists('%(AzzsBundledCatalogResource.Identity)')" Text="A required bundled catalog resource is missing: %(AzzsBundledCatalogResource.Identity)" />
+    <MakeDir Directories="$(OutDir)catalog" />
+    <Copy SourceFiles="@(AzzsBundledCatalogResource)" DestinationFiles="@(AzzsBundledCatalogResource->'$(OutDir)catalog\%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

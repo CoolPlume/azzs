@@ -67,6 +67,40 @@ function Require-ZipFixedRescueFolders {
     }
 }
 
+function Require-BundledCatalogResources {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root,
+
+        [Parameter(Mandatory = $true)]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    Require ($Resources.Count -eq 2) "$Context must declare exactly two bundled catalog resources"
+    $seenIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($resource in $Resources) {
+        $id = [string]$resource.id
+        Require ($seenIds.Add($id)) "$Context contains a duplicate bundled catalog resource id $id"
+        Require ($id -in @("software-catalog", "software-optimization-catalog")) "$Context contains an unexpected bundled catalog resource $id"
+        $relativePath = [string]$resource.relativePath
+        $packagePath = [string]$resource.packagePath
+        Require (-not [System.IO.Path]::IsPathRooted($relativePath)) "$Context resource $id has a rooted repository path"
+        Require (-not $relativePath.Contains("\")) "$Context resource $id repository path must use POSIX separators"
+        Require (-not ($relativePath.Split("/") -contains "..")) "$Context resource $id repository path must not traverse"
+        Require ($packagePath -eq $relativePath) "$Context resource $id must preserve its fixed package path"
+        $path = Join-Path $Root ($packagePath.Replace("/", "\"))
+        Require (Test-Path -LiteralPath $path -PathType Leaf) "$Context is missing bundled catalog resource $packagePath"
+        $file = Get-Item -LiteralPath $path
+        Require ($file.Length -eq [Int64]$resource.bytes) "$Context resource $id bytes do not match the locked manifest"
+        Require ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -eq ([string]$resource.sha256).ToLowerInvariant()) "$Context resource $id SHA256 does not match the locked manifest"
+    }
+    Require ($seenIds.Contains("software-catalog")) "$Context is missing software-catalog"
+    Require ($seenIds.Contains("software-optimization-catalog")) "$Context is missing software-optimization-catalog"
+}
+
 function Write-JsonFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -182,6 +216,7 @@ function New-FixtureRoot {
     Copy-Item -LiteralPath (Join-Path $sourceRoot ".gitignore") -Destination (Join-Path $fixtureRoot ".gitignore")
     Copy-Item -LiteralPath (Join-Path $sourceRoot "eng") -Destination (Join-Path $fixtureRoot "eng") -Recurse
     Copy-Item -LiteralPath (Join-Path $sourceRoot "release") -Destination (Join-Path $fixtureRoot "release") -Recurse
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "catalog") -Destination (Join-Path $fixtureRoot "catalog") -Recurse
     New-Item -ItemType Directory -Path (Join-Path $fixtureRoot "docs/adr") -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $sourceRoot "docs/adr/0030-controlled-rescue-tool-release-boundary.md") -Destination (Join-Path $fixtureRoot "docs/adr/0030-controlled-rescue-tool-release-boundary.md")
     foreach ($evidencePath in @(
@@ -391,6 +426,32 @@ function Set-LockedInputs {
     Save-ContentManifest -FixtureRoot $FixtureRoot -Manifest $manifest
 }
 
+function Set-BundledCatalogResourceField {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FixtureRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Field,
+
+        [Parameter(Mandatory = $true)]
+        [object]$Value
+    )
+
+    $manifest = Get-ContentManifest -FixtureRoot $FixtureRoot
+    $artifact = Get-ArtifactContent -Manifest $manifest -ArtifactId $ArtifactId
+    $matches = @($artifact.bundledCatalogResources | Where-Object { $_.id -eq $ResourceId })
+    Require ($matches.Count -eq 1) "fixture content manifest lacks a unique bundled catalog resource $ResourceId"
+    $matches[0].$Field = $Value
+    Save-ContentManifest -FixtureRoot $FixtureRoot -Manifest $manifest
+}
+
 function Set-ReleaseDirectoryState {
     param(
         [Parameter(Mandatory = $true)]
@@ -409,6 +470,21 @@ function Set-ReleaseDirectoryState {
 
 try {
     $sourceContentManifest = Get-Content -LiteralPath (Join-Path $RepositoryRoot "release/artifact-content-manifest.v1.json") -Raw | ConvertFrom-Json
+    Require (@($sourceContentManifest.artifacts).Count -eq 3) "artifact content manifest must cover the three x64 portable artifacts"
+    $compositionRoot = Get-Content -LiteralPath (Join-Path $RepositoryRoot "src/composition/windows/composition_root.cpp") -Raw
+    Require (-not $compositionRoot.Contains("__FILE__")) "startup composition must not derive bundled catalog paths from source-file locations"
+    Require ($compositionRoot.Contains("bundled_catalog_paths")) "startup composition must resolve bundled catalog resources from the workbench module directory"
+    Require ($compositionRoot.Contains("path_chain_has_no_reparse_points")) "startup composition must reject reparse points along bundled catalog resource paths"
+    Require ($compositionRoot.Contains("bundled_catalog_resource_matches")) "startup composition must fail closed when bundled catalog resource bytes or SHA256 do not match"
+    $winuiProject = Get-Content -LiteralPath (Join-Path $RepositoryRoot "src/adapters/ui/winui/Azzs.WinUI.vcxproj") -Raw
+    Require ($winuiProject.Contains("CopyAzzsBundledCatalogResources")) "WinUI project must copy bundled catalog resources to the output directory"
+    foreach ($resourcePath in @("catalog\software-catalog.toml", "catalog\software-optimization-catalog.toml")) {
+        Require ($winuiProject.Contains($resourcePath)) "WinUI project must include bundled catalog resource $resourcePath"
+    }
+    foreach ($artifactId in @("standard-x64-portable", "rescue-x64-portable", "large-offline-x64-portable")) {
+        $sourceArtifact = Get-ArtifactContent -Manifest $sourceContentManifest -ArtifactId $artifactId
+        Require-BundledCatalogResources -Root $RepositoryRoot -Resources @($sourceArtifact.bundledCatalogResources) -Context "source artifact $artifactId"
+    }
     foreach ($artifactId in @("rescue-x64-portable", "large-offline-x64-portable")) {
         $sourceArtifact = Get-ArtifactContent -Manifest $sourceContentManifest -ArtifactId $artifactId
         Require (@($sourceArtifact.inputs).Count -eq 0) "$artifactId must remain fail-closed without locked rescue or large inputs"
@@ -425,6 +501,7 @@ try {
     Require ($standardManifest.artifactId -eq "standard-x64-portable") "package manifest lacks artifactId"
     Require ($standardManifest.edition -eq "standard") "package manifest lacks edition"
     Require ($null -ne $standardManifest.contentManifest) "package manifest lacks contentManifest"
+    Require-BundledCatalogResources -Root $standardCandidates[0] -Resources @($standardManifest.bundledCatalogResources) -Context "standard package manifest and staging"
     Require (@($standardManifest.inputs).Count -eq 0) "standard package must not claim external content inputs"
     Require (-not ((Get-Content -LiteralPath $standardCandidates[2] -Raw).Contains($standardFixture))) "package manifest leaked an absolute fixture path"
     Require ($standardManifest.package.path -eq "out/packages/Azzs-standard-x64-portable.zip") "package manifest must use the canonical repository-relative ZIP path"
@@ -436,6 +513,36 @@ try {
     $extractedStandardDirectory = Join-Path $standardFixture "out/extracted/standard-x64-portable"
     [System.IO.Compression.ZipFile]::ExtractToDirectory($standardCandidates[1], $extractedStandardDirectory)
     Require-EmptyFixedRescueFolders -Root $extractedStandardDirectory -Context "extracted standard ZIP"
+    Require-BundledCatalogResources -Root $extractedStandardDirectory -Resources @($standardManifest.bundledCatalogResources) -Context "extracted standard ZIP"
+
+    $missingCatalogFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $missingCatalogFixture -ArtifactId "standard-x64-portable"
+    Remove-Item -LiteralPath (Join-Path $missingCatalogFixture "catalog/software-catalog.toml") -Force
+    Require-PackageFailure -FixtureRoot $missingCatalogFixture -ArtifactId "standard-x64-portable" -Scenario "missing bundled software catalog"
+
+    $catalogPathDriftFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $catalogPathDriftFixture -ArtifactId "standard-x64-portable"
+    Set-BundledCatalogResourceField -FixtureRoot $catalogPathDriftFixture -ArtifactId "standard-x64-portable" -ResourceId "software-catalog" -Field "packagePath" -Value "catalog/drifted-software-catalog.toml"
+    Require-PackageFailure -FixtureRoot $catalogPathDriftFixture -ArtifactId "standard-x64-portable" -Scenario "drifted bundled catalog package path"
+
+    $catalogDigestDriftFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $catalogDigestDriftFixture -ArtifactId "standard-x64-portable"
+    Set-BundledCatalogResourceField -FixtureRoot $catalogDigestDriftFixture -ArtifactId "standard-x64-portable" -ResourceId "software-catalog" -Field "sha256" -Value ("0" * 64)
+    Require-PackageFailure -FixtureRoot $catalogDigestDriftFixture -ArtifactId "standard-x64-portable" -Scenario "tampered bundled catalog source digest"
+
+    $stagingCatalogTamperFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $stagingCatalogTamperFixture -ArtifactId "standard-x64-portable"
+    $stagingCatalogCandidates = Get-CandidatePaths -FixtureRoot $stagingCatalogTamperFixture -ArtifactId "standard-x64-portable"
+    Set-Content -LiteralPath (Join-Path $stagingCatalogCandidates[0] "catalog/software-catalog.toml") -Value "tampered catalog resource" -Encoding UTF8
+    Require-PortableVerificationFailure -FixtureRoot $stagingCatalogTamperFixture -ArtifactId "standard-x64-portable" -Scenario "a tampered staged bundled catalog resource"
+
+    $manifestCatalogDigestTamperFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $manifestCatalogDigestTamperFixture -ArtifactId "standard-x64-portable"
+    $manifestCatalogDigestCandidates = Get-CandidatePaths -FixtureRoot $manifestCatalogDigestTamperFixture -ArtifactId "standard-x64-portable"
+    $manifestCatalogDigest = Get-Content -LiteralPath $manifestCatalogDigestCandidates[2] -Raw | ConvertFrom-Json
+    $manifestCatalogDigest.bundledCatalogResources[0].sha256 = "0" * 64
+    Write-JsonFile -Value $manifestCatalogDigest -Path $manifestCatalogDigestCandidates[2]
+    Require-PortableVerificationFailure -FixtureRoot $manifestCatalogDigestTamperFixture -ArtifactId "standard-x64-portable" -Scenario "a tampered bundled catalog resource manifest digest"
 
     $tamperedArchive = [System.IO.Compression.ZipFile]::Open(
         $standardCandidates[1],
