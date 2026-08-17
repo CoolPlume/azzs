@@ -805,7 +805,7 @@ class WindowsWorkbenchServices final
       auto self = shared_from_this();
       emergency_preflight_start_ = startup::start_emergency_preflight(
           [self = std::move(self)] {
-            std::thread([self] {
+            std::thread worker{[self] {
               try {
                 static_cast<void>(self->emergency_withdrawals_.preflight_check());
               } catch (...) {
@@ -814,7 +814,18 @@ class WindowsWorkbenchServices final
                 static_cast<void>(self->emergency_withdrawals_
                                       .report_preflight_execution_exception());
               }
-            }).detach();
+            }};
+            try {
+              worker.detach();
+            } catch (...) {
+              // A failed detach leaves the thread joinable; let the worker
+              // finish before propagating the typed start failure so its
+              // destructor cannot call std::terminate.
+              if (worker.joinable()) {
+                worker.join();
+              }
+              throw;
+            }
           });
     });
     return emergency_preflight_start_;
