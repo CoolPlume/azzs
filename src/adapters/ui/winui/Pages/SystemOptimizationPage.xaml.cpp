@@ -184,53 +184,62 @@ void SystemOptimizationPage::OnRestoreWindows11Default(
 winrt::fire_and_forget SystemOptimizationPage::OnForceAttempt(
     winrt::Windows::Foundation::IInspectable const& sender,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (!service_ || !advanced_view_) {
-    co_return;
-  }
-  auto const button =
-      sender.try_as<winrt::Microsoft::UI::Xaml::Controls::Button>();
-  if (!button) {
-    co_return;
-  }
-  auto const id = winrt::unbox_value<winrt::hstring>(button.Tag());
-  auto const snapshot = service_->snapshot();
-  auto const item = std::ranges::find_if(
-      snapshot.settings, [&](auto const& candidate) {
-        return candidate.id.value == winrt::to_string(id);
-      });
-  if (item == snapshot.settings.end() || item->applicable ||
-      !item->can_force_attempt) {
-    co_return;
-  }
+  try {
+    auto lifetime = get_strong();
+    if (!service_ || !advanced_view_ || confirmation_dialog_open_) {
+      co_return;
+    }
+    auto const button =
+        sender.try_as<winrt::Microsoft::UI::Xaml::Controls::Button>();
+    if (!button) {
+      co_return;
+    }
+    auto const id = winrt::unbox_value<winrt::hstring>(button.Tag());
+    auto const snapshot = service_->snapshot();
+    auto const item = std::ranges::find_if(
+        snapshot.settings, [&](auto const& candidate) {
+          return candidate.id.value == winrt::to_string(id);
+        });
+    if (item == snapshot.settings.end() || item->applicable ||
+        !item->can_force_attempt) {
+      co_return;
+    }
 
-  using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
-  using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
-  using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
-  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+    using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
+    using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
+    using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
+    using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
-  auto const resources = ResourceLoader{};
-  auto dialog = ContentDialog{};
-  dialog.XamlRoot(XamlRoot());
-  dialog.Title(winrt::box_value(
-      resources.GetString(L"SystemSettingsForceAttemptDialogTitle")));
-  dialog.Content(winrt::box_value(winrt::hstring{resource_with_token(
-      resources, L"SystemSettingsForceAttemptDialogBody", L"{name}",
-      std::wstring{winrt::to_hstring(item->display_name)})}));
-  dialog.PrimaryButtonText(
-      resources.GetString(L"SystemSettingsForceAttemptDialogPrimaryButtonText"));
-  dialog.CloseButtonText(
-      resources.GetString(L"SystemSettingsForceAttemptDialogCloseButtonText"));
-  dialog.DefaultButton(ContentDialogButton::Close);
+    confirmation_dialog_open_ = true;
+    auto const resources = ResourceLoader{};
+    auto dialog = ContentDialog{};
+    dialog.XamlRoot(XamlRoot());
+    dialog.Title(winrt::box_value(
+        resources.GetString(L"SystemSettingsForceAttemptDialogTitle")));
+    dialog.Content(winrt::box_value(winrt::hstring{resource_with_token(
+        resources, L"SystemSettingsForceAttemptDialogBody", L"{name}",
+        std::wstring{winrt::to_hstring(item->display_name)})}));
+    dialog.PrimaryButtonText(resources.GetString(
+        L"SystemSettingsForceAttemptDialogPrimaryButtonText"));
+    dialog.CloseButtonText(resources.GetString(
+        L"SystemSettingsForceAttemptDialogCloseButtonText"));
+    dialog.DefaultButton(ContentDialogButton::Close);
 
-  if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-    static_cast<void>(service_->set_selected(
-        azzs::application::settings_domain::StableId{winrt::to_string(id)},
-        true));
-    static_cast<void>(service_->apply_selected(
-        {.force_attempt_confirmed = true}));
+    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+      confirmation_dialog_open_ = false;
+      static_cast<void>(service_->set_selected(
+          azzs::application::settings_domain::StableId{winrt::to_string(id)},
+          true));
+      static_cast<void>(service_->apply_selected(
+          {.force_attempt_confirmed = true}));
+    } else {
+      confirmation_dialog_open_ = false;
+    }
+    project(service_->snapshot());
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI force-attempt dialog failed.\n");
   }
-  project(service_->snapshot());
 }
 
 void SystemOptimizationPage::OnSettingSelectionChanged(

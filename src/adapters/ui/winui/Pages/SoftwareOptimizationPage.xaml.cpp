@@ -134,45 +134,56 @@ void SoftwareOptimizationPage::OnPrepareSelected(
 winrt::fire_and_forget SoftwareOptimizationPage::OnOptionSelectionChanged(
     winrt::Windows::Foundation::IInspectable const& sender,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  auto lifetime = get_strong();
-  if (service_ == nullptr) {
-    co_return;
-  }
-  auto const check_box = sender.try_as<CheckBox>();
-  if (!check_box) {
-    co_return;
-  }
-  std::string scheme_id;
-  std::string option_id;
-  if (!parse_option_tag(winrt::unbox_value<winrt::hstring>(check_box.Tag()),
-                        scheme_id, option_id)) {
-    co_return;
-  }
-  auto mutation = azzs::domain::software_optimization_discovery::SelectionMutation{
-      .scheme_id = {std::move(scheme_id)},
-      .option_id = {std::move(option_id)},
-      .selected = check_box.IsChecked() && check_box.IsChecked().Value(),
-  };
-  auto result = service_->change_selection(mutation);
-  if (result.code == DiscoveryActionCode::adjustment_confirmation_required) {
-    ContentDialog dialog;
-    dialog.XamlRoot(XamlRoot());
-    dialog.Title(winrt::box_value(
-        resource_string(L"SoftwareOptimizationSelectionAdjustmentTitle")));
-    dialog.Content(winrt::box_value(
-        resource_string(L"SoftwareOptimizationSelectionAdjustmentContent")));
-    dialog.PrimaryButtonText(
-        resource_string(L"SoftwareOptimizationSelectionAdjustmentConfirm"));
-    dialog.CloseButtonText(
-        resource_string(L"SoftwareOptimizationSelectionAdjustmentCancel"));
-    if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
-      mutation.accept_adjustments = true;
-      result = service_->change_selection(std::move(mutation));
+  try {
+    auto lifetime = get_strong();
+    if (service_ == nullptr || confirmation_dialog_open_) {
+      co_return;
     }
-  }
-  project(result.snapshot);
-  if (result.code == DiscoveryActionCode::selection_rejected) {
-    set_status(winrt::to_hstring(result.message), InfoBarSeverity::Warning);
+    auto const check_box = sender.try_as<CheckBox>();
+    if (!check_box) {
+      co_return;
+    }
+    std::string scheme_id;
+    std::string option_id;
+    if (!parse_option_tag(winrt::unbox_value<winrt::hstring>(check_box.Tag()),
+                          scheme_id, option_id)) {
+      co_return;
+    }
+    auto mutation =
+        azzs::domain::software_optimization_discovery::SelectionMutation{
+            .scheme_id = {std::move(scheme_id)},
+            .option_id = {std::move(option_id)},
+            .selected = check_box.IsChecked() && check_box.IsChecked().Value(),
+        };
+    auto result = service_->change_selection(mutation);
+    if (result.code == DiscoveryActionCode::adjustment_confirmation_required) {
+      confirmation_dialog_open_ = true;
+      ContentDialog dialog;
+      dialog.XamlRoot(XamlRoot());
+      dialog.Title(winrt::box_value(
+          resource_string(L"SoftwareOptimizationSelectionAdjustmentTitle")));
+      dialog.Content(winrt::box_value(
+          resource_string(L"SoftwareOptimizationSelectionAdjustmentContent")));
+      dialog.PrimaryButtonText(
+          resource_string(L"SoftwareOptimizationSelectionAdjustmentConfirm"));
+      dialog.CloseButtonText(
+          resource_string(L"SoftwareOptimizationSelectionAdjustmentCancel"));
+      if (co_await dialog.ShowAsync() == ContentDialogResult::Primary) {
+        confirmation_dialog_open_ = false;
+        mutation.accept_adjustments = true;
+        result = service_->change_selection(std::move(mutation));
+      } else {
+        confirmation_dialog_open_ = false;
+      }
+    }
+    confirmation_dialog_open_ = false;
+    project(result.snapshot);
+    if (result.code == DiscoveryActionCode::selection_rejected) {
+      set_status(winrt::to_hstring(result.message), InfoBarSeverity::Warning);
+    }
+  } catch (...) {
+    confirmation_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI optimization selection dialog failed.\n");
   }
 }
 

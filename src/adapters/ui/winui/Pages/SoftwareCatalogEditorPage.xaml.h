@@ -146,6 +146,7 @@ struct SoftwareCatalogEditorPage
   std::size_t next_category_sequence_{1};
   bool editing_enabled_{false};
   bool projecting_{false};
+  bool confirmation_dialog_open_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation
