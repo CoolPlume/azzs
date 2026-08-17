@@ -629,6 +629,14 @@ try {
     finally {
         $missingRuntimeArchive.Dispose()
     }
+    $missingRuntimeManifest = Get-Content -LiteralPath $missingRuntimeCandidates[2] -Raw | ConvertFrom-Json
+    $missingRuntimeManifest.payload = @(
+        $missingRuntimeManifest.payload | Where-Object {
+            $_.path -ne "Microsoft.UI.Xaml.Controls.dll"
+        }
+    )
+    $missingRuntimeManifest.package.bytes = (Get-Item -LiteralPath $missingRuntimeCandidates[1]).Length
+    Write-JsonFile -Value $missingRuntimeManifest -Path $missingRuntimeCandidates[2]
     Require-PortableVerificationFailure `
         -FixtureRoot $missingRuntimeFixture `
         -ArtifactId "standard-x64-portable" `
