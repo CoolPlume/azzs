@@ -32,3 +32,4 @@ Evidence freshness: 绑定当前源码提交、启动装配接口、失败呈现
 ## Comments
 
 - 2026-08-17：切片源自启动边界后置源码审查的四项发现：诊断不可读分支未调用服务关闭、WinUI 启动入口缺少标准异常总边界、类型化启动结果未被调用方保留，以及启动合同构造了导航失败但预检已启动的不可能状态。当前仅建立执行合同，未修改源码或声称验证通过。
+- 2026-08-17：只读静态核对确认，源码实现已由 feature `2ec3bd748667ad7a9bf8e22340f156c8cb22f113` 经 integration merge `d7d15f500c71a6b87710202dba93647ab74717ab` 落地到当时 integration 基线 `6896ff364f6c7a3a63949b85cbc68cff281cba5d`；本次只完成静态源码检查，未运行启动装配合同、无界面核心合同、x64 Release、EXE 或真实 Windows，因此 `Resolution: open` 不变。

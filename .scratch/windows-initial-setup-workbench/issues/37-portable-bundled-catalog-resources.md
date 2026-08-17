@@ -32,3 +32,4 @@ Evidence freshness: 绑定当前源码、目录文件、发行内容清单、打
 ## Comments
 
 - 2026-08-17：切片源自发行包审查：`src/composition/windows/composition_root.cpp` 的 `repository_catalog_path()` 与 `repository_optimization_catalog_path()` 通过 `__FILE__` 计算仓库路径，而现有便携打包只复制 Release 输出；内容清单当前只列 x64 的三个便携条目。当前仅建立执行合同，未修改源码、清单或打包脚本，未生成任何制品。
+- 2026-08-17：只读静态核对确认，源码实现已由 feature `9559ba73cb1e64a0d11099fcbe6c011e8f50d2fe` 经 integration merge `fd2cec28c1f4d27fd1507e74771632e7575d2485` 落地到当时 integration 基线 `6896ff364f6c7a3a63949b85cbc68cff281cba5d`；ADR-0047 及其合入 `6896ff364f6c7a3a63949b85cbc68cff281cba5d` 只澄清 x64 临时候选范围，不构成制品生成或验收结论。已做源代码、PowerShell、JSON 与 XML 静态检查，但未运行构建、portable contract、打包、EXE 或真实候选；资源拒绝路径的行为级证据仍缺失，因此 `Resolution: open` 不变。
