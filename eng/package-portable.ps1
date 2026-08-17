@@ -24,15 +24,23 @@ elseif ($PSBoundParameters.ContainsKey("Architecture")) {
     throw "Portable packaging is ArtifactId-driven; do not combine -ArtifactId with -Architecture."
 }
 
+$supportedArtifactEditions = @{
+    "standard-x64-portable" = "standard"
+    "rescue-x64-portable" = "rescue"
+    "large-offline-x64-portable" = "large-offline"
+}
+if (-not $supportedArtifactEditions.ContainsKey($ArtifactId)) {
+    throw "Portable packaging supports only the three x64 portable artifact ids."
+}
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$definition = Get-PortableArtifactDefinition -RepositoryRoot $repositoryRoot -ArtifactId $ArtifactId
-$artifact = $definition.Artifact
-$architecture = [string]$artifact.architecture
+$expectedEdition = [string]$supportedArtifactEditions[$ArtifactId]
+$architecture = "x64"
 $stagingDirectory = Join-Path $repositoryRoot "out/staging/portable/$ArtifactId"
 $packageDirectory = Join-Path $repositoryRoot "out/packages"
 $architectureToken = $architecture.ToLowerInvariant()
-$packagePath = Join-Path $packageDirectory "Azzs-$($artifact.edition)-$architectureToken-portable.zip"
-$manifestPath = Join-Path $repositoryRoot "out/manifests/package-$($artifact.edition)-$architectureToken-portable.json"
+$packagePath = Join-Path $packageDirectory "Azzs-$expectedEdition-$architectureToken-portable.zip"
+$manifestPath = Join-Path $repositoryRoot "out/manifests/package-$expectedEdition-$architectureToken-portable.json"
 $fixedRescueFolderNames = @(
     "generic-network-driver",
     "offline-network-diagnostics"
@@ -57,6 +65,12 @@ function Assert-PortableCandidatePaths {
 
 Remove-PortableCandidate
 try {
+    $definition = Get-PortableArtifactDefinition -RepositoryRoot $repositoryRoot -ArtifactId $ArtifactId
+    $artifact = $definition.Artifact
+    if ($artifact.edition -ne $expectedEdition -or $artifact.architecture -ne $architecture) {
+        throw "Portable artifact identity does not match its fixed x64 candidate paths."
+    }
+    $bundledCatalogResources = @(Test-BundledCatalogResources -Content $definition.Content -RepositoryRoot $repositoryRoot -ArtifactId $ArtifactId -ValidateSource)
     $contentInputs = Test-PortableArtifactInputs -Definition $definition -RepositoryRoot $repositoryRoot
     if ($artifact.edition -eq "large-offline") {
         $rescueDefinition = Get-PortableArtifactDefinition -RepositoryRoot $repositoryRoot -ArtifactId "rescue-x64-portable"
@@ -96,6 +110,33 @@ try {
         }
     }
 
+    foreach ($resource in $bundledCatalogResources) {
+        $resourcePackagePath = [string]$resource.packagePath
+        $destinationPath = Join-Path $stagingDirectory ($resourcePackagePath.Replace("/", "\"))
+        if ($stagedPaths.Contains($resourcePackagePath)) {
+            if (-not (Test-Path -LiteralPath $destinationPath -PathType Leaf)) {
+                throw "Bundled catalog resource '$($resource.id)' package path '$resourcePackagePath' is not a regular staged file."
+            }
+            $stagedResource = Get-Item -LiteralPath $destinationPath
+            if ($stagedResource.Length -ne [Int64]$resource.bytes -or
+                (Get-Sha256Hex -Path $destinationPath) -ne $resource.sha256) {
+                throw "Bundled catalog resource '$($resource.id)' in the workbench payload does not match its locked content."
+            }
+            continue
+        }
+        $sourcePath = Resolve-RepositoryRelativePath -RepositoryRoot $repositoryRoot -RelativePath $resource.relativePath -Context "Bundled catalog resource '$($resource.id)'"
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destinationPath) -Force | Out-Null
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+        $stagedResource = Get-Item -LiteralPath $destinationPath
+        if ($stagedResource.Length -ne [Int64]$resource.bytes -or
+            (Get-Sha256Hex -Path $destinationPath) -ne $resource.sha256) {
+            throw "Bundled catalog resource '$($resource.id)' was not copied with its locked content."
+        }
+        if (-not $stagedPaths.Add($resourcePackagePath)) {
+            throw "Bundled catalog resource '$($resource.id)' packagePath '$resourcePackagePath' collides with the workbench payload."
+        }
+    }
+
     foreach ($contentInput in $contentInputs) {
         $sourcePath = Resolve-RepositoryRelativePath -RepositoryRoot $repositoryRoot -RelativePath $contentInput.relativePath -Context "Locked input '$($contentInput.id)'"
         $inputPackagePath = [string]$contentInput.packagePath
@@ -130,6 +171,7 @@ try {
         -ArtifactId $ArtifactId `
         -Edition $artifact.edition `
         -ContentManifestPath $definition.ContentManifestPath `
+        -BundledCatalogResources $bundledCatalogResources `
         -Inputs $contentInputs
     & (Join-Path $PSScriptRoot "verify-portable-package.ps1") `
         -ArtifactId $ArtifactId `

@@ -39,6 +39,7 @@ elseif ($PSBoundParameters.ContainsKey("Architecture")) {
 $definition = Get-PortableArtifactDefinition -RepositoryRoot $RepositoryRoot -ArtifactId $ArtifactId
 $artifact = $definition.Artifact
 $Architecture = [string]$artifact.architecture
+$bundledCatalogResources = @(Test-BundledCatalogResources -Content $definition.Content -RepositoryRoot $RepositoryRoot -ArtifactId $ArtifactId -ValidateSource)
 $contentInputs = Test-PortableArtifactInputs -Definition $definition -RepositoryRoot $RepositoryRoot
 if ($artifact.edition -eq "large-offline") {
     $rescueDefinition = Get-PortableArtifactDefinition -RepositoryRoot $RepositoryRoot -ArtifactId "rescue-x64-portable"
@@ -278,6 +279,19 @@ Assert-PayloadMapMatches -Expected $stagedPayloadMap -Actual $archivePayloadMap 
 $stagedPayloadHashMap = ConvertTo-PayloadHashMap -Payload $stagedPayload -Name "Portable package staging payload"
 $archivePayloadHashMap = ConvertTo-PayloadHashMap -Payload $archivePayload -Name "Portable package ZIP payload"
 Assert-PayloadHashMapMatches -Expected $stagedPayloadHashMap -Actual $archivePayloadHashMap -ExpectedName "staging payload" -ActualName "Portable package ZIP"
+foreach ($resource in $bundledCatalogResources) {
+    $packagePath = [string]$resource.packagePath
+    if (-not $stagedPayloadMap.ContainsKey($packagePath) -or
+        $stagedPayloadMap[$packagePath] -ne [Int64]$resource.bytes -or
+        -not $stagedPayloadHashMap.ContainsKey($packagePath) -or
+        $stagedPayloadHashMap[$packagePath] -ne $resource.sha256 -or
+        -not $archivePayloadMap.ContainsKey($packagePath) -or
+        $archivePayloadMap[$packagePath] -ne [Int64]$resource.bytes -or
+        -not $archivePayloadHashMap.ContainsKey($packagePath) -or
+        $archivePayloadHashMap[$packagePath] -ne $resource.sha256) {
+        throw "Portable package bundled catalog resource '$($resource.id)' is missing or does not match its locked content."
+    }
+}
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($manifest.kind -ne "portable" -or $manifest.architecture -ne $Architecture) {
@@ -306,6 +320,34 @@ if ($manifest.schemaVersion -ne 1 -or
     $manifest.contentManifest.path -ne $expectedContentManifestPath -or
     $manifest.contentManifest.sha256 -ne (Get-Sha256Hex -Path $definition.ContentManifestPath)) {
     throw "Portable package manifest artifact identity or content manifest binding does not match the verified inputs."
+}
+
+[object[]]$manifestBundledCatalogResources = @()
+$manifestBundledCatalogResourcesProperty = $manifest.PSObject.Properties["bundledCatalogResources"]
+if ($null -ne $manifestBundledCatalogResourcesProperty -and $null -ne $manifestBundledCatalogResourcesProperty.Value) {
+    $manifestBundledCatalogResources = @($manifestBundledCatalogResourcesProperty.Value | ForEach-Object { $_ })
+}
+if ($manifestBundledCatalogResources.Count -ne $bundledCatalogResources.Count) {
+    throw "Portable package manifest bundled catalog resource count does not match the verified content manifest."
+}
+$manifestResourcesById = @{}
+foreach ($manifestResource in $manifestBundledCatalogResources) {
+    $id = [string](Get-RequiredProperty -Object $manifestResource -Name "id" -Context "Portable package manifest bundled catalog resource")
+    if ($manifestResourcesById.ContainsKey($id)) {
+        throw "Portable package manifest contains duplicate bundled catalog resource '$id'."
+    }
+    $manifestResourcesById[$id] = $manifestResource
+}
+foreach ($expectedResource in $bundledCatalogResources) {
+    if (-not $manifestResourcesById.ContainsKey($expectedResource.id)) {
+        throw "Portable package manifest is missing bundled catalog resource '$($expectedResource.id)'."
+    }
+    $manifestResource = $manifestResourcesById[$expectedResource.id]
+    foreach ($field in @("relativePath", "packagePath", "bytes", "sha256")) {
+        if ((Get-RequiredProperty -Object $manifestResource -Name $field -Context "Portable package manifest bundled catalog resource '$($expectedResource.id)'") -ne $expectedResource.$field) {
+            throw "Portable package manifest bundled catalog resource '$($expectedResource.id)' $field does not match the verified content manifest."
+        }
+    }
 }
 
 [object[]]$expectedInputs = @()

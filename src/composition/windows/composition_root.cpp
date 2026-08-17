@@ -2,14 +2,18 @@
 
 #include "composition_root.hpp"
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <filesystem>
 #include <algorithm>
+#include <fstream>
 #include <thread>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -69,6 +73,8 @@
 #include "azzs/settings_catalog/settings_catalog_lifecycle.hpp"
 
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
+
+#include <wincrypt.h>
 
 namespace azzs::composition::windows {
 namespace {
@@ -149,18 +155,167 @@ class OfflineNetworkObserver final
   return {reinterpret_cast<char const*>(native.data()), native.size()};
 }
 
-[[nodiscard]] std::filesystem::path repository_catalog_path() {
-  // The repository catalog is an explicitly embedded, deployment-controlled
-  // input for this desktop host. Its path does not cross any application seam.
-  auto const source = std::filesystem::path{__FILE__};
-  return source.parent_path().parent_path().parent_path().parent_path() /
-         "catalog" / "software-catalog.toml";
+struct BundledCatalogPaths final {
+  std::filesystem::path software_catalog;
+  std::filesystem::path software_optimization_catalog;
+};
+
+constexpr std::uintmax_t kSoftwareCatalogBytes = 8894;
+constexpr std::array<std::uint8_t, 32> kSoftwareCatalogSha256{
+    0xe2, 0x45, 0xe0, 0x95, 0xa2, 0xc5, 0x44, 0xbd,
+    0x37, 0x6a, 0x56, 0x4c, 0xe3, 0x26, 0x63, 0x22,
+    0x50, 0x38, 0x10, 0x51, 0xa8, 0x29, 0xac, 0x05,
+    0x0d, 0xf3, 0x36, 0xef, 0xc6, 0xd7, 0x67, 0x8a};
+constexpr std::uintmax_t kSoftwareOptimizationCatalogBytes = 18010;
+constexpr std::array<std::uint8_t, 32> kSoftwareOptimizationCatalogSha256{
+    0x59, 0x1b, 0xc9, 0x26, 0x97, 0x1a, 0x39, 0x05,
+    0xb6, 0x7b, 0x67, 0xc3, 0x21, 0x2d, 0x1e, 0xad,
+    0x8b, 0xf7, 0x5a, 0x8e, 0x4d, 0x28, 0x2b, 0x3c,
+    0xb8, 0xbd, 0xcf, 0x26, 0x3c, 0xa7, 0x14, 0x37};
+
+[[nodiscard]] bool is_not_reparse_point(std::filesystem::path const& path) {
+  auto const attributes = ::GetFileAttributesW(path.c_str());
+  return attributes != INVALID_FILE_ATTRIBUTES &&
+         (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
 }
 
-[[nodiscard]] std::filesystem::path repository_optimization_catalog_path() {
-  auto const source = std::filesystem::path{__FILE__};
-  return source.parent_path().parent_path().parent_path().parent_path() /
-         "catalog" / "software-optimization-catalog.toml";
+[[nodiscard]] bool path_chain_has_no_reparse_points(
+    std::filesystem::path const& path) {
+  auto current = path.root_path();
+  if (current.empty() || !is_not_reparse_point(current)) {
+    return false;
+  }
+  for (auto const& segment : path.relative_path()) {
+    current /= segment;
+    if (!is_not_reparse_point(current)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+[[nodiscard]] bool bundled_catalog_resource_matches(
+    std::filesystem::path const& path,
+    std::uintmax_t expected_bytes,
+    std::array<std::uint8_t, 32> const& expected_sha256) {
+  std::error_code error;
+  if (std::filesystem::file_size(path, error) != expected_bytes || error) {
+    return false;
+  }
+
+  std::ifstream input(path, std::ios::binary);
+  if (!input) {
+    return false;
+  }
+  HCRYPTPROV provider = 0;
+  if (!::CryptAcquireContextW(&provider, nullptr, nullptr, PROV_RSA_AES,
+                              CRYPT_VERIFYCONTEXT)) {
+    return false;
+  }
+  HCRYPTHASH hash = 0;
+  if (!::CryptCreateHash(provider, CALG_SHA_256, 0, 0, &hash)) {
+    ::CryptReleaseContext(provider, 0);
+    return false;
+  }
+
+  bool succeeded = true;
+  std::array<char, 4096> buffer{};
+  while (input) {
+    input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    auto const bytes_read = input.gcount();
+    if (bytes_read > 0 &&
+        !::CryptHashData(hash,
+                         reinterpret_cast<BYTE const*>(buffer.data()),
+                         static_cast<DWORD>(bytes_read), 0)) {
+      succeeded = false;
+      break;
+    }
+  }
+  if (!input.eof()) {
+    succeeded = false;
+  }
+
+  std::array<std::uint8_t, 32> digest{};
+  DWORD digest_bytes = static_cast<DWORD>(digest.size());
+  if (succeeded &&
+      !::CryptGetHashParam(hash, HP_HASHVAL,
+                           reinterpret_cast<BYTE*>(digest.data()),
+                           &digest_bytes, 0)) {
+    succeeded = false;
+  }
+  ::CryptDestroyHash(hash);
+  ::CryptReleaseContext(provider, 0);
+  return succeeded && digest_bytes == digest.size() &&
+         std::equal(digest.begin(), digest.end(), expected_sha256.begin());
+}
+
+[[nodiscard]] std::optional<std::filesystem::path> workbench_module_directory() {
+  std::vector<wchar_t> buffer(512);
+  for (;;) {
+    auto const length = ::GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0) {
+      return std::nullopt;
+    }
+    if (length < buffer.size() - 1) {
+      auto const module = std::filesystem::path{
+          std::wstring{buffer.data(), length}};
+      auto const directory = module.parent_path();
+      return directory.empty() ? std::nullopt
+                               : std::optional<std::filesystem::path>{directory};
+    }
+    if (buffer.size() >= 32768) {
+      return std::nullopt;
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+}
+
+[[nodiscard]] std::optional<BundledCatalogPaths> bundled_catalog_paths() {
+  auto const module_directory = workbench_module_directory();
+  if (!module_directory.has_value() ||
+      !path_chain_has_no_reparse_points(*module_directory)) {
+    return std::nullopt;
+  }
+
+  auto const catalog_directory = *module_directory / "catalog";
+  std::error_code error;
+  auto const catalog_status =
+      std::filesystem::symlink_status(catalog_directory, error);
+  if (error || !std::filesystem::is_directory(catalog_status) ||
+      !path_chain_has_no_reparse_points(catalog_directory)) {
+    return std::nullopt;
+  }
+
+  BundledCatalogPaths paths{
+      .software_catalog = catalog_directory / "software-catalog.toml",
+      .software_optimization_catalog =
+          catalog_directory / "software-optimization-catalog.toml"};
+  auto const software_catalog_status =
+      std::filesystem::symlink_status(paths.software_catalog, error);
+  if (error || !std::filesystem::is_regular_file(software_catalog_status) ||
+      !path_chain_has_no_reparse_points(paths.software_catalog)) {
+    return std::nullopt;
+  }
+  auto const software_optimization_catalog_status =
+      std::filesystem::symlink_status(paths.software_optimization_catalog,
+                                      error);
+  if (error || !std::filesystem::is_regular_file(
+                   software_optimization_catalog_status) ||
+      !path_chain_has_no_reparse_points(
+          paths.software_optimization_catalog)) {
+    return std::nullopt;
+  }
+  if (!bundled_catalog_resource_matches(paths.software_catalog,
+                                        kSoftwareCatalogBytes,
+                                        kSoftwareCatalogSha256) ||
+      !bundled_catalog_resource_matches(
+          paths.software_optimization_catalog,
+          kSoftwareOptimizationCatalogBytes,
+          kSoftwareOptimizationCatalogSha256)) {
+    return std::nullopt;
+  }
+  return paths;
 }
 
 class UnavailableSoftwarePresenceDetector final
@@ -526,6 +681,7 @@ class WindowsWorkbenchServices final
       public std::enable_shared_from_this<WindowsWorkbenchServices> {
  public:
   explicit WindowsWorkbenchServices(
+      BundledCatalogPaths bundled_catalog_paths,
       adapters::windows::DeviceDataEnvironment environment,
       std::shared_ptr<application::ArchitecturePreferences>
           architecture_preferences,
@@ -635,7 +791,8 @@ class WindowsWorkbenchServices final
         debug_log_policy_(debug_log_policy_provider_),
         software_optimization_catalog_update_source_(
             optimization_catalog_file_,
-            utf8_from_path(repository_optimization_catalog_path())),
+            utf8_from_path(
+                bundled_catalog_paths.software_optimization_catalog)),
         application_settings_(
             architecture_selection_, *architecture_preferences_,
             live_offline_package_cache_, batch_offline_package_cache_,
@@ -655,7 +812,7 @@ class WindowsWorkbenchServices final
     static_cast<void>(software_selection_.restore());
     synchronize_catalog_selection_projection();
     auto const optimization_catalog = optimization_catalog_file_.read(
-        utf8_from_path(repository_optimization_catalog_path()));
+        utf8_from_path(bundled_catalog_paths.software_optimization_catalog));
     if (optimization_catalog.succeeded) {
       static_cast<void>(software_optimization_catalog_.ensure_builtin(
           optimization_catalog.source, "embedded-software-optimization-catalog"));
@@ -967,7 +1124,7 @@ class WindowsWorkbenchServices final
   std::shared_ptr<application::DebugModeCatalogEditor>
       debug_mode_catalog_editor_;
   adapters::infrastructure::LocalSoftwareCatalogFileReader software_catalog_file_{
-      utf8_from_path(repository_catalog_path())};
+      utf8_from_path(bundled_catalog_paths.software_catalog)};
   adapters::infrastructure::TomlSoftwareCatalogCodec software_catalog_codec_;
   application::software_catalog::SoftwareCatalogLifecycle software_catalog_{
       states_, log_, occupancy_, software_catalog_file_, software_catalog_codec_,
@@ -1109,6 +1266,11 @@ StartupAssemblyResult assemble_startup() {
   auto diagnostic_availability = startup::StartupDiagnosticAvailability::unavailable;
   std::optional<StartupServicesShutdownGuard> services_shutdown;
   try {
+    auto bundled_catalog_resources = bundled_catalog_paths();
+    if (!bundled_catalog_resources.has_value()) {
+      return startup_failure(startup::startup_assembly_failed(
+          startup::StartupAssemblyStage::bundled_catalog_resources));
+    }
     auto environment =
         adapters::windows::WindowsDeviceDataEnvironment::prepare();
     if (!environment) {
@@ -1132,6 +1294,7 @@ StartupAssemblyResult assemble_startup() {
             static_cast<application::DebugModePreferenceStore*>(
                 view_preferences.get()));
     auto services = std::make_shared<WindowsWorkbenchServices>(
+        std::move(*bundled_catalog_resources),
         std::move(*environment.environment), std::move(architecture_preferences),
         std::move(cache_retention_preferences), std::move(debug_mode_preferences));
     services_shutdown.emplace(services);

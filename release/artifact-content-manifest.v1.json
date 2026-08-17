@@ -6,6 +6,22 @@
       "edition": "standard",
       "packageKind": "portable",
       "architecture": "x64",
+      "bundledCatalogResources": [
+        {
+          "id": "software-catalog",
+          "relativePath": "catalog/software-catalog.toml",
+          "packagePath": "catalog/software-catalog.toml",
+          "bytes": 8894,
+          "sha256": "e245e095a2c544bd376a564ce326632250381051a829ac050df336efc6d7678a"
+        },
+        {
+          "id": "software-optimization-catalog",
+          "relativePath": "catalog/software-optimization-catalog.toml",
+          "packagePath": "catalog/software-optimization-catalog.toml",
+          "bytes": 18010,
+          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+        }
+      ],
       "inputs": []
     },
     {
@@ -13,6 +29,22 @@
       "edition": "rescue",
       "packageKind": "portable",
       "architecture": "x64",
+      "bundledCatalogResources": [
+        {
+          "id": "software-catalog",
+          "relativePath": "catalog/software-catalog.toml",
+          "packagePath": "catalog/software-catalog.toml",
+          "bytes": 8894,
+          "sha256": "e245e095a2c544bd376a564ce326632250381051a829ac050df336efc6d7678a"
+        },
+        {
+          "id": "software-optimization-catalog",
+          "relativePath": "catalog/software-optimization-catalog.toml",
+          "packagePath": "catalog/software-optimization-catalog.toml",
+          "bytes": 18010,
+          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+        }
+      ],
       "inputs": [],
       "rescueGate": {
         "adrId": "ADR-0030",
@@ -25,6 +57,22 @@
       "edition": "large-offline",
       "packageKind": "portable",
       "architecture": "x64",
+      "bundledCatalogResources": [
+        {
+          "id": "software-catalog",
+          "relativePath": "catalog/software-catalog.toml",
+          "packagePath": "catalog/software-catalog.toml",
+          "bytes": 8894,
+          "sha256": "e245e095a2c544bd376a564ce326632250381051a829ac050df336efc6d7678a"
+        },
+        {
+          "id": "software-optimization-catalog",
+          "relativePath": "catalog/software-optimization-catalog.toml",
+          "packagePath": "catalog/software-optimization-catalog.toml",
+          "bytes": 18010,
+          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+        }
+      ],
       "inputs": [],
       "rescueGate": {
         "adrId": "ADR-0030",

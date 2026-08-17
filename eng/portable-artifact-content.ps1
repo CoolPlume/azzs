@@ -162,6 +162,30 @@ function Resolve-PortablePackagePath {
     return $PackagePath
 }
 
+function Resolve-BundledCatalogPackagePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PackagePath) -or
+        $PackagePath.Contains("\") -or
+        $PackagePath.StartsWith("/", [StringComparison]::Ordinal) -or
+        $PackagePath -match "^[A-Za-z]:" -or
+        -not $PackagePath.StartsWith("catalog/", [StringComparison]::Ordinal)) {
+        throw "$Context must use a non-empty catalog/ relative POSIX package path."
+    }
+    foreach ($segment in $PackagePath.Split("/")) {
+        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq "." -or $segment -eq "..") {
+            throw "$Context contains an empty, current-directory, or parent-directory package path segment."
+        }
+    }
+    return $PackagePath
+}
+
 function Test-TrackedRepositoryFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -250,9 +274,93 @@ function Get-PortableArtifactDefinition {
     return [pscustomobject]@{
         Artifact = $artifact
         Content = $content
+        BundledCatalogResources = @(Test-BundledCatalogResources -Content $content -RepositoryRoot $RepositoryRoot -ArtifactId $ArtifactId -ValidateSource:$false)
         ContentManifestPath = $contentManifestPath
         ContentManifest = $contentManifest
     }
+}
+
+function Test-BundledCatalogResources {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Content,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactId,
+
+        [switch]$ValidateSource
+    )
+
+    $expectedResources = @(
+        [pscustomobject]@{
+            id = "software-catalog"
+            relativePath = "catalog/software-catalog.toml"
+            packagePath = "catalog/software-catalog.toml"
+        },
+        [pscustomobject]@{
+            id = "software-optimization-catalog"
+            relativePath = "catalog/software-optimization-catalog.toml"
+            packagePath = "catalog/software-optimization-catalog.toml"
+        }
+    )
+    [object[]]$rawResources = @(
+        Get-RequiredProperty -Object $Content -Name "bundledCatalogResources" -Context "Artifact content '$ArtifactId'" |
+            ForEach-Object { $_ }
+    )
+    if ($rawResources.Count -ne $expectedResources.Count) {
+        throw "Artifact content '$ArtifactId' must declare exactly two bundled catalog resources."
+    }
+
+    $resourcesById = @{}
+    foreach ($rawResource in $rawResources) {
+        $context = "Artifact content '$ArtifactId' bundled catalog resource"
+        $id = [string](Get-RequiredProperty -Object $rawResource -Name "id" -Context $context)
+        if ([string]::IsNullOrWhiteSpace($id) -or $resourcesById.ContainsKey($id)) {
+            throw "$context contains an empty or duplicate id."
+        }
+        $resourcesById[$id] = $rawResource
+    }
+
+    $validated = [System.Collections.Generic.List[object]]::new()
+    foreach ($expectedResource in $expectedResources) {
+        if (-not $resourcesById.ContainsKey($expectedResource.id)) {
+            throw "Artifact content '$ArtifactId' is missing bundled catalog resource '$($expectedResource.id)'."
+        }
+        $resource = $resourcesById[$expectedResource.id]
+        $context = "Artifact content '$ArtifactId' bundled catalog resource '$($expectedResource.id)'"
+        $relativePath = [string](Get-RequiredProperty -Object $resource -Name "relativePath" -Context $context)
+        $packagePath = Resolve-BundledCatalogPackagePath -PackagePath ([string](Get-RequiredProperty -Object $resource -Name "packagePath" -Context $context)) -Context "$context packagePath"
+        $bytes = [Int64](Get-RequiredProperty -Object $resource -Name "bytes" -Context $context)
+        $sha256 = [string](Get-RequiredProperty -Object $resource -Name "sha256" -Context $context)
+        if ($relativePath -ne $expectedResource.relativePath -or $packagePath -ne $expectedResource.packagePath) {
+            throw "$context must use the fixed catalog resource layout."
+        }
+        if ($bytes -le 0 -or $sha256 -notmatch "^[a-fA-F0-9]{64}$") {
+            throw "$context has invalid bytes or SHA256."
+        }
+        if ($ValidateSource) {
+            $sourcePath = Resolve-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -RelativePath $relativePath -Context "$context relativePath"
+            if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+                throw "$context source file is missing."
+            }
+            Test-TrackedRepositoryFile -RepositoryRoot $RepositoryRoot -RelativePath $relativePath -Context "$context source file"
+            $sourceFile = Get-Item -LiteralPath $sourcePath
+            if ($sourceFile.Length -ne $bytes -or (Get-Sha256Hex -Path $sourcePath) -ne $sha256.ToLowerInvariant()) {
+                throw "$context bytes or SHA256 do not match the locked resource."
+            }
+        }
+        $validated.Add([pscustomobject][ordered]@{
+                id = $expectedResource.id
+                relativePath = $relativePath
+                packagePath = $packagePath
+                bytes = $bytes
+                sha256 = $sha256.ToLowerInvariant()
+            })
+    }
+    return $validated.ToArray()
 }
 
 function Test-RescueGate {
