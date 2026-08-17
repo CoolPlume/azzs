@@ -9,6 +9,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $evidenceName = "windows-$($Architecture.ToLowerInvariant())-release"
 $logDirectory = Join-Path $repositoryRoot "out/logs"
@@ -19,6 +21,17 @@ $msbuildLogPath = Join-Path $logDirectory "$evidenceName.msbuild.log"
 $binlogPath = Join-Path $logDirectory "$evidenceName.binlog"
 $manifestPath = Join-Path $manifestDirectory "$evidenceName.json"
 $testResultPath = Join-Path $testResultDirectory "core-$($Architecture.ToLowerInvariant())-release.xml"
+
+foreach ($directoryPath in @($logDirectory, $manifestDirectory, $testResultDirectory)) {
+    Assert-PathChainWithoutReparsePoint `
+        -Path $directoryPath `
+        -Context "Build evidence directory '$directoryPath'"
+}
+foreach ($filePath in @($logPath, $msbuildLogPath, $binlogPath, $manifestPath, $testResultPath)) {
+    Assert-PathChainWithoutReparsePoint `
+        -Path $filePath `
+        -Context "Build evidence file '$filePath'"
+}
 
 New-Item -ItemType Directory -Path $logDirectory, $manifestDirectory, $testResultDirectory -Force | Out-Null
 New-Item -ItemType File -Path $logPath -Force | Out-Null
