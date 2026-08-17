@@ -90,6 +90,9 @@ if (-not $payloadItem.PSIsContainer) {
     throw "Package manifest payload directory must be a directory."
 }
 $PayloadDirectory = (Get-ExistingNonReparsePath -Path $payloadItem.FullName -Context "Package manifest payload directory").TrimEnd([char[]]@('\', '/'))
+Assert-NoReparsePointsBelow `
+    -Path $PayloadDirectory `
+    -Context "Package manifest payload"
 $outputFullPath = [System.IO.Path]::GetFullPath($OutputPath)
 $repositoryPrefix = "$RepositoryRoot$([System.IO.Path]::DirectorySeparatorChar)"
 if (-not $outputFullPath.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
