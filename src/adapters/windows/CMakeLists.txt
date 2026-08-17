@@ -54,6 +54,7 @@ if(WIN32)
     INTERFACE_INCLUDE_DIRECTORIES "${azzs_cppwinrt_generated_directory}")
 
   add_library(azzs_windows_adapter STATIC
+    src/bundled_catalog_resource_reader.cpp
     src/windows_application_update_platform.cpp
     src/windows_device_data_environment.cpp
     src/windows_driver_acquisition.cpp

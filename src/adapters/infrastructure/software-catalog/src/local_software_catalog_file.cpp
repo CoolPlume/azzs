@@ -12,8 +12,23 @@ LocalSoftwareCatalogFileReader::LocalSoftwareCatalogFileReader(
     : built_in_path_(std::move(built_in_path)),
       update_path_(std::move(update_path)) {}
 
+LocalSoftwareCatalogFileReader
+LocalSoftwareCatalogFileReader::from_verified_built_in(std::string bytes) {
+  LocalSoftwareCatalogFileReader reader;
+  reader.verified_built_in_bytes_ = std::move(bytes);
+  return reader;
+}
+
 application::software_catalog::CatalogFileRead
 LocalSoftwareCatalogFileReader::read_built_in() const {
+  if (verified_built_in_bytes_.has_value()) {
+    if (verified_built_in_bytes_->empty()) {
+      return {.error = "trusted built-in catalog bytes are unavailable"};
+    }
+    return {.succeeded = true,
+            .path = "embedded-software-catalog",
+            .bytes = *verified_built_in_bytes_};
+  }
   if (built_in_path_.empty()) {
     return {.error = "trusted built-in catalog source is unavailable"};
   }
