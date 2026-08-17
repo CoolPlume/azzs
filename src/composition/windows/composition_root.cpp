@@ -1236,9 +1236,12 @@ StartupAssemblyResult assemble_startup() {
         adapters::windows::WindowsDeviceDataEnvironment::prepare();
     if (!environment) {
       auto failure = std::move(environment);
+      auto const raw_error_code = failure.raw_error;
       return startup_failure(
           startup::startup_assembly_failed(
-              startup::StartupAssemblyStage::device_data_environment),
+              startup::StartupAssemblyStage::device_data_environment,
+              startup::StartupDiagnosticAvailability::unavailable,
+              raw_error_code),
           std::move(failure));
     }
     {

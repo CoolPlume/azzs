@@ -20,7 +20,8 @@ using azzs::application::startup::StartupDiagnosticAvailability;
 
 [[nodiscard]] bool device_data_failure_contract() {
   auto status = azzs::application::startup::startup_assembly_failed(
-      StartupAssemblyStage::device_data_environment);
+      StartupAssemblyStage::device_data_environment,
+      StartupDiagnosticAvailability::unavailable, 5);
 
   return expect(!status.workbench_ready,
                 "device-data failure must not report a ready workbench") &&
@@ -34,6 +35,8 @@ using azzs::application::startup::StartupDiagnosticAvailability;
          expect(status.failure->diagnostic_availability ==
                     StartupDiagnosticAvailability::unavailable,
                 "pre-service device-data failure must not claim diagnostics") &&
+         expect(status.failure->raw_error_code == 5,
+                "device-data failure must retain only the redacted raw error code") &&
          expect(status.failure->public_statement.find(L"应用数据") !=
                     std::wstring::npos,
                 "device-data failure must use a redacted public statement");
