@@ -24,6 +24,7 @@ namespace domain_cache = azzs::domain::offline_package_cache;
 using azzs::application::Clock;
 using azzs::application::WallClockTime;
 using cache::CacheActionCode;
+using cache::CacheCleanupCode;
 using cache::CacheLocationState;
 using cache::CacheRootObservation;
 using cache::CacheStorageCleanupCode;
@@ -107,6 +108,14 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
     std::map<std::string, Stored> completed;
   };
 
+  void reset_storage_access_observation() noexcept {
+    storage_accessed_ = false;
+  }
+
+  [[nodiscard]] bool storage_was_accessed() const noexcept {
+    return storage_accessed_;
+  }
+
   class Session final : public PackageCacheWriteSession {
    public:
     Session(InMemoryCacheStorage& owner, std::string root_id,
@@ -181,6 +190,7 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
 
   [[nodiscard]] CacheRootObservation observe_root(
       ControlledCacheRoot const& root) override {
+    storage_accessed_ = true;
     auto const found = roots.find(root.id);
     if (found == roots.end()) {
       return {.detail = "unknown controlled root"};
@@ -193,6 +203,7 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
   [[nodiscard]] CompletedCacheRead read_completed(
       ControlledCacheRoot const& root,
       CacheAssetIdentity const& identity) override {
+    storage_accessed_ = true;
     auto const found = roots.find(root.id);
     if (found == roots.end() || !found->second.available) {
       return {.code = CompletedCacheReadCode::root_unavailable,
@@ -208,6 +219,7 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
 
   [[nodiscard]] CompletedCacheList list_completed(
       ControlledCacheRoot const& root) override {
+    storage_accessed_ = true;
     auto const found = roots.find(root.id);
     if (found == roots.end() || !found->second.available) {
       return {.code = CompletedCacheReadCode::root_unavailable,
@@ -222,6 +234,7 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
 
   [[nodiscard]] CacheWriteBegin begin_write(
       ControlledCacheRoot const& root, CacheAsset const& asset) override {
+    storage_accessed_ = true;
     auto found = roots.find(root.id);
     if (found == roots.end() || !found->second.available) {
       return {.code = CacheWriteBeginCode::root_unavailable,
@@ -249,6 +262,7 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
 
   [[nodiscard]] CacheStorageCleanupResult clean_orphaned_partials(
       ControlledCacheRoot const& root) override {
+    storage_accessed_ = true;
     auto found = roots.find(root.id);
     if (found == roots.end() || !found->second.available) {
       return {.code = CacheStorageCleanupCode::root_unavailable,
@@ -272,6 +286,7 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
   [[nodiscard]] CacheStorageRemovalResult remove_completed(
       ControlledCacheRoot const& root,
       CacheAssetIdentity const& identity) override {
+    storage_accessed_ = true;
     auto found = roots.find(root.id);
     if (found == roots.end() || !found->second.available) {
       return {.code = CacheStorageRemovalCode::root_unavailable,
@@ -344,6 +359,7 @@ class InMemoryCacheStorage final : public PackageCacheStorage {
 
  private:
   std::set<std::string> locks;
+  bool storage_accessed_{false};
 
   [[nodiscard]] std::string lock_key(std::string_view root,
                                      CacheAssetIdentity const& identity) const {
@@ -723,7 +739,8 @@ class ScriptedDownloader final : public ControlledPackageDownloader {
   bool passed = true;
   passed &= expect(paused.code == CacheActionCode::paused,
                    "the fixture must retain an active paused transfer");
-  passed &= expect(cleared.removed_completed_count == 1 &&
+  passed &= expect(cleared.code == CacheCleanupCode::completed &&
+                       cleared.removed_completed_count == 1 &&
                        cleared.removed_partial_count == 0 &&
                        !storage.has_completed(selected_root, completed.identity),
                    "manual cache clearing must remove completed downloads only");
@@ -739,6 +756,35 @@ class ScriptedDownloader final : public ControlledPackageDownloader {
   return passed;
 }
 
+[[nodiscard]] bool clear_after_shutdown_is_rejected_without_storage_access() {
+  InMemoryCacheStorage storage;
+  auto const selected_root = root();
+  storage.define_root(selected_root);
+  FixtureNetwork network;
+  FixedClock clock{WallClockTime{std::chrono::milliseconds{6'000}}};
+  auto const completed = asset("completed", "1.0.0", CacheArchitecture::x64,
+                               "source-a");
+  auto const orphaned = asset("orphaned", "1.0.0", CacheArchitecture::x64,
+                              "source-a");
+  storage.seed_completed(selected_root, completed.identity, clock.now());
+  storage.seed_orphaned_partial(selected_root, orphaned);
+
+  ScriptedDownloader downloader;
+  auto cache_service = service(storage, downloader, network, clock, selected_root);
+  cache_service.shutdown();
+  storage.reset_storage_access_observation();
+  auto const cleared = cache_service.clear_completed();
+
+  return expect(
+      cleared.code == CacheCleanupCode::rejected_after_shutdown &&
+          cleared.removed_completed_count == 0 &&
+          cleared.removed_partial_count == 0 && !storage.storage_was_accessed() &&
+          storage.has_completed(selected_root, completed.identity) &&
+          storage.has_partial(selected_root, orphaned.identity),
+      "a shutdown cache service must reject manual clearing without storage "
+      "access or deletion");
+}
+
 }  // namespace
 
 int main() {
@@ -749,6 +795,7 @@ int main() {
   passed &= two_failures_retry_then_manual_retry_is_available();
   passed &= cleanup_and_location_failures_are_conservative();
   passed &= manual_clear_preserves_built_in_and_active_work();
+  passed &= clear_after_shutdown_is_rejected_without_storage_access();
 
   if (!passed) {
     return EXIT_FAILURE;
