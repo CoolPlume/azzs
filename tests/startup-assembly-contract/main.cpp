@@ -39,6 +39,25 @@ using azzs::application::startup::StartupDiagnosticAvailability;
                 "device-data failure must use a redacted public statement");
 }
 
+[[nodiscard]] bool bundled_catalog_resource_failure_contract() {
+  auto status = azzs::application::startup::startup_assembly_failed(
+      StartupAssemblyStage::bundled_catalog_resources);
+
+  return expect(!status.workbench_ready && status.failure.has_value(),
+                "missing bundled catalog resources must block workbench startup") &&
+         expect(status.failure->stage ==
+                    StartupAssemblyStage::bundled_catalog_resources,
+                "bundled catalog failure must preserve its startup stage") &&
+         expect(status.failure->diagnostic_availability ==
+                    StartupDiagnosticAvailability::unavailable &&
+                    status.emergency_preflight.state ==
+                        EmergencyPreflightStartState::not_attempted,
+                "pre-service bundled catalog failure must not claim diagnostics or preflight") &&
+         expect(status.failure->public_statement.find(L"内置目录资源") !=
+                    std::wstring::npos,
+                "bundled catalog failure must use a redacted public statement");
+}
+
 [[nodiscard]] bool preflight_thread_failure_contract() {
   auto const unavailable =
       std::make_error_code(std::errc::resource_unavailable_try_again);
@@ -122,6 +141,7 @@ using azzs::application::startup::StartupDiagnosticAvailability;
 int main() {
   bool passed = true;
   passed &= device_data_failure_contract();
+  passed &= bundled_catalog_resource_failure_contract();
   passed &= preflight_thread_failure_contract();
   passed &= main_window_failure_contract();
   passed &= unexpected_exception_contract();

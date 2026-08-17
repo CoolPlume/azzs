@@ -10,6 +10,7 @@ namespace azzs::application::startup {
 
 enum class StartupAssemblyStage {
   device_data_environment,
+  bundled_catalog_resources,
   core_records_unreadable,
   main_window_initialization,
   main_window_binding,
@@ -66,7 +67,9 @@ struct StartupAssemblyStatus final {
               .public_statement =
                   stage == StartupAssemblyStage::device_data_environment
                       ? L"应用数据尚未准备完成。请关闭后重新打开应用。"
-                      : L"工作台尚未完成启动。请关闭后重新打开应用。"},
+                      : stage == StartupAssemblyStage::bundled_catalog_resources
+                            ? L"内置目录资源不可用。请关闭后重新打开应用。"
+                            : L"工作台尚未完成启动。请关闭后重新打开应用。"},
           .emergency_preflight = {}};
 }
 

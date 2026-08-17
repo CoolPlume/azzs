@@ -22,6 +22,7 @@
           "edition",
           "packageKind",
           "architecture",
+          "bundledCatalogResources",
           "inputs"
         ],
         "properties": {
@@ -40,6 +41,46 @@
           },
           "architecture": {
             "const": "x64"
+          },
+          "bundledCatalogResources": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "relativePath",
+                "packagePath",
+                "bytes",
+                "sha256"
+              ],
+              "properties": {
+                "id": {
+                  "enum": [
+                    "software-catalog",
+                    "software-optimization-catalog"
+                  ]
+                },
+                "relativePath": {
+                  "type": "string",
+                  "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                },
+                "packagePath": {
+                  "type": "string",
+                  "pattern": "^catalog/(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[A-Fa-f0-9]{64}$"
+                }
+              }
+            }
           },
           "inputs": {
             "type": "array",

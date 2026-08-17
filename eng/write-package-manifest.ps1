@@ -26,6 +26,8 @@ param(
 
     [string]$ContentManifestPath = "",
 
+    [object[]]$BundledCatalogResources = @(),
+
     [object[]]$Inputs = @()
 )
 
@@ -127,6 +129,17 @@ if (-not [string]::IsNullOrWhiteSpace($ArtifactId)) {
         path = ConvertTo-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -Path $ContentManifestPath -Context "Artifact content manifest"
         sha256 = Get-Sha256Hex -Path $ContentManifestPath
     }
+    $manifest.bundledCatalogResources = @(
+        foreach ($resource in $BundledCatalogResources) {
+            [ordered]@{
+                id = $resource.id
+                relativePath = $resource.relativePath
+                packagePath = $resource.packagePath
+                bytes = $resource.bytes
+                sha256 = $resource.sha256
+            }
+        }
+    )
     $manifest.inputs = @(
         foreach ($contentInput in $Inputs) {
             $manifestInput = [ordered]@{
