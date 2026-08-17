@@ -64,13 +64,10 @@ using azzs::application::startup::StartupDiagnosticAvailability;
                 "a successful launcher must report an observable started state");
 }
 
-[[nodiscard]] bool post_service_failure_contract() {
-  auto preflight =
-      azzs::application::startup::EmergencyPreflightStartResult{
-          .state = EmergencyPreflightStartState::started};
+[[nodiscard]] bool main_window_failure_contract() {
   auto status = azzs::application::startup::startup_assembly_failed(
       StartupAssemblyStage::main_window_navigation,
-      StartupDiagnosticAvailability::available, preflight);
+      StartupDiagnosticAvailability::available);
 
   return expect(!status.workbench_ready && status.failure.has_value(),
                 "a WinRT stage failure must not report a ready workbench") &&
@@ -81,11 +78,26 @@ using azzs::application::startup::StartupDiagnosticAvailability;
                     status.failure->diagnostic_availability ==
                         StartupDiagnosticAvailability::available,
                 "post-service failure must expose next-launch retry and existing diagnostics") &&
-         expect(status.emergency_preflight.started(),
-                 "a nonblocking preflight result must survive a later startup failure") &&
+         expect(status.emergency_preflight.state ==
+                    EmergencyPreflightStartState::not_attempted,
+                "a main-window failure must not launch preflight") &&
          expect(status.failure->stage !=
                     StartupAssemblyStage::device_data_environment,
                 "WinRT failure must not be mislabeled as a device-data failure");
+}
+
+[[nodiscard]] bool unexpected_exception_contract() {
+  auto status = azzs::application::startup::startup_assembly_failed(
+      StartupAssemblyStage::unexpected_assembly_exception);
+
+  return expect(!status.workbench_ready && status.failure.has_value(),
+                "an unexpected assembly exception must block normal startup") &&
+         expect(status.failure->stage ==
+                    StartupAssemblyStage::unexpected_assembly_exception,
+                "an unexpected assembly exception must remain typed") &&
+         expect(status.emergency_preflight.state ==
+                    EmergencyPreflightStartState::not_attempted,
+                "an unexpected assembly exception must not claim preflight");
 }
 
 [[nodiscard]] bool core_record_readability_contract() {
@@ -111,7 +123,8 @@ int main() {
   bool passed = true;
   passed &= device_data_failure_contract();
   passed &= preflight_thread_failure_contract();
-  passed &= post_service_failure_contract();
+  passed &= main_window_failure_contract();
+  passed &= unexpected_exception_contract();
   passed &= core_record_readability_contract();
   if (!passed) {
     return EXIT_FAILURE;
