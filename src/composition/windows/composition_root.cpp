@@ -212,6 +212,62 @@ constexpr std::array<std::uint8_t, 32> kSoftwareOptimizationCatalogSha256{
   };
 }
 
+// Runs the real lifecycle gate before any workbench service is constructed.
+// A pure parse check would miss its persistence, log, and occupancy failures.
+class StartupOptimizationCatalogGate final {
+ public:
+  explicit StartupOptimizationCatalogGate(
+      adapters::windows::DeviceDataEnvironment const& environment)
+      : clock_{},
+        state_files_(environment),
+        states_(state_files_, clock_),
+        log_storage_(environment.root_utf8, environment.subject_id),
+        log_(log_storage_, clock_),
+        occupancy_storage_(states_),
+        occupancy_(occupancy_storage_, lease_tokens_),
+        optimization_catalog_(
+            states_, log_, occupancy_, optimization_catalog_file_,
+            optimization_catalog_debug_authorization_,
+            application::sogou_optimization::built_in_rule_definitions(),
+            optimization_installer_baselines_) {}
+
+  [[nodiscard]] bool ensure_bundled_catalog(
+      BundledCatalogResources const& resources) {
+    auto const result = optimization_catalog_.ensure_builtin(
+        resources.software_optimization_catalog.bytes(),
+        "embedded-software-optimization-catalog");
+    auto const accepted =
+        result.code == application::SoftwareOptimizationCatalogLifecycleCode::
+                           applied ||
+        result.code == application::SoftwareOptimizationCatalogLifecycleCode::
+                           unchanged;
+    return accepted && result.logging_error.empty() &&
+           result.occupancy_error.empty();
+  }
+
+ private:
+  adapters::infrastructure::SystemClock clock_;
+  adapters::windows::WindowsStateFileSystem state_files_;
+  application::DeviceStateStore states_;
+  adapters::infrastructure::LocalFileLogStorage log_storage_;
+  adapters::infrastructure::StructuredExecutionLog log_;
+  adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
+  adapters::windows::WindowsLeaseTokenSource lease_tokens_;
+  application::SharedOperationOccupancy occupancy_;
+  adapters::infrastructure::LocalSoftwareOptimizationCatalogFile
+      optimization_catalog_file_;
+  ProductionSoftwareOptimizationCatalogDebugAuthorization
+      optimization_catalog_debug_authorization_;
+  std::vector<domain::software_optimization_catalog::
+                  SoftwareCatalogInstallerBaseline>
+      optimization_installer_baselines_{{
+          .software_item_id = {"sogou-input"},
+          .installer_baseline_id = {"sogou-input-windows-16.7"},
+          .installed_versions = {"16.7", "16.7"},
+      }};
+  application::SoftwareOptimizationCatalogLifecycle optimization_catalog_;
+};
+
 class UnavailableSoftwarePresenceDetector final
     : public application::software_selection::SoftwarePresenceDetector {
  public:
@@ -703,17 +759,6 @@ class WindowsWorkbenchServices final
     static_cast<void>(software_catalog_.restore());
     static_cast<void>(software_selection_.restore());
     synchronize_catalog_selection_projection();
-    auto const optimization_catalog =
-        software_optimization_catalog_.ensure_builtin(
-            bundled_catalog_resources.software_optimization_catalog.bytes(),
-            "embedded-software-optimization-catalog");
-    bundled_catalog_resources_ready_ =
-        (optimization_catalog.code ==
-             application::SoftwareOptimizationCatalogLifecycleCode::applied ||
-         optimization_catalog.code ==
-             application::SoftwareOptimizationCatalogLifecycleCode::unchanged) &&
-        optimization_catalog.logging_error.empty() &&
-        optimization_catalog.occupancy_error.empty();
     synchronize_live_offline_package_cache();
     static_cast<void>(restart_resume_.restore());
     static_cast<void>(driver_acquisition_.restore());
@@ -763,10 +808,6 @@ class WindowsWorkbenchServices final
           });
     });
     return emergency_preflight_start_;
-  }
-
-  [[nodiscard]] bool bundled_catalog_resources_ready() const noexcept {
-    return bundled_catalog_resources_ready_;
   }
 
   [[nodiscard]] startup::StartupDiagnosticAvailability
@@ -1095,7 +1136,6 @@ class WindowsWorkbenchServices final
   EmbeddedSoftwareOptimizationCatalogUpdateSource
       software_optimization_catalog_update_source_;
   application::ApplicationSettingsService application_settings_;
-  bool bundled_catalog_resources_ready_{false};
   WindowsGuidedInitializationEvidenceSource guided_evidence_source_{
       driver_acquisition_, system_settings_apply_, installation_batches_,
       software_optimization_discovery_, software_optimization_batches_,
@@ -1184,6 +1224,13 @@ StartupAssemblyResult assemble_startup() {
               startup::StartupAssemblyStage::device_data_environment),
           std::move(failure));
     }
+    {
+      StartupOptimizationCatalogGate catalog_gate{*environment.environment};
+      if (!catalog_gate.ensure_bundled_catalog(*bundled_catalog_resources)) {
+        return startup_failure(startup::startup_assembly_failed(
+            startup::StartupAssemblyStage::bundled_catalog_resources));
+      }
+    }
     auto view_preferences =
         std::make_shared<adapters::windows::WindowsViewPreferences>();
     auto advanced_view_preferences =
@@ -1202,11 +1249,6 @@ StartupAssemblyResult assemble_startup() {
         std::move(*environment.environment), std::move(architecture_preferences),
         std::move(cache_retention_preferences), std::move(debug_mode_preferences));
     services_shutdown.emplace(services);
-    if (!services->bundled_catalog_resources_ready()) {
-      services_shutdown->shutdown_now();
-      return startup_failure(startup::startup_assembly_failed(
-          startup::StartupAssemblyStage::bundled_catalog_resources));
-    }
     auto workbench = std::make_shared<application::Workbench>(
         services->platform_info(), services);
     auto system_settings = services->system_settings_apply_shared();
