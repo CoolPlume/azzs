@@ -803,7 +803,14 @@ class WindowsWorkbenchServices final
       emergency_preflight_start_ = startup::start_emergency_preflight(
           [self = std::move(self)] {
             std::thread([self] {
-              (void)self->emergency_withdrawals_.preflight_check();
+              try {
+                static_cast<void>(self->emergency_withdrawals_.preflight_check());
+              } catch (...) {
+                // Keep a future service regression from terminating this
+                // detached thread while preserving the same typed failure.
+                static_cast<void>(self->emergency_withdrawals_
+                                      .report_preflight_execution_exception());
+              }
             }).detach();
           });
     });
