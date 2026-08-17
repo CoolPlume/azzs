@@ -271,12 +271,14 @@ CacheCleanupResult OfflinePackageCacheService::clean() {
   if (partial.code != CacheStorageCleanupCode::succeeded) {
     return result;
   }
+  result.code = CacheCleanupCode::completed;
   if (retention_ == CacheRetentionPolicy::retain_indefinitely) {
     return result;
   }
 
   auto entries = storage_.list_completed(selected_root_);
   if (entries.code != CompletedCacheReadCode::found) {
+    result.code = CacheCleanupCode::failed;
     result.detail = entries.detail;
     return result;
   }
@@ -297,6 +299,7 @@ CacheCleanupResult OfflinePackageCacheService::clean() {
       ++result.removed_completed_count;
     } else if (erased.code == CacheStorageRemovalCode::root_unavailable ||
                erased.code == CacheStorageRemovalCode::failed) {
+      result.code = CacheCleanupCode::failed;
       result.detail = erased.detail;
       return result;
     }
@@ -305,6 +308,10 @@ CacheCleanupResult OfflinePackageCacheService::clean() {
 }
 
 CacheCleanupResult OfflinePackageCacheService::clear_completed() {
+  if (shutdown_) {
+    return {.code = CacheCleanupCode::rejected_after_shutdown,
+            .detail = "cache service is shutting down"};
+  }
   auto const root = selected_root_.valid()
                         ? storage_.observe_root(selected_root_)
                         : CacheRootObservation{};
@@ -321,9 +328,11 @@ CacheCleanupResult OfflinePackageCacheService::clear_completed() {
   if (partial.code != CacheStorageCleanupCode::succeeded) {
     return result;
   }
+  result.code = CacheCleanupCode::completed;
 
   auto entries = storage_.list_completed(selected_root_);
   if (entries.code != CompletedCacheReadCode::found) {
+    result.code = CacheCleanupCode::failed;
     result.detail = entries.detail;
     return result;
   }
@@ -333,6 +342,7 @@ CacheCleanupResult OfflinePackageCacheService::clear_completed() {
       ++result.removed_completed_count;
     } else if (erased.code == CacheStorageRemovalCode::root_unavailable ||
                erased.code == CacheStorageRemovalCode::failed) {
+      result.code = CacheCleanupCode::failed;
       result.detail = erased.detail;
       return result;
     }

@@ -260,7 +260,14 @@ struct CacheLocationConfigureResult final {
   std::string detail;
 };
 
+enum class CacheCleanupCode {
+  completed,
+  rejected_after_shutdown,
+  failed,
+};
+
 struct CacheCleanupResult final {
+  CacheCleanupCode code{CacheCleanupCode::failed};
   std::size_t removed_completed_count{};
   std::size_t removed_partial_count{};
   std::string detail;
