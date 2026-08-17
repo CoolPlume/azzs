@@ -705,6 +705,20 @@ try {
     Require (Test-Path -LiteralPath (Join-Path $largeOfflineCandidates[0] "content/offline-tool.bin")) "large offline x64 staging lacks the offline input"
     & (Join-Path $largeOfflineSuccessFixture "eng/verify-portable-package.ps1") -ArtifactId "large-offline-x64-portable" -RepositoryRoot $largeOfflineSuccessFixture -StagingDirectory $largeOfflineCandidates[0] -PackagePath $largeOfflineCandidates[1] -ManifestPath $largeOfflineCandidates[2]
 
+    $unbundledReleaseGateFixture = New-FixtureRoot
+    $unbundledRescueInput = New-LockedInput -FixtureRoot $unbundledReleaseGateFixture -Id "rescue-tool" -Role "rescue-companion-tool" -RelativePath "release-inputs/rescue-tool.bin"
+    $unbundledOfflineInput = New-LockedInput -FixtureRoot $unbundledReleaseGateFixture -Id "offline-tool" -Role "offline-package" -RelativePath "release-inputs/offline-tool.bin"
+    Set-LockedInputs -FixtureRoot $unbundledReleaseGateFixture -ArtifactId "rescue-x64-portable" -Inputs @($unbundledRescueInput)
+    Set-LockedInputs -FixtureRoot $unbundledReleaseGateFixture -ArtifactId "large-offline-x64-portable" -Inputs @($unbundledRescueInput, $unbundledOfflineInput)
+    $unbundledManifest = Get-ContentManifest -FixtureRoot $unbundledReleaseGateFixture
+    $unbundledArtifact = Get-ArtifactContent -Manifest $unbundledManifest -ArtifactId "large-offline-x64-portable"
+    $unbundledArtifact.releaseDirectoryGate.relativePath = "release/product-identity.json"
+    Save-ContentManifest -FixtureRoot $unbundledReleaseGateFixture -Manifest $unbundledManifest
+    & git -C $unbundledReleaseGateFixture add release/artifact-content-manifest.v1.json release-inputs/rescue-tool.bin release-inputs/offline-tool.bin
+    & git -C $unbundledReleaseGateFixture commit --quiet -m "reject unbundled release gate fixture"
+    Write-ValidBuildManifest -FixtureRoot $unbundledReleaseGateFixture
+    Require-PackageFailure -FixtureRoot $unbundledReleaseGateFixture -ArtifactId "large-offline-x64-portable" -Scenario "release directory gate outside bundled resources"
+
     $invalidArtifactFixture = New-FixtureRoot
     Require-PackageFailure -FixtureRoot $invalidArtifactFixture -ArtifactId "invalid-x64-portable" -Scenario "invalid artifact id"
 

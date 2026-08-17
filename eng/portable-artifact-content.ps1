@@ -242,6 +242,12 @@ function Get-PortableArtifactDefinition {
     if (-not (Test-Path -LiteralPath $contentManifestPath -PathType Leaf)) {
         throw "Portable packaging requires release/artifact-content-manifest.v1.json."
     }
+    $identityPath = Get-ExistingNonReparsePath `
+        -Path $identityPath `
+        -Context "Portable packaging product identity"
+    $contentManifestPath = Get-ExistingNonReparsePath `
+        -Path $contentManifestPath `
+        -Context "Portable packaging artifact content manifest"
 
     $identity = Get-Content -LiteralPath $identityPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $identityMatches = @($identity.artifactMatrix | Where-Object { $_.id -eq $ArtifactId })
@@ -571,11 +577,28 @@ function Test-LargeOfflineArtifactContent {
         }
     }
 
+    $bundledCatalogResources = @(
+        Test-BundledCatalogResources `
+            -Content $LargeDefinition.Content `
+            -RepositoryRoot $RepositoryRoot `
+            -ArtifactId ([string](Get-RequiredProperty `
+                    -Object $LargeDefinition.Content `
+                    -Name "artifactId" `
+                    -Context "Large offline artifact content")) `
+            -ValidateSource
+    )
     $gate = Get-RequiredProperty -Object $LargeDefinition.Content -Name "releaseDirectoryGate" -Context "Large offline artifact content"
     if ((Get-RequiredProperty -Object $gate -Name "requiredReleaseState" -Context "Large offline releaseDirectoryGate") -ne "release") {
         throw "Large offline releaseDirectoryGate must require release state."
     }
-    $directoryPath = Resolve-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -RelativePath ([string](Get-RequiredProperty -Object $gate -Name "relativePath" -Context "Large offline releaseDirectoryGate")) -Context "Large offline releaseDirectoryGate relativePath"
+    $gateRelativePath = [string](Get-RequiredProperty -Object $gate -Name "relativePath" -Context "Large offline releaseDirectoryGate")
+    $matchingResources = @($bundledCatalogResources | Where-Object {
+            $_.relativePath -eq $gateRelativePath
+        })
+    if ($matchingResources.Count -ne 1) {
+        throw "Large offline releaseDirectoryGate must match exactly one bundled catalog resource."
+    }
+    $directoryPath = Resolve-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -RelativePath $gateRelativePath -Context "Large offline releaseDirectoryGate relativePath"
     if (-not (Test-Path -LiteralPath $directoryPath -PathType Leaf)) {
         throw "Large offline release directory is missing."
     }
