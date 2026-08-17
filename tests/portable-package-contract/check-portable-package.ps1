@@ -466,6 +466,14 @@ function Set-ReleaseDirectoryState {
     $path = Join-Path $FixtureRoot ([string]$artifact.releaseDirectoryGate.relativePath)
     New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
     Set-Content -LiteralPath $path -Value "release_state = `"$State`"" -Encoding UTF8
+    $resources = @($artifact.bundledCatalogResources | Where-Object {
+            $_.relativePath -eq $artifact.releaseDirectoryGate.relativePath
+        })
+    Require ($resources.Count -eq 1) "fixture large offline release directory must be a bundled catalog resource"
+    $resource = $resources[0]
+    $resource.bytes = [Int64](Get-Item -LiteralPath $path).Length
+    $resource.sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    Save-ContentManifest -FixtureRoot $FixtureRoot -Manifest $manifest
 }
 
 try {
@@ -678,6 +686,24 @@ try {
     Require (Test-Path -LiteralPath (Join-Path $rescueCandidates[0] "content/rescue-tool.bin")) "rescue x64 staging lacks the locked content input"
     Require (-not (Test-Path -LiteralPath (Join-Path $rescueSuccessFixture "content/rescue-tool.bin"))) "rescue x64 package wrote a bypass ZIP outside out/packages"
     & (Join-Path $rescueSuccessFixture "eng/verify-portable-package.ps1") -ArtifactId "rescue-x64-portable" -RepositoryRoot $rescueSuccessFixture -StagingDirectory $rescueCandidates[0] -PackagePath $rescueCandidates[1] -ManifestPath $rescueCandidates[2]
+
+    $largeOfflineSuccessFixture = New-FixtureRoot
+    $largeOfflineRescueInput = New-LockedInput -FixtureRoot $largeOfflineSuccessFixture -Id "rescue-tool" -Role "rescue-companion-tool" -RelativePath "release-inputs/rescue-tool.bin"
+    $largeOfflineInput = New-LockedInput -FixtureRoot $largeOfflineSuccessFixture -Id "offline-tool" -Role "offline-package" -RelativePath "release-inputs/offline-tool.bin"
+    Set-LockedInputs -FixtureRoot $largeOfflineSuccessFixture -ArtifactId "rescue-x64-portable" -Inputs @($largeOfflineRescueInput)
+    Set-LockedInputs -FixtureRoot $largeOfflineSuccessFixture -ArtifactId "large-offline-x64-portable" -Inputs @($largeOfflineRescueInput, $largeOfflineInput)
+    Set-ReleaseDirectoryState -FixtureRoot $largeOfflineSuccessFixture -State "release"
+    & git -C $largeOfflineSuccessFixture add release/artifact-content-manifest.v1.json catalog/software-catalog.toml release-inputs/rescue-tool.bin release-inputs/offline-tool.bin
+    & git -C $largeOfflineSuccessFixture commit --quiet -m "large offline package fixture"
+    Write-ValidBuildManifest -FixtureRoot $largeOfflineSuccessFixture
+    Invoke-Package -FixtureRoot $largeOfflineSuccessFixture -ArtifactId "large-offline-x64-portable"
+    $largeOfflineCandidates = Get-CandidatePaths -FixtureRoot $largeOfflineSuccessFixture -ArtifactId "large-offline-x64-portable"
+    foreach ($candidatePath in $largeOfflineCandidates) {
+        Require (Test-Path -LiteralPath $candidatePath) "large offline x64 package did not create $candidatePath"
+    }
+    Require (Test-Path -LiteralPath (Join-Path $largeOfflineCandidates[0] "content/rescue-tool.bin")) "large offline x64 staging lacks the rescue input"
+    Require (Test-Path -LiteralPath (Join-Path $largeOfflineCandidates[0] "content/offline-tool.bin")) "large offline x64 staging lacks the offline input"
+    & (Join-Path $largeOfflineSuccessFixture "eng/verify-portable-package.ps1") -ArtifactId "large-offline-x64-portable" -RepositoryRoot $largeOfflineSuccessFixture -StagingDirectory $largeOfflineCandidates[0] -PackagePath $largeOfflineCandidates[1] -ManifestPath $largeOfflineCandidates[2]
 
     $invalidArtifactFixture = New-FixtureRoot
     Require-PackageFailure -FixtureRoot $invalidArtifactFixture -ArtifactId "invalid-x64-portable" -Scenario "invalid artifact id"
