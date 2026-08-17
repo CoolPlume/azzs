@@ -48,6 +48,20 @@ $fixedRescueFolderNames = @(
 
 function Remove-PortableCandidate {
     Assert-PortableCandidatePaths
+    if (Test-Path -LiteralPath $stagingDirectory) {
+        $stagingItem = Get-Item -LiteralPath $stagingDirectory -Force -ErrorAction Stop
+        if (-not $stagingItem.PSIsContainer) {
+            throw "Portable packaging staging candidate must be a directory: $stagingDirectory"
+        }
+    }
+    foreach ($fileCandidatePath in @($packagePath, $manifestPath)) {
+        if (Test-Path -LiteralPath $fileCandidatePath) {
+            $fileCandidateItem = Get-Item -LiteralPath $fileCandidatePath -Force -ErrorAction Stop
+            if ($fileCandidateItem.PSIsContainer) {
+                throw "Portable packaging file candidate must be a file: $fileCandidatePath"
+            }
+        }
+    }
     foreach ($candidatePath in @($stagingDirectory, $packagePath, $manifestPath)) {
         if (Test-Path -LiteralPath $candidatePath) {
             Remove-Item -LiteralPath $candidatePath -Recurse -Force
