@@ -35,6 +35,7 @@ struct SoftwareOptimizationPage
   azzs::application::software_optimization_discovery::
       SoftwareOptimizationDiscoveryService* service_{};
   bool advanced_view_{false};
+  bool confirmation_dialog_open_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation

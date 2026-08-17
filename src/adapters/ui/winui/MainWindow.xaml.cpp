@@ -158,57 +158,63 @@ void MainWindow::OnWindowClosing(
 }
 
 winrt::fire_and_forget MainWindow::confirm_catalog_close() {
-  auto lifetime = get_strong();
-  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+  try {
+    auto lifetime = get_strong();
+    using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
-  ContentDialog dialog;
-  dialog.XamlRoot(ContentFrame().XamlRoot());
-  auto const resources = ResourceLoader{};
-  dialog.Title(winrt::box_value(resources.GetString(L"CatalogCloseDialogTitle")));
-  dialog.Content(
-      winrt::box_value(resources.GetString(L"CatalogCloseDialogContent")));
-  dialog.PrimaryButtonText(resources.GetString(L"CatalogCloseSaveAndClose"));
-  dialog.SecondaryButtonText(
-      resources.GetString(L"CatalogCloseDiscardAndClose"));
-  dialog.CloseButtonText(resources.GetString(L"CatalogCloseReturnToEditor"));
-  dialog.DefaultButton(ContentDialogButton::Close);
+    ContentDialog dialog;
+    dialog.XamlRoot(ContentFrame().XamlRoot());
+    auto const resources = ResourceLoader{};
+    dialog.Title(
+        winrt::box_value(resources.GetString(L"CatalogCloseDialogTitle")));
+    dialog.Content(
+        winrt::box_value(resources.GetString(L"CatalogCloseDialogContent")));
+    dialog.PrimaryButtonText(resources.GetString(L"CatalogCloseSaveAndClose"));
+    dialog.SecondaryButtonText(
+        resources.GetString(L"CatalogCloseDiscardAndClose"));
+    dialog.CloseButtonText(resources.GetString(L"CatalogCloseReturnToEditor"));
+    dialog.DefaultButton(ContentDialogButton::Close);
 
-  auto const response = co_await dialog.ShowAsync();
-  catalog_close_dialog_open_ = false;
-  if (!workbench_) {
-    co_return;
-  }
-  auto const services = workbench_->services();
-  if (!services) {
-    co_return;
-  }
+    auto const response = co_await dialog.ShowAsync();
+    catalog_close_dialog_open_ = false;
+    if (!workbench_) {
+      co_return;
+    }
+    auto const services = workbench_->services();
+    if (!services) {
+      co_return;
+    }
 
-  auto& editor = services->debug_mode_catalog_editor();
-  auto choice = azzs::application::software_catalog::
-      CatalogCloseChoice::return_to_editor;
-  if (response == ContentDialogResult::Primary) {
-    choice = azzs::application::software_catalog::
-        CatalogCloseChoice::save_draft_and_close;
-  } else if (response == ContentDialogResult::Secondary) {
-    choice = azzs::application::software_catalog::
-        CatalogCloseChoice::discard_unsaved_and_close;
-  }
+    auto& editor = services->debug_mode_catalog_editor();
+    auto choice = azzs::application::software_catalog::
+        CatalogCloseChoice::return_to_editor;
+    if (response == ContentDialogResult::Primary) {
+      choice = azzs::application::software_catalog::
+          CatalogCloseChoice::save_draft_and_close;
+    } else if (response == ContentDialogResult::Secondary) {
+      choice = azzs::application::software_catalog::
+          CatalogCloseChoice::discard_unsaved_and_close;
+    }
 
-  auto const debug = editor.editor_snapshot().settings;
-  if (!debug.enabled) {
-    static_cast<void>(editor.begin_temporary_close_recovery(
-        azzs::application::CatalogEditorTemporaryAccessReason::close_return));
+    auto const debug = editor.editor_snapshot().settings;
+    if (!debug.enabled) {
+      static_cast<void>(editor.begin_temporary_close_recovery(
+          azzs::application::CatalogEditorTemporaryAccessReason::close_return));
+    }
+    auto const result = editor.handle_close(choice);
+    if (choice != azzs::application::software_catalog::
+                      CatalogCloseChoice::return_to_editor &&
+        result.succeeded()) {
+      editor.end_temporary_close_recovery();
+      allow_window_close_ = true;
+      Close();
+      co_return;
+    }
+    restore_catalog_editor_after_close(result);
+  } catch (...) {
+    catalog_close_dialog_open_ = false;
+    ::OutputDebugStringW(L"WinUI catalog close dialog failed.\n");
   }
-  auto const result = editor.handle_close(choice);
-  if (choice != azzs::application::software_catalog::
-                    CatalogCloseChoice::return_to_editor &&
-      result.succeeded()) {
-    editor.end_temporary_close_recovery();
-    allow_window_close_ = true;
-    Close();
-    co_return;
-  }
-  restore_catalog_editor_after_close(result);
 }
 
 void MainWindow::restore_catalog_editor_after_close(
