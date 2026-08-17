@@ -15,6 +15,7 @@ enum class StartupAssemblyStage {
   main_window_binding,
   main_window_navigation,
   main_window_activation,
+  unexpected_assembly_exception,
 };
 
 enum class StartupDiagnosticAvailability {
@@ -57,8 +58,7 @@ struct StartupAssemblyStatus final {
 [[nodiscard]] inline StartupAssemblyStatus startup_assembly_failed(
     StartupAssemblyStage stage,
     StartupDiagnosticAvailability diagnostic_availability =
-        StartupDiagnosticAvailability::unavailable,
-    EmergencyPreflightStartResult emergency_preflight = {}) {
+        StartupDiagnosticAvailability::unavailable) {
   return {.failure = StartupAssemblyFailure{
               .stage = stage,
               .retry_on_next_process_start = true,
@@ -67,7 +67,7 @@ struct StartupAssemblyStatus final {
                   stage == StartupAssemblyStage::device_data_environment
                       ? L"应用数据尚未准备完成。请关闭后重新打开应用。"
                       : L"工作台尚未完成启动。请关闭后重新打开应用。"},
-          .emergency_preflight = std::move(emergency_preflight)};
+          .emergency_preflight = {}};
 }
 
 [[nodiscard]] inline StartupAssemblyStatus startup_assembly_ready(

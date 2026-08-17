@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <filesystem>
 #include <algorithm>
 #include <thread>
@@ -796,23 +797,25 @@ class WindowsWorkbenchServices final
   }
 
   void shutdown() noexcept {
-    // Persist the runner's close boundary before discarding its batch-owned
-    // cache session. A later launch can then recover read-only rather than
-    // treating a closing batch as safe to continue.
-    try {
-      static_cast<void>(software_optimization_batches_.request_close());
-    } catch (...) {
-      // The persisted batch state remains fail-closed for issue 12 recovery.
-    }
-    try {
-      static_cast<void>(installation_batches_.request_close());
-    } catch (...) {
-      // Restore never auto-continues an active batch. If the best-effort
-      // close receipt cannot be produced, the persisted state remains
-      // fail-closed for the explicit recovery path on the next launch.
-    }
-    live_offline_package_cache_.shutdown();
-    batch_offline_package_cache_.shutdown();
+    std::call_once(shutdown_started_, [this] {
+      // Persist the runner's close boundary before discarding its batch-owned
+      // cache session. A later launch can then recover read-only rather than
+      // treating a closing batch as safe to continue.
+      try {
+        static_cast<void>(software_optimization_batches_.request_close());
+      } catch (...) {
+        // The persisted batch state remains fail-closed for issue 12 recovery.
+      }
+      try {
+        static_cast<void>(installation_batches_.request_close());
+      } catch (...) {
+        // Restore never auto-continues an active batch. If the best-effort
+        // close receipt cannot be produced, the persisted state remains
+        // fail-closed for the explicit recovery path on the next launch.
+      }
+      live_offline_package_cache_.shutdown();
+      batch_offline_package_cache_.shutdown();
+    });
   }
 
   [[nodiscard]] application::installation_batch::InstallationBatchService&
@@ -903,6 +906,7 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsDriverNetworkObserver driver_network_;
   application::driver_acquisition::DriverAcquisitionService driver_acquisition_;
   std::once_flag emergency_preflight_started_;
+  std::once_flag shutdown_started_;
   startup::EmergencyPreflightStartResult emergency_preflight_start_;
   adapters::windows::WindowsEmergencyWithdrawalNoticeSource
       emergency_notice_source_;
@@ -1040,6 +1044,30 @@ class WindowsWorkbenchServices final
       guided_initialization_{states_, clock_, guided_evidence_source_};
 };
 
+class StartupServicesShutdownGuard final {
+ public:
+  explicit StartupServicesShutdownGuard(
+      std::shared_ptr<WindowsWorkbenchServices> services) noexcept
+      : services_(std::move(services)) {}
+
+  ~StartupServicesShutdownGuard() {
+    shutdown_now();
+  }
+
+  void shutdown_now() noexcept {
+    if (auto services = std::move(services_)) {
+      services->shutdown();
+    }
+  }
+
+  void release() noexcept {
+    services_.reset();
+  }
+
+ private:
+  std::shared_ptr<WindowsWorkbenchServices> services_;
+};
+
 [[nodiscard]] winrt::Microsoft::UI::Xaml::Window
 create_static_startup_failure_window(
     startup::StartupAssemblyFailure const& failure) {
@@ -1078,103 +1106,112 @@ create_static_startup_failure_window(
 }  // namespace
 
 StartupAssemblyResult assemble_startup() {
-  auto environment =
-      adapters::windows::WindowsDeviceDataEnvironment::prepare();
-  if (!environment) {
-    auto failure = std::move(environment);
-    return startup_failure(
-        startup::startup_assembly_failed(
-            startup::StartupAssemblyStage::device_data_environment),
-        std::move(failure));
-  }
-  auto view_preferences =
-      std::make_shared<adapters::windows::WindowsViewPreferences>();
-  auto advanced_view_preferences =
-      std::make_shared<application::AdvancedViewPreferences>(view_preferences);
-  auto architecture_preferences =
-      std::make_shared<application::ArchitecturePreferences>(view_preferences);
-  auto cache_retention_preferences =
-      std::make_shared<application::CacheRetentionPreferences>(view_preferences);
-  auto debug_mode_preferences =
-      std::shared_ptr<application::DebugModePreferenceStore>(
-          view_preferences,
-          static_cast<application::DebugModePreferenceStore*>(
-              view_preferences.get()));
-  auto services = std::make_shared<WindowsWorkbenchServices>(
-       std::move(*environment.environment), std::move(architecture_preferences),
-       std::move(cache_retention_preferences), std::move(debug_mode_preferences));
-  auto workbench = std::make_shared<application::Workbench>(
-      services->platform_info(), services);
-  auto system_settings = services->system_settings_apply_shared();
-  auto const diagnostic_availability =
-      services->startup_diagnostic_availability();
-  if (diagnostic_availability !=
-      startup::StartupDiagnosticAvailability::available) {
-    return startup_failure(startup::startup_assembly_failed(
-        startup::StartupAssemblyStage::core_records_unreadable,
-        startup::StartupDiagnosticAvailability::unavailable));
-  }
-  startup::EmergencyPreflightStartResult emergency_preflight;
-
-  std::shared_ptr<ui::winui::MotionPreferences> motion_preferences;
+  auto diagnostic_availability = startup::StartupDiagnosticAvailability::unavailable;
+  std::optional<StartupServicesShutdownGuard> services_shutdown;
   try {
-    motion_preferences = ui::winui::MotionPreferences::create();
-  } catch (winrt::hresult_error const&) {
-    motion_preferences = ui::winui::MotionPreferences::create_static();
-  }
+    auto environment =
+        adapters::windows::WindowsDeviceDataEnvironment::prepare();
+    if (!environment) {
+      auto failure = std::move(environment);
+      return startup_failure(
+          startup::startup_assembly_failed(
+              startup::StartupAssemblyStage::device_data_environment),
+          std::move(failure));
+    }
+    auto view_preferences =
+        std::make_shared<adapters::windows::WindowsViewPreferences>();
+    auto advanced_view_preferences =
+        std::make_shared<application::AdvancedViewPreferences>(view_preferences);
+    auto architecture_preferences =
+        std::make_shared<application::ArchitecturePreferences>(view_preferences);
+    auto cache_retention_preferences =
+        std::make_shared<application::CacheRetentionPreferences>(view_preferences);
+    auto debug_mode_preferences =
+        std::shared_ptr<application::DebugModePreferenceStore>(
+            view_preferences,
+            static_cast<application::DebugModePreferenceStore*>(
+                view_preferences.get()));
+    auto services = std::make_shared<WindowsWorkbenchServices>(
+        std::move(*environment.environment), std::move(architecture_preferences),
+        std::move(cache_retention_preferences), std::move(debug_mode_preferences));
+    services_shutdown.emplace(services);
+    auto workbench = std::make_shared<application::Workbench>(
+        services->platform_info(), services);
+    auto system_settings = services->system_settings_apply_shared();
+    diagnostic_availability = services->startup_diagnostic_availability();
+    if (diagnostic_availability !=
+        startup::StartupDiagnosticAvailability::available) {
+      services_shutdown->shutdown_now();
+      return startup_failure(startup::startup_assembly_failed(
+          startup::StartupAssemblyStage::core_records_unreadable,
+          startup::StartupDiagnosticAvailability::unavailable));
+    }
+    startup::EmergencyPreflightStartResult emergency_preflight;
 
-  winrt::com_ptr<winrt::Azzs::Ui::implementation::MainWindow> window;
-  winrt::Microsoft::UI::Xaml::Window result{nullptr};
-  try {
-    window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
-    result = window.as<winrt::Microsoft::UI::Xaml::Window>();
-  } catch (winrt::hresult_error const&) {
-    services->shutdown();
+    std::shared_ptr<ui::winui::MotionPreferences> motion_preferences;
+    try {
+      motion_preferences = ui::winui::MotionPreferences::create();
+    } catch (winrt::hresult_error const&) {
+      motion_preferences = ui::winui::MotionPreferences::create_static();
+    }
+
+    winrt::com_ptr<winrt::Azzs::Ui::implementation::MainWindow> window;
+    winrt::Microsoft::UI::Xaml::Window result{nullptr};
+    try {
+      window = winrt::make_self<winrt::Azzs::Ui::implementation::MainWindow>();
+      result = window.as<winrt::Microsoft::UI::Xaml::Window>();
+    } catch (winrt::hresult_error const&) {
+      services_shutdown->shutdown_now();
+      return startup_failure(startup::startup_assembly_failed(
+          startup::StartupAssemblyStage::main_window_initialization,
+          diagnostic_availability));
+    }
+
+    try {
+      window->bind(std::move(workbench), std::move(motion_preferences),
+                   std::move(system_settings),
+                   std::move(advanced_view_preferences));
+      result.Closed([services](auto&&, auto&&) {
+        services->shutdown();
+      });
+    } catch (winrt::hresult_error const&) {
+      services_shutdown->shutdown_now();
+      return startup_failure(startup::startup_assembly_failed(
+          startup::StartupAssemblyStage::main_window_binding,
+          diagnostic_availability));
+    }
+
+    try {
+      window->show_initial_page();
+    } catch (winrt::hresult_error const&) {
+      services_shutdown->shutdown_now();
+      return startup_failure(startup::startup_assembly_failed(
+          startup::StartupAssemblyStage::main_window_navigation,
+          diagnostic_availability));
+    }
+
+    try {
+      result.Activate();
+    } catch (winrt::hresult_error const&) {
+      services_shutdown->shutdown_now();
+      return startup_failure(startup::startup_assembly_failed(
+          startup::StartupAssemblyStage::main_window_activation,
+          diagnostic_availability));
+    }
+
+    window->confirm_started_healthy();
+    emergency_preflight = services->start_emergency_preflight();
+    services_shutdown->release();
+    return {.window = std::move(result),
+            .status = startup::startup_assembly_ready(emergency_preflight)};
+  } catch (...) {
+    if (services_shutdown.has_value()) {
+      services_shutdown->shutdown_now();
+    }
     return startup_failure(startup::startup_assembly_failed(
-        startup::StartupAssemblyStage::main_window_initialization,
-        diagnostic_availability,
-        emergency_preflight));
+        startup::StartupAssemblyStage::unexpected_assembly_exception,
+        diagnostic_availability));
   }
-
-  try {
-    window->bind(std::move(workbench), std::move(motion_preferences),
-                 std::move(system_settings),
-                 std::move(advanced_view_preferences));
-    result.Closed([services](auto&&, auto&&) {
-      services->shutdown();
-    });
-  } catch (winrt::hresult_error const&) {
-    services->shutdown();
-    return startup_failure(startup::startup_assembly_failed(
-        startup::StartupAssemblyStage::main_window_binding,
-        diagnostic_availability,
-        emergency_preflight));
-  }
-
-  try {
-    window->show_initial_page();
-  } catch (winrt::hresult_error const&) {
-    services->shutdown();
-    return startup_failure(startup::startup_assembly_failed(
-        startup::StartupAssemblyStage::main_window_navigation,
-        diagnostic_availability,
-        emergency_preflight));
-  }
-
-  try {
-    result.Activate();
-  } catch (winrt::hresult_error const&) {
-    services->shutdown();
-    return startup_failure(startup::startup_assembly_failed(
-        startup::StartupAssemblyStage::main_window_activation,
-        diagnostic_availability,
-        emergency_preflight));
-  }
-
-  window->confirm_started_healthy();
-  emergency_preflight = services->start_emergency_preflight();
-  return {.window = std::move(result),
-          .status = startup::startup_assembly_ready(emergency_preflight)};
 }
 
 }  // namespace azzs::composition::windows
