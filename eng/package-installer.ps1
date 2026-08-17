@@ -15,6 +15,8 @@ if (-not $AcceptWixEula) {
     throw "WiX Toolset 7 requires an explicit terms decision. Re-run with -AcceptWixEula only after confirming the WiX 7 terms for this use."
 }
 
+. (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $SkipBuild) {
     & (Join-Path $PSScriptRoot "build.ps1") -Architecture $Architecture
@@ -22,7 +24,7 @@ if (-not $SkipBuild) {
 
 $payloadDirectory = Join-Path $repositoryRoot "out/windows/$Architecture/Release"
 $executablePath = Join-Path $payloadDirectory "Azzs.WinUI.exe"
-if (-not (Test-Path -LiteralPath $executablePath)) {
+if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
     throw "Installer packaging requires a completed $Architecture Release build."
 }
 
@@ -34,11 +36,42 @@ $installerPlatform = $Architecture.ToLowerInvariant()
 $packagePath = Join-Path $packageDirectory "Azzs-standard-$installerPlatform-machine.msi"
 $manifestPath = Join-Path $repositoryRoot "out/manifests/package-standard-$($Architecture.ToLowerInvariant())-machine.json"
 
+foreach ($candidatePath in @($stagingDirectory, $packagePath, $manifestPath, $intermediateDirectory)) {
+    Assert-PathChainWithoutReparsePoint `
+        -Path $candidatePath `
+        -Context "Installer packaging candidate '$candidatePath'"
+}
+if (Test-Path -LiteralPath $stagingDirectory) {
+    $stagingItem = Get-Item -LiteralPath $stagingDirectory -Force -ErrorAction Stop
+    if (-not $stagingItem.PSIsContainer) {
+        throw "Installer packaging staging candidate must be a directory: $stagingDirectory"
+    }
+}
+foreach ($fileCandidatePath in @($packagePath, $manifestPath)) {
+    if (Test-Path -LiteralPath $fileCandidatePath) {
+        $fileCandidateItem = Get-Item -LiteralPath $fileCandidatePath -Force -ErrorAction Stop
+        if ($fileCandidateItem.PSIsContainer) {
+            throw "Installer packaging file candidate must be a file: $fileCandidatePath"
+        }
+    }
+}
+if (Test-Path -LiteralPath $intermediateDirectory) {
+    $intermediateItem = Get-Item -LiteralPath $intermediateDirectory -Force -ErrorAction Stop
+    if (-not $intermediateItem.PSIsContainer) {
+        throw "Installer packaging intermediate candidate must be a directory: $intermediateDirectory"
+    }
+}
 if (Test-Path -LiteralPath $stagingDirectory) {
     Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
 }
 New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory, $intermediateDirectory -Force | Out-Null
+Assert-NoReparsePointsBelow `
+    -Path $payloadDirectory `
+    -Context "Installer build payload"
 Copy-Item -Path (Join-Path $payloadDirectory "*") -Destination $stagingDirectory -Recurse -Force
+Assert-NoReparsePointsBelow `
+    -Path $stagingDirectory `
+    -Context "Installer staging payload"
 Get-ChildItem -LiteralPath $stagingDirectory -File -Recurse -Include *.pdb, *.ilk, *.iobj, *.ipdb, *.exp, *.lib | Remove-Item -Force
 
 $vswherePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/Installer/vswhere.exe"
