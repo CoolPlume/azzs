@@ -258,10 +258,18 @@ ApplicationSettingsActionResult ApplicationSettingsService::clear_cache(
                   "clearing completed cache entries requires confirmation");
   }
   auto const cleaned = package_cache_.clear_completed();
-  if (!cleaned.detail.empty()) {
-    return result(ApplicationSettingsActionCode::failed, cleaned.detail);
+  switch (cleaned.code) {
+    case offline_package_cache::CacheCleanupCode::completed:
+      return result(cleaned.detail.empty()
+                        ? ApplicationSettingsActionCode::completed
+                        : ApplicationSettingsActionCode::failed,
+                    cleaned.detail);
+    case offline_package_cache::CacheCleanupCode::rejected_after_shutdown:
+      return result(ApplicationSettingsActionCode::rejected, cleaned.detail);
+    case offline_package_cache::CacheCleanupCode::failed:
+      return result(ApplicationSettingsActionCode::failed, cleaned.detail);
   }
-  return result(ApplicationSettingsActionCode::completed);
+  return result(ApplicationSettingsActionCode::failed, cleaned.detail);
 }
 
 ApplicationSettingsActionResult ApplicationSettingsService::clear_logs(
