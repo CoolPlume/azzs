@@ -8,8 +8,6 @@
 #include <mutex>
 #include <optional>
 #include <filesystem>
-#include <algorithm>
-#include <fstream>
 #include <thread>
 #include <string>
 #include <string_view>
@@ -29,6 +27,7 @@
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
 #include "azzs/adapters/infrastructure/system_settings_recovery_store.hpp"
 #include "azzs/adapters/infrastructure/system_clock.hpp"
+#include "azzs/adapters/windows/bundled_catalog_resource_reader.hpp"
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #include "azzs/adapters/windows/windows_driver_acquisition.hpp"
 #include "azzs/adapters/windows/windows_application_update_platform.hpp"
@@ -74,8 +73,6 @@
 
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 
-#include <wincrypt.h>
-
 namespace azzs::composition::windows {
 namespace {
 
@@ -107,25 +104,21 @@ class EmbeddedSettingsCatalogUpdateSource final
 class EmbeddedSoftwareOptimizationCatalogUpdateSource final
     : public application::TrustedSoftwareOptimizationCatalogUpdateSource {
  public:
-  EmbeddedSoftwareOptimizationCatalogUpdateSource(
-      application::SoftwareOptimizationCatalogLocalImportFile& files,
-      std::string source_path)
-      : files_(files), source_path_(std::move(source_path)) {}
+  explicit EmbeddedSoftwareOptimizationCatalogUpdateSource(std::string source)
+      : source_(std::move(source)) {}
 
   [[nodiscard]] application::TrustedSoftwareOptimizationCatalogUpdateRead
   read_update() override {
-    auto const read = files_.read(source_path_);
-    if (!read.succeeded) {
-      return {.detail = read.error};
+    if (source_.empty()) {
+      return {.detail = "embedded software optimization catalog is unavailable"};
     }
     return {.update = application::TrustedSoftwareOptimizationCatalogUpdate{
-                .source = read.source,
+                .source = source_,
                 .source_reference = "embedded-software-optimization-catalog"}};
   }
 
  private:
-  application::SoftwareOptimizationCatalogLocalImportFile& files_;
-  std::string source_path_;
+  std::string const source_;
 };
 
 class UnavailableControlledSourceResolver final
@@ -150,14 +143,10 @@ class OfflineNetworkObserver final
   return std::filesystem::path{std::u8string{begin, begin + value.size()}};
 }
 
-[[nodiscard]] std::string utf8_from_path(std::filesystem::path const& value) {
-  auto const native = value.generic_u8string();
-  return {reinterpret_cast<char const*>(native.data()), native.size()};
-}
-
-struct BundledCatalogPaths final {
-  std::filesystem::path software_catalog;
-  std::filesystem::path software_optimization_catalog;
+struct BundledCatalogResources final {
+  adapters::windows::VerifiedBundledCatalogResource software_catalog;
+  adapters::windows::VerifiedBundledCatalogResource
+      software_optimization_catalog;
 };
 
 constexpr std::uintmax_t kSoftwareCatalogBytes = 8894;
@@ -172,82 +161,6 @@ constexpr std::array<std::uint8_t, 32> kSoftwareOptimizationCatalogSha256{
     0xb6, 0x7b, 0x67, 0xc3, 0x21, 0x2d, 0x1e, 0xad,
     0x8b, 0xf7, 0x5a, 0x8e, 0x4d, 0x28, 0x2b, 0x3c,
     0xb8, 0xbd, 0xcf, 0x26, 0x3c, 0xa7, 0x14, 0x37};
-
-[[nodiscard]] bool is_not_reparse_point(std::filesystem::path const& path) {
-  auto const attributes = ::GetFileAttributesW(path.c_str());
-  return attributes != INVALID_FILE_ATTRIBUTES &&
-         (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
-}
-
-[[nodiscard]] bool path_chain_has_no_reparse_points(
-    std::filesystem::path const& path) {
-  auto current = path.root_path();
-  if (current.empty() || !is_not_reparse_point(current)) {
-    return false;
-  }
-  for (auto const& segment : path.relative_path()) {
-    current /= segment;
-    if (!is_not_reparse_point(current)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-[[nodiscard]] bool bundled_catalog_resource_matches(
-    std::filesystem::path const& path,
-    std::uintmax_t expected_bytes,
-    std::array<std::uint8_t, 32> const& expected_sha256) {
-  std::error_code error;
-  if (std::filesystem::file_size(path, error) != expected_bytes || error) {
-    return false;
-  }
-
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    return false;
-  }
-  HCRYPTPROV provider = 0;
-  if (!::CryptAcquireContextW(&provider, nullptr, nullptr, PROV_RSA_AES,
-                              CRYPT_VERIFYCONTEXT)) {
-    return false;
-  }
-  HCRYPTHASH hash = 0;
-  if (!::CryptCreateHash(provider, CALG_SHA_256, 0, 0, &hash)) {
-    ::CryptReleaseContext(provider, 0);
-    return false;
-  }
-
-  bool succeeded = true;
-  std::array<char, 4096> buffer{};
-  while (input) {
-    input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    auto const bytes_read = input.gcount();
-    if (bytes_read > 0 &&
-        !::CryptHashData(hash,
-                         reinterpret_cast<BYTE const*>(buffer.data()),
-                         static_cast<DWORD>(bytes_read), 0)) {
-      succeeded = false;
-      break;
-    }
-  }
-  if (!input.eof()) {
-    succeeded = false;
-  }
-
-  std::array<std::uint8_t, 32> digest{};
-  DWORD digest_bytes = static_cast<DWORD>(digest.size());
-  if (succeeded &&
-      !::CryptGetHashParam(hash, HP_HASHVAL,
-                           reinterpret_cast<BYTE*>(digest.data()),
-                           &digest_bytes, 0)) {
-    succeeded = false;
-  }
-  ::CryptDestroyHash(hash);
-  ::CryptReleaseContext(provider, 0);
-  return succeeded && digest_bytes == digest.size() &&
-         std::equal(digest.begin(), digest.end(), expected_sha256.begin());
-}
 
 [[nodiscard]] std::optional<std::filesystem::path> workbench_module_directory() {
   std::vector<wchar_t> buffer(512);
@@ -271,52 +184,89 @@ constexpr std::array<std::uint8_t, 32> kSoftwareOptimizationCatalogSha256{
   }
 }
 
-[[nodiscard]] std::optional<BundledCatalogPaths> bundled_catalog_paths() {
+// `bundled_catalog_paths` delegates the path_chain_has_no_reparse_points and
+// bundled_catalog_resource_matches checks to one handle-backed reader, so no
+// later consumer receives a package path that it could reopen.
+[[nodiscard]] std::optional<BundledCatalogResources> bundled_catalog_paths() {
   auto const module_directory = workbench_module_directory();
-  if (!module_directory.has_value() ||
-      !path_chain_has_no_reparse_points(*module_directory)) {
+  if (!module_directory.has_value()) {
     return std::nullopt;
   }
 
-  auto const catalog_directory = *module_directory / "catalog";
-  std::error_code error;
-  auto const catalog_status =
-      std::filesystem::symlink_status(catalog_directory, error);
-  if (error || !std::filesystem::is_directory(catalog_status) ||
-      !path_chain_has_no_reparse_points(catalog_directory)) {
+  adapters::windows::WindowsBundledCatalogResourceReader reader{
+      *module_directory};
+  auto software_catalog = reader.read(
+      "catalog/software-catalog.toml",
+      {.byte_count = kSoftwareCatalogBytes, .sha256 = kSoftwareCatalogSha256});
+  auto software_optimization_catalog = reader.read(
+      "catalog/software-optimization-catalog.toml",
+      {.byte_count = kSoftwareOptimizationCatalogBytes,
+       .sha256 = kSoftwareOptimizationCatalogSha256});
+  if (!software_catalog || !software_optimization_catalog) {
     return std::nullopt;
   }
-
-  BundledCatalogPaths paths{
-      .software_catalog = catalog_directory / "software-catalog.toml",
+  return BundledCatalogResources{
+      .software_catalog = std::move(*software_catalog.resource),
       .software_optimization_catalog =
-          catalog_directory / "software-optimization-catalog.toml"};
-  auto const software_catalog_status =
-      std::filesystem::symlink_status(paths.software_catalog, error);
-  if (error || !std::filesystem::is_regular_file(software_catalog_status) ||
-      !path_chain_has_no_reparse_points(paths.software_catalog)) {
-    return std::nullopt;
-  }
-  auto const software_optimization_catalog_status =
-      std::filesystem::symlink_status(paths.software_optimization_catalog,
-                                      error);
-  if (error || !std::filesystem::is_regular_file(
-                   software_optimization_catalog_status) ||
-      !path_chain_has_no_reparse_points(
-          paths.software_optimization_catalog)) {
-    return std::nullopt;
-  }
-  if (!bundled_catalog_resource_matches(paths.software_catalog,
-                                        kSoftwareCatalogBytes,
-                                        kSoftwareCatalogSha256) ||
-      !bundled_catalog_resource_matches(
-          paths.software_optimization_catalog,
-          kSoftwareOptimizationCatalogBytes,
-          kSoftwareOptimizationCatalogSha256)) {
-    return std::nullopt;
-  }
-  return paths;
+          std::move(*software_optimization_catalog.resource),
+  };
 }
+
+// Runs the real lifecycle gate before any workbench service is constructed.
+// A pure parse check would miss its persistence, log, and occupancy failures.
+class StartupOptimizationCatalogGate final {
+ public:
+  explicit StartupOptimizationCatalogGate(
+      adapters::windows::DeviceDataEnvironment const& environment)
+      : clock_{},
+        state_files_(environment),
+        states_(state_files_, clock_),
+        log_storage_(environment.root_utf8, environment.subject_id),
+        log_(log_storage_, clock_),
+        occupancy_storage_(states_),
+        occupancy_(occupancy_storage_, lease_tokens_),
+        optimization_catalog_(
+            states_, log_, occupancy_, optimization_catalog_file_,
+            optimization_catalog_debug_authorization_,
+            application::sogou_optimization::built_in_rule_definitions(),
+            optimization_installer_baselines_) {}
+
+  [[nodiscard]] bool ensure_bundled_catalog(
+      BundledCatalogResources const& resources) {
+    auto const result = optimization_catalog_.ensure_builtin(
+        resources.software_optimization_catalog.bytes(),
+        "embedded-software-optimization-catalog");
+    auto const accepted =
+        result.code == application::SoftwareOptimizationCatalogLifecycleCode::
+                           applied ||
+        result.code == application::SoftwareOptimizationCatalogLifecycleCode::
+                           unchanged;
+    return accepted && result.logging_error.empty() &&
+           result.occupancy_error.empty();
+  }
+
+ private:
+  adapters::infrastructure::SystemClock clock_;
+  adapters::windows::WindowsStateFileSystem state_files_;
+  application::DeviceStateStore states_;
+  adapters::infrastructure::LocalFileLogStorage log_storage_;
+  adapters::infrastructure::StructuredExecutionLog log_;
+  adapters::infrastructure::StateOperationOccupancyStorage occupancy_storage_;
+  adapters::windows::WindowsLeaseTokenSource lease_tokens_;
+  application::SharedOperationOccupancy occupancy_;
+  adapters::infrastructure::LocalSoftwareOptimizationCatalogFile
+      optimization_catalog_file_;
+  ProductionSoftwareOptimizationCatalogDebugAuthorization
+      optimization_catalog_debug_authorization_;
+  std::vector<domain::software_optimization_catalog::
+                  SoftwareCatalogInstallerBaseline>
+      optimization_installer_baselines_{{
+          .software_item_id = {"sogou-input"},
+          .installer_baseline_id = {"sogou-input-windows-16.7"},
+          .installed_versions = {"16.7", "16.7"},
+      }};
+  application::SoftwareOptimizationCatalogLifecycle optimization_catalog_;
+};
 
 class UnavailableSoftwarePresenceDetector final
     : public application::software_selection::SoftwarePresenceDetector {
@@ -681,7 +631,7 @@ class WindowsWorkbenchServices final
       public std::enable_shared_from_this<WindowsWorkbenchServices> {
  public:
   explicit WindowsWorkbenchServices(
-      BundledCatalogPaths bundled_catalog_paths,
+      BundledCatalogResources bundled_catalog_resources,
       adapters::windows::DeviceDataEnvironment environment,
       std::shared_ptr<application::ArchitecturePreferences>
           architecture_preferences,
@@ -790,9 +740,7 @@ class WindowsWorkbenchServices final
         debug_log_policy_provider_(debug_mode_catalog_editor_),
         debug_log_policy_(debug_log_policy_provider_),
         software_optimization_catalog_update_source_(
-            optimization_catalog_file_,
-            utf8_from_path(
-                bundled_catalog_paths.software_optimization_catalog)),
+            bundled_catalog_resources.software_optimization_catalog.bytes()),
         application_settings_(
             architecture_selection_, *architecture_preferences_,
             live_offline_package_cache_, batch_offline_package_cache_,
@@ -811,12 +759,6 @@ class WindowsWorkbenchServices final
     static_cast<void>(software_catalog_.restore());
     static_cast<void>(software_selection_.restore());
     synchronize_catalog_selection_projection();
-    auto const optimization_catalog = optimization_catalog_file_.read(
-        utf8_from_path(bundled_catalog_paths.software_optimization_catalog));
-    if (optimization_catalog.succeeded) {
-      static_cast<void>(software_optimization_catalog_.ensure_builtin(
-          optimization_catalog.source, "embedded-software-optimization-catalog"));
-    }
     synchronize_live_offline_package_cache();
     static_cast<void>(restart_resume_.restore());
     static_cast<void>(driver_acquisition_.restore());
@@ -1124,7 +1066,9 @@ class WindowsWorkbenchServices final
   std::shared_ptr<application::DebugModeCatalogEditor>
       debug_mode_catalog_editor_;
   adapters::infrastructure::LocalSoftwareCatalogFileReader software_catalog_file_{
-      utf8_from_path(bundled_catalog_paths.software_catalog)};
+      adapters::infrastructure::LocalSoftwareCatalogFileReader::
+          from_verified_built_in(
+              bundled_catalog_resources.software_catalog.bytes())};
   adapters::infrastructure::TomlSoftwareCatalogCodec software_catalog_codec_;
   application::software_catalog::SoftwareCatalogLifecycle software_catalog_{
       states_, log_, occupancy_, software_catalog_file_, software_catalog_codec_,
@@ -1279,6 +1223,13 @@ StartupAssemblyResult assemble_startup() {
           startup::startup_assembly_failed(
               startup::StartupAssemblyStage::device_data_environment),
           std::move(failure));
+    }
+    {
+      StartupOptimizationCatalogGate catalog_gate{*environment.environment};
+      if (!catalog_gate.ensure_bundled_catalog(*bundled_catalog_resources)) {
+        return startup_failure(startup::startup_assembly_failed(
+            startup::StartupAssemblyStage::bundled_catalog_resources));
+      }
     }
     auto view_preferences =
         std::make_shared<adapters::windows::WindowsViewPreferences>();

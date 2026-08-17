@@ -31,6 +31,7 @@ add_subdirectory(product-identity-contract)
 add_subdirectory(portable-package-contract)
 
 if(WIN32)
+  add_subdirectory(bundled-catalog-resource-contract)
   add_subdirectory(windows-device-data-contract)
   add_subdirectory(windows-emergency-withdrawal-notice-contract)
   add_subdirectory(windows-driver-rescue-folder-contract)
