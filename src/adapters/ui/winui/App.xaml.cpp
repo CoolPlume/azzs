@@ -28,12 +28,14 @@ void show_last_resort_startup_failure(wchar_t const* message_key) noexcept {
     }
   } catch (...) {
     // Resource loading can fail while the application is still bootstrapping.
-    // Keep this last-resort boundary no-throw and independent of WinUI assets.
-    ::OutputDebugStringW(L"Startup failure.\n");
-    (void)::MessageBoxW(nullptr, L"Startup failure.",
-                        L"Windows Initial Setup Workbench",
-                        MB_OK | MB_ICONERROR | MB_TOPMOST);
   }
+
+  // Keep this last-resort boundary no-throw and independent of WinUI assets,
+  // including the case where the loader returns an empty resource.
+  ::OutputDebugStringW(L"Startup failure.\n");
+  (void)::MessageBoxW(nullptr, L"Startup failure.",
+                      L"Windows Initial Setup Workbench",
+                      MB_OK | MB_ICONERROR | MB_TOPMOST);
 }
 
 void record_unexpected_startup_failure(
