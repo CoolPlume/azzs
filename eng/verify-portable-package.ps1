@@ -179,7 +179,18 @@ if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
     throw "Portable package manifest is missing: $ManifestPath"
 }
 
-$stagingRoot = (Resolve-Path -LiteralPath $StagingDirectory).Path.TrimEnd('\', '/')
+$StagingDirectory = Get-ExistingNonReparsePath `
+    -Path $StagingDirectory `
+    -Context "Portable package staging directory"
+$PackagePath = Get-ExistingNonReparsePath `
+    -Path $PackagePath `
+    -Context "Portable package ZIP"
+$ManifestPath = Get-ExistingNonReparsePath `
+    -Path $ManifestPath `
+    -Context "Portable package manifest"
+$stagingRoot = (Assert-NoReparsePointsBelow `
+        -Path $StagingDirectory `
+        -Context "Portable package staging payload").TrimEnd('\', '/')
 $fixedRescueFolderPaths = @(
     "rescue-tools/generic-network-driver",
     "rescue-tools/offline-network-diagnostics"
