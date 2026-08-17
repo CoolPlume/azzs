@@ -48,6 +48,28 @@ if ($artifact.edition -eq "large-offline") {
 }
 Test-PortableBuildManifest -RepositoryRoot $RepositoryRoot -Architecture $Architecture | Out-Null
 
+function ConvertTo-SafePayloadPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $path = $Value.Replace('\', '/')
+    $segments = $path.Split('/')
+    if ([string]::IsNullOrWhiteSpace($path) -or
+        [System.IO.Path]::IsPathRooted($path) -or
+        $path -match "^[A-Za-z]:" -or
+        @($segments | Where-Object {
+                [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".."
+            }).Count -gt 0) {
+        throw "$Context contains an unsafe payload path '$Value'."
+    }
+    return $path
+}
+
 function ConvertTo-PayloadMap {
     param(
         [Parameter(Mandatory = $true)]
@@ -61,7 +83,7 @@ function ConvertTo-PayloadMap {
         [System.StringComparer]::OrdinalIgnoreCase
     )
     foreach ($file in $Payload) {
-        $path = ([string]$file.path).Replace('\', '/')
+        $path = ConvertTo-SafePayloadPath -Value ([string]$file.path) -Context $Name
         if ([string]::IsNullOrWhiteSpace($path)) {
             throw "$Name contains an empty path."
         }
@@ -131,7 +153,7 @@ function ConvertTo-PayloadHashMap {
         [System.StringComparer]::OrdinalIgnoreCase
     )
     foreach ($file in $Payload) {
-        $path = ([string]$file.path).Replace('\', '/')
+        $path = ConvertTo-SafePayloadPath -Value ([string]$file.path) -Context $Name
         $sha256 = [string](Get-RequiredProperty -Object $file -Name "sha256" -Context $Name)
         if ($sha256 -notmatch "^[a-fA-F0-9]{64}$") {
             throw "$Name has an invalid SHA256 for '$path'."
