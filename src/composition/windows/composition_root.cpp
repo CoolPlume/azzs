@@ -170,7 +170,10 @@ constexpr std::array<std::uint8_t, 32> kSoftwareOptimizationCatalogSha256{
     if (length == 0) {
       return std::nullopt;
     }
-    if (length < buffer.size() - 1) {
+    // GetModuleFileNameW returns the required length excluding the terminator
+    // when the complete path fits. A valid path may therefore use the final
+    // character slot; truncation is reported by returning the buffer size.
+    if (length < buffer.size()) {
       auto const module = std::filesystem::path{
           std::wstring{buffer.data(), length}};
       auto const directory = module.parent_path();
@@ -1204,7 +1207,14 @@ create_static_startup_failure_window(
     startup::StartupAssemblyStatus status,
     std::optional<adapters::windows::DeviceDataEnvironmentResult>
         device_data_environment_failure = std::nullopt) {
-  auto failure_window = create_static_startup_failure_window(*status.failure);
+  winrt::Microsoft::UI::Xaml::Window failure_window{nullptr};
+  try {
+    failure_window = create_static_startup_failure_window(*status.failure);
+  } catch (...) {
+    // Preserve the typed status for the UI entry point. If the XAML failure
+    // presenter itself is unavailable, App.xaml.cpp supplies a platform-level
+    // last-resort error surface.
+  }
   return {.window = std::move(failure_window),
           .status = std::move(status),
           .device_data_environment_failure =

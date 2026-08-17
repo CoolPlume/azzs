@@ -22,6 +22,7 @@ struct App : AppT<App> {
   Microsoft::UI::Xaml::Window window_{nullptr};
   std::optional<::azzs::application::startup::StartupAssemblyStatus>
       startup_status_;
+  bool bootstrap_failed_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::implementation
