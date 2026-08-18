@@ -1221,9 +1221,7 @@ create_static_startup_failure_window(
 }
 
 [[nodiscard]] StartupAssemblyResult startup_failure(
-    startup::StartupAssemblyStatus status,
-    std::optional<adapters::windows::DeviceDataEnvironmentResult>
-        device_data_environment_failure = std::nullopt) {
+    startup::StartupAssemblyStatus status) {
   winrt::Microsoft::UI::Xaml::Window failure_window{nullptr};
   try {
     failure_window = create_static_startup_failure_window(*status.failure);
@@ -1233,9 +1231,7 @@ create_static_startup_failure_window(
     // last-resort error surface.
   }
   return {.window = std::move(failure_window),
-          .status = std::move(status),
-          .device_data_environment_failure =
-              std::move(device_data_environment_failure)};
+          .status = std::move(status)};
 }
 
 }  // namespace
@@ -1252,14 +1248,11 @@ StartupAssemblyResult assemble_startup() {
     auto environment =
         adapters::windows::WindowsDeviceDataEnvironment::prepare();
     if (!environment) {
-      auto failure = std::move(environment);
-      auto const raw_error_code = failure.raw_error;
       return startup_failure(
           startup::startup_assembly_failed(
               startup::StartupAssemblyStage::device_data_environment,
               startup::StartupDiagnosticAvailability::unavailable,
-              raw_error_code),
-          std::move(failure));
+              environment.raw_error));
     }
     {
       StartupOptimizationCatalogGate catalog_gate{*environment.environment};
