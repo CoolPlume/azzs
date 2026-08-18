@@ -540,6 +540,60 @@ struct SecurityInfo final {
     static_cast<void>(first_files.remove(slot_key, slot));
   }
 
+  auto const replace_key = azzs::domain::StateKey::machine(
+      azzs::domain::AggregateId{"windows-replace-contract"});
+  std::array<std::byte, 2> const replaced_bytes{std::byte{0x4a},
+                                                std::byte{0x5b}};
+  auto target_write = first_files.write(
+      replace_key, azzs::application::StateFileSlot::current, marker);
+  auto source_write = first_files.write(
+      replace_key, azzs::application::StateFileSlot::candidate,
+      replaced_bytes);
+  auto replaced = first_files.replace(
+      replace_key, azzs::application::StateFileSlot::candidate,
+      azzs::application::StateFileSlot::current);
+  auto replaced_target = first_files.read(
+      replace_key, azzs::application::StateFileSlot::current);
+  auto consumed_source = first_files.read(
+      replace_key, azzs::application::StateFileSlot::candidate);
+  passed &= expect(
+      target_write.succeeded() && source_write.succeeded() &&
+          replaced.succeeded() &&
+          replaced_target.status == azzs::application::StateIoStatus::succeeded &&
+          replaced_target.bytes == azzs::domain::StateBytes(
+                                       replaced_bytes.begin(),
+                                       replaced_bytes.end()) &&
+          consumed_source.status == azzs::application::StateIoStatus::not_found,
+      "replace must release its validated existing target before publishing the source");
+
+  auto const rejected_key = azzs::domain::StateKey::machine(
+      azzs::domain::AggregateId{"windows-replace-rejection-contract"});
+  auto rejected_source_write = first_files.write(
+      rejected_key, azzs::application::StateFileSlot::candidate,
+      replaced_bytes);
+  auto const rejected_target =
+      root / L"device" / L"state" / L"windows-replace-rejection-contract" /
+      L"authority.state";
+  std::error_code rejected_target_error;
+  auto const rejected_target_created =
+      std::filesystem::create_directory(rejected_target,
+                                        rejected_target_error);
+  auto rejected = first_files.replace(
+      rejected_key, azzs::application::StateFileSlot::candidate,
+      azzs::application::StateFileSlot::current);
+  auto retained_source = first_files.read(
+      rejected_key, azzs::application::StateFileSlot::candidate);
+  passed &= expect(
+      rejected_source_write.succeeded() && rejected_target_created &&
+          !rejected.succeeded() &&
+          retained_source.status == azzs::application::StateIoStatus::succeeded &&
+          retained_source.bytes == azzs::domain::StateBytes(
+                                       replaced_bytes.begin(),
+                                       replaced_bytes.end()) &&
+          std::filesystem::is_directory(rejected_target),
+      "replace must reject an invalid target without consuming the source");
+  std::filesystem::remove(rejected_target, rejected_target_error);
+
   std::filesystem::remove_all(root, cleanup_error);
   return passed;
 }
