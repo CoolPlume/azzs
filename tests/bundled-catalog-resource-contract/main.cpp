@@ -139,6 +139,18 @@ class Fixture final {
          expect(!read, "a digest mismatch must reject the resource bytes");
 }
 
+[[nodiscard]] bool byte_count_mismatch_is_rejected() {
+  Fixture fixture;
+  auto const written = write_file(fixture.catalog_file(), "abcx");
+  WindowsBundledCatalogResourceReader reader{fixture.root()};
+  auto const read =
+      reader.read("catalog/software-catalog.toml", kAbcExpectation);
+  return expect(fixture.ready() && written,
+                "the byte-count mismatch fixture must be writable") &&
+         expect(!read,
+                "a resource with bytes outside the locked length must be rejected");
+}
+
 [[nodiscard]] bool unsafe_relative_path_is_rejected() {
   Fixture fixture;
   auto const written = write_file(fixture.catalog_file(), "abc");
@@ -246,6 +258,7 @@ int main() {
   bool passed = true;
   passed &= missing_resource_is_rejected();
   passed &= digest_mismatch_is_rejected();
+  passed &= byte_count_mismatch_is_rejected();
   passed &= unsafe_relative_path_is_rejected();
   passed &= reparse_point_is_rejected();
   passed &= nested_reparse_point_is_rejected();

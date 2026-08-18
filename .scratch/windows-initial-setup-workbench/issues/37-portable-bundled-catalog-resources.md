@@ -5,6 +5,7 @@ Status: ready-for-agent
 Resolution: open
 Blocked by: 01, 03, 19, 25, 29, 31
 Owner: issue-37
+Claimed by: codex/issue-37-portable-resources
 Consumers: 21
 Verification: 在无仓库源目录的干净便携候选中运行内置目录加载、内容清单、package manifest 与 portable package contract；确认资源缺失、路径漂移和摘要不匹配均 fail-closed。
 Evidence freshness: 绑定当前源码、目录文件、发行内容清单、打包脚本和候选提交；目录模式、资源布局、启动装配路径或清单字段变化后重新生成并验证候选。
@@ -44,3 +45,4 @@ Evidence freshness: 绑定当前源码、目录文件、发行内容清单、打
 - 2026-08-18：启动修复 feature `a87174c` 已由普通合并 `5737855` 集成，最新架构门禁登记提交为 `ef894d4`；其中 `bundled_catalog_resources` 的构造期资源接缝与优化目录预检顺序得到静态合同覆盖。x64 host-debug 启动合同 1/1 和 WinUI 异步边界合同通过，但本次没有运行便携资源合同、Release 便携包、真实 EXE、ARM64、MSI/WiX、安装生命周期或 CI；目录资源候选证据仍不足，`Resolution: open` 保持不变。
 - 2026-08-18：在源代码等价于 `ef894d4` 的 x64 Release 隔离 worktree 中，`portable.package.contract` 的标准有效包、目录资源完整性、摘要/路径拒绝与快照场景均输出通过；`bundled-catalog-resource.contract` 的正常读取和拒绝路径进入 reparse 反例时停止。两项最终均因宿主没有创建文件/目录符号链接的管理员权限失败，未将该环境缺口写成资源实现通过；未生成并验收三档 Release 便携候选、ARM64、MSI/WiX、安装生命周期或 CI，`Resolution: open` 保持不变。
 - 2026-08-18：在 integration `7049f9a571111d5a37a1a2b31de758b9411bde69` 的 AMD64 host-debug 隔离 worktree 中，使用 `D:\azzs-codex\tmp\issue37-resource-contract-20260818` 作为 `TEMP/TMP`，`azzs_bundled_catalog_resource_contract` 增量编译成功。`ctest --preset host-debug --output-on-failure -R bundled-catalog-resource.contract` 的缺失、摘要、路径和快照断言未报告失败；文件与目录 reparse fixture 均因 `CreateSymbolicLinkW` 的非特权尝试和回退尝试返回 `GetLastError=1314 (ERROR_PRIVILEGE_NOT_HELD)` 而停止，合同整体保持失败，未把宿主权限缺口写成资源实现通过；未改系统权限，ARM64、Release 便携候选、真实 EXE、MSI/WiX、安装生命周期和 CI 仍未验证。
+- 2026-08-19：feature `codex/issue-37-portable-resources` 在 x64 资源读取接缝增加句柄读取后的锁定字节数复核，并新增实际长度超过 manifest 锁定值时拒绝的无界面合同。x64 Release WinUI/MSVC 构建、`architecture.project-graph`、`core.smoke` 和便携合同的标准资源/manifest 场景通过；资源合同和便携合同的 reparse 反例仍分别受 `ERROR_PRIVILEGE_NOT_HELD (1314)` 与宿主 Administrator 权限阻断。未运行 ARM64、MSI/WiX、人工 UAC、安装生命周期或真实候选，`Resolution: open` 保持不变。
