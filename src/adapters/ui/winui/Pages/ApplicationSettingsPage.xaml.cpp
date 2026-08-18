@@ -591,7 +591,7 @@ void ApplicationSettingsPage::project_update(
   using azzs::application::UpdateState;
   using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 
-  auto const title = resource_string(L"ApplicationUpdateTitle");
+  auto const title = resource_string(L"ApplicationUpdateTitle.Text");
   auto message = std::wstring{
       resource_string(L"ApplicationUpdateReadyMessage")};
   auto severity = InfoBarSeverity::Informational;
