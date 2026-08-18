@@ -108,15 +108,14 @@ def verify(root: Path) -> None:
 
     app_header = read(root / "src/adapters/ui/winui/App.xaml.h")
     require(
-        "DeviceDataEnvironmentResult" in app_header and
-        "device_data_environment_failure_" in app_header,
-        "App must retain the structured device-data startup failure result",
+        "windows_device_data_environment.hpp" not in app_header and
+        "StartupAssemblyStatus" in app_header,
+        "App must retain startup failures through the application-layer status type",
     )
     app_source = read(root / "src/adapters/ui/winui/App.xaml.cpp")
     require(
-        "device_data_environment_failure_ =" in app_source and
-        "std::move(startup.device_data_environment_failure)" in app_source,
-        "App must move the structured startup failure result before discarding the assembly result",
+        "startup_status_ = std::move(startup.status)" in app_source,
+        "App must retain the typed startup status returned by the composition root",
     )
 
 
