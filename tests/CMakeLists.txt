@@ -30,6 +30,7 @@ add_subdirectory(ui-design-contract)
 add_subdirectory(product-identity-contract)
 add_subdirectory(release-version-contract)
 add_subdirectory(portable-package-contract)
+add_subdirectory(installer-build-manifest-contract)
 
 if(WIN32)
   add_subdirectory(bundled-catalog-resource-contract)

@@ -17,12 +17,12 @@ APPLICATION_VERSION = re.compile(
 )
 NUMERIC_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 WINDOWS_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$")
-DEFAULT_VERSION = {
-    "schemaVersion": 1,
-    "applicationVersion": "0.1.0",
-    "cmakeVersion": "0.1.0",
-    "windowsVersion": "0.1.0.0",
-    "wixVersion": "0.1.0",
+VERSION_FIELDS = {
+    "schemaVersion",
+    "applicationVersion",
+    "cmakeVersion",
+    "windowsVersion",
+    "wixVersion",
 }
 
 
@@ -40,7 +40,7 @@ class Contract:
 
 
 def validate_mapping(version: dict[str, Any], contract: Contract) -> None:
-    contract.equal(set(version), set(DEFAULT_VERSION), "version source fields drifted")
+    contract.equal(set(version), VERSION_FIELDS, "version source fields drifted")
     contract.equal(version.get("schemaVersion"), 1, "version source schema drifted")
     application = version.get("applicationVersion")
     cmake = version.get("cmakeVersion")
@@ -56,7 +56,7 @@ def validate_mapping(version: dict[str, Any], contract: Contract) -> None:
         contract.equal(windows, f"{application}.0", "stable Windows version must derive directly from applicationVersion")
 
 
-def check_consumers(root: Path, contract: Contract) -> None:
+def check_consumers(root: Path, version: dict[str, Any], contract: Contract) -> None:
     cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
     contract.require('"${CMAKE_CURRENT_SOURCE_DIR}/release/product-version.json"' in cmake, "CMake does not read the authoritative version source")
     contract.require("string(JSON" in cmake and "AZZS_APPLICATION_VERSION" in cmake, "CMake does not parse applicationVersion")
@@ -68,6 +68,11 @@ def check_consumers(root: Path, contract: Contract) -> None:
     contract.require('AZZS_APPLICATION_VERSION="${AZZS_APPLICATION_VERSION}"' in application_cmake, "application fallback identity is not injected from CMake")
     contract.require('AZZS_APPLICATION_VERSION="${AZZS_APPLICATION_VERSION}"' in windows_cmake, "Windows update identity is not injected from CMake")
 
+    forbidden_versions = {
+        value
+        for field in ("applicationVersion", "windowsVersion", "wixVersion")
+        if isinstance(value := version.get(field), str) and value
+    }
     for relative in (
         "src/application/src/workbench.cpp",
         "src/adapters/windows/src/windows_application_update_platform.cpp",
@@ -76,7 +81,11 @@ def check_consumers(root: Path, contract: Contract) -> None:
         "installer/Package.wxs",
     ):
         source = (root / relative).read_text(encoding="utf-8")
-        contract.require("0.1.0" not in source, f"hard-coded development version remains in {relative}")
+        for forbidden_version in forbidden_versions:
+            contract.require(
+                forbidden_version not in source,
+                f"hard-coded product version {forbidden_version!r} remains in {relative}",
+            )
 
     manifest_template = (root / "src/adapters/ui/winui/app.manifest").read_text(encoding="utf-8")
     resource_template = (root / "src/adapters/ui/winui/app.rc").read_text(encoding="utf-8")
@@ -112,6 +121,7 @@ def check_consumers(root: Path, contract: Contract) -> None:
     package_script = (root / "eng/package-installer.ps1").read_text(encoding="utf-8")
     contract.require("AzzsWixVersion=$(AzzsWixVersion)" in wix_project, "WiX project does not forward AzzsWixVersion")
     contract.require("release/product-version.json" in package_script and "/p:AzzsWixVersion=" in package_script, "installer entry does not inject the authoritative WiX version")
+    contract.require("Test-PortableBuildManifest" in package_script, "installer entry no longer gates WiX on the current build manifest")
 
 
 def main() -> int:
@@ -120,6 +130,7 @@ def main() -> int:
     arguments = parser.parse_args()
     root = arguments.repository_root.resolve()
     contract = Contract()
+    version: dict[str, Any] = {}
     source_path = root / "release/product-version.json"
     contract.require(source_path.is_file(), "missing release/product-version.json")
     if source_path.is_file():
@@ -129,8 +140,23 @@ def main() -> int:
             contract.require(False, f"version source is not valid JSON: {error}")
         else:
             validate_mapping(version, contract)
-            contract.equal(version, DEFAULT_VERSION, "development version defaults changed")
-    check_consumers(root, contract)
+    beta_mapping_contract = Contract()
+    validate_mapping(
+        {
+            "schemaVersion": 1,
+            "applicationVersion": "0.9.0-beta.1",
+            "cmakeVersion": "0.9.0",
+            "windowsVersion": "0.9.0.42",
+            "wixVersion": "0.9.0",
+        },
+        beta_mapping_contract,
+    )
+    contract.require(
+        not beta_mapping_contract.failures,
+        "explicit prerelease version mappings must remain supported: "
+        + "; ".join(beta_mapping_contract.failures),
+    )
+    check_consumers(root, version, contract)
     if contract.failures:
         for failure in contract.failures:
             print(f"release version contract: FAIL: {failure}", file=sys.stderr)
