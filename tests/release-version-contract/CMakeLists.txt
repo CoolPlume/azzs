@@ -12,6 +12,11 @@ if(CMAKE_GENERATOR MATCHES "^Visual Studio ")
   list(APPEND release_version_contract_command
     --msbuild-command
     "${CMAKE_MAKE_PROGRAM}")
+  if(DEFINED CMAKE_RC_COMPILER AND EXISTS "${CMAKE_RC_COMPILER}")
+    list(APPEND release_version_contract_command
+      --resource-compiler
+      "${CMAKE_RC_COMPILER}")
+  endif()
 endif()
 
 azzs_register_test(
@@ -25,4 +30,5 @@ set_tests_properties(
   release.version.contract
   PROPERTIES
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    SKIP_RETURN_CODE 77
 )

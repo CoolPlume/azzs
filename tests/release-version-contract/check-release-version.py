@@ -30,6 +30,7 @@ VERSION_FIELDS = {
     "windowsVersion",
     "wixVersion",
 }
+MSBUILD_CONTRACT_SKIP = 77
 
 
 class Contract:
@@ -130,6 +131,13 @@ def check_consumers(root: Path, version: dict[str, Any], contract: Contract) -> 
     targets = [item.attrib.get("Name") for item in project.findall(".//m:Target", namespace)]
     contract.require("ValidateAzzsVersionInputs" in targets, "WinUI project does not fail closed without versioned build inputs")
 
+    resource_contract = root / "tests/release-version-contract"
+    contract.require(
+        (resource_contract / "resource-macro.rc").is_file()
+        and (resource_contract / "msbuild-property-capture.proj").is_file(),
+        "MSBuild resource contract probe files are missing",
+    )
+
     build_script = (root / "eng/build.ps1").read_text(encoding="utf-8")
     contract.require("release/product-version.json" in build_script, "build entry does not read the authoritative version source")
     contract.require("releaseChannel" in build_script, "build entry does not validate the authoritative release channel")
@@ -152,26 +160,214 @@ def check_consumers(root: Path, version: dict[str, Any], contract: Contract) -> 
     contract.require("Test-PortableBuildManifest" in package_script, "installer entry no longer gates WiX on the current build manifest")
 
 
-def validate_msbuild_windows_version_argument(
-    root: Path, msbuild_command: str | None, contract: Contract
+def powershell_executable() -> str | None:
+    return shutil.which("pwsh") or shutil.which("powershell")
+
+
+def run_powershell_helper(
+    powershell_command: str,
+    helper: Path,
+    windows_version: str,
+    environment: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    escaped_helper_path = str(helper).replace("'", "''")
+    escaped_version = windows_version.replace("'", "''")
+    return subprocess.run(
+        [
+            powershell_command,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "& { . '"
+            + escaped_helper_path
+            + "'; ConvertTo-AzzsWindowsVersionCommasArgument -WindowsVersion '"
+            + escaped_version
+            + "' }",
+        ],
+        cwd=helper.parents[1],
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+        errors="replace",
+    )
+
+
+def discover_resource_compiler(explicit: str | None) -> str | None:
+    candidates: list[Path] = []
+    if explicit:
+        candidates.append(Path(explicit))
+    for command in ("rc.exe", "rc"):
+        located = shutil.which(command)
+        if located:
+            candidates.append(Path(located))
+
+    sdk_root = os.environ.get("WindowsSdkDir")
+    if sdk_root:
+        sdk_path: Path | None = Path(sdk_root)
+    else:
+        program_files_x86 = os.environ.get("ProgramFiles(x86)")
+        sdk_path = (
+            Path(program_files_x86) / "Windows Kits" / "10"
+            if program_files_x86
+            else None
+        )
+    sdk_version = os.environ.get("WindowsSDKVersion", "").strip("\\/")
+    if sdk_path:
+        if sdk_version:
+            candidates.append(sdk_path / "bin" / sdk_version / "x64" / "rc.exe")
+        bin_path = sdk_path / "bin"
+        if bin_path.is_dir():
+            for version_path in sorted(bin_path.iterdir(), reverse=True):
+                candidates.append(version_path / "x64" / "rc.exe")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def validate_powershell_helper(
+    root: Path,
+    powershell_command: str | None,
+    required: bool,
+    contract: Contract,
 ) -> None:
-    if not msbuild_command:
-        return
-
     helper = root / "eng/msbuild-arguments.ps1"
-    capture_project = root / "tests/release-version-contract/msbuild-property-capture.proj"
     contract.require(helper.is_file(), "missing MSBuild Windows version argument encoder")
-    contract.require(capture_project.is_file(), "missing MSBuild Windows version capture project")
-    if not helper.is_file() or not capture_project.is_file():
+    if not helper.is_file():
         return
-
-    powershell_command = shutil.which("pwsh") or shutil.which("powershell")
+    helper_source = helper.read_text(encoding="utf-8")
     contract.require(
-        powershell_command is not None,
-        "MSBuild Windows version argument contract requires PowerShell",
+        "throw" in helper_source
+        and "notmatch" in helper_source
+        and "WindowsVersion" in helper_source,
+        "MSBuild Windows version argument encoder must fail closed in its production function",
     )
     if powershell_command is None:
+        if required:
+            contract.require(False, "MSBuild Windows version argument contract requires PowerShell")
         return
+
+    environment = os.environ.copy()
+    valid = run_powershell_helper(
+        powershell_command, helper, "0.1.0.0", environment
+    )
+    contract.require(
+        valid.returncode == 0,
+        "MSBuild Windows version argument encoder failed: "
+        + (valid.stdout + valid.stderr).strip()[-1200:],
+    )
+    contract.equal(
+        valid.stdout.strip(),
+        "0%2c1%2c0%2c0",
+        "0.1.0.0 must be encoded for an MSBuild property argument",
+    )
+
+    invalid_inputs = (
+        ("missing segment", "0.1.0"),
+        ("extra segment", "0.1.0.0.1"),
+        ("non-numeric segment", "0.one.0.0"),
+        ("pre-encoded commas", "0%2c1%2c0%2c0"),
+    )
+    for description, value in invalid_inputs:
+        result = run_powershell_helper(
+            powershell_command, helper, value, environment
+        )
+        contract.require(
+            result.returncode != 0,
+            f"MSBuild Windows version argument encoder accepted {description}: {value!r}",
+        )
+        contract.require(
+            result.stdout.strip() == ""
+            and "0%2c1%2c0%2c0" not in result.stderr,
+            f"MSBuild Windows version argument encoder emitted a misleading value for {description}",
+        )
+
+
+def validate_build_rejects_invalid_windows_version(
+    root: Path,
+    powershell_command: str | None,
+    version: dict[str, Any],
+    contract: Contract,
+) -> None:
+    if powershell_command is None:
+        return
+
+    source_path = root / "release/product-version.json"
+    build_script = root / "eng/build.ps1"
+    original = source_path.read_bytes()
+    invalid_version = dict(version)
+    invalid_version["windowsVersion"] = "0.1.0"
+    try:
+        source_path.write_text(
+            json.dumps(invalid_version, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                powershell_command,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(build_script),
+                "-Architecture",
+                "x64",
+                "-SkipCoreSmoke",
+            ],
+            cwd=root,
+            env=os.environ.copy(),
+            capture_output=True,
+            check=False,
+            text=True,
+            errors="replace",
+        )
+        output = result.stdout + result.stderr
+        contract.require(
+            result.returncode != 0,
+            "build.ps1 accepted an invalid four-part Windows version input",
+        )
+        contract.require(
+            "unsupported version mapping" in output.lower(),
+            "build.ps1 did not reject invalid Windows version input at its version gate",
+        )
+        contract.require(
+            "msbuild.exe" not in output.lower(),
+            "build.ps1 reached MSBuild after rejecting an invalid Windows version input",
+        )
+    except OSError as error:
+        contract.require(False, f"build.ps1 invalid-input contract failed: {error}")
+    finally:
+        source_path.write_bytes(original)
+
+
+def validate_msbuild_windows_version_argument(
+    root: Path,
+    msbuild_command: str | None,
+    resource_compiler: str | None,
+    contract: Contract,
+) -> bool:
+    powershell_command = powershell_executable()
+    validate_powershell_helper(
+        root, powershell_command, bool(msbuild_command), contract
+    )
+    if not msbuild_command:
+        return True
+
+    capture_project = root / "tests/release-version-contract/msbuild-property-capture.proj"
+    contract.require(capture_project.is_file(), "missing MSBuild Windows version capture project")
+    if not capture_project.is_file() or powershell_command is None:
+        return False
+
+    resolved_resource_compiler = discover_resource_compiler(resource_compiler)
+    contract.require(
+        resolved_resource_compiler is not None,
+        "MSBuild Windows version resource contract requires rc.exe",
+    )
+    if resolved_resource_compiler is None:
+        return False
 
     output_parent = root / "out"
     test_directory: Path | None = None
@@ -184,39 +380,17 @@ def validate_msbuild_windows_version_argument(
         environment = os.environ.copy()
         environment["TEMP"] = str(test_directory)
         environment["TMP"] = str(test_directory)
-        escaped_helper_path = str(helper).replace("'", "''")
-        encoded = subprocess.run(
-            [
-                powershell_command,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "& { . '"
-                + escaped_helper_path
-                + "'; ConvertTo-AzzsWindowsVersionCommasArgument -WindowsVersion '0.1.0.0' }",
-            ],
-            cwd=root,
-            env=environment,
-            capture_output=True,
-            check=False,
-            text=True,
-            errors="replace",
+        encoded = run_powershell_helper(
+            powershell_command,
+            root / "eng/msbuild-arguments.ps1",
+            "0.1.0.0",
+            environment,
         )
         encoded_output = encoded.stdout.strip()
-        contract.require(
-            encoded.returncode == 0,
-            "MSBuild Windows version argument encoder failed: "
-            + (encoded.stdout + encoded.stderr).strip()[-1200:],
-        )
-        contract.equal(
-            encoded_output,
-            "0%2c1%2c0%2c0",
-            "0.1.0.0 must be encoded for an MSBuild property argument",
-        )
         if encoded.returncode != 0 or encoded_output != "0%2c1%2c0%2c0":
             return
 
+        resource_output_path = test_directory / "resource"
         captured = subprocess.run(
             [
                 msbuild_command,
@@ -225,6 +399,8 @@ def validate_msbuild_windows_version_argument(
                 "/t:Capture",
                 f"/p:AzzsCapturePath={capture_path}",
                 f"/p:AzzsWindowsVersionCommas={encoded_output}",
+                f"/p:AzzsResourceCompiler={resolved_resource_compiler}",
+                f"/p:AzzsResourceOutputPath={resource_output_path}",
             ],
             cwd=root,
             env=environment,
@@ -248,6 +424,23 @@ def validate_msbuild_windows_version_argument(
                 "0,1,0,0",
                 "MSBuild must receive 0,1,0,0 after command-line parsing",
             )
+        resource_path = resource_output_path / "version-probe.res"
+        contract.require(
+            resource_path.is_file(),
+            "MSBuild did not produce the compiled Windows version resource",
+        )
+        if captured.returncode == 0 and resource_path.is_file():
+            resource_bytes = resource_path.read_bytes()
+            resource_text = resource_bytes.decode("utf-16le", errors="ignore")
+            contract.require(
+                "0,1,0,0" in resource_text,
+                "compiled Windows version resource does not contain 0,1,0,0",
+            )
+            for forbidden in ("%2c", '"', "\\"):
+                contract.require(
+                    forbidden not in resource_text and forbidden.encode("ascii") not in resource_bytes,
+                    f"compiled Windows version resource contains forbidden token {forbidden!r}",
+                )
     except OSError as error:
         contract.require(False, f"MSBuild Windows version argument contract failed: {error}")
     finally:
@@ -403,6 +596,7 @@ def main() -> int:
     parser.add_argument("--repository-root", required=True, type=Path)
     parser.add_argument("--cmake-command", default="cmake")
     parser.add_argument("--msbuild-command")
+    parser.add_argument("--resource-compiler")
     arguments = parser.parse_args()
     root = arguments.repository_root.resolve()
     contract = Contract()
@@ -434,8 +628,14 @@ def main() -> int:
         + "; ".join(beta_mapping_contract.failures),
     )
     check_consumers(root, version, contract)
-    validate_msbuild_windows_version_argument(
-        root, arguments.msbuild_command, contract
+    validate_build_rejects_invalid_windows_version(
+        root, powershell_executable(), version, contract
+    )
+    msbuild_contract_skipped = validate_msbuild_windows_version_argument(
+        root,
+        arguments.msbuild_command,
+        arguments.resource_compiler,
+        contract,
     )
     if source_path.is_file():
         mutation_contract(root, arguments.cmake_command, contract)
@@ -443,6 +643,13 @@ def main() -> int:
         for failure in contract.failures:
             print(f"release version contract: FAIL: {failure}", file=sys.stderr)
         return 1
+    if msbuild_contract_skipped:
+        print(
+            "release version contract: SKIP (MSBuild/rc.exe resource contract "
+            "requires a Visual Studio generator)",
+            file=sys.stderr,
+        )
+        return MSBUILD_CONTRACT_SKIP
     print("release version contract: PASS")
     return 0
 
