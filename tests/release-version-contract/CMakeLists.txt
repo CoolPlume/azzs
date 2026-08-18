@@ -8,6 +8,8 @@ azzs_register_test(
     "${CMAKE_CURRENT_SOURCE_DIR}/check-release-version.py"
     --repository-root
     "${PROJECT_SOURCE_DIR}"
+    --cmake-command
+    "${CMAKE_COMMAND}"
 )
 
 set_tests_properties(

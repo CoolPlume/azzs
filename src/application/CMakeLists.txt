@@ -24,6 +24,7 @@ target_include_directories(azzs_application
 target_compile_definitions(azzs_application
   PRIVATE
     AZZS_APPLICATION_VERSION="${AZZS_APPLICATION_VERSION}"
+    AZZS_APPLICATION_RELEASE_CHANNEL="${AZZS_APPLICATION_RELEASE_CHANNEL}"
 )
 
 azzs_project_target(

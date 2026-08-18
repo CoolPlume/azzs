@@ -22,6 +22,7 @@ endfunction()
 
 azzs_read_product_version_field(schemaVersion AZZS_PRODUCT_VERSION_SCHEMA)
 azzs_read_product_version_field(applicationVersion AZZS_APPLICATION_VERSION)
+azzs_read_product_version_field(releaseChannel AZZS_APPLICATION_RELEASE_CHANNEL)
 azzs_read_product_version_field(cmakeVersion AZZS_CMAKE_PROJECT_VERSION)
 azzs_read_product_version_field(windowsVersion AZZS_WINDOWS_VERSION)
 azzs_read_product_version_field(wixVersion AZZS_WIX_VERSION)
@@ -33,6 +34,18 @@ if(NOT "${AZZS_APPLICATION_VERSION}" MATCHES
        "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z]+(\\.[0-9A-Za-z]+)*)?$")
   message(FATAL_ERROR
     "applicationVersion must be a three-part semantic version with an optional prerelease suffix")
+endif()
+if(NOT "${AZZS_APPLICATION_RELEASE_CHANNEL}" STREQUAL "stable" AND
+   NOT "${AZZS_APPLICATION_RELEASE_CHANNEL}" STREQUAL "prerelease")
+  message(FATAL_ERROR "releaseChannel must be stable or prerelease")
+endif()
+if("${AZZS_APPLICATION_VERSION}" MATCHES "-" AND
+   NOT "${AZZS_APPLICATION_RELEASE_CHANNEL}" STREQUAL "prerelease")
+  message(FATAL_ERROR "Prerelease applicationVersion requires releaseChannel prerelease")
+endif()
+if(NOT "${AZZS_APPLICATION_VERSION}" MATCHES "-" AND
+   NOT "${AZZS_APPLICATION_RELEASE_CHANNEL}" STREQUAL "stable")
+  message(FATAL_ERROR "Stable applicationVersion requires releaseChannel stable")
 endif()
 foreach(version_name IN ITEMS AZZS_CMAKE_PROJECT_VERSION AZZS_WIX_VERSION)
   if(NOT "${${version_name}}" MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
