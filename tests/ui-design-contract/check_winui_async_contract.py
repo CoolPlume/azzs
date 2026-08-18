@@ -106,6 +106,19 @@ def verify(root: Path) -> None:
         "WinUI resources must not define ApplicationUpdateTitle as both a scope and a resource",
     )
 
+    app_header = read(root / "src/adapters/ui/winui/App.xaml.h")
+    require(
+        "DeviceDataEnvironmentResult" in app_header and
+        "device_data_environment_failure_" in app_header,
+        "App must retain the structured device-data startup failure result",
+    )
+    app_source = read(root / "src/adapters/ui/winui/App.xaml.cpp")
+    require(
+        "device_data_environment_failure_ =" in app_source and
+        "std::move(startup.device_data_environment_failure)" in app_source,
+        "App must move the structured startup failure result before discarding the assembly result",
+    )
+
 
 def main() -> int:
     try:
