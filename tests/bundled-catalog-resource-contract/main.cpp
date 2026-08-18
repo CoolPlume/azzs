@@ -49,6 +49,43 @@ constexpr BundledCatalogResourceExpectation kAbcExpectation{
   return static_cast<bool>(output);
 }
 
+struct SymbolicLinkCreation final {
+  bool created{false};
+  DWORD unprivileged_error{ERROR_SUCCESS};
+  DWORD fallback_error{ERROR_SUCCESS};
+};
+
+[[nodiscard]] SymbolicLinkCreation create_symbolic_link(
+    std::filesystem::path const& link, std::filesystem::path const& target,
+    DWORD directory_flag) {
+  auto created = ::CreateSymbolicLinkW(
+      link.c_str(), target.c_str(),
+      directory_flag | SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE);
+  auto const unprivileged_error =
+      created ? DWORD{ERROR_SUCCESS} : ::GetLastError();
+  auto fallback_error = DWORD{ERROR_SUCCESS};
+  if (!created) {
+    created = ::CreateSymbolicLinkW(link.c_str(), target.c_str(),
+                                    directory_flag);
+    fallback_error = created ? DWORD{ERROR_SUCCESS} : ::GetLastError();
+  }
+  return {.created = created != FALSE,
+          .unprivileged_error = unprivileged_error,
+          .fallback_error = fallback_error};
+}
+
+[[nodiscard]] bool expect_symbolic_link_creation(
+    SymbolicLinkCreation const& creation, char const* message) {
+  if (creation.created) {
+    return true;
+  }
+  std::cerr << "bundled catalog resource contract failed: " << message
+            << " (CreateSymbolicLinkW ALLOW_UNPRIVILEGED_CREATE GetLastError="
+            << creation.unprivileged_error
+            << "; fallback GetLastError=" << creation.fallback_error << ")\n";
+  return false;
+}
+
 class Fixture final {
  public:
   Fixture()
@@ -126,20 +163,17 @@ class Fixture final {
   auto const target = fixture.root() / L"outside.toml";
   auto const written = write_file(target, "abc");
   auto const link = fixture.catalog_file();
-  auto created = ::CreateSymbolicLinkW(
-      link.c_str(), target.c_str(), SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE);
-  if (!created) {
-    created = ::CreateSymbolicLinkW(link.c_str(), target.c_str(), 0);
-  }
+  auto const creation =
+      create_symbolic_link(link, target, /*directory_flag=*/0);
 
   WindowsBundledCatalogResourceReader reader{fixture.root()};
   auto const read =
       reader.read("catalog/software-catalog.toml", kAbcExpectation);
   bool passed = expect(fixture.ready() && written,
                        "the reparse fixture target must be writable") &&
-                expect(created != FALSE,
-                       "the reparse contract requires a file symbolic link");
-  if (created) {
+                expect_symbolic_link_creation(
+                    creation, "the reparse contract requires a file symbolic link");
+  if (creation.created) {
     passed &= expect(!read,
                      "a bundled catalog reparse point must be rejected");
     ::DeleteFileW(link.c_str());
@@ -156,22 +190,18 @@ class Fixture final {
   std::filesystem::create_directories(target, error);
   auto const written = !error &&
                        write_file(target / L"software-catalog.toml", "abc");
-  auto created = ::CreateSymbolicLinkW(
-      catalog.c_str(), target.c_str(),
-      SYMBOLIC_LINK_FLAG_DIRECTORY | SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE);
-  if (!created) {
-    created = ::CreateSymbolicLinkW(catalog.c_str(), target.c_str(),
-                                    SYMBOLIC_LINK_FLAG_DIRECTORY);
-  }
+  auto const creation = create_symbolic_link(
+      catalog, target, SYMBOLIC_LINK_FLAG_DIRECTORY);
 
   WindowsBundledCatalogResourceReader reader{fixture.root()};
   auto const read =
       reader.read("catalog/software-catalog.toml", kAbcExpectation);
   bool passed = expect(fixture.ready() && written,
                        "the nested reparse fixture target must be writable") &&
-                expect(created != FALSE,
-                       "the reparse contract requires a directory symbolic link");
-  if (created) {
+                expect_symbolic_link_creation(
+                    creation,
+                    "the reparse contract requires a directory symbolic link");
+  if (creation.created) {
     passed &= expect(!read,
                      "a reparse point in the catalog directory must be rejected");
     ::RemoveDirectoryW(catalog.c_str());
