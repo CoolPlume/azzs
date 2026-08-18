@@ -81,6 +81,7 @@
     <GeneratedFilesDir>$(IntDir)Generated Files\</GeneratedFilesDir>
     <TargetName>Azzs.WinUI</TargetName>
     <GenerateManifest>true</GenerateManifest>
+    <AzzsApplicationManifest>$(AzzsGeneratedResourceDirectory)\app.manifest</AzzsApplicationManifest>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
@@ -95,6 +96,9 @@
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/Zc:__cplusplus /utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>AZZS_APPLICATION_VERSION=&quot;$(AzzsApplicationVersion)&quot;;AZZS_WINDOWS_VERSION=&quot;$(AzzsWindowsVersion)&quot;;AZZS_WINDOWS_VERSION_COMMAS=$(AzzsWindowsVersionCommas);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>$(AzzsCoreLibraryDirectory);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -226,7 +230,7 @@
     <Midl Include="Pages\SystemOptimizationPage.idl" />
   </ItemGroup>
   <ItemGroup>
-    <Manifest Include="app.manifest" />
+    <Manifest Include="$(AzzsApplicationManifest)" />
     <PRIResource Include="Strings\zh-CN\Resources.resw" />
     <ResourceCompile Include="app.rc" />
   </ItemGroup>
@@ -270,6 +274,12 @@
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_installation_batch_runner_domain.lib')" Text="The CMake installation batch runner domain has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_batch_runner_application.lib')" Text="The CMake software optimization batch runner application has not been built for $(Platform)|$(Configuration)." />
     <Error Condition="!Exists('$(AzzsCoreLibraryDirectory)\azzs_software_optimization_batch_runner_domain.lib')" Text="The CMake software optimization batch runner domain has not been built for $(Platform)|$(Configuration)." />
+  </Target>
+  <Target Name="ValidateAzzsVersionInputs" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(AzzsGeneratedResourceDirectory)' == ''" Text="AzzsGeneratedResourceDirectory must point to CMake-generated versioned resources." />
+    <Error Condition="!Exists('$(AzzsApplicationManifest)')" Text="The CMake-generated versioned manifest is missing: $(AzzsApplicationManifest)" />
+    <Error Condition="'$(AzzsApplicationVersion)' == ''" Text="AzzsApplicationVersion is required." />
+    <Error Condition="'$(AzzsWindowsVersion)' == '' Or '$(AzzsWindowsVersionCommas)' == ''" Text="AzzsWindowsVersion and AzzsWindowsVersionCommas are required." />
   </Target>
   <Target Name="CopyAzzsBundledCatalogResources" AfterTargets="Build">
     <Error Condition="!Exists('%(AzzsBundledCatalogResource.Identity)')" Text="A required bundled catalog resource is missing: %(AzzsBundledCatalogResource.Identity)" />

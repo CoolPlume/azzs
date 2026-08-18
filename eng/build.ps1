@@ -10,8 +10,30 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
+. (Join-Path $PSScriptRoot "msbuild-arguments.ps1")
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$productVersionPath = Join-Path $repositoryRoot "release/product-version.json"
+if (-not (Test-Path -LiteralPath $productVersionPath -PathType Leaf)) {
+    throw "The authoritative product version source was not found: $productVersionPath"
+}
+try {
+    $productVersion = Get-Content -LiteralPath $productVersionPath -Raw | ConvertFrom-Json
+} catch {
+    throw "The authoritative product version source is not valid JSON: $productVersionPath"
+}
+if ($productVersion.schemaVersion -ne 1 -or
+    $productVersion.applicationVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$" -or
+    $productVersion.releaseChannel -notmatch "^(stable|prerelease)$" -or
+    $productVersion.windowsVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") {
+    throw "The authoritative product version source has an unsupported version mapping."
+}
+$applicationIsPrerelease = $productVersion.applicationVersion -match "-"
+if (($productVersion.releaseChannel -eq "stable") -eq $applicationIsPrerelease) {
+    throw "The authoritative product version source has an inconsistent application version and release channel."
+}
+$windowsVersionCommasArgument = ConvertTo-AzzsWindowsVersionCommasArgument `
+    -WindowsVersion $productVersion.windowsVersion
 $evidenceName = "windows-$($Architecture.ToLowerInvariant())-release"
 $logDirectory = Join-Path $repositoryRoot "out/logs"
 $manifestDirectory = Join-Path $repositoryRoot "out/manifests"
@@ -138,6 +160,7 @@ try {
     $configurePreset = "windows-$presetArchitecture"
     $buildPreset = "$configurePreset-release"
     $coreLibraryDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/lib/Release"
+    $winuiVersionedResourceDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/generated/winui"
 
     Write-Log "Restoring the locked C++/WinRT and XAML host packages."
     Invoke-NativeCommand -FilePath $msbuildPath -Arguments @(
@@ -175,6 +198,10 @@ try {
         "/p:Configuration=Release",
         "/p:Platform=$Architecture",
         "/p:AzzsCoreLibraryDirectory=$coreLibraryDirectory",
+        "/p:AzzsGeneratedResourceDirectory=$winuiVersionedResourceDirectory",
+        "/p:AzzsApplicationVersion=$($productVersion.applicationVersion)",
+        "/p:AzzsWindowsVersion=$($productVersion.windowsVersion)",
+        "/p:AzzsWindowsVersionCommas=$windowsVersionCommasArgument",
         "/p:ContinuousIntegrationBuild=true",
         "/bl:$binlogPath",
         "/fl",

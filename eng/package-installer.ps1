@@ -15,6 +15,19 @@ $wixTermsError = "WiX Toolset 7 requires an explicit terms decision. Re-run with
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$productVersionPath = Join-Path $repositoryRoot "release/product-version.json"
+if (-not (Test-Path -LiteralPath $productVersionPath -PathType Leaf)) {
+    throw "The authoritative product version source was not found: $productVersionPath"
+}
+try {
+    $productVersion = Get-Content -LiteralPath $productVersionPath -Raw | ConvertFrom-Json
+} catch {
+    throw "The authoritative product version source is not valid JSON: $productVersionPath"
+}
+if ($productVersion.schemaVersion -ne 1 -or
+    $productVersion.wixVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+$") {
+    throw "The authoritative product version source has an unsupported WiX version mapping."
+}
 if (-not $SkipBuild -and -not $AcceptWixEula) {
     throw $wixTermsError
 }
@@ -111,6 +124,7 @@ $msbuildPath = Join-Path $visualStudioInstance.installationPath "MSBuild/Current
     /p:AzzsInstallerIntermediateDirectory=$intermediateDirectoryWithSeparator `
     /p:BaseIntermediateOutputPath=$intermediateDirectoryWithSeparator `
     /p:MSBuildProjectExtensionsPath=$intermediateDirectoryWithSeparator `
+    /p:AzzsWixVersion=$($productVersion.wixVersion) `
     /p:AcceptEula=wix7
 if ($LASTEXITCODE -ne 0) {
     throw "WiX installer build failed with exit code $LASTEXITCODE."

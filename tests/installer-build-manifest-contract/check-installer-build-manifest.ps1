@@ -78,9 +78,11 @@ function New-FixtureRoot {
     $sourceRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
     Copy-Item -LiteralPath (Join-Path $sourceRoot ".gitignore") -Destination (Join-Path $fixtureRoot ".gitignore")
     New-Item -ItemType Directory -Path (Join-Path $fixtureRoot "eng") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRoot "release") -Force | Out-Null
     foreach ($scriptName in @("package-installer.ps1", "portable-artifact-content.ps1")) {
         Copy-Item -LiteralPath (Join-Path $sourceRoot "eng/$scriptName") -Destination (Join-Path $fixtureRoot "eng/$scriptName")
     }
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "release/product-version.json") -Destination (Join-Path $fixtureRoot "release/product-version.json")
 
     $payloadDirectory = Join-Path $fixtureRoot "out/windows/x64/Release"
     New-Item -ItemType Directory -Path $payloadDirectory -Force | Out-Null
