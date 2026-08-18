@@ -6,7 +6,7 @@
     <OutputPath>$(AzzsPackageOutputDirectory)</OutputPath>
     <IntermediateOutputPath>$(AzzsInstallerIntermediateDirectory)</IntermediateOutputPath>
     <ProductIconPath Condition="'$(ProductIconPath)' == ''">$(MSBuildThisFileDirectory)..\assets\product\generated\windows\windows-initial-setup-workbench.ico</ProductIconPath>
-    <DefineConstants>PayloadDirectory=$(PayloadDirectory);ProductIconPath=$(ProductIconPath)</DefineConstants>
+    <DefineConstants>PayloadDirectory=$(PayloadDirectory);ProductIconPath=$(ProductIconPath);AzzsWixVersion=$(AzzsWixVersion)</DefineConstants>
     <Pedantic>true</Pedantic>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
@@ -17,5 +17,6 @@
     <Error Condition="'$(AzzsPackageOutputDirectory)' == ''" Text="AzzsPackageOutputDirectory is required." />
     <Error Condition="'$(AzzsInstallerIntermediateDirectory)' == ''" Text="AzzsInstallerIntermediateDirectory is required." />
     <Error Condition="!Exists('$(ProductIconPath)')" Text="ProductIconPath does not contain the generated product icon." />
+    <Error Condition="'$(AzzsWixVersion)' == ''" Text="AzzsWixVersion is required from the authoritative product version source." />
   </Target>
 </Project>

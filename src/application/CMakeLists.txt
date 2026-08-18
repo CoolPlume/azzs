@@ -21,6 +21,11 @@ target_include_directories(azzs_application
     include
 )
 
+target_compile_definitions(azzs_application
+  PRIVATE
+    AZZS_APPLICATION_VERSION="${AZZS_APPLICATION_VERSION}"
+)
+
 azzs_project_target(
   TARGET azzs_application
   ROLE application

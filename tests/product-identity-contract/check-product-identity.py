@@ -566,7 +566,17 @@ def check_consumers(root: Path, locale: dict[str, Any], identity: dict[str, Any]
     project_root = ET.parse(project_path).getroot()
     msbuild_namespace = {"m": "http://schemas.microsoft.com/developer/msbuild/2003"}
     resources = project_root.findall(".//m:ResourceCompile", msbuild_namespace)
-    contract.equal([item.attrib.get("Include") for item in resources], ["app.rc"], "WinUI PE resource inclusion drifted")
+    contract.equal(
+        [item.attrib.get("Include") for item in resources if item.attrib.get("Include")],
+        ["app.rc"],
+        "WinUI PE resource inclusion drifted",
+    )
+    manifests = project_root.findall(".//m:Manifest", msbuild_namespace)
+    contract.equal(
+        [item.attrib.get("Include") for item in manifests],
+        ["$(AzzsApplicationManifest)"],
+        "WinUI manifest inclusion drifted",
+    )
     target_name = project_root.find(".//m:TargetName", msbuild_namespace)
     contract.equal(target_name.text if target_name is not None else None, "Azzs.WinUI", "internal executable name drifted")
 

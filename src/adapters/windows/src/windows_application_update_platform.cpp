@@ -24,7 +24,7 @@ constexpr std::string_view kManualGithubReleases{
     "https://github.com/CoolPlume/azzs/releases"};
 
 #ifndef AZZS_APPLICATION_VERSION
-#define AZZS_APPLICATION_VERSION "0.1.0"
+#error "AZZS_APPLICATION_VERSION must be supplied by the authoritative product version source"
 #endif
 
 [[nodiscard]] application::UpdatePlatformResult unavailable(
