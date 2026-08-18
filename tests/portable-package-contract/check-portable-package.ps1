@@ -634,6 +634,30 @@ try {
         -ArtifactId "standard-x64-portable" `
         -Scenario "a package manifest missing the required inputs array"
 
+    $scalarManifestInputsFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $scalarManifestInputsFixture -ArtifactId "standard-x64-portable"
+    $scalarManifestInputsCandidates = Get-CandidatePaths -FixtureRoot $scalarManifestInputsFixture -ArtifactId "standard-x64-portable"
+    $scalarManifestInputsManifest = Get-Content -LiteralPath $scalarManifestInputsCandidates[2] -Raw | ConvertFrom-Json
+    $scalarManifestInputsManifest.inputs = [pscustomobject]@{ id = "not-an-array" }
+    Write-JsonFile -Value $scalarManifestInputsManifest -Path $scalarManifestInputsCandidates[2]
+    Require-PortableVerificationFailure `
+        -FixtureRoot $scalarManifestInputsFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "a package manifest inputs value with the wrong JSON type"
+
+    $nullPayloadBytesFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $nullPayloadBytesFixture -ArtifactId "standard-x64-portable"
+    $nullPayloadBytesCandidates = Get-CandidatePaths -FixtureRoot $nullPayloadBytesFixture -ArtifactId "standard-x64-portable"
+    $nullPayloadBytesManifest = Get-Content -LiteralPath $nullPayloadBytesCandidates[2] -Raw | ConvertFrom-Json
+    $nullPayloadBytesEntry = @($nullPayloadBytesManifest.payload | Where-Object { $_.path -eq "Azzs.WinUI.exe" })[0]
+    Require ($null -ne $nullPayloadBytesEntry) "null payload bytes fixture lacks the entry executable"
+    $nullPayloadBytesEntry.bytes = $null
+    Write-JsonFile -Value $nullPayloadBytesManifest -Path $nullPayloadBytesCandidates[2]
+    Require-PortableVerificationFailure `
+        -FixtureRoot $nullPayloadBytesFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "a package manifest payload entry with null bytes"
+
     $missingRuntimeFixture = New-FixtureRoot
     Invoke-Package -FixtureRoot $missingRuntimeFixture -ArtifactId "standard-x64-portable"
     $missingRuntimeCandidates = Get-CandidatePaths -FixtureRoot $missingRuntimeFixture -ArtifactId "standard-x64-portable"
@@ -948,6 +972,12 @@ try {
     $buildManifest.source.dirty = $true
     Write-JsonFile -Value $buildManifest -Path (Get-BuildManifestPath -FixtureRoot $buildFixture)
     Require-PackageFailure -FixtureRoot $buildFixture -ArtifactId "standard-x64-portable" -Scenario "dirty build manifest"
+
+    $scalarBuildArtifactsFixture = New-FixtureRoot
+    $scalarBuildManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $scalarBuildArtifactsFixture) -Raw | ConvertFrom-Json
+    $scalarBuildManifest.artifacts = [pscustomobject]@{ path = "Azzs.WinUI.exe"; bytes = 512 }
+    Write-JsonFile -Value $scalarBuildManifest -Path (Get-BuildManifestPath -FixtureRoot $scalarBuildArtifactsFixture)
+    Require-PackageFailure -FixtureRoot $scalarBuildArtifactsFixture -ArtifactId "standard-x64-portable" -Scenario "build manifest artifacts with the wrong JSON type"
 
     $dirtyAfterBuildFixture = New-FixtureRoot
     @'

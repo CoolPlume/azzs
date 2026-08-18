@@ -17,13 +17,125 @@ function Get-RequiredProperty {
         if (-not $Object.Contains($Name) -or $null -eq $Object[$Name]) {
             throw "$Context is missing '$Name'."
         }
-        return $Object[$Name]
+        return [pscustomobject]@{ Value = $Object[$Name] }
     }
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property -or $null -eq $property.Value) {
         throw "$Context is missing '$Name'."
     }
-    return $property.Value
+    return [pscustomobject]@{ Value = $property.Value }
+}
+
+function Get-RequiredStringProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $value = (Get-RequiredProperty -Object $Object -Name $Name -Context $Context).Value
+    if ($value -isnot [string]) {
+        throw "$Context '$Name' must be a JSON string."
+    }
+    return $value
+}
+
+function Get-RequiredIntegerProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $value = (Get-RequiredProperty -Object $Object -Name $Name -Context $Context).Value
+    if ($value.GetType().FullName -notin @(
+            "System.Byte", "System.SByte", "System.Int16", "System.UInt16",
+            "System.Int32", "System.UInt32", "System.Int64", "System.UInt64"
+        )) {
+        throw "$Context '$Name' must be a JSON integer."
+    }
+    return [Int64]$value
+}
+
+function Get-RequiredBooleanProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $value = (Get-RequiredProperty -Object $Object -Name $Name -Context $Context).Value
+    if ($value -isnot [bool]) {
+        throw "$Context '$Name' must be a JSON boolean."
+    }
+    return $value
+}
+
+function Get-RequiredArrayProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    # Preserve an empty JSON array instead of letting the PowerShell pipeline erase it.
+    if ($Object -is [System.Collections.IDictionary]) {
+        if (-not $Object.Contains($Name) -or $null -eq $Object[$Name]) {
+            throw "$Context is missing '$Name'."
+        }
+        $value = $Object[$Name]
+    }
+    else {
+        $property = $Object.PSObject.Properties[$Name]
+        if ($null -eq $property -or $null -eq $property.Value) {
+            throw "$Context is missing '$Name'."
+        }
+        $value = $property.Value
+    }
+    if ($value -isnot [System.Array]) {
+        throw "$Context '$Name' must be a JSON array."
+    }
+    return [pscustomobject]@{ Value = [object[]]$value }
+}
+
+function Get-RequiredObjectProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Context
+    )
+
+    $value = (Get-RequiredProperty -Object $Object -Name $Name -Context $Context).Value
+    if ($value -is [System.Array] -or
+        ($value -isnot [System.Collections.IDictionary] -and $value -isnot [pscustomobject])) {
+        throw "$Context '$Name' must be a JSON object."
+    }
+    return $value
 }
 
 function Get-Sha256Hex {
@@ -277,29 +389,58 @@ function Get-PortableArtifactDefinition {
         -Context "Portable packaging artifact content manifest"
 
     $identity = Get-Content -LiteralPath $identityPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $identityMatches = @($identity.artifactMatrix | Where-Object { $_.id -eq $ArtifactId })
+    $identityMatrix = (Get-RequiredArrayProperty `
+        -Object $identity `
+        -Name "artifactMatrix" `
+        -Context "Product identity").Value
+    $identityMatches = @(
+        foreach ($candidate in $identityMatrix) {
+            if ((Get-RequiredStringProperty -Object $candidate -Name "id" -Context "Product identity artifact") -eq $ArtifactId) {
+                $candidate
+            }
+        }
+    )
     if ($identityMatches.Count -ne 1) {
         throw "ArtifactId '$ArtifactId' is not present exactly once in release/product-identity.json."
     }
     $artifact = $identityMatches[0]
-    if ($artifact.packageKind -ne "portable") {
+    $artifactEdition = Get-RequiredStringProperty -Object $artifact -Name "edition" -Context "Product identity artifact '$ArtifactId'"
+    $artifactPackageKind = Get-RequiredStringProperty -Object $artifact -Name "packageKind" -Context "Product identity artifact '$ArtifactId'"
+    $artifactArchitecture = Get-RequiredStringProperty -Object $artifact -Name "architecture" -Context "Product identity artifact '$ArtifactId'"
+    if ($artifactPackageKind -ne "portable") {
         throw "ArtifactId '$ArtifactId' is not a portable artifact."
     }
-    if ($artifact.architecture -ne "x64") {
-        throw "ArtifactId '$ArtifactId' targets $($artifact.architecture); ARM64 portable packaging is deferred."
+    if ($artifactArchitecture -ne "x64") {
+        throw "ArtifactId '$ArtifactId' targets $artifactArchitecture; ARM64 portable packaging is deferred."
     }
 
     $contentManifest = Get-Content -LiteralPath $contentManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($contentManifest.schemaVersion -ne 1) {
+    if ((Get-RequiredIntegerProperty -Object $contentManifest -Name "schemaVersion" -Context "Artifact content manifest") -ne 1) {
         throw "Artifact content manifest schemaVersion must be 1."
     }
-    $contentMatches = @($contentManifest.artifacts | Where-Object { $_.artifactId -eq $ArtifactId })
+    $contentArtifacts = (Get-RequiredArrayProperty `
+        -Object $contentManifest `
+        -Name "artifacts" `
+        -Context "Artifact content manifest").Value
+    $contentMatches = @(
+        foreach ($candidate in $contentArtifacts) {
+            if ((Get-RequiredStringProperty -Object $candidate -Name "artifactId" -Context "Artifact content manifest artifact") -eq $ArtifactId) {
+                $candidate
+            }
+        }
+    )
     if ($contentMatches.Count -ne 1) {
         throw "Artifact content manifest lacks a unique '$ArtifactId' entry."
     }
     $content = $contentMatches[0]
     foreach ($field in @("edition", "packageKind", "architecture")) {
-        if ((Get-RequiredProperty -Object $content -Name $field -Context "Artifact content '$ArtifactId'") -ne $artifact.$field) {
+        $contentValue = Get-RequiredStringProperty -Object $content -Name $field -Context "Artifact content '$ArtifactId'"
+        $identityValue = switch ($field) {
+            "edition" { $artifactEdition }
+            "packageKind" { $artifactPackageKind }
+            "architecture" { $artifactArchitecture }
+        }
+        if ($contentValue -ne $identityValue) {
             throw "Artifact content '$ArtifactId' $field does not match product identity."
         }
     }
@@ -339,10 +480,10 @@ function Test-BundledCatalogResources {
             packagePath = "catalog/software-optimization-catalog.toml"
         }
     )
-    [object[]]$rawResources = @(
-        Get-RequiredProperty -Object $Content -Name "bundledCatalogResources" -Context "Artifact content '$ArtifactId'" |
-            ForEach-Object { $_ }
-    )
+    [object[]]$rawResources = (Get-RequiredArrayProperty `
+        -Object $Content `
+        -Name "bundledCatalogResources" `
+        -Context "Artifact content '$ArtifactId'").Value
     if ($rawResources.Count -ne $expectedResources.Count) {
         throw "Artifact content '$ArtifactId' must declare exactly two bundled catalog resources."
     }
@@ -350,7 +491,7 @@ function Test-BundledCatalogResources {
     $resourcesById = @{}
     foreach ($rawResource in $rawResources) {
         $context = "Artifact content '$ArtifactId' bundled catalog resource"
-        $id = [string](Get-RequiredProperty -Object $rawResource -Name "id" -Context $context)
+        $id = Get-RequiredStringProperty -Object $rawResource -Name "id" -Context $context
         if ([string]::IsNullOrWhiteSpace($id) -or $resourcesById.ContainsKey($id)) {
             throw "$context contains an empty or duplicate id."
         }
@@ -364,10 +505,12 @@ function Test-BundledCatalogResources {
         }
         $resource = $resourcesById[$expectedResource.id]
         $context = "Artifact content '$ArtifactId' bundled catalog resource '$($expectedResource.id)'"
-        $relativePath = [string](Get-RequiredProperty -Object $resource -Name "relativePath" -Context $context)
-        $packagePath = Resolve-BundledCatalogPackagePath -PackagePath ([string](Get-RequiredProperty -Object $resource -Name "packagePath" -Context $context)) -Context "$context packagePath"
-        $bytes = [Int64](Get-RequiredProperty -Object $resource -Name "bytes" -Context $context)
-        $sha256 = [string](Get-RequiredProperty -Object $resource -Name "sha256" -Context $context)
+        $relativePath = Get-RequiredStringProperty -Object $resource -Name "relativePath" -Context $context
+        $packagePath = Resolve-BundledCatalogPackagePath `
+            -PackagePath (Get-RequiredStringProperty -Object $resource -Name "packagePath" -Context $context) `
+            -Context "$context packagePath"
+        $bytes = Get-RequiredIntegerProperty -Object $resource -Name "bytes" -Context $context
+        $sha256 = Get-RequiredStringProperty -Object $resource -Name "sha256" -Context $context
         if ($relativePath -ne $expectedResource.relativePath -or $packagePath -ne $expectedResource.packagePath) {
             throw "$context must use the fixed catalog resource layout."
         }
@@ -408,14 +551,17 @@ function Test-RescueGate {
         [string]$ArtifactId
     )
 
-    $gate = Get-RequiredProperty -Object $Content -Name "rescueGate" -Context "Artifact content '$ArtifactId'"
-    if ((Get-RequiredProperty -Object $gate -Name "adrId" -Context "Artifact content '$ArtifactId' rescueGate") -ne "ADR-0030") {
+    $gate = Get-RequiredObjectProperty -Object $Content -Name "rescueGate" -Context "Artifact content '$ArtifactId'"
+    if ((Get-RequiredStringProperty -Object $gate -Name "adrId" -Context "Artifact content '$ArtifactId' rescueGate") -ne "ADR-0030") {
         throw "Artifact content '$ArtifactId' must be gated by ADR-0030."
     }
-    if ((Get-RequiredProperty -Object $gate -Name "requiredStatus" -Context "Artifact content '$ArtifactId' rescueGate") -ne "accepted") {
+    if ((Get-RequiredStringProperty -Object $gate -Name "requiredStatus" -Context "Artifact content '$ArtifactId' rescueGate") -ne "accepted") {
         throw "Artifact content '$ArtifactId' rescueGate must require the accepted ADR-0030 status."
     }
-    $adrPath = Resolve-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -RelativePath ([string](Get-RequiredProperty -Object $gate -Name "relativePath" -Context "Artifact content '$ArtifactId' rescueGate")) -Context "Artifact content '$ArtifactId' rescueGate relativePath"
+    $adrPath = Resolve-RepositoryRelativePath `
+        -RepositoryRoot $RepositoryRoot `
+        -RelativePath (Get-RequiredStringProperty -Object $gate -Name "relativePath" -Context "Artifact content '$ArtifactId' rescueGate") `
+        -Context "Artifact content '$ArtifactId' rescueGate relativePath"
     if (-not (Test-Path -LiteralPath $adrPath -PathType Leaf)) {
         throw "Artifact content '$ArtifactId' ADR-0030 gate file is missing."
     }
@@ -438,10 +584,10 @@ function Test-RescueInputEvidence {
         [string]$Context
     )
 
-    $evidence = Get-RequiredProperty -Object $LockedInput -Name "rescueEvidence" -Context $Context
+    $evidence = Get-RequiredObjectProperty -Object $LockedInput -Name "rescueEvidence" -Context $Context
     $validated = [ordered]@{}
     foreach ($field in @("sourcePath", "reproducibleBuildPath", "minimalSmokePath", "processTokenContractPath")) {
-        $relativePath = [string](Get-RequiredProperty -Object $evidence -Name $field -Context "$Context rescueEvidence")
+        $relativePath = Get-RequiredStringProperty -Object $evidence -Name $field -Context "$Context rescueEvidence"
         $evidencePath = Resolve-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -RelativePath $relativePath -Context "$Context rescueEvidence $field"
         if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
             throw "$Context rescueEvidence $field file is missing."
@@ -463,12 +609,12 @@ function Test-PortableArtifactInputs {
 
     $artifact = $Definition.Artifact
     $content = $Definition.Content
-    $artifactId = [string]$artifact.id
-    $inputs = Get-RequiredProperty `
+    $artifactId = Get-RequiredStringProperty -Object $artifact -Name "id" -Context "Product identity artifact"
+    $inputs = (Get-RequiredArrayProperty `
         -Object $content `
         -Name "inputs" `
-        -Context "Artifact content '$artifactId'"
-    [object[]]$rawInputs = @($inputs | ForEach-Object { $_ })
+        -Context "Artifact content '$artifactId'").Value
+    [object[]]$rawInputs = $inputs
     if ($artifact.edition -eq "standard") {
         if ($rawInputs.Count -ne 0) {
             throw "Standard portable content must not declare external inputs."
@@ -490,17 +636,17 @@ function Test-PortableArtifactInputs {
     $null = $allowedSecurityClassifications.Add("allowed")
     foreach ($contentInput in $rawInputs) {
         $context = "Artifact content '$artifactId' input"
-        $id = [string](Get-RequiredProperty -Object $contentInput -Name "id" -Context $context)
-        $role = [string](Get-RequiredProperty -Object $contentInput -Name "role" -Context $context)
-        $version = [string](Get-RequiredProperty -Object $contentInput -Name "version" -Context $context)
-        $architecture = [string](Get-RequiredProperty -Object $contentInput -Name "architecture" -Context $context)
-        $relativePath = [string](Get-RequiredProperty -Object $contentInput -Name "relativePath" -Context $context)
-        $packagePath = [string](Get-RequiredProperty -Object $contentInput -Name "packagePath" -Context $context)
-        $bytes = [Int64](Get-RequiredProperty -Object $contentInput -Name "bytes" -Context $context)
-        $sha256 = [string](Get-RequiredProperty -Object $contentInput -Name "sha256" -Context $context)
-        $license = [string](Get-RequiredProperty -Object $contentInput -Name "license" -Context $context)
-        $source = [string](Get-RequiredProperty -Object $contentInput -Name "source" -Context $context)
-        $securityClassification = [string](Get-RequiredProperty -Object $contentInput -Name "securityClassification" -Context $context)
+        $id = Get-RequiredStringProperty -Object $contentInput -Name "id" -Context $context
+        $role = Get-RequiredStringProperty -Object $contentInput -Name "role" -Context $context
+        $version = Get-RequiredStringProperty -Object $contentInput -Name "version" -Context $context
+        $architecture = Get-RequiredStringProperty -Object $contentInput -Name "architecture" -Context $context
+        $relativePath = Get-RequiredStringProperty -Object $contentInput -Name "relativePath" -Context $context
+        $packagePath = Get-RequiredStringProperty -Object $contentInput -Name "packagePath" -Context $context
+        $bytes = Get-RequiredIntegerProperty -Object $contentInput -Name "bytes" -Context $context
+        $sha256 = Get-RequiredStringProperty -Object $contentInput -Name "sha256" -Context $context
+        $license = Get-RequiredStringProperty -Object $contentInput -Name "license" -Context $context
+        $source = Get-RequiredStringProperty -Object $contentInput -Name "source" -Context $context
+        $securityClassification = Get-RequiredStringProperty -Object $contentInput -Name "securityClassification" -Context $context
         if ([string]::IsNullOrWhiteSpace($id) -or [string]::IsNullOrWhiteSpace($role) -or
             [string]::IsNullOrWhiteSpace($version) -or [string]::IsNullOrWhiteSpace($license) -or
             [string]::IsNullOrWhiteSpace($source)) {
@@ -608,17 +754,17 @@ function Test-LargeOfflineArtifactContent {
         Test-BundledCatalogResources `
             -Content $LargeDefinition.Content `
             -RepositoryRoot $RepositoryRoot `
-            -ArtifactId ([string](Get-RequiredProperty `
+            -ArtifactId $(Get-RequiredStringProperty `
                     -Object $LargeDefinition.Content `
                     -Name "artifactId" `
-                    -Context "Large offline artifact content")) `
+                    -Context "Large offline artifact content") `
             -ValidateSource
     )
-    $gate = Get-RequiredProperty -Object $LargeDefinition.Content -Name "releaseDirectoryGate" -Context "Large offline artifact content"
-    if ((Get-RequiredProperty -Object $gate -Name "requiredReleaseState" -Context "Large offline releaseDirectoryGate") -ne "release") {
+    $gate = Get-RequiredObjectProperty -Object $LargeDefinition.Content -Name "releaseDirectoryGate" -Context "Large offline artifact content"
+    if ((Get-RequiredStringProperty -Object $gate -Name "requiredReleaseState" -Context "Large offline releaseDirectoryGate") -ne "release") {
         throw "Large offline releaseDirectoryGate must require release state."
     }
-    $gateRelativePath = [string](Get-RequiredProperty -Object $gate -Name "relativePath" -Context "Large offline releaseDirectoryGate")
+    $gateRelativePath = Get-RequiredStringProperty -Object $gate -Name "relativePath" -Context "Large offline releaseDirectoryGate"
     $matchingResources = @($bundledCatalogResources | Where-Object {
             $_.relativePath -eq $gateRelativePath
         })
@@ -669,11 +815,17 @@ function Test-PortableBuildManifest {
         -Context "Portable build manifest"
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $commit = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
-    if ($manifest.schemaVersion -ne 1 -or $manifest.result -ne "succeeded" -or
-        $manifest.source.dirty -ne $false -or $manifest.source.commit -ne $commit -or
-        $manifest.target.architecture -ne $Architecture -or $manifest.target.configuration -ne "Release") {
+    $source = Get-RequiredObjectProperty -Object $manifest -Name "source" -Context "Portable build manifest"
+    $target = Get-RequiredObjectProperty -Object $manifest -Name "target" -Context "Portable build manifest"
+    if ((Get-RequiredIntegerProperty -Object $manifest -Name "schemaVersion" -Context "Portable build manifest") -ne 1 -or
+        (Get-RequiredStringProperty -Object $manifest -Name "result" -Context "Portable build manifest") -ne "succeeded" -or
+        (Get-RequiredBooleanProperty -Object $source -Name "dirty" -Context "Portable build manifest source") -ne $false -or
+        (Get-RequiredStringProperty -Object $source -Name "commit" -Context "Portable build manifest source") -ne $commit -or
+        (Get-RequiredStringProperty -Object $target -Name "architecture" -Context "Portable build manifest target") -ne $Architecture -or
+        (Get-RequiredStringProperty -Object $target -Name "configuration" -Context "Portable build manifest target") -ne "Release") {
         throw "Portable packaging requires a clean, succeeded $Architecture Release build manifest for the current commit."
     }
+    $null = (Get-RequiredArrayProperty -Object $manifest -Name "artifacts" -Context "Portable build manifest").Value
     Test-PortableRepositoryClean -RepositoryRoot $RepositoryRoot
     return $manifest
 }
