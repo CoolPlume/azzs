@@ -3,6 +3,8 @@
 #include <system_error>
 #include <utility>
 
+#include "azzs/application/software_optimization_catalog_lifecycle.hpp"
+#include "azzs/application/startup_catalog_gate.hpp"
 #include "azzs/application/startup_assembly_status.hpp"
 
 namespace {
@@ -10,6 +12,8 @@ namespace {
 using azzs::application::startup::EmergencyPreflightStartState;
 using azzs::application::startup::StartupAssemblyStage;
 using azzs::application::startup::StartupDiagnosticAvailability;
+using azzs::application::SoftwareOptimizationCatalogLifecycleCode;
+using azzs::application::SoftwareOptimizationCatalogLifecycleResult;
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
   if (!condition) {
@@ -139,6 +143,91 @@ using azzs::application::startup::StartupDiagnosticAvailability;
                 "unreadable records must not claim diagnostics or launch preflight");
 }
 
+[[nodiscard]] bool catalog_gate_failure_mapping_contract() {
+  auto persistence_failure = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::persistence_failed,
+      .error = "win32:5",
+  };
+  auto occupied_failure = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::occupied,
+      .error = "operation is occupied",
+  };
+  auto logging_failure = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::unchanged,
+      .logging_error = "win32:5",
+  };
+  auto occupancy_release_failure = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::applied,
+      .occupancy_error = "win32:5",
+  };
+  auto rejected_failure = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::rejected,
+      .error = "bundled catalog candidate was rejected",
+  };
+  auto accepted = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::applied,
+  };
+  auto unchanged_accepted = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::unchanged,
+  };
+
+  auto const persistence_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(
+          persistence_failure);
+  auto const occupied_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(
+          occupied_failure);
+  auto const logging_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(
+          logging_failure);
+  auto const occupancy_release_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(
+          occupancy_release_failure);
+  auto const rejected_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(
+          rejected_failure);
+  auto const accepted_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(accepted);
+  auto const unchanged_accepted_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(
+          unchanged_accepted);
+
+  return expect(
+             persistence_stage.has_value() &&
+                 *persistence_stage ==
+                     StartupAssemblyStage::software_optimization_catalog_lifecycle,
+             "persistence failure must map to the catalog lifecycle stage") &&
+         expect(occupied_stage.has_value() &&
+                    *occupied_stage ==
+                        StartupAssemblyStage::software_optimization_catalog_lifecycle,
+                "occupancy failure must map to the catalog lifecycle stage") &&
+         expect(logging_stage.has_value() &&
+                    *logging_stage ==
+                        StartupAssemblyStage::software_optimization_catalog_lifecycle,
+                "logging failure must map to the catalog lifecycle stage") &&
+         expect(occupancy_release_stage.has_value() &&
+                    *occupancy_release_stage ==
+                        StartupAssemblyStage::software_optimization_catalog_lifecycle,
+                "occupancy release failure must map to the catalog lifecycle stage") &&
+         expect(rejected_stage.has_value() &&
+                    *rejected_stage ==
+                        StartupAssemblyStage::software_optimization_catalog_lifecycle,
+                "any rejected lifecycle result must map to the catalog lifecycle stage") &&
+         expect(!accepted_stage.has_value(),
+                "an applied catalog lifecycle result must not fail startup") &&
+         expect(!unchanged_accepted_stage.has_value(),
+                "an unchanged catalog lifecycle result must not fail startup");
+}
+
+[[nodiscard]] bool catalog_gate_public_statement_contract() {
+  auto status = azzs::application::startup::startup_assembly_failed(
+      StartupAssemblyStage::software_optimization_catalog_lifecycle);
+  return expect(status.failure.has_value() &&
+                    status.failure->public_statement.find(L"软件优化目录") !=
+                        std::wstring::npos,
+                "catalog lifecycle failures must have a bounded public statement");
+}
+
 }  // namespace
 
 int main() {
@@ -149,6 +238,8 @@ int main() {
   passed &= main_window_failure_contract();
   passed &= unexpected_exception_contract();
   passed &= core_record_readability_contract();
+  passed &= catalog_gate_failure_mapping_contract();
+  passed &= catalog_gate_public_statement_contract();
   if (!passed) {
     return EXIT_FAILURE;
   }
