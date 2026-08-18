@@ -276,6 +276,11 @@ BundledCatalogResourceRead WindowsBundledCatalogResourceReader::read(
 
   auto bytes = read_exact_bytes(file.get(), expectation.byte_count);
   if (!bytes.has_value() ||
+      // Keep the byte-count contract stable across the handle-backed read.
+      // The initial check prevents oversized/undersized files from opening;
+      // this second check rejects a file changed by another pre-existing
+      // writer while the resource bytes were being consumed.
+      !length_matches(file.get(), expectation.byte_count) ||
       !bundled_catalog_resource_matches(*bytes, expectation.sha256)) {
     return {.error = "bundled catalog resource integrity check failed"};
   }
