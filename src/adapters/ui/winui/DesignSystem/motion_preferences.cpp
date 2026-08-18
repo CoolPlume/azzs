@@ -85,13 +85,13 @@ void MotionPreferences::start_listening() {
 
 void MotionPreferences::on_animations_enabled_changed(bool enabled) noexcept {
   try {
-    if (!dispatcher_queue_ || dispatcher_queue_.HasThreadAccess()) {
+    if (!dispatcher_queue_ || dispatcher_queue_->HasThreadAccess()) {
       apply_animations_enabled(enabled);
       return;
     }
 
     std::weak_ptr<MotionPreferences> weak_preferences{shared_from_this()};
-    dispatcher_queue_.TryEnqueue([weak_preferences, enabled] {
+    dispatcher_queue_->TryEnqueue([weak_preferences, enabled] {
       if (auto preferences = weak_preferences.lock()) {
         preferences->apply_animations_enabled(enabled);
       }

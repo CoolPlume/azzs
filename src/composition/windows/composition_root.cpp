@@ -697,8 +697,12 @@ class WindowsWorkbenchServices final
         debug_mode_catalog_editor_(
             std::make_shared<application::DebugModeCatalogEditor>(
                 log_, debug_mode_preferences_)),
+        software_catalog_file_(
+            adapters::infrastructure::LocalSoftwareCatalogFileReader::
+                from_verified_built_in(
+                    bundled_catalog_resources.software_catalog.bytes())),
         cache_root_{.kind = domain::offline_package_cache::
-                            CacheLocationKind::system_directory,
+                        CacheLocationKind::system_directory,
                     .id = "program-data"},
         cache_storage_({adapters::infrastructure::
             ControlledPackageCacheRootConfiguration{
@@ -1091,10 +1095,7 @@ class WindowsWorkbenchServices final
       architecture_selection_;
   std::shared_ptr<application::DebugModeCatalogEditor>
       debug_mode_catalog_editor_;
-  adapters::infrastructure::LocalSoftwareCatalogFileReader software_catalog_file_{
-      adapters::infrastructure::LocalSoftwareCatalogFileReader::
-          from_verified_built_in(
-              bundled_catalog_resources.software_catalog.bytes())};
+  adapters::infrastructure::LocalSoftwareCatalogFileReader software_catalog_file_;
   adapters::infrastructure::TomlSoftwareCatalogCodec software_catalog_codec_;
   application::software_catalog::SoftwareCatalogLifecycle software_catalog_{
       states_, log_, occupancy_, software_catalog_file_, software_catalog_codec_,
