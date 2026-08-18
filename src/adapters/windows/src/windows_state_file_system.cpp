@@ -635,6 +635,8 @@ application::StateIoResult WindowsStateFileSystem::replace(
     return {.status = application::StateIoStatus::failed,
             .error = "state replacement target security or type is invalid"};
   }
+  // MoveFileExW cannot replace a target while its validation handle is open.
+  target_file.reset();
   if (!::MoveFileExW(source_path->path.c_str(), target_path->path.c_str(),
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
     return io_failure(::GetLastError());
