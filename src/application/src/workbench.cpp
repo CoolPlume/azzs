@@ -5,6 +5,10 @@
 
 #include "azzs/application/workbench_services.hpp"
 
+#ifndef AZZS_APPLICATION_VERSION
+#error "AZZS_APPLICATION_VERSION must be supplied by the authoritative product version source"
+#endif
+
 namespace azzs::application {
 
 Workbench::Workbench(PlatformInfo const& platform_info)
@@ -30,7 +34,7 @@ Workbench::Workbench(PlatformInfo const& platform_info,
     snapshot_.driver_acquisition = services_->driver_acquisition().snapshot();
   } else {
     snapshot_.update.current = ApplicationBuildIdentity{
-        .version = "0.1.0",
+        .version = AZZS_APPLICATION_VERSION,
         .channel = ApplicationReleaseChannel::stable,
         .architecture = platform_info.windows_architecture(),
         .edition = ApplicationReleaseEdition::standard,

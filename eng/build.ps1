@@ -12,6 +12,21 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$productVersionPath = Join-Path $repositoryRoot "release/product-version.json"
+if (-not (Test-Path -LiteralPath $productVersionPath -PathType Leaf)) {
+    throw "The authoritative product version source was not found: $productVersionPath"
+}
+try {
+    $productVersion = Get-Content -LiteralPath $productVersionPath -Raw | ConvertFrom-Json
+} catch {
+    throw "The authoritative product version source is not valid JSON: $productVersionPath"
+}
+if ($productVersion.schemaVersion -ne 1 -or
+    $productVersion.applicationVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$" -or
+    $productVersion.windowsVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") {
+    throw "The authoritative product version source has an unsupported version mapping."
+}
+$windowsVersionCommas = $productVersion.windowsVersion.Replace(".", ",")
 $evidenceName = "windows-$($Architecture.ToLowerInvariant())-release"
 $logDirectory = Join-Path $repositoryRoot "out/logs"
 $manifestDirectory = Join-Path $repositoryRoot "out/manifests"
@@ -138,6 +153,7 @@ try {
     $configurePreset = "windows-$presetArchitecture"
     $buildPreset = "$configurePreset-release"
     $coreLibraryDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/lib/Release"
+    $winuiVersionedResourceDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/generated/winui"
 
     Write-Log "Restoring the locked C++/WinRT and XAML host packages."
     Invoke-NativeCommand -FilePath $msbuildPath -Arguments @(
@@ -175,6 +191,10 @@ try {
         "/p:Configuration=Release",
         "/p:Platform=$Architecture",
         "/p:AzzsCoreLibraryDirectory=$coreLibraryDirectory",
+        "/p:AzzsGeneratedResourceDirectory=$winuiVersionedResourceDirectory",
+        "/p:AzzsApplicationVersion=$($productVersion.applicationVersion)",
+        "/p:AzzsWindowsVersion=$($productVersion.windowsVersion)",
+        "/p:AzzsWindowsVersionCommas=$windowsVersionCommas",
         "/p:ContinuousIntegrationBuild=true",
         "/bl:$binlogPath",
         "/fl",
