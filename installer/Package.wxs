@@ -3,7 +3,7 @@
   <Package
       Name="Windows 初装工作台"
       Manufacturer="CoolPlume"
-      Version="0.1.0"
+      Version="$(var.AzzsWixVersion)"
       Language="2052"
       UpgradeCode="{F632F744-7177-4861-86D8-B4A493EE08D0}"
       Scope="perMachine"

@@ -3,7 +3,7 @@
   <assemblyIdentity
     name="CoolPlume.Azzs"
     processorArchitecture="*"
-    version="0.1.0.0"
+    version="@AZZS_WINDOWS_VERSION@"
     type="win32" />
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>

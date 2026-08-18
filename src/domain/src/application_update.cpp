@@ -16,6 +16,7 @@ namespace {
 
 constexpr std::size_t kMaxTextBytes = 256;
 constexpr std::size_t kMaxVersionParts = 8;
+constexpr std::size_t kMaxPrereleaseParts = 8;
 constexpr std::size_t kMaxAssets = 64;
 
 [[nodiscard]] bool safe_text(std::string_view value,
@@ -29,6 +30,8 @@ constexpr std::size_t kMaxAssets = 64;
 struct ParsedVersion final {
   std::array<std::uint32_t, kMaxVersionParts> parts{};
   std::size_t size{};
+  std::array<std::string_view, kMaxPrereleaseParts> prerelease{};
+  std::size_t prerelease_size{};
 };
 
 [[nodiscard]] std::optional<ParsedVersion> parse_version(
@@ -40,6 +43,15 @@ struct ParsedVersion final {
     return std::nullopt;
   }
   ParsedVersion result;
+  auto const prerelease_start = value.find('-');
+  auto prerelease = std::string_view{};
+  if (prerelease_start != std::string_view::npos) {
+    prerelease = value.substr(prerelease_start + 1);
+    value = value.substr(0, prerelease_start);
+    if (prerelease.empty()) {
+      return std::nullopt;
+    }
+  }
   while (!value.empty()) {
     if (result.size == kMaxVersionParts) {
       return std::nullopt;
@@ -63,6 +75,56 @@ struct ParsedVersion final {
     }
     value.remove_prefix(dot + 1);
   }
+  if (result.size < 3) {
+    return std::nullopt;
+  }
+  while (!prerelease.empty()) {
+    if (result.prerelease_size == kMaxPrereleaseParts) {
+      return std::nullopt;
+    }
+    auto const dot = prerelease.find('.');
+    auto const identifier = prerelease.substr(0, dot);
+    if (identifier.empty() ||
+        !std::ranges::all_of(identifier, [](unsigned char byte) {
+          return (byte >= '0' && byte <= '9') ||
+                 (byte >= 'A' && byte <= 'Z') ||
+                 (byte >= 'a' && byte <= 'z') || byte == '-';
+        })) {
+      return std::nullopt;
+    }
+    if (identifier.size() > 1 && identifier.front() == '0' &&
+        std::ranges::all_of(identifier, [](unsigned char byte) {
+          return std::isdigit(byte) != 0;
+        })) {
+      return std::nullopt;
+    }
+    result.prerelease[result.prerelease_size++] = identifier;
+    if (dot == std::string_view::npos) {
+      break;
+    }
+    prerelease.remove_prefix(dot + 1);
+    if (prerelease.empty()) {
+      return std::nullopt;
+    }
+  }
+  return result;
+}
+
+[[nodiscard]] bool numeric_identifier(std::string_view value) noexcept {
+  return !value.empty() &&
+         std::ranges::all_of(value, [](unsigned char byte) {
+           return std::isdigit(byte) != 0;
+         });
+}
+
+[[nodiscard]] std::optional<std::uint32_t> numeric_value(
+    std::string_view value) noexcept {
+  auto result = std::uint32_t{};
+  auto const [end, error] =
+      std::from_chars(value.data(), value.data() + value.size(), result);
+  if (error != std::errc{} || end != value.data() + value.size()) {
+    return std::nullopt;
+  }
   return result;
 }
 
@@ -75,8 +137,13 @@ struct ParsedVersion final {
 }  // namespace
 
 bool BuildIdentity::valid() const noexcept {
-  return safe_text(version, 64) && parse_version(version).has_value() &&
-         architecture != SystemArchitecture::unknown;
+  auto const parsed = parse_version(version);
+  if (!safe_text(version, 64) || !parsed.has_value() ||
+      architecture == SystemArchitecture::unknown) {
+    return false;
+  }
+  auto const has_prerelease = parsed->prerelease_size != 0;
+  return (channel == ReleaseChannel::prerelease) == has_prerelease;
 }
 
 bool GithubApplicationAsset::valid() const noexcept {
@@ -112,6 +179,50 @@ VersionComparison compare_versions(std::string_view current,
       return VersionComparison::lower;
     }
   }
+  if (left->prerelease_size == 0 || right->prerelease_size == 0) {
+    if (left->prerelease_size == 0 && right->prerelease_size != 0) {
+      return VersionComparison::lower;
+    }
+    if (left->prerelease_size != 0 && right->prerelease_size == 0) {
+      return VersionComparison::higher;
+    }
+    return VersionComparison::equal;
+  }
+  auto const prerelease_size =
+      std::min(left->prerelease_size, right->prerelease_size);
+  for (std::size_t index = 0; index < prerelease_size; ++index) {
+    auto const left_identifier = left->prerelease[index];
+    auto const right_identifier = right->prerelease[index];
+    auto const left_numeric = numeric_identifier(left_identifier);
+    auto const right_numeric = numeric_identifier(right_identifier);
+    if (left_numeric != right_numeric) {
+      return left_numeric ? VersionComparison::lower
+                          : VersionComparison::higher;
+    }
+    if (left_numeric) {
+      auto const left_number = numeric_value(left_identifier);
+      auto const right_number = numeric_value(right_identifier);
+      if (!left_number.has_value() || !right_number.has_value()) {
+        return VersionComparison::incomparable;
+      }
+      if (*left_number < *right_number) {
+        return VersionComparison::higher;
+      }
+      if (*left_number > *right_number) {
+        return VersionComparison::lower;
+      }
+    } else if (left_identifier < right_identifier) {
+      return VersionComparison::higher;
+    } else if (left_identifier > right_identifier) {
+      return VersionComparison::lower;
+    }
+  }
+  if (left->prerelease_size < right->prerelease_size) {
+    return VersionComparison::higher;
+  }
+  if (left->prerelease_size > right->prerelease_size) {
+    return VersionComparison::lower;
+  }
   return VersionComparison::equal;
 }
 
@@ -135,8 +246,8 @@ bool is_formal_stable_release(GithubApplicationRelease const& release) noexcept 
          !contains_test_marker(release.title) &&
          std::ranges::all_of(release.assets,
                              [](GithubApplicationAsset const& asset) {
-                               return asset.target.channel ==
-                                      ReleaseChannel::stable;
+                                return asset.target.channel ==
+                                       ReleaseChannel::stable;
                              });
 }
 

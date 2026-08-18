@@ -24,8 +24,17 @@ constexpr std::string_view kManualGithubReleases{
     "https://github.com/CoolPlume/azzs/releases"};
 
 #ifndef AZZS_APPLICATION_VERSION
-#define AZZS_APPLICATION_VERSION "0.1.0"
+#error "AZZS_APPLICATION_VERSION must be supplied by the authoritative product version source"
 #endif
+#ifndef AZZS_APPLICATION_RELEASE_CHANNEL
+#error "AZZS_APPLICATION_RELEASE_CHANNEL must be supplied by the authoritative product version source"
+#endif
+
+constexpr auto kApplicationReleaseChannel =
+    application::parse_application_release_channel(
+        AZZS_APPLICATION_RELEASE_CHANNEL);
+static_assert(kApplicationReleaseChannel.has_value(),
+              "AZZS_APPLICATION_RELEASE_CHANNEL must be stable or prerelease");
 
 [[nodiscard]] application::UpdatePlatformResult unavailable(
     std::string detail) {
@@ -58,7 +67,7 @@ application::ApplicationBuildIdentity
 WindowsApplicationUpdatePlatform::current_build() const noexcept {
   return application::ApplicationBuildIdentity{
       .version = AZZS_APPLICATION_VERSION,
-      .channel = application::ApplicationReleaseChannel::stable,
+      .channel = *kApplicationReleaseChannel,
       .architecture = platform_.windows_architecture(),
       .edition = application::ApplicationReleaseEdition::standard,
       .form = application::ApplicationReleaseForm::portable,

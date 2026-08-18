@@ -5,7 +5,22 @@
 
 #include "azzs/application/workbench_services.hpp"
 
+#ifndef AZZS_APPLICATION_VERSION
+#error "AZZS_APPLICATION_VERSION must be supplied by the authoritative product version source"
+#endif
+#ifndef AZZS_APPLICATION_RELEASE_CHANNEL
+#error "AZZS_APPLICATION_RELEASE_CHANNEL must be supplied by the authoritative product version source"
+#endif
+
 namespace azzs::application {
+namespace {
+
+constexpr auto kApplicationReleaseChannel =
+    parse_application_release_channel(AZZS_APPLICATION_RELEASE_CHANNEL);
+static_assert(kApplicationReleaseChannel.has_value(),
+              "AZZS_APPLICATION_RELEASE_CHANNEL must be stable or prerelease");
+
+}  // namespace
 
 Workbench::Workbench(PlatformInfo const& platform_info)
     : Workbench(platform_info, {}) {}
@@ -30,8 +45,8 @@ Workbench::Workbench(PlatformInfo const& platform_info,
     snapshot_.driver_acquisition = services_->driver_acquisition().snapshot();
   } else {
     snapshot_.update.current = ApplicationBuildIdentity{
-        .version = "0.1.0",
-        .channel = ApplicationReleaseChannel::stable,
+        .version = AZZS_APPLICATION_VERSION,
+        .channel = *kApplicationReleaseChannel,
         .architecture = platform_info.windows_architecture(),
         .edition = ApplicationReleaseEdition::standard,
         .form = ApplicationReleaseForm::portable,

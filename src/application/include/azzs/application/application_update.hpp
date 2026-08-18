@@ -19,6 +19,11 @@ using GithubApplicationAsset = domain::application_update::GithubApplicationAsse
 using GithubApplicationRelease = domain::application_update::GithubApplicationRelease;
 using ApplicationUpdateCandidate = domain::application_update::Candidate;
 
+[[nodiscard]] constexpr std::optional<ApplicationReleaseChannel>
+parse_application_release_channel(std::string_view value) noexcept {
+  return domain::application_update::parse_release_channel(value);
+}
+
 enum class GithubReleaseQueryResultCode {
   succeeded,
   unavailable,
