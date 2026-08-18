@@ -3,6 +3,11 @@
   <Target Name="Capture">
     <Error Condition="'$(AzzsCapturePath)' == ''" Text="AzzsCapturePath is required." />
     <Error Condition="'$(AzzsWindowsVersionCommas)' == ''" Text="AzzsWindowsVersionCommas is required." />
+    <Error Condition="'$(AzzsResourceCompiler)' == ''" Text="AzzsResourceCompiler is required." />
+    <Error Condition="'$(AzzsResourceOutputPath)' == ''" Text="AzzsResourceOutputPath is required." />
+    <MakeDir Directories="$(AzzsResourceOutputPath)" />
+    <Exec
+      Command="&quot;$(AzzsResourceCompiler)&quot; /nologo /r /fo &quot;$(AzzsResourceOutputPath)\version-probe.res&quot; /d AZZS_WINDOWS_VERSION_COMMAS=$(AzzsWindowsVersionCommas) &quot;$(MSBuildThisFileDirectory)resource-macro.rc&quot;" />
     <WriteLinesToFile
       File="$(AzzsCapturePath)"
       Lines="$(AzzsWindowsVersionCommas)"
