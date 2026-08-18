@@ -123,6 +123,25 @@ function Require-NoInstallerCandidate {
     }
 }
 
+function Seed-StaleInstallerOutputs {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FixtureRoot
+    )
+
+    $stagingDirectory = Join-Path $FixtureRoot "out/staging/installer/x64"
+    New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $stagingDirectory "stale.txt") -Value "stale" -Encoding ASCII
+
+    $packagePath = Join-Path $FixtureRoot "out/packages/Azzs-standard-x64-machine.msi"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $packagePath) -Force | Out-Null
+    Set-Content -LiteralPath $packagePath -Value "stale" -Encoding ASCII
+
+    $manifestPath = Join-Path $FixtureRoot "out/manifests/package-standard-x64-machine.json"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $manifestPath) -Force | Out-Null
+    Set-Content -LiteralPath $manifestPath -Value "{}" -Encoding ASCII
+}
+
 function Require-InstallerFailure {
     param(
         [Parameter(Mandatory = $true)]
@@ -174,6 +193,7 @@ try {
     Require-InstallerFailure -FixtureRoot $dirtyWorkspaceFixture -Scenario "dirty repository after build" -ExpectedMessage "*clean current Git index, worktree, and untracked-file state*"
 
     $cleanFixture = New-FixtureRoot
+    Seed-StaleInstallerOutputs -FixtureRoot $cleanFixture
     Require-InstallerFailure -FixtureRoot $cleanFixture -Scenario "clean manifest without WiX EULA" -ExpectedMessage "WiX Toolset 7 requires an explicit terms decision*"
 
     Write-Host "installer build manifest contract: PASS"
