@@ -67,6 +67,7 @@ function Write-ValidBuildManifest {
                 architecture = "x64"
                 configuration = "Release"
             }
+            artifacts = @()
         }) -Path (Get-BuildManifestPath -FixtureRoot $FixtureRoot)
 }
 
