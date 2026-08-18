@@ -558,9 +558,17 @@ function Test-RescueGate {
     if ((Get-RequiredStringProperty -Object $gate -Name "requiredStatus" -Context "Artifact content '$ArtifactId' rescueGate") -ne "accepted") {
         throw "Artifact content '$ArtifactId' rescueGate must require the accepted ADR-0030 status."
     }
+    $expectedAdrRelativePath = "docs/adr/0030-controlled-rescue-tool-release-boundary.md"
+    $adrRelativePath = Get-RequiredStringProperty `
+        -Object $gate `
+        -Name "relativePath" `
+        -Context "Artifact content '$ArtifactId' rescueGate"
+    if ($adrRelativePath -ne $expectedAdrRelativePath) {
+        throw "Artifact content '$ArtifactId' rescueGate must reference $expectedAdrRelativePath."
+    }
     $adrPath = Resolve-RepositoryRelativePath `
         -RepositoryRoot $RepositoryRoot `
-        -RelativePath (Get-RequiredStringProperty -Object $gate -Name "relativePath" -Context "Artifact content '$ArtifactId' rescueGate") `
+        -RelativePath $adrRelativePath `
         -Context "Artifact content '$ArtifactId' rescueGate relativePath"
     if (-not (Test-Path -LiteralPath $adrPath -PathType Leaf)) {
         throw "Artifact content '$ArtifactId' ADR-0030 gate file is missing."

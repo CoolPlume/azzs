@@ -1050,6 +1050,22 @@ Set-Content -LiteralPath (Join-Path $repositoryRoot "docs/adr/0030-controlled-re
     Save-ContentManifest -FixtureRoot $adrFixture -Manifest $adrManifest
     Require-PackageFailure -FixtureRoot $adrFixture -ArtifactId "rescue-x64-portable" -Scenario "missing ADR-0030 gate"
 
+    $adrPathDriftFixture = New-FixtureRoot
+    $adrPathDriftInput = New-LockedInput -FixtureRoot $adrPathDriftFixture -Id "rescue-tool" -Role "rescue-companion-tool" -RelativePath "release-inputs/rescue-tool.bin"
+    $adrPathDriftManifest = Get-ContentManifest -FixtureRoot $adrPathDriftFixture
+    $adrPathDriftArtifact = Get-ArtifactContent -Manifest $adrPathDriftManifest -ArtifactId "rescue-x64-portable"
+    $adrPathDriftRelativePath = "docs/adr/fake-rescue-gate.md"
+    Copy-Item `
+        -LiteralPath (Join-Path $adrPathDriftFixture "docs/adr/0030-controlled-rescue-tool-release-boundary.md") `
+        -Destination (Join-Path $adrPathDriftFixture $adrPathDriftRelativePath)
+    $adrPathDriftArtifact.rescueGate.relativePath = $adrPathDriftRelativePath
+    $adrPathDriftArtifact.inputs = @($adrPathDriftInput)
+    Save-ContentManifest -FixtureRoot $adrPathDriftFixture -Manifest $adrPathDriftManifest
+    & git -C $adrPathDriftFixture add docs/adr/fake-rescue-gate.md release/artifact-content-manifest.v1.json release-inputs/rescue-tool.bin
+    & git -C $adrPathDriftFixture commit --quiet -m "reject drifted rescue gate path"
+    Write-ValidBuildManifest -FixtureRoot $adrPathDriftFixture
+    Require-PackageFailure -FixtureRoot $adrPathDriftFixture -ArtifactId "rescue-x64-portable" -Scenario "drifted ADR-0030 gate path"
+
     $missingEvidenceFixture = New-FixtureRoot
     $missingEvidenceInput = New-LockedInput -FixtureRoot $missingEvidenceFixture -Id "rescue-tool" -Role "rescue-companion-tool" -RelativePath "release-inputs/rescue-tool.bin"
     $missingEvidenceInput.rescueEvidence.PSObject.Properties.Remove("sourcePath")
