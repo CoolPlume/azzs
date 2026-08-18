@@ -421,9 +421,10 @@ if ($null -ne $contentInputs) {
 }
 [object[]]$manifestInputs = @()
 $manifestInputsProperty = $manifest.PSObject.Properties["inputs"]
-if ($null -ne $manifestInputsProperty -and $null -ne $manifestInputsProperty.Value) {
-    $manifestInputs = @($manifestInputsProperty.Value | ForEach-Object { $_ })
+if ($null -eq $manifestInputsProperty -or $null -eq $manifestInputsProperty.Value) {
+    throw "Portable package manifest lacks the required inputs array."
 }
+$manifestInputs = @($manifestInputsProperty.Value | ForEach-Object { $_ })
 if ($manifestInputs.Count -ne $expectedInputs.Count) {
     throw "Portable package manifest input count does not match the verified content manifest."
 }
