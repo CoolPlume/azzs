@@ -153,6 +153,7 @@ set(AZZS_ARCHITECTURE_EXTERNAL_MSBUILD_LIBRARIES
   "oleaut32.lib|external:windows-platform|platform_runtime"
   "rpcrt4.lib|external:windows-platform|platform_runtime"
   "shell32.lib|external:windows-platform|platform_runtime"
+  "user32.lib|external:windows-platform|platform_runtime"
   "wbemuuid.lib|external:windows-platform|platform_runtime"
   "winhttp.lib|external:windows-platform|platform_runtime"
   "wtsapi32.lib|external:windows-platform|platform_runtime"
