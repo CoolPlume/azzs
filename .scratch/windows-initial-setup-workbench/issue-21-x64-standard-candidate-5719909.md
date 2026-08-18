@@ -28,6 +28,7 @@ python tests\ui-design-contract\check_design_system.py .
 - x64 Release 构建成功，0 errors；保留 5 个既有 C4244/C4457 warnings。
 - `startup-assembly.contract`、`build.toolchain.contract`、`ui.design.contract`、`product.identity.contract` 和 `windows-driver-rescue-folder.contract` 通过。
 - `portable.package.contract` 的普通 package/manifest/runtime-output 场景输出通过，但其 reparse 反例创建符号链接时因宿主返回 `Administrator privilege required` 停止；这不是 portable runtime 或候选装配失败，且未写成合同通过。
+- 该次 CTest 的 fixture harness 自动使用了 Windows 默认临时目录，超出本轮 D-only 临时路径目标；它只作为宿主权限诊断，不作为候选 D 盘证据，且未在 C 盘重试、读取或清理。
 - 打包内置 verifier 与工作树内的独立 verifier 均通过。独立 verifier 明确要求路径处于源码仓库内，因此仓库外 artifact 副本不作为其直接输入；已核对源 ZIP 与 artifact ZIP 的 SHA-256 一致，staging 文件数与总字节数一致。
 
 ## 源码复核与边界
