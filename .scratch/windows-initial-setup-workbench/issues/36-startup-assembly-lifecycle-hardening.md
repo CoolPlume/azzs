@@ -2,7 +2,7 @@
 
 Type: task  
 Status: ready-for-agent  
-Resolution: open
+Resolution: completed
 Blocked by: 01, 31
 Owner: issue-36
 Consumers: 21
@@ -19,11 +19,11 @@ Evidence freshness: 绑定当前源码提交、启动装配接口、失败呈现
 
 ## Acceptance Criteria
 
-- [ ] 核心诊断不可读、服务构造失败、主窗口导航失败、主窗口激活失败和健康确认失败等路径，在已经创建服务后都执行一次幂等且有序的 `shutdown()`，再离开装配入口；不把服务析构当作业务关闭协议。
-- [ ] `App::OnLaunched` 与装配入口对 WinRT 错误及标准 C++ 异常建立总边界，把未预期异常转换为受限的启动装配失败结果；异常不得逃出启动入口并绕过服务关闭。
-- [ ] `StartupAssemblyResult` 的 `StartupAssemblyStatus` 与受限设备环境失败结果由唯一调用方保留或安全投影，不能在返回后销毁而使失败窗口只能显示模糊文本；不得把设备身份、路径或原始敏感诊断带入失败窗口。
-- [ ] 预检只在主窗口已激活且达到“已正常进入工作台”健康边界后启动；任何导航、激活、诊断或装配失败结果都明确为 `not_attempted`，合同测试不再构造“失败但预检已启动”的不可能状态。
-- [ ] 启动失败路径不提交初始化业务状态，不启动新的后台任务；成功路径的既有关闭、预检和主窗口状态语义保持不变。
+- [x] 核心诊断不可读、服务构造失败、主窗口导航失败、主窗口激活失败和健康确认失败等路径，在已经创建服务后都执行一次幂等且有序的 `shutdown()`，再离开装配入口；不把服务析构当作业务关闭协议。
+- [x] `App::OnLaunched` 与装配入口对 WinRT 错误及标准 C++ 异常建立总边界，把未预期异常转换为受限的启动装配失败结果；异常不得逃出启动入口并绕过服务关闭。
+- [x] `StartupAssemblyResult` 的 `StartupAssemblyStatus` 与受限设备环境失败结果由唯一调用方保留或安全投影，不能在返回后销毁而使失败窗口只能显示模糊文本；不得把设备身份、路径或原始敏感诊断带入失败窗口。
+- [x] 预检只在主窗口已激活且达到“已正常进入工作台”健康边界后启动；任何导航、激活、诊断或装配失败结果都明确为 `not_attempted`，合同测试不再构造“失败但预检已启动”的不可能状态。
+- [x] 启动失败路径不提交初始化业务状态，不启动新的后台任务；成功路径的既有关闭、预检和主窗口状态语义保持不变。
 
 ## References
 
@@ -45,3 +45,4 @@ Evidence freshness: 绑定当前源码提交、启动装配接口、失败呈现
 - 2026-08-18：启动修复 feature `a87174c` 已由普通合并 `5737855` 集成，最新架构门禁登记提交为 `ef894d4`。修复收束了 `software_catalog_file_` 的构造期初始化、可选 `DispatcherQueue` 的安全访问、WinUI `ApplicationUpdateTitle` PRI 键冲突，并为最后一级 `MessageBoxW` 兜底登记 `user32.lib`；x64 host-debug 的 `startup-assembly.contract` 1/1 与 WinUI 异步边界合同通过。该记录不声称 WinUI MSBuild、x64 Release EXE、WinDbg、真实窗口生命周期、ARM64、便携/安装候选或 CI 已通过，`Resolution: open` 保持不变。
 - 2026-08-18：针对精确源码头 `ef894d4` 的 D 盘 Debug 产物完成运行时证据。`startup-exit-check.ps1` 三次均通过 5 秒健康窗口（`GREEN_ALIVE_AT_HEALTHY_WINDOW`，`spawnErrors=0`）；独立进程采样在 5 秒时 `HasExited=False` 且存在窗口句柄。CDB 设置 `sxe c000027b` 运行 5 秒未命中 `0xC000027B`；唯一异常为观察结束时请求的 `80000003`/`ntdll!DbgBreakPoint`，不是应用早退。该证据绑定 Debug 产物，不替代 x64 Release 候选、ARM64、便携/安装生命周期、真实 UI 验收或 CI；`Resolution: open` 保持不变。
 - 2026-08-18：在集成文档头 `0dbae571154bd279f80ad3682406166fcbefa54b`（相对源代码头 `ef894d4` 仅增加事项证据）的隔离 worktree 中，直接 MSBuild `Azzs.Windows.sln /t:Build /p:Configuration=Release /p:Platform=x64` 成功生成完整 x64 Release WinUI 目录（305 文件、201191668 bytes，`Azzs.WinUI.exe` SHA-256 `692E1F6A9F093FF7305BA0843BC7966FAD4D61479B646A41E05B1A88D21B1DAB`）。Release `startup-assembly.contract` 1/1、WinUI 异步边界合同通过；同一 Release EXE 使用隔离启动检测三次均为 `GREEN_ALIVE_AT_HEALTHY_WINDOW`（5014/5004/5010 ms，0 个 spawn error）。完整 `eng/build.ps1` 的全量 CTest 仍有 4 个宿主前置失败（ACL、符号链接、隔离设备根），且其 `-SkipCoreSmoke` CMake 阶段另有宿主 `.lastbuildstate` 读取失败；这些不被写成产品或 Release 失败。真实 WinDbg 已在源代码等价的 `ef894d4` Debug EXE 上完成，未运行 Release WinDbg、ARM64、便携/安装生命周期或 CI，`Resolution: open` 保持不变。
+- 2026-08-18：事项 36 验收闭合：上述源码边界、x64 Release 定向构建与合同、Release EXE 健康存活及 `ef894d4` Debug CDB 绿色证据共同满足本事项验证条件；完整发行候选、ARM64、便携/安装生命周期和 CI 仍由事项 21/37 等保留，`Resolution` 更新为 `completed`。
