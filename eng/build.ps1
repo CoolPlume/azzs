@@ -10,6 +10,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
+. (Join-Path $PSScriptRoot "msbuild-arguments.ps1")
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $productVersionPath = Join-Path $repositoryRoot "release/product-version.json"
@@ -31,7 +32,8 @@ $applicationIsPrerelease = $productVersion.applicationVersion -match "-"
 if (($productVersion.releaseChannel -eq "stable") -eq $applicationIsPrerelease) {
     throw "The authoritative product version source has an inconsistent application version and release channel."
 }
-$windowsVersionCommas = $productVersion.windowsVersion.Replace(".", ",")
+$windowsVersionCommasArgument = ConvertTo-AzzsWindowsVersionCommasArgument `
+    -WindowsVersion $productVersion.windowsVersion
 $evidenceName = "windows-$($Architecture.ToLowerInvariant())-release"
 $logDirectory = Join-Path $repositoryRoot "out/logs"
 $manifestDirectory = Join-Path $repositoryRoot "out/manifests"
@@ -199,7 +201,7 @@ try {
         "/p:AzzsGeneratedResourceDirectory=$winuiVersionedResourceDirectory",
         "/p:AzzsApplicationVersion=$($productVersion.applicationVersion)",
         "/p:AzzsWindowsVersion=$($productVersion.windowsVersion)",
-        "/p:AzzsWindowsVersionCommas=$windowsVersionCommas",
+        "/p:AzzsWindowsVersionCommas=$windowsVersionCommasArgument",
         "/p:ContinuousIntegrationBuild=true",
         "/bl:$binlogPath",
         "/fl",
