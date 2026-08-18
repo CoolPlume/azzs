@@ -167,6 +167,9 @@ using azzs::application::SoftwareOptimizationCatalogLifecycleResult;
   auto accepted = SoftwareOptimizationCatalogLifecycleResult{
       .code = SoftwareOptimizationCatalogLifecycleCode::applied,
   };
+  auto unchanged_accepted = SoftwareOptimizationCatalogLifecycleResult{
+      .code = SoftwareOptimizationCatalogLifecycleCode::unchanged,
+  };
 
   auto const persistence_stage =
       azzs::application::startup::startup_catalog_gate_failure_stage(
@@ -185,6 +188,9 @@ using azzs::application::SoftwareOptimizationCatalogLifecycleResult;
           rejected_failure);
   auto const accepted_stage =
       azzs::application::startup::startup_catalog_gate_failure_stage(accepted);
+  auto const unchanged_accepted_stage =
+      azzs::application::startup::startup_catalog_gate_failure_stage(
+          unchanged_accepted);
 
   return expect(
              persistence_stage.has_value() &&
@@ -208,7 +214,9 @@ using azzs::application::SoftwareOptimizationCatalogLifecycleResult;
                         StartupAssemblyStage::software_optimization_catalog_lifecycle,
                 "any rejected lifecycle result must map to the catalog lifecycle stage") &&
          expect(!accepted_stage.has_value(),
-                "an accepted catalog lifecycle result must not fail startup");
+                "an applied catalog lifecycle result must not fail startup") &&
+         expect(!unchanged_accepted_stage.has_value(),
+                "an unchanged catalog lifecycle result must not fail startup");
 }
 
 [[nodiscard]] bool catalog_gate_public_statement_contract() {
