@@ -623,6 +623,17 @@ try {
     Require-EmptyFixedRescueFolders -Root $extractedStandardDirectory -Context "extracted standard ZIP"
     Require-BundledCatalogResources -Root $extractedStandardDirectory -Resources @($standardManifest.bundledCatalogResources) -Context "extracted standard ZIP"
 
+    $missingManifestInputsFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $missingManifestInputsFixture -ArtifactId "standard-x64-portable"
+    $missingManifestInputsCandidates = Get-CandidatePaths -FixtureRoot $missingManifestInputsFixture -ArtifactId "standard-x64-portable"
+    $missingManifestInputsManifest = Get-Content -LiteralPath $missingManifestInputsCandidates[2] -Raw | ConvertFrom-Json
+    $missingManifestInputsManifest.PSObject.Properties.Remove("inputs")
+    Write-JsonFile -Value $missingManifestInputsManifest -Path $missingManifestInputsCandidates[2]
+    Require-PortableVerificationFailure `
+        -FixtureRoot $missingManifestInputsFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "a package manifest missing the required inputs array"
+
     $missingRuntimeFixture = New-FixtureRoot
     Invoke-Package -FixtureRoot $missingRuntimeFixture -ArtifactId "standard-x64-portable"
     $missingRuntimeCandidates = Get-CandidatePaths -FixtureRoot $missingRuntimeFixture -ArtifactId "standard-x64-portable"
