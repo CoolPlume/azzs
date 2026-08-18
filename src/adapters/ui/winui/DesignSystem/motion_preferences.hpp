@@ -46,7 +46,8 @@ class MotionPreferences final
   void apply_animations_enabled(bool enabled);
 
   std::optional<winrt::Windows::UI::ViewManagement::UISettings> settings_;
-  winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher_queue_;
+  std::optional<winrt::Microsoft::UI::Dispatching::DispatcherQueue>
+      dispatcher_queue_;
   winrt::event_token animations_enabled_changed_token_{};
   std::atomic_bool animations_enabled_{true};
   std::mutex handlers_mutex_;

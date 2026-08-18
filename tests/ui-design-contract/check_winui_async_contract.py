@@ -66,6 +66,46 @@ def verify(root: Path) -> None:
         require("bool confirmation_dialog_open_{false};" in read(root / relative_path),
                 f"{relative_path} must own the dialog gate")
 
+    composition = read(root / "src/composition/windows/composition_root.cpp")
+    require(
+        "software_catalog_file_(" in composition and
+        "bundled_catalog_resources.software_catalog.bytes()" in composition,
+        "startup services must initialize the bundled software catalog in the constructor scope",
+    )
+    require(
+        "software_catalog_file_{" not in composition,
+        "startup services must not initialize a member from an out-of-scope constructor parameter",
+    )
+
+    motion_header = read(
+        root / "src/adapters/ui/winui/DesignSystem/motion_preferences.hpp"
+    )
+    require(
+        "std::optional<winrt::Microsoft::UI::Dispatching::DispatcherQueue>" in motion_header,
+        "motion preferences must make the dispatcher queue explicitly optional",
+    )
+    motion_source = read(
+        root / "src/adapters/ui/winui/DesignSystem/motion_preferences.cpp"
+    )
+    require(
+        "dispatcher_queue_->HasThreadAccess()" in motion_source and
+        "dispatcher_queue_->TryEnqueue" in motion_source,
+        "motion preferences must dereference the optional dispatcher queue only after a presence check",
+    )
+
+    project = read(root / "src/adapters/ui/winui/Azzs.WinUI.vcxproj")
+    require(
+        "user32.lib" in project,
+        "the WinUI host must link user32 for the startup last-resort MessageBoxW fallback",
+    )
+
+    resources = read(root / "src/adapters/ui/winui/Strings/zh-CN/Resources.resw")
+    require(
+        'name="ApplicationUpdateTitle.Text"' in resources and
+        'name="ApplicationUpdateTitle"' not in resources,
+        "WinUI resources must not define ApplicationUpdateTitle as both a scope and a resource",
+    )
+
 
 def main() -> int:
     try:
