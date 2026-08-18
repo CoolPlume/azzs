@@ -464,11 +464,11 @@ function Test-PortableArtifactInputs {
     $artifact = $Definition.Artifact
     $content = $Definition.Content
     $artifactId = [string]$artifact.id
-    [object[]]$rawInputs = @()
-    $inputsProperty = $content.PSObject.Properties["inputs"]
-    if ($null -ne $inputsProperty -and $null -ne $inputsProperty.Value) {
-        $rawInputs = @($inputsProperty.Value | ForEach-Object { $_ })
-    }
+    $inputs = Get-RequiredProperty `
+        -Object $content `
+        -Name "inputs" `
+        -Context "Artifact content '$artifactId'"
+    [object[]]$rawInputs = @($inputs | ForEach-Object { $_ })
     if ($artifact.edition -eq "standard") {
         if ($rawInputs.Count -ne 0) {
             throw "Standard portable content must not declare external inputs."
