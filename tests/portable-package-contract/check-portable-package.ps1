@@ -588,6 +588,16 @@ try {
         Require (@($sourceArtifact.inputs).Count -eq 0) "$artifactId must remain fail-closed without locked rescue or large inputs"
     }
 
+    $missingInputsFixture = New-FixtureRoot
+    $missingInputsManifest = Get-ContentManifest -FixtureRoot $missingInputsFixture
+    $missingInputsArtifact = Get-ArtifactContent -Manifest $missingInputsManifest -ArtifactId "standard-x64-portable"
+    $missingInputsArtifact.PSObject.Properties.Remove("inputs")
+    Save-ContentManifest -FixtureRoot $missingInputsFixture -Manifest $missingInputsManifest
+    Require-PackageFailure `
+        -FixtureRoot $missingInputsFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "standard artifact without required inputs field"
+
     $standardFixture = New-FixtureRoot
     Invoke-Package -FixtureRoot $standardFixture -ArtifactId "standard-x64-portable"
     $standardCandidates = Get-CandidatePaths -FixtureRoot $standardFixture -ArtifactId "standard-x64-portable"
