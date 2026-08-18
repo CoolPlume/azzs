@@ -69,8 +69,6 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
 
   try {
     auto startup = azzs::composition::windows::assemble_startup();
-    device_data_environment_failure_ =
-        std::move(startup.device_data_environment_failure);
     startup_status_ = std::move(startup.status);
     window_ = std::move(startup.window);
     if (!window_) {

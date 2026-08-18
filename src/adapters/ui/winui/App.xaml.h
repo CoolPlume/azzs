@@ -2,7 +2,6 @@
 
 #include <optional>
 
-#include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #include "azzs/application/startup_assembly_status.hpp"
 
 #include "App.xaml.g.h"
@@ -21,8 +20,6 @@ struct App : AppT<App> {
 
  private:
   Microsoft::UI::Xaml::Window window_{nullptr};
-  std::optional<::azzs::adapters::windows::DeviceDataEnvironmentResult>
-      device_data_environment_failure_;
   std::optional<::azzs::application::startup::StartupAssemblyStatus>
       startup_status_;
   bool bootstrap_failed_{false};
