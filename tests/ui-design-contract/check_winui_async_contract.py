@@ -106,6 +106,18 @@ def verify(root: Path) -> None:
         "WinUI resources must not define ApplicationUpdateTitle as both a scope and a resource",
     )
 
+    app_header = read(root / "src/adapters/ui/winui/App.xaml.h")
+    require(
+        "windows_device_data_environment.hpp" not in app_header and
+        "StartupAssemblyStatus" in app_header,
+        "App must retain startup failures through the application-layer status type",
+    )
+    app_source = read(root / "src/adapters/ui/winui/App.xaml.cpp")
+    require(
+        "startup_status_ = std::move(startup.status)" in app_source,
+        "App must retain the typed startup status returned by the composition root",
+    )
+
 
 def main() -> int:
     try:
