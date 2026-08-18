@@ -285,6 +285,29 @@ foreach ($buildArtifact in $buildPayloadMap.GetEnumerator()) {
         throw "Portable package staging payload byte count does not match build output '$($buildArtifact.Key)'."
     }
 }
+$packagedPayloadPaths = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+)
+foreach ($resource in $bundledCatalogResources) {
+    $null = $packagedPayloadPaths.Add(
+        (ConvertTo-SafePayloadPath `
+            -Value (Get-RequiredStringProperty -Object $resource -Name "packagePath" -Context "Bundled catalog resource") `
+            -Context "Bundled catalog resource packagePath"))
+}
+foreach ($contentInput in $contentInputs) {
+    $null = $packagedPayloadPaths.Add(
+        (ConvertTo-SafePayloadPath `
+            -Value (Get-RequiredStringProperty -Object $contentInput -Name "packagePath" -Context "Portable content input") `
+            -Context "Portable content input packagePath"))
+}
+foreach ($stagedArtifact in $stagedPayloadMap.GetEnumerator()) {
+    if ($packagedPayloadPaths.Contains($stagedArtifact.Key)) {
+        continue
+    }
+    if (-not $buildPayloadMap.ContainsKey($stagedArtifact.Key)) {
+        throw "Portable package staging payload contains unrecorded build output '$($stagedArtifact.Key)'."
+    }
+}
 
 $requiredRuntimeFiles = @(
     "Azzs.WinUI.exe",

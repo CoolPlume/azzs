@@ -979,6 +979,18 @@ try {
     Write-JsonFile -Value $scalarBuildManifest -Path (Get-BuildManifestPath -FixtureRoot $scalarBuildArtifactsFixture)
     Require-PackageFailure -FixtureRoot $scalarBuildArtifactsFixture -ArtifactId "standard-x64-portable" -Scenario "build manifest artifacts with the wrong JSON type"
 
+    $unrecordedBuildArtifactFixture = New-FixtureRoot
+    Invoke-Package -FixtureRoot $unrecordedBuildArtifactFixture -ArtifactId "standard-x64-portable"
+    $unrecordedBuildManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $unrecordedBuildArtifactFixture) -Raw | ConvertFrom-Json
+    $unrecordedBuildManifest.artifacts = @($unrecordedBuildManifest.artifacts | Where-Object {
+            $_.path -ne "Microsoft.UI.Xaml.Controls.dll"
+        })
+    Write-JsonFile -Value $unrecordedBuildManifest -Path (Get-BuildManifestPath -FixtureRoot $unrecordedBuildArtifactFixture)
+    Require-PortableVerificationFailure `
+        -FixtureRoot $unrecordedBuildArtifactFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "staging payload with an unrecorded build artifact"
+
     $dirtyAfterBuildFixture = New-FixtureRoot
     @'
 param([string]$Architecture)
