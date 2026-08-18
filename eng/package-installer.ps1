@@ -54,43 +54,48 @@ $installerPlatform = $Architecture.ToLowerInvariant()
 $packagePath = Join-Path $packageDirectory "Azzs-standard-$installerPlatform-machine.msi"
 $manifestPath = Join-Path $repositoryRoot "out/manifests/package-standard-$($Architecture.ToLowerInvariant())-machine.json"
 
-foreach ($candidatePath in @($stagingDirectory, $packagePath, $manifestPath, $intermediateDirectory)) {
-    Assert-PathChainWithoutReparsePoint `
-        -Path $candidatePath `
-        -Context "Installer packaging candidate '$candidatePath'"
-}
-if (Test-Path -LiteralPath $stagingDirectory) {
-    $stagingItem = Get-Item -LiteralPath $stagingDirectory -Force -ErrorAction Stop
-    if (-not $stagingItem.PSIsContainer) {
-        throw "Installer packaging staging candidate must be a directory: $stagingDirectory"
+function Remove-InstallerCandidate {
+    foreach ($candidatePath in @($stagingDirectory, $packagePath, $manifestPath, $intermediateDirectory)) {
+        Assert-PathChainWithoutReparsePoint `
+            -Path $candidatePath `
+            -Context "Installer packaging candidate '$candidatePath'"
     }
-}
-foreach ($fileCandidatePath in @($packagePath, $manifestPath)) {
-    if (Test-Path -LiteralPath $fileCandidatePath) {
-        $fileCandidateItem = Get-Item -LiteralPath $fileCandidatePath -Force -ErrorAction Stop
-        if ($fileCandidateItem.PSIsContainer) {
-            throw "Installer packaging file candidate must be a file: $fileCandidatePath"
+    if (Test-Path -LiteralPath $stagingDirectory) {
+        $stagingItem = Get-Item -LiteralPath $stagingDirectory -Force -ErrorAction Stop
+        if (-not $stagingItem.PSIsContainer) {
+            throw "Installer packaging staging candidate must be a directory: $stagingDirectory"
+        }
+        Assert-NoReparsePointsBelow `
+            -Path $stagingDirectory `
+            -Context "Installer packaging staging candidate"
+    }
+    foreach ($fileCandidatePath in @($packagePath, $manifestPath)) {
+        if (Test-Path -LiteralPath $fileCandidatePath) {
+            $fileCandidateItem = Get-Item -LiteralPath $fileCandidatePath -Force -ErrorAction Stop
+            if ($fileCandidateItem.PSIsContainer) {
+                throw "Installer packaging file candidate must be a file: $fileCandidatePath"
+            }
+        }
+    }
+    if (Test-Path -LiteralPath $intermediateDirectory) {
+        $intermediateItem = Get-Item -LiteralPath $intermediateDirectory -Force -ErrorAction Stop
+        if (-not $intermediateItem.PSIsContainer) {
+            throw "Installer packaging intermediate candidate must be a directory: $intermediateDirectory"
+        }
+        Assert-NoReparsePointsBelow `
+            -Path $intermediateDirectory `
+            -Context "Installer packaging intermediate candidate"
+    }
+    foreach ($candidatePath in @($stagingDirectory, $packagePath, $manifestPath)) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            Remove-Item -LiteralPath $candidatePath -Recurse -Force
         }
     }
 }
-if (Test-Path -LiteralPath $intermediateDirectory) {
-    $intermediateItem = Get-Item -LiteralPath $intermediateDirectory -Force -ErrorAction Stop
-    if (-not $intermediateItem.PSIsContainer) {
-        throw "Installer packaging intermediate candidate must be a directory: $intermediateDirectory"
-    }
-}
-if (Test-Path -LiteralPath $stagingDirectory) {
-    Assert-NoReparsePointsBelow `
-        -Path $stagingDirectory `
-        -Context "Installer packaging staging candidate"
-    Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
-}
-if (Test-Path -LiteralPath $intermediateDirectory) {
-    Assert-NoReparsePointsBelow `
-        -Path $intermediateDirectory `
-        -Context "Installer packaging intermediate candidate"
-}
-New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory, $intermediateDirectory -Force | Out-Null
+
+Remove-InstallerCandidate
+try {
+    New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory, $intermediateDirectory -Force | Out-Null
 Assert-NoReparsePointsBelow `
     -Path $payloadDirectory `
     -Context "Installer build payload"
@@ -134,5 +139,10 @@ if (-not (Test-Path -LiteralPath $packagePath)) {
 }
 
 & (Join-Path $PSScriptRoot "write-package-manifest.ps1") -Kind machine-installer -Architecture $Architecture -RepositoryRoot $repositoryRoot -PayloadDirectory $stagingDirectory -PackagePath $packagePath -OutputPath $manifestPath
+}
+catch {
+    Remove-InstallerCandidate
+    throw
+}
 Write-Host "Machine installer: $packagePath"
 Write-Host "Package manifest: $manifestPath"
