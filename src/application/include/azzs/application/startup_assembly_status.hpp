@@ -17,6 +17,7 @@ enum class StartupAssemblyStage {
   main_window_navigation,
   main_window_activation,
   unexpected_assembly_exception,
+  software_optimization_catalog_lifecycle,
 };
 
 enum class StartupDiagnosticAvailability {
@@ -74,7 +75,10 @@ struct StartupAssemblyStatus final {
                       ? L"应用数据尚未准备完成。请关闭后重新打开应用。"
                       : stage == StartupAssemblyStage::bundled_catalog_resources
                             ? L"内置目录资源不可用。请关闭后重新打开应用。"
-                            : L"工作台尚未完成启动。请关闭后重新打开应用。"},
+                            : stage == StartupAssemblyStage::
+                                      software_optimization_catalog_lifecycle
+                                  ? L"软件优化目录初始化失败。请关闭后重新打开应用。"
+                                  : L"工作台尚未完成启动。请关闭后重新打开应用。"},
           .emergency_preflight = {}};
 }
 
