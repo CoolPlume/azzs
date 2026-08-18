@@ -637,7 +637,10 @@ def main() -> int:
         arguments.resource_compiler,
         contract,
     )
-    if source_path.is_file():
+    # Visual Studio mutation requires the real MSBuild capability passed by the
+    # Visual Studio generator; Ninja and other hosts keep the static checks and
+    # skip this Windows-only configure probe.
+    if source_path.is_file() and bool(arguments.msbuild_command):
         mutation_contract(root, arguments.cmake_command, contract)
     if contract.failures:
         for failure in contract.failures:
