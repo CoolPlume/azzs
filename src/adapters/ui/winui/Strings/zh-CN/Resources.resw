@@ -285,7 +285,6 @@
   <data name="VersionRiskEarlierMessage" xml:space="preserve"><value>当前版本为 {observed}，早于目标版本 Windows 10 22H2（{target}）。部分功能可能无法正常工作，你仍可继续使用。</value></data>
   <data name="VersionRiskUnavailableMessage" xml:space="preserve"><value>无法读取当前 Windows 版本。部分功能可能无法正常工作，你仍可继续使用。</value></data>
   <data name="ApplicationUpdateTitle.Text" xml:space="preserve"><value>应用更新</value></data>
-  <data name="ApplicationUpdateTitle" xml:space="preserve"><value>应用更新</value></data>
   <data name="ApplicationUpdateReadyMessage" xml:space="preserve"><value>当前版本可以主动检查 GitHub 正式稳定发行。</value></data>
   <data name="ApplicationUpdateCheckButton" xml:space="preserve"><value>检查更新</value></data>
   <data name="ApplicationUpdateLatestMessage" xml:space="preserve"><value>当前已是可确认的最新正式稳定版。</value></data>
