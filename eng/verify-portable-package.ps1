@@ -83,14 +83,20 @@ function ConvertTo-PayloadMap {
         [System.StringComparer]::OrdinalIgnoreCase
     )
     foreach ($file in $Payload) {
-        $path = ConvertTo-SafePayloadPath -Value ([string]$file.path) -Context $Name
+        $path = ConvertTo-SafePayloadPath `
+            -Value (Get-RequiredStringProperty -Object $file -Name "path" -Context $Name) `
+            -Context $Name
         if ([string]::IsNullOrWhiteSpace($path)) {
             throw "$Name contains an empty path."
         }
         if ($payloadMap.ContainsKey($path)) {
             throw "$Name contains duplicate path '$path'."
         }
-        $payloadMap.Add($path, [Int64]$file.bytes)
+        $bytes = Get-RequiredIntegerProperty -Object $file -Name "bytes" -Context $Name
+        if ($bytes -lt 0) {
+            throw "$Name contains a negative byte count for '$path'."
+        }
+        $payloadMap.Add($path, $bytes)
     }
     return $payloadMap
 }
@@ -153,8 +159,10 @@ function ConvertTo-PayloadHashMap {
         [System.StringComparer]::OrdinalIgnoreCase
     )
     foreach ($file in $Payload) {
-        $path = ConvertTo-SafePayloadPath -Value ([string]$file.path) -Context $Name
-        $sha256 = [string](Get-RequiredProperty -Object $file -Name "sha256" -Context $Name)
+        $path = ConvertTo-SafePayloadPath `
+            -Value (Get-RequiredStringProperty -Object $file -Name "path" -Context $Name) `
+            -Context $Name
+        $sha256 = Get-RequiredStringProperty -Object $file -Name "sha256" -Context $Name
         if ($sha256 -notmatch "^[a-fA-F0-9]{64}$") {
             throw "$Name has an invalid SHA256 for '$path'."
         }
@@ -247,16 +255,16 @@ if (@($stagedPayload | Where-Object {
 }
 
 # Keep the verifier tied to the exact self-contained output that was built.
-$buildArtifactsProperty = $buildManifest.PSObject.Properties["artifacts"]
-if ($null -eq $buildArtifactsProperty -or $null -eq $buildArtifactsProperty.Value) {
-    throw "Portable build manifest lacks the output artifact list required for package verification."
-}
+$buildArtifacts = (Get-RequiredArrayProperty `
+        -Object $buildManifest `
+        -Name "artifacts" `
+        -Context "Portable build manifest").Value
 $buildPayloadMap = [System.Collections.Generic.Dictionary[string, Int64]]::new(
     [System.StringComparer]::OrdinalIgnoreCase
 )
-foreach ($buildArtifact in @($buildArtifactsProperty.Value)) {
+foreach ($buildArtifact in $buildArtifacts) {
     $buildArtifactPath = ConvertTo-SafePayloadPath `
-        -Value ([string](Get-RequiredProperty -Object $buildArtifact -Name "path" -Context "Portable build manifest artifact")) `
+        -Value (Get-RequiredStringProperty -Object $buildArtifact -Name "path" -Context "Portable build manifest artifact") `
         -Context "Portable build manifest artifact"
     if ($excludedExtensions -contains [System.IO.Path]::GetExtension($buildArtifactPath).ToLowerInvariant()) {
         continue
@@ -266,7 +274,7 @@ foreach ($buildArtifact in @($buildArtifactsProperty.Value)) {
     }
     $buildPayloadMap.Add(
         $buildArtifactPath,
-        [Int64](Get-RequiredProperty -Object $buildArtifact -Name "bytes" -Context "Portable build manifest artifact '$buildArtifactPath'"))
+        (Get-RequiredIntegerProperty -Object $buildArtifact -Name "bytes" -Context "Portable build manifest artifact '$buildArtifactPath'"))
 }
 $stagedPayloadMap = ConvertTo-PayloadMap -Payload $stagedPayload -Name "Portable package staging payload"
 foreach ($buildArtifact in $buildPayloadMap.GetEnumerator()) {
@@ -359,10 +367,12 @@ foreach ($resource in $bundledCatalogResources) {
 }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($manifest.kind -ne "portable" -or $manifest.architecture -ne $Architecture) {
+if ((Get-RequiredStringProperty -Object $manifest -Name "kind" -Context "Portable package manifest") -ne "portable" -or
+    (Get-RequiredStringProperty -Object $manifest -Name "architecture" -Context "Portable package manifest") -ne $Architecture) {
     throw "Portable package manifest kind or architecture does not match the requested package."
 }
-$manifestPackagePath = [string](Get-RequiredProperty -Object $manifest.package -Name "path" -Context "Portable package manifest package")
+$manifestPackage = Get-RequiredObjectProperty -Object $manifest -Name "package" -Context "Portable package manifest"
+$manifestPackagePath = Get-RequiredStringProperty -Object $manifestPackage -Name "path" -Context "Portable package manifest package"
 $expectedPackageRelativePath = ConvertTo-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -Path $PackagePath -Context "Portable package ZIP"
 $packageSegments = $manifestPackagePath.Split("/")
 if ([string]::IsNullOrWhiteSpace($manifestPackagePath) -or
@@ -376,28 +386,27 @@ if ([string]::IsNullOrWhiteSpace($manifestPackagePath) -or
     throw "Portable package manifest package path is not the canonical repository-relative ZIP path."
 }
 $expectedContentManifestPath = ConvertTo-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -Path $definition.ContentManifestPath -Context "Artifact content manifest"
-if ($manifest.schemaVersion -ne 1 -or
-    $manifest.artifactId -ne $ArtifactId -or
-    $manifest.edition -ne $artifact.edition -or
-    $manifest.sourceCommit -ne ((& git -C $RepositoryRoot rev-parse HEAD).Trim()) -or
-    $null -eq $manifest.contentManifest -or
-    $manifest.contentManifest.schemaVersion -ne 1 -or
-    $manifest.contentManifest.path -ne $expectedContentManifestPath -or
-    $manifest.contentManifest.sha256 -ne (Get-Sha256Hex -Path $definition.ContentManifestPath)) {
+$manifestContent = Get-RequiredObjectProperty -Object $manifest -Name "contentManifest" -Context "Portable package manifest"
+if ((Get-RequiredIntegerProperty -Object $manifest -Name "schemaVersion" -Context "Portable package manifest") -ne 1 -or
+    (Get-RequiredStringProperty -Object $manifest -Name "artifactId" -Context "Portable package manifest") -ne $ArtifactId -or
+    (Get-RequiredStringProperty -Object $manifest -Name "edition" -Context "Portable package manifest") -ne (Get-RequiredStringProperty -Object $artifact -Name "edition" -Context "Artifact identity '$ArtifactId'") -or
+    (Get-RequiredStringProperty -Object $manifest -Name "sourceCommit" -Context "Portable package manifest") -ne ((& git -C $RepositoryRoot rev-parse HEAD).Trim()) -or
+    (Get-RequiredIntegerProperty -Object $manifestContent -Name "schemaVersion" -Context "Portable package manifest contentManifest") -ne 1 -or
+    (Get-RequiredStringProperty -Object $manifestContent -Name "path" -Context "Portable package manifest contentManifest") -ne $expectedContentManifestPath -or
+    (Get-RequiredStringProperty -Object $manifestContent -Name "sha256" -Context "Portable package manifest contentManifest") -ne (Get-Sha256Hex -Path $definition.ContentManifestPath)) {
     throw "Portable package manifest artifact identity or content manifest binding does not match the verified inputs."
 }
 
-[object[]]$manifestBundledCatalogResources = @()
-$manifestBundledCatalogResourcesProperty = $manifest.PSObject.Properties["bundledCatalogResources"]
-if ($null -ne $manifestBundledCatalogResourcesProperty -and $null -ne $manifestBundledCatalogResourcesProperty.Value) {
-    $manifestBundledCatalogResources = @($manifestBundledCatalogResourcesProperty.Value | ForEach-Object { $_ })
-}
+[object[]]$manifestBundledCatalogResources = (Get-RequiredArrayProperty `
+    -Object $manifest `
+    -Name "bundledCatalogResources" `
+    -Context "Portable package manifest").Value
 if ($manifestBundledCatalogResources.Count -ne $bundledCatalogResources.Count) {
     throw "Portable package manifest bundled catalog resource count does not match the verified content manifest."
 }
 $manifestResourcesById = @{}
 foreach ($manifestResource in $manifestBundledCatalogResources) {
-    $id = [string](Get-RequiredProperty -Object $manifestResource -Name "id" -Context "Portable package manifest bundled catalog resource")
+    $id = Get-RequiredStringProperty -Object $manifestResource -Name "id" -Context "Portable package manifest bundled catalog resource"
     if ($manifestResourcesById.ContainsKey($id)) {
         throw "Portable package manifest contains duplicate bundled catalog resource '$id'."
     }
@@ -409,7 +418,12 @@ foreach ($expectedResource in $bundledCatalogResources) {
     }
     $manifestResource = $manifestResourcesById[$expectedResource.id]
     foreach ($field in @("relativePath", "packagePath", "bytes", "sha256")) {
-        if ((Get-RequiredProperty -Object $manifestResource -Name $field -Context "Portable package manifest bundled catalog resource '$($expectedResource.id)'") -ne $expectedResource.$field) {
+        $actualValue = if ($field -eq "bytes") {
+            Get-RequiredIntegerProperty -Object $manifestResource -Name $field -Context "Portable package manifest bundled catalog resource '$($expectedResource.id)'"
+        } else {
+            Get-RequiredStringProperty -Object $manifestResource -Name $field -Context "Portable package manifest bundled catalog resource '$($expectedResource.id)'"
+        }
+        if ($actualValue -ne $expectedResource.$field) {
             throw "Portable package manifest bundled catalog resource '$($expectedResource.id)' $field does not match the verified content manifest."
         }
     }
@@ -419,18 +433,16 @@ foreach ($expectedResource in $bundledCatalogResources) {
 if ($null -ne $contentInputs) {
     $expectedInputs = @($contentInputs | ForEach-Object { $_ })
 }
-[object[]]$manifestInputs = @()
-$manifestInputsProperty = $manifest.PSObject.Properties["inputs"]
-if ($null -eq $manifestInputsProperty -or $null -eq $manifestInputsProperty.Value) {
-    throw "Portable package manifest lacks the required inputs array."
-}
-$manifestInputs = @($manifestInputsProperty.Value | ForEach-Object { $_ })
+[object[]]$manifestInputs = (Get-RequiredArrayProperty `
+        -Object $manifest `
+        -Name "inputs" `
+        -Context "Portable package manifest").Value
 if ($manifestInputs.Count -ne $expectedInputs.Count) {
     throw "Portable package manifest input count does not match the verified content manifest."
 }
 $manifestInputsById = @{}
 foreach ($manifestInput in $manifestInputs) {
-    $id = [string](Get-RequiredProperty -Object $manifestInput -Name "id" -Context "Portable package manifest input")
+    $id = Get-RequiredStringProperty -Object $manifestInput -Name "id" -Context "Portable package manifest input"
     if ($manifestInputsById.ContainsKey($id)) {
         throw "Portable package manifest contains duplicate input '$id'."
     }
@@ -442,7 +454,12 @@ foreach ($expectedInput in $expectedInputs) {
     }
     $actualInput = $manifestInputsById[$expectedInput.id]
     foreach ($field in @("role", "version", "architecture", "relativePath", "packagePath", "bytes", "sha256", "license", "source", "securityClassification")) {
-        if ($actualInput.$field -ne $expectedInput.$field) {
+        $actualValue = if ($field -eq "bytes") {
+            Get-RequiredIntegerProperty -Object $actualInput -Name $field -Context "Portable package manifest input '$($expectedInput.id)'"
+        } else {
+            Get-RequiredStringProperty -Object $actualInput -Name $field -Context "Portable package manifest input '$($expectedInput.id)'"
+        }
+        if ($actualValue -ne $expectedInput.$field) {
             throw "Portable package manifest input '$($expectedInput.id)' $field does not match the verified content manifest."
         }
     }
@@ -453,7 +470,7 @@ foreach ($expectedInput in $expectedInputs) {
     }
     if ($null -ne $expectedRescueEvidence) {
         foreach ($field in @("sourcePath", "reproducibleBuildPath", "minimalSmokePath", "processTokenContractPath")) {
-            if ((Get-RequiredProperty -Object $actualRescueEvidence.Value -Name $field -Context "Portable package manifest input '$($expectedInput.id)' rescueEvidence") -ne $expectedRescueEvidence.Value.$field) {
+            if ((Get-RequiredStringProperty -Object $actualRescueEvidence.Value -Name $field -Context "Portable package manifest input '$($expectedInput.id)' rescueEvidence") -ne $expectedRescueEvidence.Value.$field) {
                 throw "Portable package manifest input '$($expectedInput.id)' rescueEvidence $field does not match the verified content manifest."
             }
         }
@@ -466,13 +483,13 @@ foreach ($expectedInput in $expectedInputs) {
     }
 }
 
-$manifestPayload = @($manifest.payload)
+$manifestPayload = (Get-RequiredArrayProperty -Object $manifest -Name "payload" -Context "Portable package manifest").Value
 $manifestPayloadMap = ConvertTo-PayloadMap -Payload $manifestPayload -Name "Portable package manifest payload"
 Assert-PayloadMapMatches -Expected $archivePayloadMap -Actual $manifestPayloadMap -ExpectedName "ZIP payload" -ActualName "Portable package manifest"
 $manifestPayloadHashMap = ConvertTo-PayloadHashMap -Payload $manifestPayload -Name "Portable package manifest payload"
 Assert-PayloadHashMapMatches -Expected $archivePayloadHashMap -Actual $manifestPayloadHashMap -ExpectedName "ZIP payload" -ActualName "Portable package manifest"
 
-if ([Int64]$manifest.package.bytes -ne (Get-Item -LiteralPath $PackagePath).Length) {
+if ((Get-RequiredIntegerProperty -Object $manifestPackage -Name "bytes" -Context "Portable package manifest package") -ne (Get-Item -LiteralPath $PackagePath).Length) {
     throw "Portable package manifest byte count does not match ZIP."
 }
 
