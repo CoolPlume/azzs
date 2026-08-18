@@ -15,37 +15,8 @@ $wixTermsError = "WiX Toolset 7 requires an explicit terms decision. Re-run with
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$productVersionPath = Join-Path $repositoryRoot "release/product-version.json"
-if (-not (Test-Path -LiteralPath $productVersionPath -PathType Leaf)) {
-    throw "The authoritative product version source was not found: $productVersionPath"
-}
-try {
-    $productVersion = Get-Content -LiteralPath $productVersionPath -Raw | ConvertFrom-Json
-} catch {
-    throw "The authoritative product version source is not valid JSON: $productVersionPath"
-}
-if ($productVersion.schemaVersion -ne 1 -or
-    $productVersion.wixVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+$") {
-    throw "The authoritative product version source has an unsupported WiX version mapping."
-}
-if (-not $SkipBuild -and -not $AcceptWixEula) {
-    throw $wixTermsError
-}
-if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot "build.ps1") -Architecture $Architecture
-}
-
 $payloadDirectory = Join-Path $repositoryRoot "out/windows/$Architecture/Release"
 $executablePath = Join-Path $payloadDirectory "Azzs.WinUI.exe"
-if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
-    throw "Installer packaging requires a completed $Architecture Release build."
-}
-Test-PortableBuildManifest -RepositoryRoot $repositoryRoot -Architecture $Architecture | Out-Null
-
-if (-not $AcceptWixEula) {
-    throw $wixTermsError
-}
-
 $stagingDirectory = Join-Path $repositoryRoot "out/staging/installer/$Architecture"
 $packageDirectory = Join-Path $repositoryRoot "out/packages"
 $intermediateDirectory = Join-Path $repositoryRoot "out/obj/installer/$Architecture"
@@ -94,6 +65,35 @@ function Remove-InstallerCandidate {
 }
 
 Remove-InstallerCandidate
+$productVersionPath = Join-Path $repositoryRoot "release/product-version.json"
+if (-not (Test-Path -LiteralPath $productVersionPath -PathType Leaf)) {
+    throw "The authoritative product version source was not found: $productVersionPath"
+}
+try {
+    $productVersion = Get-Content -LiteralPath $productVersionPath -Raw | ConvertFrom-Json
+} catch {
+    throw "The authoritative product version source is not valid JSON: $productVersionPath"
+}
+if ($productVersion.schemaVersion -ne 1 -or
+    $productVersion.wixVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+$") {
+    throw "The authoritative product version source has an unsupported WiX version mapping."
+}
+if (-not $SkipBuild -and -not $AcceptWixEula) {
+    throw $wixTermsError
+}
+if (-not $SkipBuild) {
+    & (Join-Path $PSScriptRoot "build.ps1") -Architecture $Architecture
+}
+
+if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
+    throw "Installer packaging requires a completed $Architecture Release build."
+}
+Test-PortableBuildManifest -RepositoryRoot $repositoryRoot -Architecture $Architecture | Out-Null
+
+if (-not $AcceptWixEula) {
+    throw $wixTermsError
+}
+
 try {
     New-Item -ItemType Directory -Path $stagingDirectory, $packageDirectory, $intermediateDirectory -Force | Out-Null
 Assert-NoReparsePointsBelow `
