@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -132,6 +133,11 @@ def check_consumers(root: Path, version: dict[str, Any], contract: Contract) -> 
     build_script = (root / "eng/build.ps1").read_text(encoding="utf-8")
     contract.require("release/product-version.json" in build_script, "build entry does not read the authoritative version source")
     contract.require("releaseChannel" in build_script, "build entry does not validate the authoritative release channel")
+    contract.require(
+        "msbuild-arguments.ps1" in build_script
+        and "ConvertTo-AzzsWindowsVersionCommasArgument" in build_script,
+        "build entry does not use the MSBuild Windows version argument encoder",
+    )
     for property_name in ("AzzsGeneratedResourceDirectory", "AzzsApplicationVersion", "AzzsWindowsVersion", "AzzsWindowsVersionCommas"):
         contract.require(f"/p:{property_name}=" in build_script, f"build entry does not pass {property_name}")
 
@@ -144,6 +150,109 @@ def check_consumers(root: Path, version: dict[str, Any], contract: Contract) -> 
     contract.require("AzzsWixVersion=$(AzzsWixVersion)" in wix_project, "WiX project does not forward AzzsWixVersion")
     contract.require("release/product-version.json" in package_script and "/p:AzzsWixVersion=" in package_script, "installer entry does not inject the authoritative WiX version")
     contract.require("Test-PortableBuildManifest" in package_script, "installer entry no longer gates WiX on the current build manifest")
+
+
+def validate_msbuild_windows_version_argument(
+    root: Path, msbuild_command: str | None, contract: Contract
+) -> None:
+    if not msbuild_command:
+        return
+
+    helper = root / "eng/msbuild-arguments.ps1"
+    capture_project = root / "tests/release-version-contract/msbuild-property-capture.proj"
+    contract.require(helper.is_file(), "missing MSBuild Windows version argument encoder")
+    contract.require(capture_project.is_file(), "missing MSBuild Windows version capture project")
+    if not helper.is_file() or not capture_project.is_file():
+        return
+
+    powershell_command = shutil.which("pwsh") or shutil.which("powershell")
+    contract.require(
+        powershell_command is not None,
+        "MSBuild Windows version argument contract requires PowerShell",
+    )
+    if powershell_command is None:
+        return
+
+    output_parent = root / "out"
+    test_directory: Path | None = None
+    try:
+        output_parent.mkdir(parents=True, exist_ok=True)
+        test_directory = Path(
+            tempfile.mkdtemp(prefix="release-version-msbuild-", dir=output_parent)
+        )
+        capture_path = test_directory / "captured-windows-version.txt"
+        environment = os.environ.copy()
+        environment["TEMP"] = str(test_directory)
+        environment["TMP"] = str(test_directory)
+        escaped_helper_path = str(helper).replace("'", "''")
+        encoded = subprocess.run(
+            [
+                powershell_command,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "& { . '"
+                + escaped_helper_path
+                + "'; ConvertTo-AzzsWindowsVersionCommasArgument -WindowsVersion '0.1.0.0' }",
+            ],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+            errors="replace",
+        )
+        encoded_output = encoded.stdout.strip()
+        contract.require(
+            encoded.returncode == 0,
+            "MSBuild Windows version argument encoder failed: "
+            + (encoded.stdout + encoded.stderr).strip()[-1200:],
+        )
+        contract.equal(
+            encoded_output,
+            "0%2c1%2c0%2c0",
+            "0.1.0.0 must be encoded for an MSBuild property argument",
+        )
+        if encoded.returncode != 0 or encoded_output != "0%2c1%2c0%2c0":
+            return
+
+        captured = subprocess.run(
+            [
+                msbuild_command,
+                str(capture_project),
+                "/nologo",
+                "/t:Capture",
+                f"/p:AzzsCapturePath={capture_path}",
+                f"/p:AzzsWindowsVersionCommas={encoded_output}",
+            ],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            check=False,
+            text=True,
+            errors="replace",
+        )
+        contract.require(
+            captured.returncode == 0,
+            "MSBuild rejected the encoded Windows version property: "
+            + (captured.stdout + captured.stderr).strip()[-1200:],
+        )
+        contract.require(
+            capture_path.is_file(),
+            "MSBuild did not write the captured Windows version property",
+        )
+        if captured.returncode == 0 and capture_path.is_file():
+            contract.equal(
+                capture_path.read_text(encoding="utf-8").strip(),
+                "0,1,0,0",
+                "MSBuild must receive 0,1,0,0 after command-line parsing",
+            )
+    except OSError as error:
+        contract.require(False, f"MSBuild Windows version argument contract failed: {error}")
+    finally:
+        if test_directory is not None:
+            shutil.rmtree(test_directory, ignore_errors=True)
 
 
 def target_defines(build_directory: Path, target_name: str) -> set[str] | None:
@@ -293,6 +402,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository-root", required=True, type=Path)
     parser.add_argument("--cmake-command", default="cmake")
+    parser.add_argument("--msbuild-command")
     arguments = parser.parse_args()
     root = arguments.repository_root.resolve()
     contract = Contract()
@@ -324,6 +434,9 @@ def main() -> int:
         + "; ".join(beta_mapping_contract.failures),
     )
     check_consumers(root, version, contract)
+    validate_msbuild_windows_version_argument(
+        root, arguments.msbuild_command, contract
+    )
     if source_path.is_file():
         mutation_contract(root, arguments.cmake_command, contract)
     if contract.failures:
