@@ -10,10 +10,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-
-if (-not $AcceptWixEula) {
-    throw "WiX Toolset 7 requires an explicit terms decision. Re-run with -AcceptWixEula only after confirming the WiX 7 terms for this use."
-}
+$wixTermsError = "WiX Toolset 7 requires an explicit terms decision. Re-run with -AcceptWixEula only after confirming the WiX 7 terms for this use."
 
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
 
@@ -31,6 +28,9 @@ if ($productVersion.schemaVersion -ne 1 -or
     $productVersion.wixVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+$") {
     throw "The authoritative product version source has an unsupported WiX version mapping."
 }
+if (-not $SkipBuild -and -not $AcceptWixEula) {
+    throw $wixTermsError
+}
 if (-not $SkipBuild) {
     & (Join-Path $PSScriptRoot "build.ps1") -Architecture $Architecture
 }
@@ -39,6 +39,11 @@ $payloadDirectory = Join-Path $repositoryRoot "out/windows/$Architecture/Release
 $executablePath = Join-Path $payloadDirectory "Azzs.WinUI.exe"
 if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
     throw "Installer packaging requires a completed $Architecture Release build."
+}
+Test-PortableBuildManifest -RepositoryRoot $repositoryRoot -Architecture $Architecture | Out-Null
+
+if (-not $AcceptWixEula) {
+    throw $wixTermsError
 }
 
 $stagingDirectory = Join-Path $repositoryRoot "out/staging/installer/$Architecture"
