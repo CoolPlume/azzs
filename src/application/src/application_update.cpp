@@ -240,7 +240,7 @@ UpdateCommandResult ApplicationUpdateLifecycle::check_for_update() {
   }
 
   snapshot_.state =
-      snapshot_.current.channel == ApplicationReleaseChannel::test
+      snapshot_.current.channel == ApplicationReleaseChannel::prerelease
           ? UpdateState::stable_switch_available
           : UpdateState::update_available;
   log_event("select-candidate", ExecutionResult::succeeded,

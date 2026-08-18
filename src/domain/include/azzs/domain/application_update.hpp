@@ -11,7 +11,7 @@ namespace azzs::domain::application_update {
 
 enum class ReleaseChannel {
   stable,
-  test,
+  prerelease,
 };
 
 enum class ReleaseEdition {
@@ -76,6 +76,17 @@ enum class VersionComparison {
 
 [[nodiscard]] VersionComparison compare_versions(
     std::string_view current, std::string_view candidate) noexcept;
+
+[[nodiscard]] constexpr std::optional<ReleaseChannel> parse_release_channel(
+    std::string_view value) noexcept {
+  if (value == "stable") {
+    return ReleaseChannel::stable;
+  }
+  if (value == "prerelease") {
+    return ReleaseChannel::prerelease;
+  }
+  return std::nullopt;
+}
 
 [[nodiscard]] bool is_formal_stable_release(
     GithubApplicationRelease const& release) noexcept;

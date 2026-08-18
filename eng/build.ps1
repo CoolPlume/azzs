@@ -23,8 +23,13 @@ try {
 }
 if ($productVersion.schemaVersion -ne 1 -or
     $productVersion.applicationVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$" -or
+    $productVersion.releaseChannel -notmatch "^(stable|prerelease)$" -or
     $productVersion.windowsVersion -notmatch "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$") {
     throw "The authoritative product version source has an unsupported version mapping."
+}
+$applicationIsPrerelease = $productVersion.applicationVersion -match "-"
+if (($productVersion.releaseChannel -eq "stable") -eq $applicationIsPrerelease) {
+    throw "The authoritative product version source has an inconsistent application version and release channel."
 }
 $windowsVersionCommas = $productVersion.windowsVersion.Replace(".", ",")
 $evidenceName = "windows-$($Architecture.ToLowerInvariant())-release"

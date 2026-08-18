@@ -48,6 +48,7 @@ using azzs::application::UpdateState;
 using azzs::application::UpdateUserIntent;
 using azzs::adapters::infrastructure::StateApplicationUpdateHealthStorage;
 using azzs::domain::SystemArchitecture;
+using azzs::domain::application_update::VersionComparison;
 using azzs::testing::FixedClock;
 using azzs::testing::InMemoryStateFileSystem;
 
@@ -328,15 +329,16 @@ static_assert(
   passed &= expect(platform.queries == 1,
                    "the core must obtain release facts only through its typed platform seam");
 
-  platform.current = build("9.0.0", ApplicationReleaseChannel::test);
-  auto test_lifecycle = make_lifecycle(platform, activity, log, clock);
-  auto const test_checked =
-      test_lifecycle.handle(UpdateUserIntent::check_for_update);
+  platform.current =
+      build("9.0.0-beta.1", ApplicationReleaseChannel::prerelease);
+  auto prerelease_lifecycle = make_lifecycle(platform, activity, log, clock);
+  auto const prerelease_checked =
+      prerelease_lifecycle.handle(UpdateUserIntent::check_for_update);
   passed &= expect(
-      test_checked.snapshot.state == UpdateState::stable_switch_available &&
-          test_checked.snapshot.candidate.has_value() &&
-          test_checked.snapshot.candidate->target.version == "1.2.0",
-      "a test build may only expose a user-triggered switch to the latest matching stable build");
+      prerelease_checked.snapshot.state == UpdateState::stable_switch_available &&
+          prerelease_checked.snapshot.candidate.has_value() &&
+          prerelease_checked.snapshot.candidate->target.version == "1.2.0",
+      "a prerelease build may only expose a user-triggered switch to the latest matching stable build");
 
   platform.current = build("1.2.0");
   auto current_lifecycle = make_lifecycle(platform, activity, log, clock);
@@ -356,6 +358,46 @@ static_assert(
       invalid_lifecycle.handle(UpdateUserIntent::check_for_update)
               .snapshot.state == UpdateState::no_matching_stable_asset,
       "a missing matching asset must explicitly refuse automatic update");
+  return passed;
+}
+
+[[nodiscard]] bool prerelease_identity_and_ordering_contract() {
+  auto const stable = build("0.9.0");
+  auto const prerelease =
+      build("0.9.0-beta.1", ApplicationReleaseChannel::prerelease);
+  auto const mismatched_stable =
+      build("0.9.0-beta.1", ApplicationReleaseChannel::stable);
+  auto const mismatched_prerelease =
+      build("0.9.0", ApplicationReleaseChannel::prerelease);
+  auto const malformed_prerelease =
+      build("0.9.0-beta.", ApplicationReleaseChannel::prerelease);
+
+  bool passed = expect(stable.valid() && prerelease.valid(),
+                       "stable and prerelease build identities must be valid when their channels match");
+  passed &= expect(!mismatched_stable.valid() && !mismatched_prerelease.valid() &&
+                       !malformed_prerelease.valid(),
+                   "build identities must reject a version and release channel mismatch or malformed prerelease");
+  passed &= expect(
+      azzs::domain::application_update::compare_versions("0.9.0-beta.1",
+                                                          "0.9.0-beta.2") ==
+          VersionComparison::higher &&
+          azzs::domain::application_update::compare_versions("0.9.0-beta.2",
+                                                              "0.9.0") ==
+              VersionComparison::higher &&
+          azzs::domain::application_update::compare_versions("0.9.0",
+                                                              "0.9.0-beta.2") ==
+              VersionComparison::lower,
+      "semantic prerelease ordering must place beta.1 before beta.2 and both before the stable version");
+
+  auto const prerelease_asset = asset(
+      "prerelease-asset",
+      build("0.9.0-beta.1", ApplicationReleaseChannel::prerelease));
+  auto const prerelease_release = release(
+      "prerelease-asset-release", "v0.9.0", "正式版", {prerelease_asset});
+  passed &= expect(
+      !azzs::domain::application_update::is_formal_stable_release(
+          prerelease_release),
+      "a prerelease asset must not be treated as a formal stable release even without a GitHub prerelease flag");
   return passed;
 }
 
@@ -638,6 +680,7 @@ static_assert(
 int main() {
   bool passed = true;
   passed &= filtering_pairing_and_version_contract();
+  passed &= prerelease_identity_and_ordering_contract();
   passed &= deferral_and_confirmation_contract();
   passed &= replace_failure_rolls_back_contract();
   passed &= startup_retry_and_automatic_rollback_contract();

@@ -165,10 +165,10 @@ void encode_build(Encoder& encoder, ApplicationBuildIdentity const& build) {
   std::uint8_t edition{};
   std::uint8_t form{};
   if (!decoder.text(build.version, kMaximumVersionBytes) ||
-      !decoder.u8(channel) || !decoder.u8(architecture) ||
-      !decoder.u8(edition) || !decoder.u8(form) ||
-      !valid_enum(channel, static_cast<std::uint8_t>(
-                               ApplicationReleaseChannel::test)) ||
+       !decoder.u8(channel) || !decoder.u8(architecture) ||
+       !decoder.u8(edition) || !decoder.u8(form) ||
+       !valid_enum(channel, static_cast<std::uint8_t>(
+                                ApplicationReleaseChannel::prerelease)) ||
       !valid_enum(architecture, static_cast<std::uint8_t>(
                                     domain::SystemArchitecture::unknown)) ||
       !valid_enum(edition, static_cast<std::uint8_t>(
