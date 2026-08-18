@@ -62,6 +62,7 @@
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/software_catalog_lifecycle.hpp"
 #include "azzs/application/software_optimization_catalog_lifecycle.hpp"
+#include "azzs/application/startup_catalog_gate.hpp"
 #include "azzs/application/software_optimization_batch.hpp"
 #include "azzs/application/software_optimization_discovery.hpp"
 #include "azzs/application/sogou_optimization.hpp"
@@ -234,18 +235,13 @@ class StartupOptimizationCatalogGate final {
             application::sogou_optimization::built_in_rule_definitions(),
             optimization_installer_baselines_) {}
 
-  [[nodiscard]] bool ensure_bundled_catalog(
+  [[nodiscard]] std::optional<startup::StartupAssemblyStage>
+  ensure_bundled_catalog(
       BundledCatalogResources const& resources) {
     auto const result = optimization_catalog_.ensure_builtin(
         resources.software_optimization_catalog.bytes(),
         "embedded-software-optimization-catalog");
-    auto const accepted =
-        result.code == application::SoftwareOptimizationCatalogLifecycleCode::
-                           applied ||
-        result.code == application::SoftwareOptimizationCatalogLifecycleCode::
-                           unchanged;
-    return accepted && result.logging_error.empty() &&
-           result.occupancy_error.empty();
+    return startup::startup_catalog_gate_failure_stage(result);
   }
 
  private:
@@ -1256,9 +1252,11 @@ StartupAssemblyResult assemble_startup() {
     }
     {
       StartupOptimizationCatalogGate catalog_gate{*environment.environment};
-      if (!catalog_gate.ensure_bundled_catalog(*bundled_catalog_resources)) {
+      if (auto const failure_stage =
+              catalog_gate.ensure_bundled_catalog(*bundled_catalog_resources);
+          failure_stage.has_value()) {
         return startup_failure(startup::startup_assembly_failed(
-            startup::StartupAssemblyStage::bundled_catalog_resources));
+            *failure_stage));
       }
     }
     auto view_preferences =
