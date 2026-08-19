@@ -98,6 +98,25 @@ def verify(root: Path) -> None:
         "user32.lib" in project,
         "the WinUI host must link user32 for the startup last-resort MessageBoxW fallback",
     )
+    require(
+        "DISABLE_XAML_GENERATED_MAIN" in project and
+        'startup_entry.cpp' in project,
+        "the WinUI host must replace the generated process entry with its guarded wrapper",
+    )
+
+    startup_entry = read(root / "src/adapters/ui/winui/startup_entry.cpp")
+    require(
+        "int __stdcall wWinMain" in startup_entry and
+        "wXamlGeneratedMain(" in startup_entry,
+        "the process entry must delegate to the XAML-generated startup sequence",
+    )
+    require(
+        "catch (...)" in startup_entry and
+        "OutputDebugStringW" in startup_entry and
+        "MessageBoxW" in startup_entry and
+        "return 1;" in startup_entry,
+        "the process entry must report early startup failures and return non-zero",
+    )
 
     resources = read(root / "src/adapters/ui/winui/Strings/zh-CN/Resources.resw")
     require(
