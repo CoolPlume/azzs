@@ -1,11 +1,14 @@
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -22,6 +25,7 @@
 #include <windows.h>
 
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
+#include "azzs/testing/windows_device_data_environment_test_seam.hpp"
 #endif
 
 namespace {
@@ -56,6 +60,69 @@ using azzs::testing::InMemoryLogStorage;
   }
   return condition;
 }
+
+#ifdef _WIN32
+[[nodiscard]] std::optional<std::filesystem::path> execution_log_contract_root() {
+  auto const required = ::GetEnvironmentVariableW(
+      L"AZZS_EXECUTION_LOG_CONTRACT_ROOT", nullptr, 0);
+  if (required == 0) {
+    return std::nullopt;
+  }
+  std::vector<wchar_t> root_buffer(required);
+  auto const copied = ::GetEnvironmentVariableW(
+      L"AZZS_EXECUTION_LOG_CONTRACT_ROOT", root_buffer.data(),
+      static_cast<DWORD>(root_buffer.size()));
+  if (copied == 0 || copied >= root_buffer.size()) {
+    return std::nullopt;
+  }
+  return std::filesystem::path{root_buffer.data()};
+}
+
+[[nodiscard]] std::string token_integrity_label() {
+  HANDLE raw_token = nullptr;
+  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &raw_token)) {
+    return "unavailable";
+  }
+  std::unique_ptr<void, decltype(&::CloseHandle)> token{raw_token,
+                                                         &::CloseHandle};
+  DWORD required = 0;
+  ::SetLastError(ERROR_SUCCESS);
+  ::GetTokenInformation(token.get(), TokenIntegrityLevel, nullptr, 0,
+                        &required);
+  if (required == 0 || ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+    return "unavailable";
+  }
+  std::vector<std::byte> bytes(required);
+  if (!::GetTokenInformation(token.get(), TokenIntegrityLevel, bytes.data(),
+                             required, &required)) {
+    return "unavailable";
+  }
+  auto const* label =
+      reinterpret_cast<TOKEN_MANDATORY_LABEL const*>(bytes.data());
+  if (!::IsValidSid(label->Label.Sid)) {
+    return "unavailable";
+  }
+  auto const count = *::GetSidSubAuthorityCount(label->Label.Sid);
+  if (count == 0) {
+    return "unavailable";
+  }
+  auto const integrity =
+      *::GetSidSubAuthority(label->Label.Sid, static_cast<DWORD>(count - 1));
+  if (integrity >= SECURITY_MANDATORY_SYSTEM_RID) {
+    return "system";
+  }
+  if (integrity >= SECURITY_MANDATORY_HIGH_RID) {
+    return "high";
+  }
+  if (integrity >= SECURITY_MANDATORY_MEDIUM_RID) {
+    return "medium";
+  }
+  if (integrity >= SECURITY_MANDATORY_LOW_RID) {
+    return "low";
+  }
+  return "untrusted";
+}
+#endif
 
 void seed_storage(InMemoryLogStorage& storage, std::string bytes) {
   auto transaction = storage.begin_transaction();
@@ -1204,8 +1271,23 @@ void replace_once(std::string& bytes, std::string_view original,
 [[nodiscard]] bool verify_local_file_storage_and_single_file_export() {
   auto const unique = std::to_string(
       std::chrono::steady_clock::now().time_since_epoch().count());
+#ifdef _WIN32
+  auto const base = execution_log_contract_root();
+  if (!base.has_value()) {
+    return expect(false,
+                  "the Windows local log contract root must be available");
+  }
+  std::error_code parent_error;
+  std::filesystem::create_directories(*base, parent_error);
+  if (parent_error) {
+    return expect(false,
+                  "the Windows local log contract root must be created");
+  }
+  auto const root = *base / ("azzs-execution-log-contract-" + unique);
+#else
   auto const root = std::filesystem::temp_directory_path() /
                     ("azzs-execution-log-contract-" + unique);
+#endif
   struct Cleanup final {
     std::filesystem::path path;
     ~Cleanup() {
@@ -1221,10 +1303,10 @@ void replace_once(std::string& bytes, std::string_view original,
   }();
   std::string subject_id{"S-1-5-21-4242"};
 #ifdef _WIN32
-  auto environment =
-      azzs::adapters::windows::WindowsDeviceDataEnvironment::prepare(
-          azzs::adapters::windows::DeviceDataEnvironmentOptions{
-              .root_override_utf8 = root_utf8});
+  auto environment = azzs::testing::prepare_windows_device_data_for_test(
+      azzs::testing::WindowsDeviceDataTestOptions{
+          .root_override_utf8 = root_utf8,
+          .subject_override = "S-1-5-32-544"});
   if (!environment) {
     return expect(false,
                   "the Windows local log contract requires a prepared ACL root");
@@ -1232,7 +1314,6 @@ void replace_once(std::string& bytes, std::string_view original,
   root_utf8 = environment.environment->root_utf8;
   subject_id = environment.environment->subject_id;
 #endif
-
   FixedClock clock{WallClockTime{std::chrono::milliseconds{1'786'422'405'750}}};
   LocalFileLogStorage first_storage{root_utf8, subject_id};
   LocalFileLogStorage second_storage{root_utf8, subject_id};
@@ -1699,6 +1780,9 @@ verify_diagnostic_context_facts_mark_absence_and_redact_dynamic_text() {
 }  // namespace
 
 int main() {
+#ifdef _WIN32
+  std::cout << "token integrity: " << token_integrity_label() << '\n';
+#endif
   if (!verify_unknown_and_corrupt_formats_are_preserved() ||
       !verify_diagnostic_export_is_read_only_during_gaps() ||
       !verify_first_event_is_persisted() ||
