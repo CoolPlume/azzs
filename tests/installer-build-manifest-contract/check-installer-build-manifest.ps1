@@ -67,7 +67,13 @@ function Write-ValidBuildManifest {
                 architecture = "x64"
                 configuration = "Release"
             }
-            artifacts = @()
+            artifacts = @(
+                [ordered]@{
+                    path = "Azzs.WinUI.exe"
+                    bytes = (Get-Item -LiteralPath (Join-Path $FixtureRoot "out/windows/x64/Release/Azzs.WinUI.exe")).Length
+                    sha256 = (Get-FileHash -LiteralPath (Join-Path $FixtureRoot "out/windows/x64/Release/Azzs.WinUI.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+                }
+            )
         }) -Path (Get-BuildManifestPath -FixtureRoot $FixtureRoot)
 }
 
