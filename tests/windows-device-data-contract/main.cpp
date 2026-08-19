@@ -964,6 +964,21 @@ struct SecurityInfo final {
           non_rpc_wts_failure.raw_error == ERROR_ACCESS_DENIED,
       "a non-RPC WTS failure must not use a matching shell fallback");
 
+  auto const unmapped_wts_identity =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = *current_sid,
+              .wts_raw_error = ERROR_NONE_MAPPED,
+              .desktop_shell_session_matches = true,
+          });
+  passed &= expect(
+      !unmapped_wts_identity &&
+          unmapped_wts_identity.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          unmapped_wts_identity.raw_error == ERROR_NONE_MAPPED,
+      "an unmapped WTS identity must fail closed despite a matching shell SID");
+
   auto const mismatched_session_root =
       *base / L"mismatched-shell-session";
   auto const mismatched_session =

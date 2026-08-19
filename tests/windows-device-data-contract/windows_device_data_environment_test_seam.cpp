@@ -28,7 +28,7 @@ using LocalMemory = std::unique_ptr<void, decltype(&::LocalFree)>;
 [[nodiscard]] constexpr bool is_wts_rpc_transport_failure(
     DWORD error) noexcept {
   return error == RPC_S_SERVER_UNAVAILABLE ||
-         error == RPC_S_SERVER_NOT_LISTENING ||
+         error == RPC_S_NOT_LISTENING ||
          error == RPC_S_SERVER_TOO_BUSY || error == RPC_S_CALL_FAILED ||
          error == RPC_S_CALL_FAILED_DNE;
 }
