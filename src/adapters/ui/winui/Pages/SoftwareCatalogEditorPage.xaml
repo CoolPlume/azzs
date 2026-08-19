@@ -36,7 +36,6 @@
             <InfoBar
                 x:Name="StatusInfoBar"
                 Grid.Row="1"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorStatus"
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
@@ -45,7 +44,6 @@
             <InfoBar
                 x:Name="LocalTrialInfoBar"
                 Grid.Row="2"
-                Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                 x:Uid="SoftwareCatalogEditorLocalTrial"
                 AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalTrial"
                 IsClosable="False"
@@ -55,7 +53,6 @@
             <InfoBar
                 x:Name="RuntimeIssuesInfoBar"
                 Grid.Row="3"
-                Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorRuntimeIssues"
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
@@ -65,7 +62,6 @@
             <InfoBar
                 x:Name="ReleaseIssuesInfoBar"
                 Grid.Row="4"
-                Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorReleaseIssues"
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
@@ -74,7 +70,6 @@
                 Style="{StaticResource AzzsWarningStatusBandStyle}" />
             <CommandBar
                 Grid.Row="5"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCommands"
                 DefaultLabelPosition="Right">
                 <AppBarButton x:Name="AddSoftwareButton" x:Uid="SoftwareCatalogEditorAdd" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAdd" Click="OnAddSoftware">
@@ -100,7 +95,9 @@
                     <AppBarButton.Icon><SymbolIcon Symbol="Cancel" /></AppBarButton.Icon>
                 </AppBarButton>
             </CommandBar>
-            <Grid Grid.Row="6" Margin="0,{StaticResource AzzsSpaceStandard},0,0">
+            <Grid
+                Grid.Row="6"
+                RowSpacing="{StaticResource AzzsSpaceSmall}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -110,7 +107,7 @@
                     x:Uid="SoftwareCatalogEditorSearch"
                     AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSearch"
                     TextChanged="OnSearchChanged" />
-                <StackPanel Grid.Row="1" Margin="0,{StaticResource AzzsSpaceSmall},0,0" Spacing="{StaticResource AzzsSpaceSmall}">
+                <StackPanel Grid.Row="1" Spacing="{StaticResource AzzsSpaceSmall}">
                     <TextBox
                         x:Name="ImportPathTextBox"
                         x:Uid="SoftwareCatalogEditorImportPath"
@@ -134,7 +131,6 @@
             </Grid>
             <Grid
                 Grid.Row="7"
-                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
                 ColumnSpacing="{StaticResource AzzsSpaceStandard}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />

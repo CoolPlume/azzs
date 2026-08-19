@@ -36,7 +36,6 @@
                 x:Name="LocalTrialInfoBar"
                 x:Uid="SoftwareInstallationLocalTrial"
                 Grid.Row="1"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareInstallationLocalTrial"
                 IsClosable="False"
                 IsOpen="False"

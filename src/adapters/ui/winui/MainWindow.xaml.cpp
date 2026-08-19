@@ -83,10 +83,11 @@ void MainWindow::bind(
   project(workbench_->snapshot());
 }
 
-void MainWindow::show_initial_page() {
-  if (workbench_) {
-    navigate_to(workbench_->snapshot().current_page);
+bool MainWindow::show_initial_page() {
+  if (!workbench_) {
+    return false;
   }
+  return navigate_to(workbench_->snapshot().current_page);
 }
 
 void MainWindow::confirm_started_healthy() {
@@ -108,7 +109,7 @@ void MainWindow::OnNavigationSelectionChanged(
     Microsoft::UI::Xaml::Controls::NavigationView const&,
     Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&
         args) {
-  if (!workbench_) {
+  if (restoring_navigation_selection_ || !workbench_) {
     return;
   }
 
@@ -123,10 +124,18 @@ void MainWindow::OnNavigationSelectionChanged(
     return;
   }
 
-  workbench_->navigate(*page);
-  auto const snapshot = workbench_->snapshot();
-  project(snapshot);
-  navigate_to(snapshot.current_page);
+  auto const previous_page = displayed_page_;
+  if (!navigate_and_commit(*page)) {
+    if (previous_page.has_value()) {
+      auto const previous_item = navigation_item_for_page(*previous_page);
+      if (previous_item) {
+        restoring_navigation_selection_ = true;
+        PrimaryNavigation().SelectedItem(previous_item);
+        restoring_navigation_selection_ = false;
+      }
+    }
+    return;
+  }
 }
 
 void MainWindow::OnWindowClosing(
@@ -234,10 +243,10 @@ void MainWindow::restore_catalog_editor_after_close(
     project(workbench_->snapshot());
     return;
   }
-  workbench_->navigate(PageId::software_catalog_editor);
-  auto const snapshot = workbench_->snapshot();
-  project(snapshot);
-  navigate_to(snapshot.current_page);
+  project(workbench_->snapshot());
+  if (!navigate_and_commit(PageId::software_catalog_editor)) {
+    return;
+  }
   if (auto page = ContentFrame().Content().try_as<
           Pages::SoftwareCatalogEditorPage>()) {
     winrt::get_self<Pages::implementation::SoftwareCatalogEditorPage>(page)
@@ -261,10 +270,10 @@ void MainWindow::OnContinueRecoveredCatalogEditorClick(
     return;
   }
 
-  workbench_->navigate(PageId::software_catalog_editor);
-  auto const snapshot = workbench_->snapshot();
-  project(snapshot);
-  navigate_to(snapshot.current_page);
+  project(workbench_->snapshot());
+  if (!navigate_and_commit(PageId::software_catalog_editor)) {
+    return;
+  }
 }
 
 std::optional<PageId> MainWindow::page_for_item(
@@ -297,38 +306,71 @@ std::optional<PageId> MainWindow::page_for_item(
   return std::nullopt;
 }
 
-void MainWindow::navigate_to(PageId page) {
+NavigationViewItem MainWindow::navigation_item_for_page(PageId page) {
+  switch (page) {
+    case PageId::overview:
+      return OverviewItem();
+    case PageId::drivers:
+      return DriversItem();
+    case PageId::system_optimization:
+      return SystemOptimizationItem();
+    case PageId::software_installation:
+      return SoftwareInstallationItem();
+    case PageId::software_optimization:
+      return SoftwareOptimizationItem();
+    case PageId::history_and_logs:
+      return HistoryAndLogsItem();
+    case PageId::application_settings:
+      return ApplicationSettingsItem();
+    case PageId::software_catalog_editor:
+      return SoftwareCatalogEditorItem();
+  }
+  return nullptr;
+}
+
+bool MainWindow::navigate_and_commit(PageId page) {
+  if (!workbench_ || !navigate_to(page)) {
+    return false;
+  }
+  workbench_->navigate(page);
+  project(workbench_->snapshot());
+  auto const navigation_item = navigation_item_for_page(page);
+  if (navigation_item) {
+    restoring_navigation_selection_ = true;
+    PrimaryNavigation().SelectedItem(navigation_item);
+    restoring_navigation_selection_ = false;
+  }
+  return true;
+}
+
+bool MainWindow::navigate_to(PageId page) {
   using winrt::Microsoft::UI::Xaml::Media::Animation::
       SuppressNavigationTransitionInfo;
 
   auto const transition = SuppressNavigationTransitionInfo{};
-  if (displayed_page_ == PageId::software_catalog_editor &&
-      page != PageId::software_catalog_editor) {
-    if (auto const services = workbench_->services()) {
-      services->debug_mode_catalog_editor().end_temporary_close_recovery();
-      project(workbench_->snapshot());
-    }
-  }
   switch (page) {
     case PageId::overview:
-      ContentFrame().Navigate(xaml_typename<Pages::OverviewPage>(), nullptr,
-                              transition);
+      if (!ContentFrame().Navigate(xaml_typename<Pages::OverviewPage>(), nullptr,
+                                   transition)) {
+        return false;
+      }
       if (auto const services = workbench_->services()) {
         auto const page = ContentFrame().Content().as<Pages::OverviewPage>();
         winrt::get_self<Pages::implementation::OverviewPage>(page)->bind(
             services, advanced_view_, [weak_this = get_weak()](PageId target) {
               if (auto self = weak_this.get(); self && self->workbench_) {
-                self->workbench_->navigate(target);
-                auto const snapshot = self->workbench_->snapshot();
-                self->project(snapshot);
-                self->navigate_to(snapshot.current_page);
+                if (!self->navigate_and_commit(target)) {
+                  return;
+                }
               }
             });
       }
       break;
     case PageId::drivers:
-      ContentFrame().Navigate(xaml_typename<Pages::DriversPage>(), nullptr,
-                              transition);
+      if (!ContentFrame().Navigate(xaml_typename<Pages::DriversPage>(), nullptr,
+                                   transition)) {
+        return false;
+      }
       if (auto const drivers_page =
               ContentFrame().Content().try_as<Pages::DriversPage>()) {
         auto const hardware =
@@ -361,8 +403,11 @@ void MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::system_optimization:
-      ContentFrame().Navigate(xaml_typename<Pages::SystemOptimizationPage>(),
-                              nullptr, transition);
+      if (!ContentFrame().Navigate(
+              xaml_typename<Pages::SystemOptimizationPage>(), nullptr,
+              transition)) {
+        return false;
+      }
       if (auto page =
               ContentFrame().Content().try_as<Pages::SystemOptimizationPage>();
           page && system_settings_) {
@@ -371,8 +416,11 @@ void MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::software_installation:
-      ContentFrame().Navigate(xaml_typename<Pages::SoftwareInstallationPage>(),
-                              nullptr, transition);
+      if (!ContentFrame().Navigate(
+              xaml_typename<Pages::SoftwareInstallationPage>(), nullptr,
+              transition)) {
+        return false;
+      }
       if (auto const services = workbench_->services()) {
         auto const page = ContentFrame()
                               .Content()
@@ -382,8 +430,11 @@ void MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::software_optimization:
-      ContentFrame().Navigate(xaml_typename<Pages::SoftwareOptimizationPage>(),
-                              nullptr, transition);
+      if (!ContentFrame().Navigate(
+              xaml_typename<Pages::SoftwareOptimizationPage>(), nullptr,
+              transition)) {
+        return false;
+      }
       if (auto const services = workbench_->services()) {
         auto const page = ContentFrame()
                               .Content()
@@ -393,8 +444,10 @@ void MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::history_and_logs:
-      ContentFrame().Navigate(xaml_typename<Pages::HistoryAndLogsPage>(), nullptr,
-                              transition);
+      if (!ContentFrame().Navigate(xaml_typename<Pages::HistoryAndLogsPage>(),
+                                   nullptr, transition)) {
+        return false;
+      }
       if (auto const services = workbench_->services()) {
         auto const history_page =
             ContentFrame().Content().as<Pages::HistoryAndLogsPage>();
@@ -403,8 +456,11 @@ void MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::application_settings:
-      ContentFrame().Navigate(xaml_typename<Pages::ApplicationSettingsPage>(),
-                              nullptr, transition);
+      if (!ContentFrame().Navigate(
+              xaml_typename<Pages::ApplicationSettingsPage>(), nullptr,
+              transition)) {
+        return false;
+      }
       if (auto settings = ContentFrame().Content().try_as<
               Pages::ApplicationSettingsPage>();
           settings && workbench_->services()) {
@@ -418,17 +474,19 @@ void MainWindow::navigate_to(PageId page) {
               return false;
             }, [weak_this = get_weak()] {
               if (auto self = weak_this.get(); self && self->workbench_) {
-                self->workbench_->navigate(PageId::software_catalog_editor);
-                auto const snapshot = self->workbench_->snapshot();
-                self->project(snapshot);
-                self->navigate_to(snapshot.current_page);
+                if (!self->navigate_and_commit(PageId::software_catalog_editor)) {
+                  return;
+                }
               }
             });
       }
       break;
     case PageId::software_catalog_editor:
-      ContentFrame().Navigate(xaml_typename<Pages::SoftwareCatalogEditorPage>(),
-                              nullptr, transition);
+      if (!ContentFrame().Navigate(
+              xaml_typename<Pages::SoftwareCatalogEditorPage>(), nullptr,
+              transition)) {
+        return false;
+      }
       if (auto page = ContentFrame().Content().try_as<
               Pages::SoftwareCatalogEditorPage>();
           page && workbench_->services()) {
@@ -437,7 +495,15 @@ void MainWindow::navigate_to(PageId page) {
       }
       break;
   }
+  if (displayed_page_ == PageId::software_catalog_editor &&
+      page != PageId::software_catalog_editor) {
+    if (auto const services = workbench_->services()) {
+      services->debug_mode_catalog_editor().end_temporary_close_recovery();
+      project(workbench_->snapshot());
+    }
+  }
   displayed_page_ = page;
+  return true;
 }
 
 bool MainWindow::set_advanced_view(bool enabled) {

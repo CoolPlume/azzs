@@ -35,13 +35,11 @@
             <InfoBar
                 x:Name="StatusInfoBar"
                 Grid.Row="1"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareOptimizationStatus"
                 IsOpen="False"
                 IsClosable="False" />
             <StackPanel
                 Grid.Row="2"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 Orientation="Horizontal"
                 Spacing="{StaticResource AzzsSpaceSmall}">
                 <Button
@@ -58,7 +56,6 @@
             <StackPanel
                 x:Name="CanOptimizeGroup"
                 Grid.Row="3"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareOptimizationCanOptimize">
                 <TextBlock
                     x:Uid="SoftwareOptimizationCanOptimizeTitle"
@@ -70,7 +67,6 @@
             <StackPanel
                 x:Name="NeedsAttentionGroup"
                 Grid.Row="4"
-                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareOptimizationNeedsAttention">
                 <TextBlock
                     x:Uid="SoftwareOptimizationNeedsAttentionTitle"
@@ -82,7 +78,6 @@
             <StackPanel
                 x:Name="OptimizedGroup"
                 Grid.Row="5"
-                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
                 AutomationProperties.AutomationId="AzzsSoftwareOptimizationOptimized">
                 <TextBlock
                     x:Uid="SoftwareOptimizationOptimizedTitle"
@@ -93,7 +88,7 @@
                 <Expander
                     x:Name="NoAvailableOptimizationExpander"
                     x:Uid="SoftwareOptimizationNoAvailableExpander"
-                    Margin="0,{StaticResource AzzsSpaceLarge},0,0"
+                    Margin="{StaticResource AzzsTopMarginLarge}"
                     AutomationProperties.AutomationId="AzzsSoftwareOptimizationNoAvailable">
                     <StackPanel x:Name="NoAvailableItems" Spacing="{StaticResource AzzsSpaceSmall}" />
                 </Expander>

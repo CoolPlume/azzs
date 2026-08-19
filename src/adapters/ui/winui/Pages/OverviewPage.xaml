@@ -34,7 +34,6 @@
 
             <StackPanel
                 Grid.Row="1"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 Spacing="{StaticResource AzzsSpaceStandard}">
                 <controls:ReadOnlyPresentationSurface x:Name="SummarySurface" />
                 <controls:ReadOnlyPresentationSurface x:Name="LocalTrialSurface" />
@@ -43,7 +42,6 @@
 
             <StackPanel
                 Grid.Row="2"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 Spacing="{StaticResource AzzsSpaceSmall}"
                 x:Uid="OverviewGuidedInitializationStages"
                 AutomationProperties.AutomationId="AzzsGuidedInitializationStages">
@@ -61,7 +59,6 @@
             <TextBlock
                 x:Uid="OverviewGuidedIndependenceNotice"
                 Grid.Row="3"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 Style="{StaticResource AzzsMetadataTextStyle}"
                 TextWrapping="Wrap" />
         </Grid>
