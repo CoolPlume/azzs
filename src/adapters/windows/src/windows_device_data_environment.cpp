@@ -466,6 +466,13 @@ struct SubjectResult final {
   return canonical;
 }
 
+[[nodiscard]] bool is_d_drive_path(std::filesystem::path const& path) {
+  auto const root_name = path.root_name().wstring();
+  return root_name.size() == 2 &&
+         (root_name[0] == L'D' || root_name[0] == L'd') &&
+         root_name[1] == L':';
+}
+
 [[nodiscard]] std::optional<std::filesystem::path> program_data_base() {
   wchar_t* raw = nullptr;
   auto const status =
@@ -481,23 +488,40 @@ struct SubjectResult final {
 
 DeviceDataEnvironmentResult WindowsDeviceDataEnvironment::prepare(
     DeviceDataEnvironmentOptions options) {
+  if (options.root_override_utf8.has_value() &&
+      options.diagnostic_root_utf8.has_value()) {
+    return failure(DeviceDataEnvironmentError::invalid_test_override,
+                   ERROR_INVALID_PARAMETER,
+                   "test and diagnostic roots cannot be combined");
+  }
   if (options.subject_override.has_value() &&
-      !options.root_override_utf8.has_value()) {
+      (!options.root_override_utf8.has_value() ||
+       options.diagnostic_root_utf8.has_value())) {
     return failure(DeviceDataEnvironmentError::invalid_test_override,
                    ERROR_INVALID_PARAMETER,
                    "subject override requires an isolated root override");
   }
 
   bool const test_root = options.root_override_utf8.has_value();
+  bool const diagnostic_root = options.diagnostic_root_utf8.has_value();
   std::filesystem::path root;
   std::filesystem::path existing_anchor;
   std::vector<std::filesystem::path> owned_machine_prefixes;
   DWORD path_error = ERROR_SUCCESS;
-  if (test_root) {
-    auto wide = utf8_to_wide(*options.root_override_utf8);
+  if (test_root || diagnostic_root) {
+    auto const& root_override = test_root ? *options.root_override_utf8
+                                          : *options.diagnostic_root_utf8;
+    auto wide = utf8_to_wide(root_override);
     if (!wide.has_value() || wide->empty()) {
       return failure(DeviceDataEnvironmentError::invalid_test_override,
-                     ERROR_INVALID_NAME, "test root is not valid UTF-8");
+                     ERROR_INVALID_NAME,
+                     test_root ? "test root is not valid UTF-8"
+                               : "diagnostic root is not valid UTF-8");
+    }
+    if (diagnostic_root && !is_d_drive_path(std::filesystem::path{*wide})) {
+      return failure(DeviceDataEnvironmentError::unsupported_storage_location,
+                     ERROR_INVALID_DRIVE,
+                     "diagnostic device data root must be on drive D:");
     }
     auto canonical = canonical_fixed_path(std::filesystem::path{*wide},
                                           path_error);

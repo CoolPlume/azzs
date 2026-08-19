@@ -29,6 +29,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$OutputPath,
 
+    [bool]$StartupDiagnosticDeviceDataRootEnabled = $false,
+
     [string]$FailureMessage = ""
 )
 
@@ -117,6 +119,9 @@ $manifest = [ordered]@{
         configuration = "Release"
         windowsMinimumLoadVersion = "10.0.17763.0"
         windowsDesignTarget = "10.0.19045"
+    }
+    buildOptions = [ordered]@{
+        startupDiagnosticDeviceDataRoot = $StartupDiagnosticDeviceDataRootEnabled
     }
     toolchain = [ordered]@{
         visualStudio = $VisualStudioVersion
