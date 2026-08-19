@@ -132,6 +132,7 @@ set(AZZS_ARCHITECTURE_EXTERNAL_CMAKE_TARGETS
   "oleaut32|external:windows-platform|platform_runtime"
   "rpcrt4|external:windows-platform|platform_runtime"
   "shell32|external:windows-platform|platform_runtime"
+  "user32|external:windows-platform|platform_runtime"
   "wbemuuid|external:windows-platform|platform_runtime"
   "winhttp|external:windows-platform|platform_runtime"
   "wtsapi32|external:windows-platform|platform_runtime"
