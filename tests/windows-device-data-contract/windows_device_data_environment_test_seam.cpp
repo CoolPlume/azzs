@@ -25,6 +25,14 @@ namespace {
 
 using LocalMemory = std::unique_ptr<void, decltype(&::LocalFree)>;
 
+[[nodiscard]] constexpr bool is_wts_rpc_transport_failure(
+    DWORD error) noexcept {
+  return error == RPC_S_SERVER_UNAVAILABLE ||
+         error == RPC_S_SERVER_NOT_LISTENING ||
+         error == RPC_S_SERVER_TOO_BUSY || error == RPC_S_CALL_FAILED ||
+         error == RPC_S_CALL_FAILED_DNE;
+}
+
 struct HandleCloser final {
   void operator()(void* handle) const noexcept {
     if (handle != nullptr && handle != INVALID_HANDLE_VALUE) {
@@ -372,7 +380,8 @@ resolve_test_subject(WindowsDeviceDataIdentityEvidence const& evidence) {
     return failure(Error::interactive_subject_unavailable, wts_error,
                    "an unqualified WTS username is not resolved");
   }
-  if (evidence.desktop_shell_sid.has_value() &&
+  if (is_wts_rpc_transport_failure(wts_error) &&
+      evidence.desktop_shell_sid.has_value() &&
       evidence.desktop_shell_session_matches) {
     return check_candidate(*evidence.desktop_shell_sid);
   }

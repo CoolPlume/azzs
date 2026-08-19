@@ -949,6 +949,21 @@ struct SecurityInfo final {
       static_cast<bool>(matching) && matching.subject_id == *current_sid,
       "an unavailable WTS/RPC path may use a matching same-session shell SID");
 
+  auto const non_rpc_wts_failure =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = *current_sid,
+              .wts_raw_error = ERROR_ACCESS_DENIED,
+              .desktop_shell_session_matches = true,
+          });
+  passed &= expect(
+      !non_rpc_wts_failure &&
+          non_rpc_wts_failure.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          non_rpc_wts_failure.raw_error == ERROR_ACCESS_DENIED,
+      "a non-RPC WTS failure must not use a matching shell fallback");
+
   auto const mismatched_session_root =
       *base / L"mismatched-shell-session";
   auto const mismatched_session =
