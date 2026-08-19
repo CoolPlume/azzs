@@ -31,6 +31,9 @@ VERSION_FIELDS = {
     "wixVersion",
 }
 MSBUILD_CONTRACT_SKIP = 77
+SUBPROCESS_OUTPUT_TAIL_LIMIT = 1200
+WINDOWS_PATH = re.compile(r"(?i)(?:[A-Z]:[\\/]|\\\\)[^\r\n]+")
+POSIX_PATH = re.compile(r"(?<![A-Za-z0-9])/(?:[^\r\n]+)")
 
 
 class Contract:
@@ -164,6 +167,21 @@ def powershell_executable() -> str | None:
     return shutil.which("pwsh") or shutil.which("powershell")
 
 
+def sanitized_output_tail(output: str, limit: int = SUBPROCESS_OUTPUT_TAIL_LIMIT) -> str:
+    sanitized = WINDOWS_PATH.sub("<path>", output.replace("\r\n", "\n")).strip()
+    sanitized = POSIX_PATH.sub("<path>", sanitized)
+    return sanitized[-limit:] if sanitized else "<empty>"
+
+
+def powershell_diagnostic(result: subprocess.CompletedProcess[str]) -> str:
+    return (
+        "PowerShell subprocess diagnostic: "
+        f"returncode={result.returncode}; "
+        f"stdout_tail={sanitized_output_tail(result.stdout)!r}; "
+        f"stderr_tail={sanitized_output_tail(result.stderr)!r}"
+    )
+
+
 def run_powershell_helper(
     powershell_command: str,
     helper: Path,
@@ -257,12 +275,12 @@ def validate_powershell_helper(
     contract.require(
         valid.returncode == 0,
         "MSBuild Windows version argument encoder failed: "
-        + (valid.stdout + valid.stderr).strip()[-1200:],
+        + powershell_diagnostic(valid),
     )
-    contract.equal(
-        valid.stdout.strip(),
-        "0%2c1%2c0%2c0",
-        "0.1.0.0 must be encoded for an MSBuild property argument",
+    contract.require(
+        valid.stdout.strip() == "0%2c1%2c0%2c0",
+        "0.1.0.0 must be encoded for an MSBuild property argument; "
+        + powershell_diagnostic(valid),
     )
 
     invalid_inputs = (
@@ -277,12 +295,14 @@ def validate_powershell_helper(
         )
         contract.require(
             result.returncode != 0,
-            f"MSBuild Windows version argument encoder accepted {description}: {value!r}",
+            f"MSBuild Windows version argument encoder accepted {description}: {value!r}; "
+            + powershell_diagnostic(result),
         )
         contract.require(
             result.stdout.strip() == ""
             and "0%2c1%2c0%2c0" not in result.stderr,
-            f"MSBuild Windows version argument encoder emitted a misleading value for {description}",
+            f"MSBuild Windows version argument encoder emitted a misleading value for {description}; "
+            + powershell_diagnostic(result),
         )
 
 
@@ -295,12 +315,26 @@ def validate_build_rejects_invalid_windows_version(
     if powershell_command is None:
         return
 
-    source_path = root / "release/product-version.json"
-    build_script = root / "eng/build.ps1"
-    original = source_path.read_bytes()
+    output_parent = root / "out"
+    fixture_root: Path | None = None
     invalid_version = dict(version)
     invalid_version["windowsVersion"] = "0.1.0"
     try:
+        output_parent.mkdir(parents=True, exist_ok=True)
+        fixture_root = Path(
+            tempfile.mkdtemp(prefix="release-version-powershell-repo-", dir=output_parent)
+        )
+        (fixture_root / "eng").mkdir()
+        (fixture_root / "release").mkdir()
+        for relative in (
+            "eng/build.ps1",
+            "eng/portable-artifact-content.ps1",
+            "eng/msbuild-arguments.ps1",
+        ):
+            destination = fixture_root / relative
+            shutil.copy2(root / relative, destination)
+        source_path = fixture_root / "release/product-version.json"
+        build_script = fixture_root / "eng/build.ps1"
         source_path.write_text(
             json.dumps(invalid_version, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -317,7 +351,7 @@ def validate_build_rejects_invalid_windows_version(
                 "x64",
                 "-SkipCoreSmoke",
             ],
-            cwd=root,
+            cwd=fixture_root,
             env=os.environ.copy(),
             capture_output=True,
             check=False,
@@ -327,20 +361,24 @@ def validate_build_rejects_invalid_windows_version(
         output = result.stdout + result.stderr
         contract.require(
             result.returncode != 0,
-            "build.ps1 accepted an invalid four-part Windows version input",
+            "build.ps1 accepted an invalid four-part Windows version input; "
+            + powershell_diagnostic(result),
         )
         contract.require(
             "unsupported version mapping" in output.lower(),
-            "build.ps1 did not reject invalid Windows version input at its version gate",
+            "build.ps1 did not reject invalid Windows version input at its version gate; "
+            + powershell_diagnostic(result),
         )
         contract.require(
             "msbuild.exe" not in output.lower(),
-            "build.ps1 reached MSBuild after rejecting an invalid Windows version input",
+            "build.ps1 reached MSBuild after rejecting an invalid Windows version input; "
+            + powershell_diagnostic(result),
         )
     except OSError as error:
         contract.require(False, f"build.ps1 invalid-input contract failed: {error}")
     finally:
-        source_path.write_bytes(original)
+        if fixture_root is not None:
+            shutil.rmtree(fixture_root, ignore_errors=True)
 
 
 def validate_msbuild_windows_version_argument(
@@ -388,6 +426,11 @@ def validate_msbuild_windows_version_argument(
         )
         encoded_output = encoded.stdout.strip()
         if encoded.returncode != 0 or encoded_output != "0%2c1%2c0%2c0":
+            contract.require(
+                False,
+                "MSBuild Windows version argument encoder did not produce the expected value; "
+                + powershell_diagnostic(encoded),
+            )
             return
 
         resource_output_path = test_directory / "resource"
@@ -479,13 +522,22 @@ def target_defines(build_directory: Path, target_name: str) -> set[str] | None:
 def validate_mutated_cmake_consumers(
     root: Path, cmake_command: str, version: dict[str, Any], contract: Contract
 ) -> None:
-    source_path = root / "release/product-version.json"
-    original = source_path.read_bytes()
     output_parent = root / "out"
+    fixture_root: Path | None = None
     build_directory: Path | None = None
     description = f"{version['applicationVersion']} ({version['releaseChannel']})"
     try:
         output_parent.mkdir(parents=True, exist_ok=True)
+        fixture_root = Path(
+            tempfile.mkdtemp(prefix="release-version-cmake-repo-", dir=output_parent)
+        )
+        shutil.copytree(
+            root,
+            fixture_root,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns(".git", ".scratch", "out"),
+        )
+        source_path = fixture_root / "release/product-version.json"
         build_directory = Path(
             tempfile.mkdtemp(prefix="release-version-contract-", dir=output_parent)
         )
@@ -504,7 +556,7 @@ def validate_mutated_cmake_consumers(
             [
                 cmake_command,
                 "-S",
-                str(root),
+                str(fixture_root),
                 "-B",
                 str(build_directory),
                 "-G",
@@ -517,7 +569,7 @@ def validate_mutated_cmake_consumers(
                 f"-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES={version_observation}",
                 "-DBUILD_TESTING=OFF",
             ],
-            cwd=root,
+            cwd=fixture_root,
             capture_output=True,
             check=False,
             text=True,
@@ -563,9 +615,10 @@ def validate_mutated_cmake_consumers(
     except (OSError, json.JSONDecodeError) as error:
         contract.require(False, f"mutated {description} consumer check failed: {error}")
     finally:
-        source_path.write_bytes(original)
         if build_directory is not None:
             shutil.rmtree(build_directory, ignore_errors=True)
+        if fixture_root is not None:
+            shutil.rmtree(fixture_root, ignore_errors=True)
 
 
 def mutation_contract(root: Path, cmake_command: str, contract: Contract) -> None:
