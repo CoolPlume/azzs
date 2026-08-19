@@ -38,6 +38,8 @@ function New-VswhereFixture {
         }
     )
     ConvertTo-Json -InputObject $instances -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding ASCII
+    Require ((Get-Content -LiteralPath $jsonPath -Raw).TrimStart().StartsWith("[")) `
+        "vswhere fixture must preserve the JSON array response shape"
 
     $argumentsPath = Join-Path $fixtureRoot "vswhere-arguments.txt"
     $vswherePath = Join-Path $fixtureRoot "vswhere.cmd"
