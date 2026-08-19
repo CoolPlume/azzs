@@ -33,6 +33,7 @@ add_subdirectory(portable-package-contract)
 add_subdirectory(installer-build-manifest-contract)
 
 if(WIN32)
+  add_subdirectory(runtime-catalog-lock-contract)
   add_subdirectory(bundled-catalog-resource-contract)
   add_subdirectory(windows-device-data-contract)
   add_subdirectory(windows-emergency-withdrawal-notice-contract)
