@@ -792,6 +792,10 @@ if(AZZS_GRAPH_SCAN_PROJECT)
   set(winui_include_directories)
   set(inherited_include_count 0)
   set(msbuild_directory_prefix [==[$(MSBuildThisFileDirectory)]==])
+  # CMake creates this header directory during configure. Keep its checked
+  # project-relative path valid even when the validator runs before the first
+  # generated header is materialized; all other missing paths still fail.
+  set(generated_header_include_relative "out/obj/winui/generated")
   string(LENGTH "${msbuild_directory_prefix}" msbuild_prefix_length)
   foreach(include_directory IN LISTS include_directories)
     string(STRIP "${include_directory}" include_directory)
@@ -819,14 +823,18 @@ if(AZZS_GRAPH_SCAN_PROJECT)
     get_filename_component(include_absolute
       "${winui_project_directory}/${include_relative}" ABSOLUTE)
     cmake_path(NORMAL_PATH include_absolute)
-    if(NOT IS_DIRECTORY "${include_absolute}")
-      _azzs_architecture_fail(
-        "Azzs.WinUI"
-        "Azzs.WinUI -> ${include_absolute} (missing include directory)"
-        "Azzs.WinUI include directories -> existing registered project paths")
-    endif()
     _azzs_project_relative_role(
       "${include_absolute}" include_project_path include_role)
+    if(NOT IS_DIRECTORY "${include_absolute}")
+      if(NOT "${include_project_path}" STREQUAL
+         "${generated_header_include_relative}" OR
+         EXISTS "${include_absolute}")
+        _azzs_architecture_fail(
+          "Azzs.WinUI"
+          "Azzs.WinUI -> ${include_absolute} (missing include directory)"
+          "Azzs.WinUI include directories -> existing registered project paths")
+      endif()
+    endif()
     _azzs_graph_add_node("directory:${include_project_path}" "${include_role}")
     _azzs_graph_add_edge("Azzs.WinUI" "directory:${include_project_path}")
     list(APPEND winui_include_directories "${include_absolute}")

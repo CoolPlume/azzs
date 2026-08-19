@@ -611,6 +611,43 @@ struct SecurityInfo final {
       "UNC and non-fixed roots must be rejected before storage access");
 }
 
+[[nodiscard]] bool verify_empty_and_relative_roots_are_rejected() {
+  auto const empty = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{.root_override_utf8 = ""});
+  auto const relative = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{
+          .root_override_utf8 = "relative-device-data-root"});
+  return expect(!empty &&
+                    empty.error == DeviceDataEnvironmentError::invalid_test_override,
+                "an empty override root must fail closed") &&
+         expect(!relative &&
+                    relative.error ==
+                        DeviceDataEnvironmentError::unsupported_storage_location,
+                "a relative override root must fail closed");
+}
+
+[[nodiscard]] bool verify_diagnostic_root_guards() {
+  auto const empty = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{.diagnostic_root_utf8 = ""});
+  auto const relative = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{
+          .diagnostic_root_utf8 = "diagnostic-device-data-root"});
+  auto const wrong_drive = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{
+          .diagnostic_root_utf8 = R"(C:\azzs-diagnostic-contract)"});
+  return expect(!empty &&
+                    empty.error == DeviceDataEnvironmentError::invalid_test_override,
+                "an empty diagnostic root must fail closed") &&
+         expect(!relative &&
+                    relative.error ==
+                        DeviceDataEnvironmentError::unsupported_storage_location,
+                "a relative diagnostic root must fail closed") &&
+         expect(!wrong_drive &&
+                    wrong_drive.error ==
+                        DeviceDataEnvironmentError::unsupported_storage_location,
+                "a diagnostic root outside drive D: must fail closed");
+}
+
 [[nodiscard]] bool verify_reparse_root_is_rejected() {
   wchar_t temp_buffer[MAX_PATH]{};
   auto const length = ::GetTempPathW(MAX_PATH, temp_buffer);
@@ -721,6 +758,8 @@ int main() {
   bool passed = true;
   passed &= verify_layout_acl_and_slots();
   passed &= verify_non_local_root_is_rejected();
+  passed &= verify_empty_and_relative_roots_are_rejected();
+  passed &= verify_diagnostic_root_guards();
   passed &= verify_reparse_root_is_rejected();
   passed &= verify_nested_reparse_is_rejected();
   passed &= verify_override_guard();

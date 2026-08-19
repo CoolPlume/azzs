@@ -19,9 +19,12 @@ enum class DeviceDataEnvironmentError {
 };
 
 struct DeviceDataEnvironmentOptions final {
-  // Tests may inject an isolated root. Production leaves this empty and always
-  // resolves the machine ProgramData known folder.
+  // Adapter contracts may inject an isolated test root. Production leaves
+  // this empty and resolves the ProgramData known folder.
   std::optional<std::string> root_override_utf8;
+  // An explicitly compiled startup diagnostic may inject an isolated root
+  // without enabling the test-only process-SID fallback.
+  std::optional<std::string> diagnostic_root_utf8;
   // A subject override is accepted only together with a root override. It must
   // be a valid Windows SID string and exists solely for adapter contract tests.
   std::optional<std::string> subject_override;
