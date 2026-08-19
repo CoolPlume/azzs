@@ -42,16 +42,16 @@ foreach ($uwpVisualStudioComponent in $uwpVisualStudioComponents) {
         throw "vswhere.exe failed while locating Visual Studio 2026."
     }
 
-    $visualStudioInstances = @(
-        if ($instanceJson) {
-            try {
-                ConvertFrom-Json ($instanceJson -join [Environment]::NewLine)
-            }
-            catch {
-                throw "vswhere.exe returned invalid JSON: $($_.Exception.Message)"
-            }
+    $visualStudioInstances = @()
+    if ($instanceJson) {
+        try {
+            $parsedVisualStudioInstances = ConvertFrom-Json ($instanceJson -join [Environment]::NewLine)
+            $visualStudioInstances = @($parsedVisualStudioInstances)
         }
-    )
+        catch {
+            throw "vswhere.exe returned invalid JSON: $($_.Exception.Message)"
+        }
+    }
     if ($visualStudioInstances.Count -gt 0) {
         break
     }
