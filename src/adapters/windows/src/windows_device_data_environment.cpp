@@ -72,6 +72,17 @@ struct AncestorResult final {
   }
 };
 
+struct ExistingDirectoryResult final {
+  UniqueHandle handle;
+  DeviceDataEnvironmentError error{DeviceDataEnvironmentError::none};
+  DWORD raw_error{ERROR_SUCCESS};
+  std::string detail;
+
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return handle.get() != nullptr && handle.get() != INVALID_HANDLE_VALUE;
+  }
+};
+
 [[nodiscard]] DeviceDataEnvironmentResult failure(
     DeviceDataEnvironmentError error,
     std::uint32_t raw_error,
@@ -82,27 +93,6 @@ struct AncestorResult final {
       .raw_error = raw_error,
       .detail = std::move(detail),
   };
-}
-
-[[nodiscard]] std::optional<std::wstring> utf8_to_wide(
-    std::string const& value) {
-  if (value.empty()) {
-    return std::wstring{};
-  }
-  auto const size = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-                                           value.data(),
-                                           static_cast<int>(value.size()),
-                                           nullptr, 0);
-  if (size <= 0) {
-    return std::nullopt;
-  }
-  std::wstring result(static_cast<std::size_t>(size), L'\0');
-  if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
-                            static_cast<int>(value.size()), result.data(), size) !=
-      size) {
-    return std::nullopt;
-  }
-  return result;
 }
 
 [[nodiscard]] std::optional<std::string> wide_to_utf8(
@@ -135,56 +125,87 @@ struct AncestorResult final {
   return std::wstring{raw};
 }
 
-[[nodiscard]] std::optional<std::vector<std::byte>> token_user_sid(
-    HANDLE token) {
-  DWORD needed = 0;
-  ::GetTokenInformation(token, TokenUser, nullptr, 0, &needed);
-  if (needed == 0 || ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+[[nodiscard]] std::optional<std::vector<std::byte>> copy_sid(PSID source,
+                                                               DWORD& error) {
+  error = ERROR_SUCCESS;
+  if (source == nullptr || !::IsValidSid(source)) {
+    error = ERROR_INVALID_SID;
     return std::nullopt;
   }
-  std::vector<std::byte> buffer(needed);
-  if (!::GetTokenInformation(token, TokenUser, buffer.data(), needed, &needed)) {
+  auto const sid_size = ::GetLengthSid(source);
+  if (sid_size == 0) {
+    error = ERROR_INVALID_SID;
     return std::nullopt;
   }
-  auto const* user = reinterpret_cast<TOKEN_USER const*>(buffer.data());
-  auto const sid_size = ::GetLengthSid(user->User.Sid);
   std::vector<std::byte> sid(sid_size);
-  if (!::CopySid(sid_size, sid.data(), user->User.Sid)) {
+  if (!::CopySid(sid_size, sid.data(), source)) {
+    error = ::GetLastError();
     return std::nullopt;
   }
   return sid;
 }
 
+[[nodiscard]] std::optional<std::vector<std::byte>> token_user_sid(
+    HANDLE token,
+    DWORD& error) {
+  error = ERROR_SUCCESS;
+  DWORD needed = 0;
+  ::SetLastError(ERROR_SUCCESS);
+  ::GetTokenInformation(token, TokenUser, nullptr, 0, &needed);
+  auto const size_error = ::GetLastError();
+  if (needed == 0 || size_error != ERROR_INSUFFICIENT_BUFFER) {
+    error = size_error;
+    return std::nullopt;
+  }
+  std::vector<std::byte> buffer(needed);
+  if (!::GetTokenInformation(token, TokenUser, buffer.data(), needed, &needed)) {
+    error = ::GetLastError();
+    return std::nullopt;
+  }
+  auto const* user = reinterpret_cast<TOKEN_USER const*>(buffer.data());
+  return copy_sid(user->User.Sid, error);
+}
+
 [[nodiscard]] std::optional<std::wstring> query_session_text(
     DWORD session_id,
-    WTS_INFO_CLASS info_class) {
+    WTS_INFO_CLASS info_class,
+    DWORD& error) {
+  error = ERROR_SUCCESS;
   wchar_t* raw = nullptr;
   DWORD bytes = 0;
   if (!::WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, session_id,
                                      info_class, &raw, &bytes)) {
+    error = ::GetLastError();
     return std::nullopt;
   }
   WtsMemory memory{raw, &::WTSFreeMemory};
   if (raw == nullptr || bytes <= sizeof(wchar_t)) {
+    error = ERROR_NONE_MAPPED;
     return std::nullopt;
   }
   return std::wstring{raw};
 }
 
 [[nodiscard]] std::optional<std::vector<std::byte>> account_sid(
-    std::wstring const& account) {
+    std::wstring const& account,
+    DWORD& error) {
+  error = ERROR_SUCCESS;
   DWORD sid_size = 0;
   DWORD domain_size = 0;
   SID_NAME_USE use{};
+  ::SetLastError(ERROR_SUCCESS);
   ::LookupAccountNameW(nullptr, account.c_str(), nullptr, &sid_size, nullptr,
                        &domain_size, &use);
-  if (sid_size == 0 || ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+  auto const size_error = ::GetLastError();
+  if (sid_size == 0 || size_error != ERROR_INSUFFICIENT_BUFFER) {
+    error = size_error;
     return std::nullopt;
   }
   std::vector<std::byte> sid(sid_size);
   std::wstring domain(domain_size, L'\0');
   if (!::LookupAccountNameW(nullptr, account.c_str(), sid.data(), &sid_size,
                             domain.data(), &domain_size, &use)) {
+    error = ::GetLastError();
     return std::nullopt;
   }
   return sid;
@@ -196,53 +217,205 @@ struct SubjectResult final {
   DWORD raw_error{ERROR_SUCCESS};
 };
 
-[[nodiscard]] SubjectResult resolve_interactive_subject(bool test_root) {
+struct SubjectEvidence final {
+  std::optional<std::vector<std::byte>> process_sid;
+  std::optional<std::vector<std::byte>> wts_session_sid;
+  std::optional<std::vector<std::byte>> desktop_shell_sid;
+  DWORD process_raw_error{ERROR_SUCCESS};
+  DWORD session_raw_error{ERROR_SUCCESS};
+  DWORD wts_raw_error{ERROR_SUCCESS};
+  DWORD desktop_shell_raw_error{ERROR_SUCCESS};
+  bool wts_unqualified_user{false};
+  bool wts_rpc_transport_failure{false};
+};
+
+[[nodiscard]] constexpr bool is_wts_rpc_transport_failure(
+    DWORD error) noexcept {
+  return error == RPC_S_SERVER_UNAVAILABLE ||
+         error == RPC_S_NOT_LISTENING ||
+         error == RPC_S_SERVER_TOO_BUSY || error == RPC_S_CALL_FAILED ||
+         error == RPC_S_CALL_FAILED_DNE;
+}
+
+[[nodiscard]] std::optional<std::vector<std::byte>> wts_account_sid(
+    std::optional<std::wstring> const& user,
+    DWORD user_error,
+    std::optional<std::wstring> const& domain,
+    DWORD domain_error,
+    DWORD& error) {
+  if (!user.has_value() || user->empty()) {
+    error = user_error == ERROR_SUCCESS ? ERROR_NONE_MAPPED : user_error;
+    return std::nullopt;
+  }
+  if (!domain.has_value() || domain->empty()) {
+    error = domain_error == ERROR_SUCCESS ? ERROR_NONE_MAPPED : domain_error;
+    return std::nullopt;
+  }
+  return account_sid(*domain + L"\\" + *user, error);
+}
+
+[[nodiscard]] std::optional<std::vector<std::byte>> wts_session_sid(
+    DWORD session_id,
+    DWORD& error,
+    bool& unqualified_user,
+    bool& rpc_transport_failure) {
+  unqualified_user = false;
+  rpc_transport_failure = false;
+  DWORD user_error = ERROR_SUCCESS;
+  auto user = query_session_text(session_id, WTSUserName, user_error);
+  if (!user.has_value() || user->empty()) {
+    rpc_transport_failure = is_wts_rpc_transport_failure(user_error);
+    return wts_account_sid(user, user_error, std::nullopt, ERROR_SUCCESS,
+                           error);
+  }
+  DWORD domain_error = ERROR_SUCCESS;
+  auto domain = query_session_text(session_id, WTSDomainName, domain_error);
+  if (!domain.has_value() || domain->empty()) {
+    rpc_transport_failure = is_wts_rpc_transport_failure(domain_error);
+  }
+  if ((!domain.has_value() || domain->empty()) &&
+      domain_error == ERROR_NONE_MAPPED) {
+    // A username without a domain is ambiguous. Do not use a shell process as
+    // an alternate identity source after WTS has returned partial identity.
+    unqualified_user = true;
+  }
+  return wts_account_sid(user, user_error, domain, domain_error, error);
+}
+
+[[nodiscard]] std::optional<std::vector<std::byte>> desktop_shell_sid(
+    DWORD expected_session_id,
+    DWORD& error) {
+  error = ERROR_SUCCESS;
+  auto const shell = ::GetShellWindow();
+  if (shell == nullptr) {
+    error = ERROR_NOT_FOUND;
+    return std::nullopt;
+  }
+  DWORD shell_process_id = 0;
+  if (::GetWindowThreadProcessId(shell, &shell_process_id) == 0 ||
+      shell_process_id == 0) {
+    error = ::GetLastError();
+    if (error == ERROR_SUCCESS) {
+      error = ERROR_NOT_FOUND;
+    }
+    return std::nullopt;
+  }
+  DWORD shell_session_id = 0;
+  if (!::ProcessIdToSessionId(shell_process_id, &shell_session_id)) {
+    error = ::GetLastError();
+    return std::nullopt;
+  }
+  if (shell_session_id != expected_session_id) {
+    error = ERROR_NOT_FOUND;
+    return std::nullopt;
+  }
+  HANDLE raw_process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                     shell_process_id);
+  if (raw_process == nullptr) {
+    error = ::GetLastError();
+    return std::nullopt;
+  }
+  UniqueHandle process{raw_process};
   HANDLE raw_token = nullptr;
-  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &raw_token)) {
-    return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
-            .raw_error = ::GetLastError()};
+  if (!::OpenProcessToken(process.get(), TOKEN_QUERY, &raw_token)) {
+    error = ::GetLastError();
+    return std::nullopt;
   }
   UniqueHandle token{raw_token};
-  auto process_sid = token_user_sid(token.get());
-  if (!process_sid.has_value()) {
-    return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
-            .raw_error = ::GetLastError()};
+  return token_user_sid(token.get(), error);
+}
+
+[[nodiscard]] SubjectEvidence collect_subject_evidence() {
+  SubjectEvidence evidence;
+  HANDLE raw_token = nullptr;
+  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &raw_token)) {
+    evidence.process_raw_error = ::GetLastError();
+    return evidence;
+  }
+  UniqueHandle token{raw_token};
+  evidence.process_sid = token_user_sid(token.get(), evidence.process_raw_error);
+  if (!evidence.process_sid.has_value()) {
+    return evidence;
   }
 
   DWORD session_id = 0;
   if (!::ProcessIdToSessionId(::GetCurrentProcessId(), &session_id)) {
-    return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
-            .raw_error = ::GetLastError()};
+    evidence.session_raw_error = ::GetLastError();
+    return evidence;
   }
-  auto user = query_session_text(session_id, WTSUserName);
-  auto domain = query_session_text(session_id, WTSDomainName);
-  std::optional<std::vector<std::byte>> interactive_sid;
-  if (user.has_value()) {
-    auto account = domain.has_value() && !domain->empty()
-                       ? *domain + L"\\" + *user
-                       : *user;
-    interactive_sid = account_sid(account);
+  evidence.wts_session_sid =
+      wts_session_sid(session_id, evidence.wts_raw_error,
+                      evidence.wts_unqualified_user,
+                      evidence.wts_rpc_transport_failure);
+  if (evidence.wts_session_sid.has_value()) {
+    return evidence;
+  }
+  evidence.desktop_shell_sid =
+      desktop_shell_sid(session_id, evidence.desktop_shell_raw_error);
+  return evidence;
+}
+
+[[nodiscard]] DWORD unavailable_subject_error(SubjectEvidence const& evidence) {
+  // WTS is the authoritative interactive-session source. When its RPC/query
+  // path and the shell fallback both fail, retain the WTS failure for callers.
+  if (evidence.wts_raw_error != ERROR_SUCCESS) {
+    return evidence.wts_raw_error;
+  }
+  if (evidence.desktop_shell_raw_error != ERROR_SUCCESS) {
+    return evidence.desktop_shell_raw_error;
+  }
+  if (evidence.session_raw_error != ERROR_SUCCESS) {
+    return evidence.session_raw_error;
+  }
+  if (evidence.process_raw_error != ERROR_SUCCESS) {
+    return evidence.process_raw_error;
+  }
+  return ERROR_NOT_FOUND;
+}
+
+[[nodiscard]] SubjectResult resolve_subject_evidence(
+    SubjectEvidence const& evidence) {
+  if (!evidence.process_sid.has_value()) {
+    return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
+            .raw_error = unavailable_subject_error(evidence)};
   }
 
-  if (!interactive_sid.has_value()) {
-    if (!test_root) {
+  auto resolve_matching_sid = [&](std::vector<std::byte> const& candidate)
+      -> SubjectResult {
+    auto const process_sid = const_cast<std::byte*>(evidence.process_sid->data());
+    auto const candidate_sid = const_cast<std::byte*>(candidate.data());
+    if (!::EqualSid(process_sid, candidate_sid)) {
+      return {.error =
+                  DeviceDataEnvironmentError::alternate_credentials_not_supported,
+              .raw_error = ERROR_ACCESS_DENIED};
+    }
+    auto sid = sid_to_string(candidate_sid);
+    if (!sid.has_value()) {
       return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
               .raw_error = ::GetLastError()};
     }
-    interactive_sid = process_sid;
-  }
+    return {.sid = std::move(sid)};
+  };
 
-  if (!::EqualSid(process_sid->data(), interactive_sid->data())) {
-    return {.error =
-                DeviceDataEnvironmentError::alternate_credentials_not_supported,
-            .raw_error = ERROR_ACCESS_DENIED};
+  if (evidence.wts_session_sid.has_value()) {
+    return resolve_matching_sid(*evidence.wts_session_sid);
   }
-  auto sid = sid_to_string(interactive_sid->data());
-  if (!sid.has_value()) {
+  if (evidence.wts_unqualified_user) {
     return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
-            .raw_error = ::GetLastError()};
+            .raw_error = evidence.wts_raw_error == ERROR_SUCCESS
+                             ? ERROR_NONE_MAPPED
+                             : evidence.wts_raw_error};
   }
-  return {.sid = std::move(sid)};
+  if (evidence.wts_rpc_transport_failure &&
+      evidence.desktop_shell_sid.has_value()) {
+    return resolve_matching_sid(*evidence.desktop_shell_sid);
+  }
+  return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
+          .raw_error = unavailable_subject_error(evidence)};
+}
+
+[[nodiscard]] SubjectResult resolve_interactive_subject() {
+  return resolve_subject_evidence(collect_subject_evidence());
 }
 
 [[nodiscard]] std::optional<SecurityTemplate> parse_security_template(
@@ -265,6 +438,35 @@ struct SubjectResult final {
     return std::nullopt;
   }
   return result;
+}
+
+[[nodiscard]] ExistingDirectoryResult open_plain_directory(
+    std::filesystem::path const& path) {
+  UniqueHandle directory{::CreateFileW(
+      path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+      nullptr, OPEN_EXISTING,
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr)};
+  if (directory.get() == INVALID_HANDLE_VALUE) {
+    auto const error = ::GetLastError();
+    return {.error = DeviceDataEnvironmentError::directory_creation_failed,
+            .raw_error = error,
+            .detail = "storage ancestor could not be opened safely"};
+  }
+  FILE_ATTRIBUTE_TAG_INFO attributes{};
+  if (!::GetFileInformationByHandleEx(directory.get(), FileAttributeTagInfo,
+                                      &attributes, sizeof(attributes))) {
+    auto const error = ::GetLastError();
+    return {.error = DeviceDataEnvironmentError::directory_creation_failed,
+            .raw_error = error,
+            .detail = "storage ancestor attributes could not be read"};
+  }
+  if ((attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+      (attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    return {.error = DeviceDataEnvironmentError::unsafe_storage_path,
+            .raw_error = ERROR_REPARSE_TAG_INVALID,
+            .detail = "storage ancestor contains a reparse point"};
+  }
+  return {.handle = std::move(directory)};
 }
 
 [[nodiscard]] bool equal_acl(PACL left, PACL right) {
@@ -386,32 +588,14 @@ struct SubjectResult final {
     current /= component;
     paths.push_back(current);
   }
-  for (auto const& ancestor : paths) {
-    UniqueHandle directory{::CreateFileW(
-        ancestor.c_str(), FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
-        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr)};
-    if (directory.get() == INVALID_HANDLE_VALUE) {
-      auto const error = ::GetLastError();
-      return {.error = DeviceDataEnvironmentError::directory_creation_failed,
-              .raw_error = error,
-              .detail = "storage ancestor could not be opened safely"};
+  for (auto const& candidate : paths) {
+    auto directory = open_plain_directory(candidate);
+    if (!directory) {
+      return {.error = directory.error,
+              .raw_error = directory.raw_error,
+              .detail = std::move(directory.detail)};
     }
-    FILE_ATTRIBUTE_TAG_INFO attributes{};
-    if (!::GetFileInformationByHandleEx(directory.get(), FileAttributeTagInfo,
-                                        &attributes, sizeof(attributes))) {
-      auto const error = ::GetLastError();
-      return {.error = DeviceDataEnvironmentError::directory_creation_failed,
-              .raw_error = error,
-              .detail = "storage ancestor attributes could not be read"};
-    }
-    if ((attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
-        (attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-      return {.error = DeviceDataEnvironmentError::unsafe_storage_path,
-              .raw_error = ERROR_REPARSE_TAG_INVALID,
-              .detail = "storage ancestor contains a reparse point"};
-    }
-    result.handles.push_back(std::move(directory));
+    result.handles.push_back(std::move(directory.handle));
   }
   return result;
 }
@@ -466,93 +650,51 @@ struct SubjectResult final {
   return canonical;
 }
 
-[[nodiscard]] std::optional<std::filesystem::path> program_data_base() {
+[[nodiscard]] std::optional<std::filesystem::path> program_data_base(
+    DWORD& error) {
+  error = ERROR_SUCCESS;
   wchar_t* raw = nullptr;
   auto const status =
       ::SHGetKnownFolderPath(FOLDERID_ProgramData, KF_FLAG_DEFAULT, nullptr, &raw);
+  KnownFolderMemory memory{raw, &::CoTaskMemFree};
   if (FAILED(status) || raw == nullptr) {
+    error = FAILED(status) ? static_cast<DWORD>(status) : ERROR_NOT_FOUND;
     return std::nullopt;
   }
-  KnownFolderMemory memory{raw, &::CoTaskMemFree};
   return std::filesystem::path{raw};
 }
 
-}  // namespace
-
-DeviceDataEnvironmentResult WindowsDeviceDataEnvironment::prepare(
-    DeviceDataEnvironmentOptions options) {
-  if (options.subject_override.has_value() &&
-      !options.root_override_utf8.has_value()) {
-    return failure(DeviceDataEnvironmentError::invalid_test_override,
-                   ERROR_INVALID_PARAMETER,
-                   "subject override requires an isolated root override");
-  }
-
-  bool const test_root = options.root_override_utf8.has_value();
-  std::filesystem::path root;
-  std::filesystem::path existing_anchor;
-  std::vector<std::filesystem::path> owned_machine_prefixes;
+[[nodiscard]] DeviceDataEnvironmentResult prepare_device_data_impl() {
   DWORD path_error = ERROR_SUCCESS;
-  if (test_root) {
-    auto wide = utf8_to_wide(*options.root_override_utf8);
-    if (!wide.has_value() || wide->empty()) {
-      return failure(DeviceDataEnvironmentError::invalid_test_override,
-                     ERROR_INVALID_NAME, "test root is not valid UTF-8");
-    }
-    auto canonical = canonical_fixed_path(std::filesystem::path{*wide},
-                                          path_error);
-    if (!canonical.has_value()) {
-      return failure(DeviceDataEnvironmentError::unsupported_storage_location,
-                     path_error,
-                     "device data root must be on a local fixed volume");
-    }
-    root = std::move(*canonical);
-    existing_anchor = root.parent_path();
-    owned_machine_prefixes.push_back(root);
-  } else {
-    auto base = program_data_base();
-    if (!base.has_value()) {
-      return failure(DeviceDataEnvironmentError::program_data_unavailable,
-                     ::GetLastError(), "ProgramData known folder is unavailable");
-    }
-    auto canonical = canonical_fixed_path(*base, path_error);
-    if (!canonical.has_value()) {
-      return failure(DeviceDataEnvironmentError::unsupported_storage_location,
-                     path_error,
-                     "ProgramData must resolve to a local fixed volume");
-    }
-    existing_anchor = *canonical;
-    auto const vendor = existing_anchor / L"Azzs";
-    auto const product = vendor / L"WindowsInitialSetupWorkbench";
-    root = product / L"device-data-v1";
-    owned_machine_prefixes = {vendor, product, root};
+  auto base = program_data_base(path_error);
+  if (!base.has_value()) {
+    return failure(DeviceDataEnvironmentError::program_data_unavailable,
+                   path_error, "ProgramData known folder is unavailable");
+  }
+  auto canonical = canonical_fixed_path(*base, path_error);
+  if (!canonical.has_value()) {
+    return failure(DeviceDataEnvironmentError::unsupported_storage_location,
+                   path_error,
+                   "ProgramData must resolve to a local fixed volume");
   }
 
-  std::optional<std::wstring> subject_sid;
-  if (options.subject_override.has_value()) {
-    auto wide = utf8_to_wide(*options.subject_override);
-    PSID parsed = nullptr;
-    if (!wide.has_value() ||
-        !::ConvertStringSidToSidW(wide->c_str(), &parsed)) {
-      return failure(DeviceDataEnvironmentError::invalid_test_override,
-                     ::GetLastError(), "test subject is not a valid SID");
-    }
-    LocalMemory parsed_sid{parsed, &::LocalFree};
-    subject_sid = std::move(wide);
-  } else {
-    auto subject = resolve_interactive_subject(test_root);
-    if (!subject.sid.has_value()) {
-      return failure(subject.error, subject.raw_error,
-                     "interactive state subject could not be established");
-    }
-    subject_sid = std::move(subject.sid);
+  auto subject = resolve_interactive_subject();
+  if (!subject.sid.has_value()) {
+    return failure(subject.error, subject.raw_error,
+                   "interactive state subject could not be established");
   }
+
+  auto const existing_anchor = *canonical;
+  auto const vendor = existing_anchor / L"Azzs";
+  auto const product = vendor / L"WindowsInitialSetupWorkbench";
+  auto const root = product / L"device-data-v1";
+  auto const subject_sid = *subject.sid;
 
   auto machine_security = parse_security_template(
       L"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)");
   auto subject_security = parse_security_template(
-      L"O:" + *subject_sid + L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;" +
-      *subject_sid + L")");
+      L"O:" + subject_sid + L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;" +
+      subject_sid + L")");
   if (!machine_security.has_value() || !subject_security.has_value()) {
     return failure(DeviceDataEnvironmentError::access_control_failed,
                    ::GetLastError(),
@@ -565,6 +707,7 @@ DeviceDataEnvironmentResult WindowsDeviceDataEnvironment::prepare(
                    std::move(ancestors.detail));
   }
   std::vector<UniqueHandle> directory_guards = std::move(ancestors.handles);
+
   auto ensure = [&](std::filesystem::path const& path,
                     SecurityTemplate const& security)
       -> std::optional<DeviceDataEnvironmentResult> {
@@ -577,7 +720,7 @@ DeviceDataEnvironmentResult WindowsDeviceDataEnvironment::prepare(
     return std::nullopt;
   };
 
-  for (auto const& path : owned_machine_prefixes) {
+  for (auto const& path : {vendor, product, root}) {
     if (auto failed = ensure(path, *machine_security); failed.has_value()) {
       return std::move(*failed);
     }
@@ -593,18 +736,18 @@ DeviceDataEnvironmentResult WindowsDeviceDataEnvironment::prepare(
     }
   }
 
-  auto const subject = subjects / *subject_sid;
-  auto const subject_state = subject / L"state";
-  auto const logs = subject / L"logs";
-  auto const exports = subject / L"exports";
-  for (auto const& path : {subject, subject_state, logs, exports}) {
+  auto const subject_path = subjects / subject_sid;
+  auto const subject_state = subject_path / L"state";
+  auto const logs = subject_path / L"logs";
+  auto const exports = subject_path / L"exports";
+  for (auto const& path : {subject_path, subject_state, logs, exports}) {
     if (auto failed = ensure(path, *subject_security); failed.has_value()) {
       return std::move(*failed);
     }
   }
 
   auto root_utf8 = wide_to_utf8(root.wstring());
-  auto subject_utf8 = wide_to_utf8(*subject_sid);
+  auto subject_utf8 = wide_to_utf8(subject_sid);
   if (!root_utf8.has_value() || !subject_utf8.has_value()) {
     return failure(DeviceDataEnvironmentError::directory_creation_failed,
                    ERROR_NO_UNICODE_TRANSLATION,
@@ -614,9 +757,14 @@ DeviceDataEnvironmentResult WindowsDeviceDataEnvironment::prepare(
       .environment = DeviceDataEnvironment{
           .root_utf8 = std::move(*root_utf8),
           .subject_id = std::move(*subject_utf8),
-          .uses_test_root = test_root,
       },
   };
+}
+
+}  // namespace
+
+DeviceDataEnvironmentResult WindowsDeviceDataEnvironment::prepare() {
+  return prepare_device_data_impl();
 }
 
 }  // namespace azzs::adapters::windows
