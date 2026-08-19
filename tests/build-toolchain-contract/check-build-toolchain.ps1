@@ -29,12 +29,17 @@ function New-VswhereFixture {
     New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 
     $jsonPath = Join-Path $fixtureRoot "instance.json"
-    [ordered]@{
-        installationPath = (Join-Path $fixtureRoot "visual-studio")
-        catalog = [ordered]@{
-            productDisplayVersion = "18.8.3"
+    $instances = @(
+        [ordered]@{
+            installationPath = (Join-Path $fixtureRoot "visual-studio")
+            catalog = [ordered]@{
+                productDisplayVersion = "18.8.3"
+            }
         }
-    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding ASCII
+    )
+    ConvertTo-Json -InputObject $instances -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding ASCII
+    Require ((Get-Content -LiteralPath $jsonPath -Raw).TrimStart().StartsWith("[")) `
+        "vswhere fixture must preserve the JSON array response shape"
 
     $argumentsPath = Join-Path $fixtureRoot "vswhere-arguments.txt"
     $vswherePath = Join-Path $fixtureRoot "vswhere.cmd"
