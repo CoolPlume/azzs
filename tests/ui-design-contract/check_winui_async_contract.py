@@ -5,11 +5,34 @@ from __future__ import annotations
 
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
 class ContractFailure(RuntimeError):
     pass
+
+
+MSBUILD_NS = "http://schemas.microsoft.com/developer/msbuild/2003"
+MSBUILD = {"m": MSBUILD_NS}
+EXPECTED_WINUI_CONFIGURATIONS = {
+    "Debug|x64",
+    "Debug|ARM64",
+    "Release|x64",
+    "Release|ARM64",
+}
+MSBUILD_CONDITION = re.compile(
+    r"['\"]\$\((Configuration|Platform)\)['\"]\s*==\s*['\"]([^'\"]+)['\"]"
+)
+CPP_NON_CODE = re.compile(
+    r'//[^\r\n]*|/\*.*?\*/|'
+    r'R"(?P<delimiter>[^\s()\\]{0,16})\(.*?\)(?P=delimiter)"|'
+    r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
+    flags=re.DOTALL,
+)
+REAL_WWINMAIN = re.compile(
+    r"\bint\s+(?:__stdcall|WINAPI)\s+wWinMain\s*\([^)]*\)\s*\{"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -20,6 +43,178 @@ def require(condition: bool, message: str) -> None:
 def read(path: Path) -> str:
     require(path.is_file(), f"missing required file: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def parse_xml(path: Path) -> ET.Element:
+    require(path.is_file(), f"missing required XML file: {path}")
+    try:
+        return ET.parse(path).getroot()
+    except ET.ParseError as error:
+        raise ContractFailure(f"invalid XML in {path}: {error}") from error
+
+
+def msbuild_condition_applies(condition: str, configuration: str,
+                              platform: str) -> bool:
+    condition = condition.strip()
+    if not condition:
+        return True
+
+    clauses = list(MSBUILD_CONDITION.finditer(condition))
+    require(
+        clauses,
+        f"unsupported WinUI MSBuild condition (expected Configuration/Platform equality): {condition}",
+    )
+    remainder = MSBUILD_CONDITION.sub("", condition)
+    remainder = re.sub(r"\bAnd\b", "", remainder, flags=re.IGNORECASE)
+    remainder = remainder.replace("(", "").replace(")", "").strip()
+    require(
+        not remainder,
+        f"unsupported WinUI MSBuild condition syntax: {condition}",
+    )
+    expected = {"Configuration": configuration, "Platform": platform}
+    return all(expected[match.group(1)] == match.group(2) for match in clauses)
+
+
+def strip_cpp_non_code(source: str) -> str:
+    def blank(match: re.Match[str]) -> str:
+        return "".join("\n" if character == "\n" else " "
+                       for character in match.group(0))
+
+    return CPP_NON_CODE.sub(blank, source)
+
+
+def braced_body(source: str, opening_brace: int) -> str:
+    depth = 0
+    for index in range(opening_brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening_brace + 1:index]
+    raise ContractFailure("startup_entry.cpp has an unterminated wWinMain body")
+
+
+def verify_winui_project(project_path: Path) -> ET.Element:
+    project = parse_xml(project_path)
+    configurations = project.findall(
+        "./m:ItemGroup[@Label='ProjectConfigurations']/m:ProjectConfiguration",
+        MSBUILD,
+    )
+    configuration_keys: list[str] = []
+    for item in configurations:
+        include = item.attrib.get("Include")
+        configuration = item.findtext("m:Configuration", namespaces=MSBUILD)
+        platform = item.findtext("m:Platform", namespaces=MSBUILD)
+        require(
+            include is not None and configuration is not None and platform is not None,
+            "each WinUI ProjectConfiguration must declare Include, Configuration, and Platform",
+        )
+        key = f"{configuration}|{platform}"
+        require(
+            include == key,
+            f"WinUI ProjectConfiguration Include drifted: expected {key!r}, got {include!r}",
+        )
+        configuration_keys.append(key)
+
+    require(
+        len(configuration_keys) == len(set(configuration_keys)),
+        f"WinUI project contains duplicate configurations: {configuration_keys}",
+    )
+    require(
+        set(configuration_keys) == EXPECTED_WINUI_CONFIGURATIONS,
+        "WinUI project must declare exactly Debug/Release x64/ARM64 configurations; "
+        f"found {sorted(configuration_keys)}",
+    )
+
+    definition_groups = project.findall("./m:ItemDefinitionGroup", MSBUILD)
+    for key in sorted(EXPECTED_WINUI_CONFIGURATIONS):
+        configuration, platform = key.split("|", 1)
+        definitions: list[str] = []
+        for group in definition_groups:
+            if not msbuild_condition_applies(
+                group.attrib.get("Condition", ""), configuration, platform
+            ):
+                continue
+            definition = group.find(
+                "m:ClCompile/m:PreprocessorDefinitions", MSBUILD
+            )
+            if definition is not None and definition.text:
+                definitions.extend(
+                    token.strip() for token in definition.text.split(";")
+                )
+        require(
+            any(
+                token == "DISABLE_XAML_GENERATED_MAIN"
+                or token.startswith("DISABLE_XAML_GENERATED_MAIN=")
+                for token in definitions
+            ),
+            f"WinUI {key} ClCompile definitions must define DISABLE_XAML_GENERATED_MAIN; "
+            f"effective definitions were {definitions}",
+        )
+
+    dependencies = project.findall(
+        ".//m:Link/m:AdditionalDependencies", MSBUILD
+    )
+    require(
+        any(
+            "user32.lib" in {
+                token.strip() for token in (dependency.text or "").split(";")
+            }
+            for dependency in dependencies
+        ),
+        "the WinUI host must link user32 for the startup last-resort MessageBoxW fallback",
+    )
+
+    clcompile_paths = [
+        item.attrib.get("Include", "").replace("\\", "/")
+        for item in project.findall(".//m:ClCompile", MSBUILD)
+    ]
+    startup_entries = [path for path in clcompile_paths if path == "startup_entry.cpp"]
+    require(
+        len(startup_entries) == 1,
+        "Azzs.WinUI.vcxproj must include startup_entry.cpp exactly once as a ClCompile source; "
+        f"found {startup_entries}",
+    )
+    return project
+
+
+def verify_startup_entry(source: str) -> None:
+    code = strip_cpp_non_code(source)
+    entry_definitions = list(REAL_WWINMAIN.finditer(code))
+    require(
+        len(entry_definitions) == 1,
+        "startup_entry.cpp must contain exactly one real int __stdcall/ WINAPI wWinMain definition; "
+        f"found {len(entry_definitions)}",
+    )
+    entry_body = braced_body(code, entry_definitions[0].end() - 1)
+    require(
+        re.search(r"\breturn\s+wXamlGeneratedMain\s*\(", entry_body) is not None,
+        "wWinMain must delegate to wXamlGeneratedMain",
+    )
+    require(
+        re.search(r"\bcatch\s*\(\s*\.\.\.\s*\)\s*\{", entry_body) is not None,
+        "wWinMain must catch all early startup exceptions",
+    )
+    catch_header = re.search(
+        r"\bcatch\s*\(\s*\.\.\.\s*\)\s*\{",
+        entry_body,
+    )
+    require(catch_header is not None, "wWinMain catch-all body is missing")
+    catch_body = braced_body(entry_body, catch_header.end() - 1)
+    require(
+        re.search(r"\breturn\s+1\s*;", catch_body) is not None,
+        "wWinMain catch-all fallback must return a non-zero status",
+    )
+    require(
+        re.search(r"\bshow_startup_failure\s*\(\s*\)", catch_body) is not None,
+        "wWinMain catch-all fallback must report the startup failure",
+    )
+    require(
+        re.search(r"\bOutputDebugStringW\s*\(", code) is not None
+        and re.search(r"\bMessageBoxW\s*\(", code) is not None,
+        "startup failure reporting must retain both OutputDebugStringW and MessageBoxW",
+    )
 
 
 def verify_file(root: Path, relative_path: str, expected_handlers: int,
@@ -93,30 +288,8 @@ def verify(root: Path) -> None:
         "motion preferences must dereference the optional dispatcher queue only after a presence check",
     )
 
-    project = read(root / "src/adapters/ui/winui/Azzs.WinUI.vcxproj")
-    require(
-        "user32.lib" in project,
-        "the WinUI host must link user32 for the startup last-resort MessageBoxW fallback",
-    )
-    require(
-        "DISABLE_XAML_GENERATED_MAIN" in project and
-        'startup_entry.cpp' in project,
-        "the WinUI host must replace the generated process entry with its guarded wrapper",
-    )
-
-    startup_entry = read(root / "src/adapters/ui/winui/startup_entry.cpp")
-    require(
-        "int __stdcall wWinMain" in startup_entry and
-        "wXamlGeneratedMain(" in startup_entry,
-        "the process entry must delegate to the XAML-generated startup sequence",
-    )
-    require(
-        "catch (...)" in startup_entry and
-        "OutputDebugStringW" in startup_entry and
-        "MessageBoxW" in startup_entry and
-        "return 1;" in startup_entry,
-        "the process entry must report early startup failures and return non-zero",
-    )
+    verify_winui_project(root / "src/adapters/ui/winui/Azzs.WinUI.vcxproj")
+    verify_startup_entry(read(root / "src/adapters/ui/winui/startup_entry.cpp"))
 
     resources = read(root / "src/adapters/ui/winui/Strings/zh-CN/Resources.resw")
     require(
