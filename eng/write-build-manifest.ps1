@@ -89,6 +89,7 @@ if (Test-Path -LiteralPath $payloadDirectory -PathType Container) {
                 [ordered]@{
                     path = $_.FullName.Substring($payloadDirectory.Length).TrimStart("\", "/").Replace("\", "/")
                     bytes = $_.Length
+                    sha256 = Get-Sha256Hex -Path $_.FullName
                 }
             }
     )

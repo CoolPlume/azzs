@@ -23,8 +23,15 @@ if(WIN32)
   get_filename_component(azzs_windows_kits_root
     "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots;KitsRoot10]"
     ABSOLUTE)
+  if(DEFINED CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION AND
+     NOT "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}" STREQUAL "")
+    set(azzs_windows_metadata_version
+      "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
+  else()
+    set(azzs_windows_metadata_version "${CMAKE_SYSTEM_VERSION}")
+  endif()
   set(azzs_windows_metadata
-    "${azzs_windows_kits_root}/UnionMetadata/${CMAKE_SYSTEM_VERSION}/Windows.winmd")
+    "${azzs_windows_kits_root}/UnionMetadata/${azzs_windows_metadata_version}/Windows.winmd")
   set(azzs_cppwinrt_generated_directory
     "${CMAKE_CURRENT_BINARY_DIR}/cppwinrt")
   set(azzs_cppwinrt_base_header
@@ -106,6 +113,7 @@ azzs_project_target(
     oleaut32
     rpcrt4
     shell32
+    user32
     wbemuuid
     winhttp
     wtsapi32

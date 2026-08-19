@@ -29,12 +29,17 @@ function New-VswhereFixture {
     New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
 
     $jsonPath = Join-Path $fixtureRoot "instance.json"
-    [ordered]@{
-        installationPath = (Join-Path $fixtureRoot "visual-studio")
-        catalog = [ordered]@{
-            productDisplayVersion = "18.8.3"
+    $instances = @(
+        [ordered]@{
+            installationPath = (Join-Path $fixtureRoot "visual-studio")
+            catalog = [ordered]@{
+                productDisplayVersion = "18.8.3"
+            }
         }
-    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding ASCII
+    )
+    ConvertTo-Json -InputObject $instances -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding ASCII
+    Require ((Get-Content -LiteralPath $jsonPath -Raw).TrimStart().StartsWith("[")) `
+        "vswhere fixture must preserve the JSON array response shape"
 
     $argumentsPath = Join-Path $fixtureRoot "vswhere-arguments.txt"
     $vswherePath = Join-Path $fixtureRoot "vswhere.cmd"
@@ -113,11 +118,18 @@ try {
         $compositionRoot.Contains("startup_diagnostic_device_data_options()") -and
         $compositionRoot.Contains("WindowsDeviceDataEnvironment::prepare()")) "the composition root must keep diagnostic and production roots compile-time separated"
     Require ($deviceEnvironmentHeader.Contains("diagnostic_root_utf8") -and
-        $deviceEnvironmentSource.Contains("bool const test_root = options.root_override_utf8.has_value();") -and
-        $deviceEnvironmentSource.Contains("auto subject = resolve_interactive_subject(test_root);") -and
+        $deviceEnvironmentHeader.Contains("std::optional<std::string> diagnostic_root_utf8;") -and
+        $deviceEnvironmentHeader.Contains("DeviceDataEnvironmentOptions options = {}") -and
+        -not $deviceEnvironmentHeader.Contains("root_override_utf8") -and
+        -not $deviceEnvironmentHeader.Contains("subject_override") -and
+        -not $deviceEnvironmentHeader.Contains("uses_test_root") -and
+        $deviceEnvironmentSource.Contains("prepare_device_data_impl(") -and
+        $deviceEnvironmentSource.Contains("return prepare_device_data_impl(options.diagnostic_root_utf8);") -and
+        $deviceEnvironmentSource.Contains("auto subject = resolve_interactive_subject();") -and
+        -not $deviceEnvironmentSource.Contains("root_override_utf8") -and
+        -not $deviceEnvironmentSource.Contains("subject_override") -and
         $deviceEnvironmentSource.Contains("is_d_drive_path") -and
-        $deviceEnvironmentSource.Contains("diagnostic device data root must be on drive D:") -and
-        -not $deviceEnvironmentSource.Contains("resolve_interactive_subject(diagnostic_root)")) "diagnostic roots must not enable the test-only process SID fallback"
+        $deviceEnvironmentSource.Contains("diagnostic device data root must be on drive D:")) "diagnostic roots must use the production identity contract without exposing test overrides"
     Require ($compositionRoot.Contains("static_cast<std::size_t>(required) + 1")) "diagnostic environment reads must reserve the terminating buffer element"
 
     $fixture = New-VswhereFixture

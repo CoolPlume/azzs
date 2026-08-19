@@ -201,6 +201,7 @@ function Write-ValidBuildManifest {
                 [ordered]@{
                     path = $_.FullName.Substring($payloadDirectory.Length).TrimStart("\", "/").Replace("\", "/")
                     bytes = $_.Length
+                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
                 }
             }
     )
@@ -622,6 +623,25 @@ try {
     [System.IO.Compression.ZipFile]::ExtractToDirectory($standardCandidates[1], $extractedStandardDirectory)
     Require-EmptyFixedRescueFolders -Root $extractedStandardDirectory -Context "extracted standard ZIP"
     Require-BundledCatalogResources -Root $extractedStandardDirectory -Resources @($standardManifest.bundledCatalogResources) -Context "extracted standard ZIP"
+
+    $sameLengthBuildTamperFixture = New-FixtureRoot
+    $sameLengthBuildTamperPath = Join-Path $sameLengthBuildTamperFixture "out/windows/x64/Release/Microsoft.UI.Xaml.Controls.dll"
+    $sameLengthBuildTamperBytes = [System.IO.File]::ReadAllBytes($sameLengthBuildTamperPath)
+    $sameLengthBuildTamperBytes[0] = $sameLengthBuildTamperBytes[0] -bxor 0x01
+    [System.IO.File]::WriteAllBytes($sameLengthBuildTamperPath, $sameLengthBuildTamperBytes)
+    Require-PackageFailure `
+        -FixtureRoot $sameLengthBuildTamperFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "same-length build output tampering after the completed build manifest"
+
+    $missingBuildDigestFixture = New-FixtureRoot
+    $missingBuildDigestManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $missingBuildDigestFixture) -Raw | ConvertFrom-Json
+    $missingBuildDigestManifest.artifacts[0].PSObject.Properties.Remove("sha256")
+    Write-JsonFile -Value $missingBuildDigestManifest -Path (Get-BuildManifestPath -FixtureRoot $missingBuildDigestFixture)
+    Require-PackageFailure `
+        -FixtureRoot $missingBuildDigestFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "a build manifest artifact without a SHA256"
 
     $missingManifestInputsFixture = New-FixtureRoot
     Invoke-Package -FixtureRoot $missingManifestInputsFixture -ArtifactId "standard-x64-portable"
