@@ -226,7 +226,16 @@ struct SubjectEvidence final {
   DWORD wts_raw_error{ERROR_SUCCESS};
   DWORD desktop_shell_raw_error{ERROR_SUCCESS};
   bool wts_unqualified_user{false};
+  bool wts_rpc_transport_failure{false};
 };
+
+[[nodiscard]] constexpr bool is_wts_rpc_transport_failure(
+    DWORD error) noexcept {
+  return error == RPC_S_SERVER_UNAVAILABLE ||
+         error == RPC_S_SERVER_NOT_LISTENING ||
+         error == RPC_S_SERVER_TOO_BUSY || error == RPC_S_CALL_FAILED ||
+         error == RPC_S_CALL_FAILED_DNE;
+}
 
 [[nodiscard]] std::optional<std::vector<std::byte>> wts_account_sid(
     std::optional<std::wstring> const& user,
@@ -248,16 +257,22 @@ struct SubjectEvidence final {
 [[nodiscard]] std::optional<std::vector<std::byte>> wts_session_sid(
     DWORD session_id,
     DWORD& error,
-    bool& unqualified_user) {
+    bool& unqualified_user,
+    bool& rpc_transport_failure) {
   unqualified_user = false;
+  rpc_transport_failure = false;
   DWORD user_error = ERROR_SUCCESS;
   auto user = query_session_text(session_id, WTSUserName, user_error);
   if (!user.has_value() || user->empty()) {
+    rpc_transport_failure = is_wts_rpc_transport_failure(user_error);
     return wts_account_sid(user, user_error, std::nullopt, ERROR_SUCCESS,
                            error);
   }
   DWORD domain_error = ERROR_SUCCESS;
   auto domain = query_session_text(session_id, WTSDomainName, domain_error);
+  if (!domain.has_value() || domain->empty()) {
+    rpc_transport_failure = is_wts_rpc_transport_failure(domain_error);
+  }
   if ((!domain.has_value() || domain->empty()) &&
       domain_error == ERROR_NONE_MAPPED) {
     // A username without a domain is ambiguous. Do not use a shell process as
@@ -330,7 +345,8 @@ struct SubjectEvidence final {
   }
   evidence.wts_session_sid =
       wts_session_sid(session_id, evidence.wts_raw_error,
-                      evidence.wts_unqualified_user);
+                      evidence.wts_unqualified_user,
+                      evidence.wts_rpc_transport_failure);
   if (evidence.wts_session_sid.has_value()) {
     return evidence;
   }
@@ -390,7 +406,8 @@ struct SubjectEvidence final {
                              ? ERROR_NONE_MAPPED
                              : evidence.wts_raw_error};
   }
-  if (evidence.desktop_shell_sid.has_value()) {
+  if (evidence.wts_rpc_transport_failure &&
+      evidence.desktop_shell_sid.has_value()) {
     return resolve_matching_sid(*evidence.desktop_shell_sid);
   }
   return {.error = DeviceDataEnvironmentError::interactive_subject_unavailable,
