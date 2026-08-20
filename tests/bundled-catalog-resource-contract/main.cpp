@@ -5,13 +5,17 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <winioctl.h>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -83,6 +87,98 @@ struct SymbolicLinkCreation final {
             << " (CreateSymbolicLinkW ALLOW_UNPRIVILEGED_CREATE GetLastError="
             << creation.unprivileged_error
             << "; fallback GetLastError=" << creation.fallback_error << ")\n";
+  return false;
+}
+
+struct JunctionReparseBuffer final {
+  DWORD reparse_tag;
+  WORD reparse_data_length;
+  WORD reserved;
+  WORD substitute_name_offset;
+  WORD substitute_name_length;
+  WORD print_name_offset;
+  WORD print_name_length;
+  wchar_t path_buffer[1];
+};
+
+static_assert(offsetof(JunctionReparseBuffer, path_buffer) == 16);
+
+struct DirectoryJunctionCreation final {
+  bool created{false};
+  DWORD error{ERROR_SUCCESS};
+};
+
+// Mount-point junctions are real directory reparse points but do not require
+// SeCreateSymbolicLinkPrivilege, unlike directory symbolic links.
+[[nodiscard]] DirectoryJunctionCreation create_directory_junction(
+    std::filesystem::path const& link, std::filesystem::path const& target) {
+  if (!target.is_absolute()) {
+    return {.error = ERROR_INVALID_NAME};
+  }
+  if (!::CreateDirectoryW(link.c_str(), nullptr)) {
+    return {.error = ::GetLastError()};
+  }
+
+  auto const substitute_name = std::wstring{L"\\??\\"} + target.native();
+  auto const print_name = target.native();
+  auto const substitute_bytes = substitute_name.size() * sizeof(wchar_t);
+  auto const print_bytes = print_name.size() * sizeof(wchar_t);
+  auto const path_bytes = substitute_bytes +
+                          sizeof(wchar_t) + print_bytes + sizeof(wchar_t);
+  auto const buffer_bytes = offsetof(JunctionReparseBuffer, path_buffer) +
+                            path_bytes;
+  auto const reparse_data_length = sizeof(WORD) * 4 + path_bytes;
+  if (reparse_data_length >
+          static_cast<std::size_t>((std::numeric_limits<WORD>::max)()) ||
+      buffer_bytes > MAXIMUM_REPARSE_DATA_BUFFER_SIZE) {
+    ::RemoveDirectoryW(link.c_str());
+    return {.error = ERROR_BUFFER_OVERFLOW};
+  }
+  alignas(JunctionReparseBuffer)
+      std::array<std::byte, MAXIMUM_REPARSE_DATA_BUFFER_SIZE> storage{};
+  auto* buffer = reinterpret_cast<JunctionReparseBuffer*>(storage.data());
+  buffer->reparse_tag = IO_REPARSE_TAG_MOUNT_POINT;
+  buffer->reparse_data_length = static_cast<WORD>(reparse_data_length);
+  buffer->reserved = 0;
+  buffer->substitute_name_offset = 0;
+  buffer->substitute_name_length = static_cast<WORD>(substitute_bytes);
+  buffer->print_name_offset =
+      static_cast<WORD>(substitute_bytes + sizeof(wchar_t));
+  buffer->print_name_length = static_cast<WORD>(print_bytes);
+  auto* path = buffer->path_buffer;
+  std::copy(substitute_name.begin(), substitute_name.end(), path);
+  path[substitute_name.size()] = L'\0';
+  auto* print = path + substitute_name.size() + 1;
+  std::copy(print_name.begin(), print_name.end(), print);
+  print[print_name.size()] = L'\0';
+
+  auto const directory = ::CreateFileW(
+      link.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (directory == INVALID_HANDLE_VALUE) {
+    auto const error = ::GetLastError();
+    ::RemoveDirectoryW(link.c_str());
+    return {.error = error};
+  }
+  DWORD written{};
+  auto const created = ::DeviceIoControl(
+      directory, FSCTL_SET_REPARSE_POINT, buffer,
+      static_cast<DWORD>(buffer_bytes), nullptr, 0, &written, nullptr);
+  auto const error = created ? DWORD{ERROR_SUCCESS} : ::GetLastError();
+  ::CloseHandle(directory);
+  if (!created) {
+    ::RemoveDirectoryW(link.c_str());
+  }
+  return {.created = created != FALSE, .error = error};
+}
+
+[[nodiscard]] bool expect_directory_junction_creation(
+    DirectoryJunctionCreation const& creation, char const* message) {
+  if (creation.created) {
+    return true;
+  }
+  std::cerr << "bundled catalog resource contract failed: " << message
+            << " (directory junction GetLastError=" << creation.error << ")\n";
   return false;
 }
 
@@ -188,7 +284,8 @@ class Fixture final {
   if (creation.created) {
     passed &= expect(!read,
                      "a bundled catalog reparse point must be rejected");
-    ::DeleteFileW(link.c_str());
+    passed &= expect(::DeleteFileW(link.c_str()) != FALSE,
+                     "the file symbolic-link fixture must be removed");
   }
   return passed;
 }
@@ -202,21 +299,20 @@ class Fixture final {
   std::filesystem::create_directories(target, error);
   auto const written = !error &&
                        write_file(target / L"software-catalog.toml", "abc");
-  auto const creation = create_symbolic_link(
-      catalog, target, SYMBOLIC_LINK_FLAG_DIRECTORY);
+  auto const creation = create_directory_junction(catalog, target);
 
   WindowsBundledCatalogResourceReader reader{fixture.root()};
   auto const read =
       reader.read("catalog/software-catalog.toml", kAbcExpectation);
   bool passed = expect(fixture.ready() && written,
                        "the nested reparse fixture target must be writable") &&
-                expect_symbolic_link_creation(
-                    creation,
-                    "the reparse contract requires a directory symbolic link");
+                expect_directory_junction_creation(
+                    creation, "the reparse contract requires a directory junction");
   if (creation.created) {
     passed &= expect(!read,
                      "a reparse point in the catalog directory must be rejected");
-    ::RemoveDirectoryW(catalog.c_str());
+    passed &= expect(::RemoveDirectoryW(catalog.c_str()) != FALSE,
+                     "the directory junction fixture must be removed");
   }
   return passed;
 }
