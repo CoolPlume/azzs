@@ -216,6 +216,9 @@ function Write-ValidBuildManifest {
                 architecture = "x64"
                 configuration = "Release"
             }
+            buildOptions = [ordered]@{
+                startupDiagnosticDeviceDataRoot = $false
+            }
             artifacts = $artifacts
         }) -Path (Get-BuildManifestPath -FixtureRoot $FixtureRoot)
 }
@@ -992,6 +995,24 @@ try {
     $buildManifest.source.dirty = $true
     Write-JsonFile -Value $buildManifest -Path (Get-BuildManifestPath -FixtureRoot $buildFixture)
     Require-PackageFailure -FixtureRoot $buildFixture -ArtifactId "standard-x64-portable" -Scenario "dirty build manifest"
+
+    $diagnosticBuildFixture = New-FixtureRoot
+    $diagnosticBuildManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $diagnosticBuildFixture) -Raw | ConvertFrom-Json
+    $diagnosticBuildManifest.buildOptions.startupDiagnosticDeviceDataRoot = $true
+    Write-JsonFile -Value $diagnosticBuildManifest -Path (Get-BuildManifestPath -FixtureRoot $diagnosticBuildFixture)
+    Require-PackageFailure -FixtureRoot $diagnosticBuildFixture -ArtifactId "standard-x64-portable" -Scenario "startup diagnostic build manifest"
+
+    $missingDiagnosticBuildOptionFixture = New-FixtureRoot
+    $missingDiagnosticBuildOptionManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $missingDiagnosticBuildOptionFixture) -Raw | ConvertFrom-Json
+    $missingDiagnosticBuildOptionManifest.buildOptions.PSObject.Properties.Remove("startupDiagnosticDeviceDataRoot")
+    Write-JsonFile -Value $missingDiagnosticBuildOptionManifest -Path (Get-BuildManifestPath -FixtureRoot $missingDiagnosticBuildOptionFixture)
+    Require-PackageFailure -FixtureRoot $missingDiagnosticBuildOptionFixture -ArtifactId "standard-x64-portable" -Scenario "missing startup diagnostic build option"
+
+    $invalidDiagnosticBuildOptionFixture = New-FixtureRoot
+    $invalidDiagnosticBuildOptionManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $invalidDiagnosticBuildOptionFixture) -Raw | ConvertFrom-Json
+    $invalidDiagnosticBuildOptionManifest.buildOptions.startupDiagnosticDeviceDataRoot = "false"
+    Write-JsonFile -Value $invalidDiagnosticBuildOptionManifest -Path (Get-BuildManifestPath -FixtureRoot $invalidDiagnosticBuildOptionFixture)
+    Require-PackageFailure -FixtureRoot $invalidDiagnosticBuildOptionFixture -ArtifactId "standard-x64-portable" -Scenario "startup diagnostic build option with the wrong JSON type"
 
     $scalarBuildArtifactsFixture = New-FixtureRoot
     $scalarBuildManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $scalarBuildArtifactsFixture) -Raw | ConvertFrom-Json

@@ -825,12 +825,14 @@ function Test-PortableBuildManifest {
     $commit = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
     $source = Get-RequiredObjectProperty -Object $manifest -Name "source" -Context "Portable build manifest"
     $target = Get-RequiredObjectProperty -Object $manifest -Name "target" -Context "Portable build manifest"
+    $buildOptions = Get-RequiredObjectProperty -Object $manifest -Name "buildOptions" -Context "Portable build manifest"
     if ((Get-RequiredIntegerProperty -Object $manifest -Name "schemaVersion" -Context "Portable build manifest") -ne 1 -or
         (Get-RequiredStringProperty -Object $manifest -Name "result" -Context "Portable build manifest") -ne "succeeded" -or
         (Get-RequiredBooleanProperty -Object $source -Name "dirty" -Context "Portable build manifest source") -ne $false -or
         (Get-RequiredStringProperty -Object $source -Name "commit" -Context "Portable build manifest source") -ne $commit -or
         (Get-RequiredStringProperty -Object $target -Name "architecture" -Context "Portable build manifest target") -ne $Architecture -or
-        (Get-RequiredStringProperty -Object $target -Name "configuration" -Context "Portable build manifest target") -ne "Release") {
+        (Get-RequiredStringProperty -Object $target -Name "configuration" -Context "Portable build manifest target") -ne "Release" -or
+        (Get-RequiredBooleanProperty -Object $buildOptions -Name "startupDiagnosticDeviceDataRoot" -Context "Portable build manifest buildOptions") -ne $false) {
         throw "Portable packaging requires a clean, succeeded $Architecture Release build manifest for the current commit."
     }
     [object[]]$manifestArtifacts = (Get-RequiredArrayProperty `
