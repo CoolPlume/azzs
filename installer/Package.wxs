@@ -13,7 +13,7 @@
     <Icon Id="ProductIcon" SourceFile="$(var.ProductIconPath)" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
 
-    <StandardDirectory Id="ProgramFiles6432Folder">
+    <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Windows 初装工作台" />
     </StandardDirectory>
 
