@@ -819,7 +819,14 @@ try {
     Write-ValidBuildManifest -FixtureRoot $ignoredLockedInputFixture
     & git -C $ignoredLockedInputFixture check-ignore -q -- $ignoredLockedInput.relativePath
     Require ($LASTEXITCODE -eq 0) "ignored locked input fixture must keep the locked input ignored"
-    $null = & git -C $ignoredLockedInputFixture ls-files --error-unmatch -- $ignoredLockedInput.relativePath 2>$null
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $null = & git -C $ignoredLockedInputFixture ls-files --error-unmatch -- $ignoredLockedInput.relativePath 2>$null
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     Require ($LASTEXITCODE -ne 0) "ignored locked input fixture must keep the locked input untracked"
     $ignoredLockedInputStatus = @(& git -C $ignoredLockedInputFixture status --porcelain=v1 --untracked-files=all 2>$null)
     Require ($ignoredLockedInputStatus.Count -eq 0) "ignored locked input fixture must remain clean"

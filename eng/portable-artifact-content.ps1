@@ -337,7 +337,14 @@ function Test-TrackedRepositoryFile {
         [string]$Context
     )
 
-    $null = & git -C $RepositoryRoot ls-files --error-unmatch -- $RelativePath 2>$null
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $null = & git -C $RepositoryRoot ls-files --error-unmatch -- $RelativePath 2>$null
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "$Context must reference a tracked repository file."
     }
