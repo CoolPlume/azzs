@@ -415,17 +415,24 @@ function Require-PackageFailure {
         [Parameter(Mandatory = $true)]
         [string]$Scenario,
 
+        [string]$ExpectedErrorText,
+
         [switch]$RunBuild
     )
 
     $failed = $false
+    $failureMessage = ""
     try {
         Invoke-Package -FixtureRoot $FixtureRoot -ArtifactId $ArtifactId -RunBuild:$RunBuild
     }
     catch {
         $failed = $true
+        $failureMessage = $_.Exception.Message
     }
     Require $failed "$Scenario unexpectedly produced a package"
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedErrorText)) {
+        Require ($failureMessage.Contains($ExpectedErrorText)) "$Scenario failed without '$ExpectedErrorText'"
+    }
     Require-NoCandidate -FixtureRoot $FixtureRoot -ArtifactId $ArtifactId
 }
 
@@ -799,6 +806,73 @@ try {
         -PackagePath $payloadFileFixture.PackagePath `
         -OutputPath (Join-Path $payloadFileFixture.Root "out/manifests/payload-file.json") `
         -Scenario "a payload parameter naming a file"
+
+    $ignoredLockedInputFixture = New-FixtureRoot
+    $ignoredLockedInput = New-LockedInput -FixtureRoot $ignoredLockedInputFixture -Id "rescue-tool" -Role "rescue-companion-tool" -RelativePath "release-inputs/rescue-tool.bin"
+    $ignoredLockedInput.relativePath = "out/ignored-input.bin"
+    $ignoredLockedInputPath = Join-Path $ignoredLockedInputFixture ($ignoredLockedInput.relativePath.Replace("/", "\"))
+    New-Item -ItemType Directory -Path (Split-Path -Parent $ignoredLockedInputPath) -Force | Out-Null
+    [System.IO.File]::WriteAllBytes($ignoredLockedInputPath, [Text.Encoding]::ASCII.GetBytes("contract input: rescue-tool"))
+    Set-LockedInputs -FixtureRoot $ignoredLockedInputFixture -ArtifactId "rescue-x64-portable" -Inputs @($ignoredLockedInput)
+    & git -C $ignoredLockedInputFixture add release/artifact-content-manifest.v1.json release-inputs/rescue-tool.bin
+    & git -C $ignoredLockedInputFixture commit --quiet -m "ignored locked input fixture"
+    Write-ValidBuildManifest -FixtureRoot $ignoredLockedInputFixture
+    & git -C $ignoredLockedInputFixture check-ignore -q -- $ignoredLockedInput.relativePath
+    Require ($LASTEXITCODE -eq 0) "ignored locked input fixture must keep the locked input ignored"
+    $gitExecutablePath = (Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
+    Require (-not [string]::IsNullOrWhiteSpace($gitExecutablePath)) "ignored locked input fixture must resolve Git as an application"
+    $previousErrorActionPreference = $ErrorActionPreference
+    $supportsPSNativeCommandUseErrorActionPreference = Test-Path -LiteralPath 'Variable:PSNativeCommandUseErrorActionPreference'
+    $gitExitCode = $null
+    try {
+        $ErrorActionPreference = "Continue"
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $previousPSNativeCommandUseErrorActionPreference = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $true
+        }
+        $null = & $gitExecutablePath -C $ignoredLockedInputFixture ls-files --error-unmatch -- $ignoredLockedInput.relativePath 2>$null
+        $gitExitCode = $LASTEXITCODE
+    }
+    finally {
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $PSNativeCommandUseErrorActionPreference = $previousPSNativeCommandUseErrorActionPreference
+        }
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    Require ($null -ne $gitExitCode -and $gitExitCode -ne 0) "ignored locked input fixture must keep the locked input untracked"
+    $ignoredLockedInputStatus = @(& git -C $ignoredLockedInputFixture status --porcelain=v1 --untracked-files=all 2>$null)
+    Require ($ignoredLockedInputStatus.Count -eq 0) "ignored locked input fixture must remain clean"
+    $pwshExecutable = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $pwshExecutablePath = if ($null -eq $pwshExecutable) { $null } else { $pwshExecutable.Path }
+    if (-not [string]::IsNullOrWhiteSpace($pwshExecutablePath)) {
+        $nativePreferenceCompatibilityScript = @"
+Remove-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue
+Set-StrictMode -Version Latest
+`$fixtureRoot = $(ConvertTo-Json -InputObject $ignoredLockedInputFixture -Compress)
+. $(ConvertTo-Json -InputObject (Join-Path $ignoredLockedInputFixture "eng/portable-artifact-content.ps1") -Compress)
+try {
+    Test-TrackedRepositoryFile -RepositoryRoot `$fixtureRoot -RelativePath "out/ignored-input.bin" -Context "ignored locked input without native preference"
+    throw "ignored locked input without native preference unexpectedly passed Git inspection."
+}
+catch {
+    `$expectedMessage = "ignored locked input without native preference must reference a tracked repository file."
+    if (`$_.Exception.Message -ne `$expectedMessage) {
+        throw
+    }
+    Write-Output `$_.Exception.Message
+}
+"@
+        $nativePreferenceCompatibilityEncodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($nativePreferenceCompatibilityScript))
+        $nativePreferenceCompatibilityOutput = @(& $pwshExecutablePath -NoLogo -NoProfile -EncodedCommand $nativePreferenceCompatibilityEncodedCommand)
+        $nativePreferenceCompatibilityExitCode = $LASTEXITCODE
+        Require ($nativePreferenceCompatibilityExitCode -eq 0) "ignored locked input without native preference must reject without a StrictMode failure"
+        Require ($nativePreferenceCompatibilityOutput -contains "ignored locked input without native preference must reference a tracked repository file.") "ignored locked input without native preference must report the tracked repository file rejection"
+    }
+    Require-PackageFailure `
+        -FixtureRoot $ignoredLockedInputFixture `
+        -ArtifactId "rescue-x64-portable" `
+        -Scenario "ignored locked input" `
+        -ExpectedErrorText "tracked repository file"
 
     $payloadJunctionFixture = New-PackageManifestFixture
     $payloadJunctionTarget = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-payload-junction-" + [Guid]::NewGuid().ToString("N"))
