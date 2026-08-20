@@ -415,17 +415,24 @@ function Require-PackageFailure {
         [Parameter(Mandatory = $true)]
         [string]$Scenario,
 
+        [string]$ExpectedErrorText,
+
         [switch]$RunBuild
     )
 
     $failed = $false
+    $failureMessage = ""
     try {
         Invoke-Package -FixtureRoot $FixtureRoot -ArtifactId $ArtifactId -RunBuild:$RunBuild
     }
     catch {
         $failed = $true
+        $failureMessage = $_.Exception.Message
     }
     Require $failed "$Scenario unexpectedly produced a package"
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedErrorText)) {
+        Require ($failureMessage.Contains($ExpectedErrorText)) "$Scenario failed without '$ExpectedErrorText'"
+    }
     Require-NoCandidate -FixtureRoot $FixtureRoot -ArtifactId $ArtifactId
 }
 
@@ -799,6 +806,28 @@ try {
         -PackagePath $payloadFileFixture.PackagePath `
         -OutputPath (Join-Path $payloadFileFixture.Root "out/manifests/payload-file.json") `
         -Scenario "a payload parameter naming a file"
+
+    $ignoredLockedInputFixture = New-FixtureRoot
+    $ignoredLockedInput = New-LockedInput -FixtureRoot $ignoredLockedInputFixture -Id "rescue-tool" -Role "rescue-companion-tool" -RelativePath "release-inputs/rescue-tool.bin"
+    $ignoredLockedInput.relativePath = "out/ignored-input.bin"
+    $ignoredLockedInputPath = Join-Path $ignoredLockedInputFixture ($ignoredLockedInput.relativePath.Replace("/", "\"))
+    New-Item -ItemType Directory -Path (Split-Path -Parent $ignoredLockedInputPath) -Force | Out-Null
+    [System.IO.File]::WriteAllBytes($ignoredLockedInputPath, [Text.Encoding]::ASCII.GetBytes("contract input: rescue-tool"))
+    Set-LockedInputs -FixtureRoot $ignoredLockedInputFixture -ArtifactId "rescue-x64-portable" -Inputs @($ignoredLockedInput)
+    & git -C $ignoredLockedInputFixture add release/artifact-content-manifest.v1.json release-inputs/rescue-tool.bin
+    & git -C $ignoredLockedInputFixture commit --quiet -m "ignored locked input fixture"
+    Write-ValidBuildManifest -FixtureRoot $ignoredLockedInputFixture
+    & git -C $ignoredLockedInputFixture check-ignore -q -- $ignoredLockedInput.relativePath
+    Require ($LASTEXITCODE -eq 0) "ignored locked input fixture must keep the locked input ignored"
+    $null = & git -C $ignoredLockedInputFixture ls-files --error-unmatch -- $ignoredLockedInput.relativePath 2>$null
+    Require ($LASTEXITCODE -ne 0) "ignored locked input fixture must keep the locked input untracked"
+    $ignoredLockedInputStatus = @(& git -C $ignoredLockedInputFixture status --porcelain=v1 --untracked-files=all 2>$null)
+    Require ($ignoredLockedInputStatus.Count -eq 0) "ignored locked input fixture must remain clean"
+    Require-PackageFailure `
+        -FixtureRoot $ignoredLockedInputFixture `
+        -ArtifactId "rescue-x64-portable" `
+        -Scenario "ignored locked input" `
+        -ExpectedErrorText "tracked repository file"
 
     $payloadJunctionFixture = New-PackageManifestFixture
     $payloadJunctionTarget = Join-Path ([System.IO.Path]::GetTempPath()) ("azzs-payload-junction-" + [Guid]::NewGuid().ToString("N"))
