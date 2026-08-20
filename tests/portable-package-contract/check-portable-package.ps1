@@ -822,7 +822,7 @@ try {
     $gitExecutablePath = (Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
     Require (-not [string]::IsNullOrWhiteSpace($gitExecutablePath)) "ignored locked input fixture must resolve Git as an application"
     $previousErrorActionPreference = $ErrorActionPreference
-    $supportsPSNativeCommandUseErrorActionPreference = $PSVersionTable.PSVersion.Major -ge 7
+    $supportsPSNativeCommandUseErrorActionPreference = Test-Path -LiteralPath 'Variable:PSNativeCommandUseErrorActionPreference'
     $gitExitCode = $null
     try {
         $ErrorActionPreference = "Continue"
@@ -842,6 +842,32 @@ try {
     Require ($null -ne $gitExitCode -and $gitExitCode -ne 0) "ignored locked input fixture must keep the locked input untracked"
     $ignoredLockedInputStatus = @(& git -C $ignoredLockedInputFixture status --porcelain=v1 --untracked-files=all 2>$null)
     Require ($ignoredLockedInputStatus.Count -eq 0) "ignored locked input fixture must remain clean"
+    $pwshExecutable = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $pwshExecutablePath = if ($null -eq $pwshExecutable) { $null } else { $pwshExecutable.Path }
+    if (-not [string]::IsNullOrWhiteSpace($pwshExecutablePath)) {
+        $nativePreferenceCompatibilityScript = @"
+Remove-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue
+Set-StrictMode -Version Latest
+`$fixtureRoot = $(ConvertTo-Json -InputObject $ignoredLockedInputFixture -Compress)
+. $(ConvertTo-Json -InputObject (Join-Path $ignoredLockedInputFixture "eng/portable-artifact-content.ps1") -Compress)
+try {
+    Test-TrackedRepositoryFile -RepositoryRoot `$fixtureRoot -RelativePath "out/ignored-input.bin" -Context "ignored locked input without native preference"
+    throw "ignored locked input without native preference unexpectedly passed Git inspection."
+}
+catch {
+    `$expectedMessage = "ignored locked input without native preference must reference a tracked repository file."
+    if (`$_.Exception.Message -ne `$expectedMessage) {
+        throw
+    }
+    Write-Output `$_.Exception.Message
+}
+"@
+        $nativePreferenceCompatibilityEncodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($nativePreferenceCompatibilityScript))
+        $nativePreferenceCompatibilityOutput = @(& $pwshExecutablePath -NoLogo -NoProfile -EncodedCommand $nativePreferenceCompatibilityEncodedCommand)
+        $nativePreferenceCompatibilityExitCode = $LASTEXITCODE
+        Require ($nativePreferenceCompatibilityExitCode -eq 0) "ignored locked input without native preference must reject without a StrictMode failure"
+        Require ($nativePreferenceCompatibilityOutput -contains "ignored locked input without native preference must reference a tracked repository file.") "ignored locked input without native preference must report the tracked repository file rejection"
+    }
     Require-PackageFailure `
         -FixtureRoot $ignoredLockedInputFixture `
         -ArtifactId "rescue-x64-portable" `

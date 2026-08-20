@@ -348,7 +348,7 @@ function Test-TrackedRepositoryFile {
     }
 
     $previousErrorActionPreference = $ErrorActionPreference
-    $supportsPSNativeCommandUseErrorActionPreference = $PSVersionTable.PSVersion.Major -ge 7
+    $supportsPSNativeCommandUseErrorActionPreference = Test-Path -LiteralPath 'Variable:PSNativeCommandUseErrorActionPreference'
     $gitInspection = $null
     try {
         $ErrorActionPreference = "Continue"
