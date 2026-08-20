@@ -338,14 +338,24 @@ function Test-TrackedRepositoryFile {
     )
 
     $previousErrorActionPreference = $ErrorActionPreference
+    $supportsPSNativeCommandUseErrorActionPreference = $PSVersionTable.PSVersion.Major -ge 7
+    $gitExitCode = 0
     try {
         $ErrorActionPreference = "Continue"
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $previousPSNativeCommandUseErrorActionPreference = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $true
+        }
         $null = & git -C $RepositoryRoot ls-files --error-unmatch -- $RelativePath 2>$null
+        $gitExitCode = $LASTEXITCODE
     }
     finally {
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $PSNativeCommandUseErrorActionPreference = $previousPSNativeCommandUseErrorActionPreference
+        }
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    if ($LASTEXITCODE -ne 0) {
+    if ($gitExitCode -ne 0) {
         throw "$Context must reference a tracked repository file."
     }
 }

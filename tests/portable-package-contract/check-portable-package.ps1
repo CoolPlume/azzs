@@ -820,14 +820,24 @@ try {
     & git -C $ignoredLockedInputFixture check-ignore -q -- $ignoredLockedInput.relativePath
     Require ($LASTEXITCODE -eq 0) "ignored locked input fixture must keep the locked input ignored"
     $previousErrorActionPreference = $ErrorActionPreference
+    $supportsPSNativeCommandUseErrorActionPreference = $PSVersionTable.PSVersion.Major -ge 7
+    $gitExitCode = 0
     try {
         $ErrorActionPreference = "Continue"
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $previousPSNativeCommandUseErrorActionPreference = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $true
+        }
         $null = & git -C $ignoredLockedInputFixture ls-files --error-unmatch -- $ignoredLockedInput.relativePath 2>$null
+        $gitExitCode = $LASTEXITCODE
     }
     finally {
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $PSNativeCommandUseErrorActionPreference = $previousPSNativeCommandUseErrorActionPreference
+        }
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    Require ($LASTEXITCODE -ne 0) "ignored locked input fixture must keep the locked input untracked"
+    Require ($gitExitCode -ne 0) "ignored locked input fixture must keep the locked input untracked"
     $ignoredLockedInputStatus = @(& git -C $ignoredLockedInputFixture status --porcelain=v1 --untracked-files=all 2>$null)
     Require ($ignoredLockedInputStatus.Count -eq 0) "ignored locked input fixture must remain clean"
     Require-PackageFailure `
