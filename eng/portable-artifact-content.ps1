@@ -337,8 +337,38 @@ function Test-TrackedRepositoryFile {
         [string]$Context
     )
 
-    $null = & git -C $RepositoryRoot ls-files --error-unmatch -- $RelativePath 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    try {
+        $gitExecutablePath = (Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
+    }
+    catch {
+        throw "$Context must reference a tracked repository file."
+    }
+    if ([string]::IsNullOrWhiteSpace($gitExecutablePath)) {
+        throw "$Context must reference a tracked repository file."
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $supportsPSNativeCommandUseErrorActionPreference = Test-Path -LiteralPath 'Variable:PSNativeCommandUseErrorActionPreference'
+    $gitInspection = $null
+    try {
+        $ErrorActionPreference = "Continue"
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $previousPSNativeCommandUseErrorActionPreference = $PSNativeCommandUseErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $true
+        }
+        $null = & $gitExecutablePath -C $RepositoryRoot ls-files --error-unmatch -- $RelativePath 2>$null
+        $gitInspection = [pscustomobject]@{
+            ExitCode = $LASTEXITCODE
+            CommandSucceeded = $?
+        }
+    }
+    finally {
+        if ($supportsPSNativeCommandUseErrorActionPreference) {
+            $PSNativeCommandUseErrorActionPreference = $previousPSNativeCommandUseErrorActionPreference
+        }
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($null -eq $gitInspection -or -not $gitInspection.CommandSucceeded -or $gitInspection.ExitCode -ne 0) {
         throw "$Context must reference a tracked repository file."
     }
 }
@@ -677,6 +707,7 @@ function Test-PortableArtifactInputs {
             throw "$context '$id' is a forbidden debug or build artifact."
         }
         $inputPath = Resolve-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -RelativePath $relativePath -Context "$context '$id' relativePath"
+        Test-TrackedRepositoryFile -RepositoryRoot $RepositoryRoot -RelativePath $relativePath -Context "$context '$id' source file"
         if (-not (Test-Path -LiteralPath $inputPath -PathType Leaf)) {
             throw "$context '$id' file is missing."
         }
