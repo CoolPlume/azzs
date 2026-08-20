@@ -513,10 +513,17 @@ def check_consumers(root: Path, locale: dict[str, Any], identity: dict[str, Any]
     contract.require(package is not None, "WiX package element is missing")
     if package is not None:
         contract.equal(package.attrib.get("Name"), name, "WiX DisplayName drifted")
+        contract.equal(package.attrib.get("Scope"), "perMachine", "WiX installer scope drifted")
+        standard_directory = package.find("w:StandardDirectory", wix_namespace)
         directory = package.find(".//w:Directory[@Id='INSTALLFOLDER']", wix_namespace)
         feature = package.find(".//w:Feature[@Id='MainFeature']", wix_namespace)
         icon = package.find("w:Icon[@Id='ProductIcon']", wix_namespace)
         arp_icon = package.find("w:Property[@Id='ARPPRODUCTICON']", wix_namespace)
+        contract.equal(
+            standard_directory.attrib.get("Id") if standard_directory is not None else None,
+            "ProgramFiles64Folder",
+            "WiX machine installer must target 64-bit Program Files",
+        )
         contract.equal(directory.attrib.get("Name") if directory is not None else None, name, "install directory name drifted")
         contract.equal(feature.attrib.get("Title") if feature is not None else None, name, "WiX feature title drifted")
         contract.equal(
