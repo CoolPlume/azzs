@@ -677,6 +677,7 @@ function Test-PortableArtifactInputs {
             throw "$context '$id' is a forbidden debug or build artifact."
         }
         $inputPath = Resolve-RepositoryRelativePath -RepositoryRoot $RepositoryRoot -RelativePath $relativePath -Context "$context '$id' relativePath"
+        Test-TrackedRepositoryFile -RepositoryRoot $RepositoryRoot -RelativePath $relativePath -Context "$context '$id' source file"
         if (-not (Test-Path -LiteralPath $inputPath -PathType Leaf)) {
             throw "$context '$id' file is missing."
         }
