@@ -819,16 +819,18 @@ try {
     Write-ValidBuildManifest -FixtureRoot $ignoredLockedInputFixture
     & git -C $ignoredLockedInputFixture check-ignore -q -- $ignoredLockedInput.relativePath
     Require ($LASTEXITCODE -eq 0) "ignored locked input fixture must keep the locked input ignored"
+    $gitExecutablePath = (Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
+    Require (-not [string]::IsNullOrWhiteSpace($gitExecutablePath)) "ignored locked input fixture must resolve Git as an application"
     $previousErrorActionPreference = $ErrorActionPreference
     $supportsPSNativeCommandUseErrorActionPreference = $PSVersionTable.PSVersion.Major -ge 7
-    $gitExitCode = 0
+    $gitExitCode = $null
     try {
         $ErrorActionPreference = "Continue"
         if ($supportsPSNativeCommandUseErrorActionPreference) {
             $previousPSNativeCommandUseErrorActionPreference = $PSNativeCommandUseErrorActionPreference
             $PSNativeCommandUseErrorActionPreference = $true
         }
-        $null = & git -C $ignoredLockedInputFixture ls-files --error-unmatch -- $ignoredLockedInput.relativePath 2>$null
+        $null = & $gitExecutablePath -C $ignoredLockedInputFixture ls-files --error-unmatch -- $ignoredLockedInput.relativePath 2>$null
         $gitExitCode = $LASTEXITCODE
     }
     finally {
@@ -837,7 +839,7 @@ try {
         }
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    Require ($gitExitCode -ne 0) "ignored locked input fixture must keep the locked input untracked"
+    Require ($null -ne $gitExitCode -and $gitExitCode -ne 0) "ignored locked input fixture must keep the locked input untracked"
     $ignoredLockedInputStatus = @(& git -C $ignoredLockedInputFixture status --porcelain=v1 --untracked-files=all 2>$null)
     Require ($ignoredLockedInputStatus.Count -eq 0) "ignored locked input fixture must remain clean"
     Require-PackageFailure `

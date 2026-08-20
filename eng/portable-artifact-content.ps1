@@ -337,17 +337,30 @@ function Test-TrackedRepositoryFile {
         [string]$Context
     )
 
+    try {
+        $gitExecutablePath = (Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
+    }
+    catch {
+        throw "$Context must reference a tracked repository file."
+    }
+    if ([string]::IsNullOrWhiteSpace($gitExecutablePath)) {
+        throw "$Context must reference a tracked repository file."
+    }
+
     $previousErrorActionPreference = $ErrorActionPreference
     $supportsPSNativeCommandUseErrorActionPreference = $PSVersionTable.PSVersion.Major -ge 7
-    $gitExitCode = 0
+    $gitInspection = $null
     try {
         $ErrorActionPreference = "Continue"
         if ($supportsPSNativeCommandUseErrorActionPreference) {
             $previousPSNativeCommandUseErrorActionPreference = $PSNativeCommandUseErrorActionPreference
             $PSNativeCommandUseErrorActionPreference = $true
         }
-        $null = & git -C $RepositoryRoot ls-files --error-unmatch -- $RelativePath 2>$null
-        $gitExitCode = $LASTEXITCODE
+        $null = & $gitExecutablePath -C $RepositoryRoot ls-files --error-unmatch -- $RelativePath 2>$null
+        $gitInspection = [pscustomobject]@{
+            ExitCode = $LASTEXITCODE
+            CommandSucceeded = $?
+        }
     }
     finally {
         if ($supportsPSNativeCommandUseErrorActionPreference) {
@@ -355,7 +368,7 @@ function Test-TrackedRepositoryFile {
         }
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    if ($gitExitCode -ne 0) {
+    if ($null -eq $gitInspection -or -not $gitInspection.CommandSucceeded -or $gitInspection.ExitCode -ne 0) {
         throw "$Context must reference a tracked repository file."
     }
 }
