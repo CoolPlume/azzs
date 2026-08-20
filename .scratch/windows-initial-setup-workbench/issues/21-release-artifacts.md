@@ -49,6 +49,8 @@ Evidence freshness: 仅对当前候选提交、锁定工具链与输入和本次
 
 ## Comments
 
+- 2026-08-20：针对精确 integration 提交 `d3f990e1d08b93c8dca7a1a654126a5c63aa68cd`，在全新 D 盘 worktree 完成 x64 Release、standard portable 打包和独立 verifier。构建 manifest 为 `result=succeeded`、`source.dirty=false`，记录 305 个输出；ZIP 为 46,168,410 bytes，SHA-256 `E058862719D4B6340BB47FB56A30297CF76632B1F25DCB5C5BCABD08BA3E45A3`，package manifest 的 `sourceCommit` 与当前 SHA 一致，包内携带两个目录资源。staging 与解压后的同一 ZIP 各完成 12/12 启动采样，进程保持存活、有响应窗口，标题为“Windows 初装工作台”；采样后由脚本主动终止。完整 CTest 仍为 38/42，4 项受当前 medium-integrity 宿主的 ACL、符号链接和隔离设备 reparse fixture 前置阻断，不能写成全绿。ARM64、MSI/WiX、安装生命周期、真实 UAC/设备仍未执行；rescue/large-offline 的 `inputs=[]` 和 `release_state="draft"` 继续 fail-closed，因此本轮只形成 standard x64 portable 候选，未改变事项 21 的 `Resolution: open`。详细记录见 [issue-21-x64-standard-candidate-d3f990e.md](../issue-21-x64-standard-candidate-d3f990e.md)。
+
 - 2026-08-17：构建证据路径增量 `4350339` 让 `eng/build.ps1` 在创建日志、MSBuild 日志、binlog、manifest 和 CTest XML 前复用统一路径链检查，发现父路径或目标为 reparse point 时 fail-closed。仅完成源码、Git diff/diff-check 静态核对，未运行构建、CTest、EXE、调试器或任何 C 盘写入；事项 21 的 `Status`、`Resolution`、`Blocked by` 与八制品门禁保持不变。
 
 - 2026-08-10：维护者确认 Q4 不设项目级信任门槛，Q8 不以真实设备证据阻断公开发行但必须记录“未实机验证”，Q9 允许当前及以后候选资源随包和公开发布，Q10 继续不提供摘要、源码关联或 provenance。Q7 已固定三档八制品矩阵：标准版同时提供便携和安装形态，断网救援版和超大离线版仅提供便携形态。Q11a-b、Q12-Q15 与 ADR-0043 已冻结原生 ARM64 安装链、机器级作用域、Repair、普通卸载、固定构建器差异说明及 x64 到 ARM64 的受控互斥迁移。WiX 仅在实际条款适用性得到书面确认后才可进入样机，未因此默认接受任何 EULA。产品和制品合同已经闭合，本事项改为 `ready-for-agent`；具体构建输入与实际门禁结果仍须在结票前形成，不能把当前状态误读为可发布。
