@@ -36,13 +36,11 @@
             <InfoBar
                 x:Name="StatusInfoBar"
                 Grid.Row="1"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsStatus"
                 IsClosable="False"
                 IsOpen="False" />
             <CommandBar
                 Grid.Row="2"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsCommands"
                 DefaultLabelPosition="Right">
                 <AppBarButton
@@ -70,20 +68,18 @@
             <TextBlock
                 x:Name="DiagnosticPreviewText"
                 Grid.Row="3"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsDiagnosticPreview"
                 TextWrapping="Wrap" />
             <TextBox
                 x:Name="FilterTextBox"
                 x:Uid="HistoryAndLogsFilter"
                 Grid.Row="4"
-                Margin="0,{StaticResource AzzsSpaceStandard},0,0"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsFilter"
                 TextChanged="OnFilterChanged" />
             <StackPanel
                 Grid.Row="5"
-                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
-                AutomationProperties.AutomationId="AzzsHistoryRecords">
+                AutomationProperties.AutomationId="AzzsHistoryRecords"
+                Spacing="{StaticResource AzzsSpaceSmall}">
                 <TextBlock
                     x:Uid="HistoryAndLogsHistoryTitle"
                     AutomationProperties.HeadingLevel="Level2"
@@ -92,17 +88,15 @@
                 <TextBlock
                     x:Name="HistoryEmptyText"
                     x:Uid="HistoryAndLogsHistoryEmpty"
-                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                     TextWrapping="Wrap" />
                 <StackPanel
                     x:Name="HistoryItems"
-                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                     Spacing="{StaticResource AzzsSpaceSmall}" />
             </StackPanel>
             <StackPanel
                 Grid.Row="6"
-                Margin="0,{StaticResource AzzsSpaceLarge},0,0"
-                AutomationProperties.AutomationId="AzzsLogRecords">
+                AutomationProperties.AutomationId="AzzsLogRecords"
+                Spacing="{StaticResource AzzsSpaceSmall}">
                 <TextBlock
                     x:Uid="HistoryAndLogsLogTitle"
                     AutomationProperties.HeadingLevel="Level2"
@@ -110,16 +104,13 @@
                     TextWrapping="Wrap" />
                 <TextBlock
                     x:Name="LogSummaryText"
-                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                     TextWrapping="Wrap" />
                 <TextBlock
                     x:Name="LogEmptyText"
                     x:Uid="HistoryAndLogsLogEmpty"
-                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                     TextWrapping="Wrap" />
                 <StackPanel
                     x:Name="LogItems"
-                    Margin="0,{StaticResource AzzsSpaceSmall},0,0"
                     Spacing="{StaticResource AzzsSpaceSmall}" />
             </StackPanel>
         </Grid>

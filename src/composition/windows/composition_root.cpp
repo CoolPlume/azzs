@@ -2,6 +2,8 @@
 
 #include "composition_root.hpp"
 
+#include "startup_diagnostic_config.hpp"
+
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -76,6 +78,41 @@
 
 namespace azzs::composition::windows {
 namespace {
+
+#if AZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT
+[[nodiscard]] adapters::windows::DeviceDataEnvironmentOptions
+startup_diagnostic_device_data_options() {
+  constexpr auto variable_name =
+      L"AZZS_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT";
+  auto const required = ::GetEnvironmentVariableW(variable_name, nullptr, 0);
+  if (required == 0) {
+    return {.diagnostic_root_utf8 = std::string{}};
+  }
+
+  std::vector<wchar_t> buffer(static_cast<std::size_t>(required) + 1,
+                             L'\0');
+  auto const copied = ::GetEnvironmentVariableW(
+      variable_name, buffer.data(), static_cast<DWORD>(buffer.size()));
+  if (copied == 0 || copied >= buffer.size()) {
+    return {.diagnostic_root_utf8 = std::string{}};
+  }
+
+  auto const utf8_size = ::WideCharToMultiByte(
+      CP_UTF8, WC_ERR_INVALID_CHARS, buffer.data(), static_cast<int>(copied),
+      nullptr, 0, nullptr, nullptr);
+  if (utf8_size <= 0) {
+    return {.diagnostic_root_utf8 = std::string{}};
+  }
+  std::string root(static_cast<std::size_t>(utf8_size), '\0');
+  if (::WideCharToMultiByte(
+          CP_UTF8, WC_ERR_INVALID_CHARS, buffer.data(),
+          static_cast<int>(copied), root.data(), utf8_size, nullptr,
+          nullptr) != utf8_size) {
+    return {.diagnostic_root_utf8 = std::string{}};
+  }
+  return {.diagnostic_root_utf8 = std::move(root)};
+}
+#endif
 
 class ProductionSettingsCatalogImportAuthorization final
     : public application::settings_catalog::SettingsCatalogImportAuthorization {
@@ -1241,8 +1278,13 @@ StartupAssemblyResult assemble_startup() {
       return startup_failure(startup::startup_assembly_failed(
           startup::StartupAssemblyStage::bundled_catalog_resources));
     }
+#if AZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT
+    auto environment = adapters::windows::WindowsDeviceDataEnvironment::prepare(
+        startup_diagnostic_device_data_options());
+#else
     auto environment =
         adapters::windows::WindowsDeviceDataEnvironment::prepare();
+#endif
     if (!environment) {
       return startup_failure(
           startup::startup_assembly_failed(
@@ -1324,7 +1366,12 @@ StartupAssemblyResult assemble_startup() {
     }
 
     try {
-      window->show_initial_page();
+      if (!window->show_initial_page()) {
+        services_shutdown->shutdown_now();
+        return startup_failure(startup::startup_assembly_failed(
+            startup::StartupAssemblyStage::main_window_navigation,
+            diagnostic_availability));
+      }
     } catch (winrt::hresult_error const&) {
       services_shutdown->shutdown_now();
       return startup_failure(startup::startup_assembly_failed(

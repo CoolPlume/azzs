@@ -825,15 +825,77 @@ function Test-PortableBuildManifest {
     $commit = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
     $source = Get-RequiredObjectProperty -Object $manifest -Name "source" -Context "Portable build manifest"
     $target = Get-RequiredObjectProperty -Object $manifest -Name "target" -Context "Portable build manifest"
+    $buildOptions = Get-RequiredObjectProperty -Object $manifest -Name "buildOptions" -Context "Portable build manifest"
     if ((Get-RequiredIntegerProperty -Object $manifest -Name "schemaVersion" -Context "Portable build manifest") -ne 1 -or
         (Get-RequiredStringProperty -Object $manifest -Name "result" -Context "Portable build manifest") -ne "succeeded" -or
         (Get-RequiredBooleanProperty -Object $source -Name "dirty" -Context "Portable build manifest source") -ne $false -or
         (Get-RequiredStringProperty -Object $source -Name "commit" -Context "Portable build manifest source") -ne $commit -or
         (Get-RequiredStringProperty -Object $target -Name "architecture" -Context "Portable build manifest target") -ne $Architecture -or
-        (Get-RequiredStringProperty -Object $target -Name "configuration" -Context "Portable build manifest target") -ne "Release") {
+        (Get-RequiredStringProperty -Object $target -Name "configuration" -Context "Portable build manifest target") -ne "Release" -or
+        (Get-RequiredBooleanProperty -Object $buildOptions -Name "startupDiagnosticDeviceDataRoot" -Context "Portable build manifest buildOptions") -ne $false) {
         throw "Portable packaging requires a clean, succeeded $Architecture Release build manifest for the current commit."
     }
-    $null = (Get-RequiredArrayProperty -Object $manifest -Name "artifacts" -Context "Portable build manifest").Value
+    [object[]]$manifestArtifacts = (Get-RequiredArrayProperty `
+            -Object $manifest `
+            -Name "artifacts" `
+            -Context "Portable build manifest").Value
+    $payloadDirectory = Get-ExistingNonReparsePath `
+        -Path (Join-Path $RepositoryRoot "out/windows/$Architecture/Release") `
+        -Context "Portable build payload"
+    Assert-NoReparsePointsBelow `
+        -Path $payloadDirectory `
+        -Context "Portable build payload" | Out-Null
+    $payloadRoot = $payloadDirectory.TrimEnd("\", "/")
+    $manifestArtifactPaths = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($artifact in $manifestArtifacts) {
+        $artifactPath = Get-RequiredStringProperty `
+            -Object $artifact `
+            -Name "path" `
+            -Context "Portable build manifest artifact"
+        if ([string]::IsNullOrWhiteSpace($artifactPath) -or
+            $artifactPath.Contains("\") -or
+            $artifactPath.StartsWith("/", [StringComparison]::Ordinal) -or
+            $artifactPath -match "^[A-Za-z]:" -or
+            @($artifactPath.Split("/") | Where-Object {
+                    [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".."
+                }).Count -gt 0) {
+            throw "Portable build manifest artifact has an unsafe output path."
+        }
+        $artifactBytes = Get-RequiredIntegerProperty `
+            -Object $artifact `
+            -Name "bytes" `
+            -Context "Portable build manifest artifact '$artifactPath'"
+        $artifactSha256 = Get-RequiredStringProperty `
+            -Object $artifact `
+            -Name "sha256" `
+            -Context "Portable build manifest artifact '$artifactPath'"
+        if ($artifactBytes -lt 0 -or $artifactSha256 -notmatch "^[a-fA-F0-9]{64}$") {
+            throw "Portable build manifest artifact '$artifactPath' has invalid bytes or SHA256."
+        }
+        if (-not $manifestArtifactPaths.Add($artifactPath)) {
+            throw "Portable build manifest contains duplicate output artifact '$artifactPath'."
+        }
+        $artifactFullPath = Get-ExistingNonReparsePath `
+            -Path (Join-Path $payloadRoot ($artifactPath.Replace("/", "\"))) `
+            -Context "Portable build manifest artifact '$artifactPath'"
+        if ((Get-Item -LiteralPath $artifactFullPath).PSIsContainer -or
+            (Get-Item -LiteralPath $artifactFullPath).Length -ne $artifactBytes -or
+            (Get-Sha256Hex -Path $artifactFullPath) -ne $artifactSha256.ToLowerInvariant()) {
+            throw "Portable build manifest artifact '$artifactPath' does not match the current Release output."
+        }
+    }
+    $payloadArtifactPaths = @(
+        Get-ChildItem -LiteralPath $payloadRoot -File -Recurse |
+            ForEach-Object {
+                $_.FullName.Substring($payloadRoot.Length).TrimStart("\", "/").Replace("\", "/")
+            }
+    )
+    if ($payloadArtifactPaths.Count -ne $manifestArtifactPaths.Count -or
+        @($payloadArtifactPaths | Where-Object { -not $manifestArtifactPaths.Contains($_) }).Count -ne 0) {
+        throw "Portable build manifest does not completely describe the current Release output."
+    }
     Test-PortableRepositoryClean -RepositoryRoot $RepositoryRoot
     return $manifest
 }

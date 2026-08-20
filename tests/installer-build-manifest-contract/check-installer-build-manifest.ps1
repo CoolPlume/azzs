@@ -67,7 +67,16 @@ function Write-ValidBuildManifest {
                 architecture = "x64"
                 configuration = "Release"
             }
-            artifacts = @()
+            buildOptions = [ordered]@{
+                startupDiagnosticDeviceDataRoot = $false
+            }
+            artifacts = @(
+                [ordered]@{
+                    path = "Azzs.WinUI.exe"
+                    bytes = (Get-Item -LiteralPath (Join-Path $FixtureRoot "out/windows/x64/Release/Azzs.WinUI.exe")).Length
+                    sha256 = (Get-FileHash -LiteralPath (Join-Path $FixtureRoot "out/windows/x64/Release/Azzs.WinUI.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+                }
+            )
         }) -Path (Get-BuildManifestPath -FixtureRoot $FixtureRoot)
 }
 
@@ -187,6 +196,18 @@ try {
     $dirtyManifest.source.dirty = $true
     Write-JsonFile -Value $dirtyManifest -Path (Get-BuildManifestPath -FixtureRoot $dirtyManifestFixture)
     Require-InstallerFailure -FixtureRoot $dirtyManifestFixture -Scenario "dirty build manifest" -ExpectedMessage "*clean, succeeded x64 Release build manifest for the current commit*"
+
+    $diagnosticBuildFixture = New-FixtureRoot
+    $diagnosticBuildManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $diagnosticBuildFixture) -Raw | ConvertFrom-Json
+    $diagnosticBuildManifest.buildOptions.startupDiagnosticDeviceDataRoot = $true
+    Write-JsonFile -Value $diagnosticBuildManifest -Path (Get-BuildManifestPath -FixtureRoot $diagnosticBuildFixture)
+    Require-InstallerFailure -FixtureRoot $diagnosticBuildFixture -Scenario "startup diagnostic build manifest" -ExpectedMessage "*clean, succeeded x64 Release build manifest for the current commit*"
+
+    $missingDiagnosticBuildOptionFixture = New-FixtureRoot
+    $missingDiagnosticBuildOptionManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $missingDiagnosticBuildOptionFixture) -Raw | ConvertFrom-Json
+    $missingDiagnosticBuildOptionManifest.buildOptions.PSObject.Properties.Remove("startupDiagnosticDeviceDataRoot")
+    Write-JsonFile -Value $missingDiagnosticBuildOptionManifest -Path (Get-BuildManifestPath -FixtureRoot $missingDiagnosticBuildOptionFixture)
+    Require-InstallerFailure -FixtureRoot $missingDiagnosticBuildOptionFixture -Scenario "missing startup diagnostic build option" -ExpectedMessage "*Portable build manifest buildOptions is missing 'startupDiagnosticDeviceDataRoot'.*"
 
     $dirtyWorkspaceFixture = New-FixtureRoot
     Set-Content -LiteralPath (Join-Path $dirtyWorkspaceFixture "untracked-payload-marker.txt") -Value "dirty after build" -Encoding ASCII

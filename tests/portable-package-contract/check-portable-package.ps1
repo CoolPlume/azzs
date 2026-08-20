@@ -201,6 +201,7 @@ function Write-ValidBuildManifest {
                 [ordered]@{
                     path = $_.FullName.Substring($payloadDirectory.Length).TrimStart("\", "/").Replace("\", "/")
                     bytes = $_.Length
+                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
                 }
             }
     )
@@ -214,6 +215,9 @@ function Write-ValidBuildManifest {
             target = [ordered]@{
                 architecture = "x64"
                 configuration = "Release"
+            }
+            buildOptions = [ordered]@{
+                startupDiagnosticDeviceDataRoot = $false
             }
             artifacts = $artifacts
         }) -Path (Get-BuildManifestPath -FixtureRoot $FixtureRoot)
@@ -623,6 +627,25 @@ try {
     Require-EmptyFixedRescueFolders -Root $extractedStandardDirectory -Context "extracted standard ZIP"
     Require-BundledCatalogResources -Root $extractedStandardDirectory -Resources @($standardManifest.bundledCatalogResources) -Context "extracted standard ZIP"
 
+    $sameLengthBuildTamperFixture = New-FixtureRoot
+    $sameLengthBuildTamperPath = Join-Path $sameLengthBuildTamperFixture "out/windows/x64/Release/Microsoft.UI.Xaml.Controls.dll"
+    $sameLengthBuildTamperBytes = [System.IO.File]::ReadAllBytes($sameLengthBuildTamperPath)
+    $sameLengthBuildTamperBytes[0] = $sameLengthBuildTamperBytes[0] -bxor 0x01
+    [System.IO.File]::WriteAllBytes($sameLengthBuildTamperPath, $sameLengthBuildTamperBytes)
+    Require-PackageFailure `
+        -FixtureRoot $sameLengthBuildTamperFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "same-length build output tampering after the completed build manifest"
+
+    $missingBuildDigestFixture = New-FixtureRoot
+    $missingBuildDigestManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $missingBuildDigestFixture) -Raw | ConvertFrom-Json
+    $missingBuildDigestManifest.artifacts[0].PSObject.Properties.Remove("sha256")
+    Write-JsonFile -Value $missingBuildDigestManifest -Path (Get-BuildManifestPath -FixtureRoot $missingBuildDigestFixture)
+    Require-PackageFailure `
+        -FixtureRoot $missingBuildDigestFixture `
+        -ArtifactId "standard-x64-portable" `
+        -Scenario "a build manifest artifact without a SHA256"
+
     $missingManifestInputsFixture = New-FixtureRoot
     Invoke-Package -FixtureRoot $missingManifestInputsFixture -ArtifactId "standard-x64-portable"
     $missingManifestInputsCandidates = Get-CandidatePaths -FixtureRoot $missingManifestInputsFixture -ArtifactId "standard-x64-portable"
@@ -972,6 +995,24 @@ try {
     $buildManifest.source.dirty = $true
     Write-JsonFile -Value $buildManifest -Path (Get-BuildManifestPath -FixtureRoot $buildFixture)
     Require-PackageFailure -FixtureRoot $buildFixture -ArtifactId "standard-x64-portable" -Scenario "dirty build manifest"
+
+    $diagnosticBuildFixture = New-FixtureRoot
+    $diagnosticBuildManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $diagnosticBuildFixture) -Raw | ConvertFrom-Json
+    $diagnosticBuildManifest.buildOptions.startupDiagnosticDeviceDataRoot = $true
+    Write-JsonFile -Value $diagnosticBuildManifest -Path (Get-BuildManifestPath -FixtureRoot $diagnosticBuildFixture)
+    Require-PackageFailure -FixtureRoot $diagnosticBuildFixture -ArtifactId "standard-x64-portable" -Scenario "startup diagnostic build manifest"
+
+    $missingDiagnosticBuildOptionFixture = New-FixtureRoot
+    $missingDiagnosticBuildOptionManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $missingDiagnosticBuildOptionFixture) -Raw | ConvertFrom-Json
+    $missingDiagnosticBuildOptionManifest.buildOptions.PSObject.Properties.Remove("startupDiagnosticDeviceDataRoot")
+    Write-JsonFile -Value $missingDiagnosticBuildOptionManifest -Path (Get-BuildManifestPath -FixtureRoot $missingDiagnosticBuildOptionFixture)
+    Require-PackageFailure -FixtureRoot $missingDiagnosticBuildOptionFixture -ArtifactId "standard-x64-portable" -Scenario "missing startup diagnostic build option"
+
+    $invalidDiagnosticBuildOptionFixture = New-FixtureRoot
+    $invalidDiagnosticBuildOptionManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $invalidDiagnosticBuildOptionFixture) -Raw | ConvertFrom-Json
+    $invalidDiagnosticBuildOptionManifest.buildOptions.startupDiagnosticDeviceDataRoot = "false"
+    Write-JsonFile -Value $invalidDiagnosticBuildOptionManifest -Path (Get-BuildManifestPath -FixtureRoot $invalidDiagnosticBuildOptionFixture)
+    Require-PackageFailure -FixtureRoot $invalidDiagnosticBuildOptionFixture -ArtifactId "standard-x64-portable" -Scenario "startup diagnostic build option with the wrong JSON type"
 
     $scalarBuildArtifactsFixture = New-FixtureRoot
     $scalarBuildManifest = Get-Content -LiteralPath (Get-BuildManifestPath -FixtureRoot $scalarBuildArtifactsFixture) -Raw | ConvertFrom-Json

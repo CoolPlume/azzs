@@ -32,7 +32,7 @@ struct MainWindow : MainWindowT<MainWindow> {
           system_settings,
       std::shared_ptr<azzs::application::AdvancedViewPreferences>
           advanced_view_preferences);
-  void show_initial_page();
+  [[nodiscard]] bool show_initial_page();
   void confirm_started_healthy();
   void OnNavigationSelectionChanged(
       Microsoft::UI::Xaml::Controls::NavigationView const&,
@@ -48,7 +48,10 @@ struct MainWindow : MainWindowT<MainWindow> {
  private:
   [[nodiscard]] std::optional<azzs::application::PageId> page_for_item(
       Microsoft::UI::Xaml::Controls::NavigationViewItem const& item);
-  void navigate_to(azzs::application::PageId page);
+  [[nodiscard]] Microsoft::UI::Xaml::Controls::NavigationViewItem
+  navigation_item_for_page(azzs::application::PageId page);
+  [[nodiscard]] bool navigate_and_commit(azzs::application::PageId page);
+  bool navigate_to(azzs::application::PageId page);
   void refresh_drivers_page();
   void begin_driver_handoff(
       azzs::application::driver_acquisition::DriverEntrypoint entrypoint);
@@ -75,6 +78,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   bool advanced_view_{false};
   bool catalog_close_dialog_open_{false};
   bool allow_window_close_{false};
+  bool restoring_navigation_selection_{false};
   std::optional<azzs::application::PageId> displayed_page_;
 };
 

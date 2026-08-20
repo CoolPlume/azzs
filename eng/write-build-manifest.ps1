@@ -29,6 +29,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$OutputPath,
 
+    [bool]$StartupDiagnosticDeviceDataRootEnabled = $false,
+
     [string]$FailureMessage = ""
 )
 
@@ -87,6 +89,7 @@ if (Test-Path -LiteralPath $payloadDirectory -PathType Container) {
                 [ordered]@{
                     path = $_.FullName.Substring($payloadDirectory.Length).TrimStart("\", "/").Replace("\", "/")
                     bytes = $_.Length
+                    sha256 = Get-Sha256Hex -Path $_.FullName
                 }
             }
     )
@@ -117,6 +120,9 @@ $manifest = [ordered]@{
         configuration = "Release"
         windowsMinimumLoadVersion = "10.0.17763.0"
         windowsDesignTarget = "10.0.19045"
+    }
+    buildOptions = [ordered]@{
+        startupDiagnosticDeviceDataRoot = $StartupDiagnosticDeviceDataRootEnabled
     }
     toolchain = [ordered]@{
         visualStudio = $VisualStudioVersion
