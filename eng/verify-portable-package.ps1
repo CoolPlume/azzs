@@ -262,6 +262,9 @@ $buildArtifacts = (Get-RequiredArrayProperty `
 $buildPayloadMap = [System.Collections.Generic.Dictionary[string, Int64]]::new(
     [System.StringComparer]::OrdinalIgnoreCase
 )
+$buildPayloadHashMap = [System.Collections.Generic.Dictionary[string, string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+)
 foreach ($buildArtifact in $buildArtifacts) {
     $buildArtifactPath = ConvertTo-SafePayloadPath `
         -Value (Get-RequiredStringProperty -Object $buildArtifact -Name "path" -Context "Portable build manifest artifact") `
@@ -275,6 +278,14 @@ foreach ($buildArtifact in $buildArtifacts) {
     $buildPayloadMap.Add(
         $buildArtifactPath,
         (Get-RequiredIntegerProperty -Object $buildArtifact -Name "bytes" -Context "Portable build manifest artifact '$buildArtifactPath'"))
+    $buildArtifactSha256 = Get-RequiredStringProperty `
+        -Object $buildArtifact `
+        -Name "sha256" `
+        -Context "Portable build manifest artifact '$buildArtifactPath'"
+    if ($buildArtifactSha256 -notmatch "^[a-fA-F0-9]{64}$") {
+        throw "Portable build manifest artifact '$buildArtifactPath' has an invalid SHA256."
+    }
+    $buildPayloadHashMap.Add($buildArtifactPath, $buildArtifactSha256.ToLowerInvariant())
 }
 $stagedPayloadMap = ConvertTo-PayloadMap -Payload $stagedPayload -Name "Portable package staging payload"
 foreach ($buildArtifact in $buildPayloadMap.GetEnumerator()) {
@@ -374,6 +385,12 @@ $archivePayloadMap = ConvertTo-PayloadMap -Payload $archivePayload -Name "Portab
 Assert-PayloadMapMatches -Expected $stagedPayloadMap -Actual $archivePayloadMap -ExpectedName "staging payload" -ActualName "Portable package ZIP"
 $stagedPayloadHashMap = ConvertTo-PayloadHashMap -Payload $stagedPayload -Name "Portable package staging payload"
 $archivePayloadHashMap = ConvertTo-PayloadHashMap -Payload $archivePayload -Name "Portable package ZIP payload"
+foreach ($buildArtifact in $buildPayloadHashMap.GetEnumerator()) {
+    if (-not $stagedPayloadHashMap.ContainsKey($buildArtifact.Key) -or
+        $stagedPayloadHashMap[$buildArtifact.Key] -ne $buildArtifact.Value) {
+        throw "Portable package staging payload SHA256 does not match build output '$($buildArtifact.Key)'."
+    }
+}
 Assert-PayloadHashMapMatches -Expected $stagedPayloadHashMap -Actual $archivePayloadHashMap -ExpectedName "staging payload" -ActualName "Portable package ZIP"
 foreach ($resource in $bundledCatalogResources) {
     $resourcePackagePath = [string]$resource.packagePath

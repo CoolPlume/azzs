@@ -83,6 +83,24 @@ project(
   LANGUAGES CXX
 )
 
+option(
+  AZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT
+  "Allow an explicitly enabled diagnostic build to read a device-data root override"
+  OFF
+)
+set(AZZS_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT_ENABLED 0)
+if(AZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT)
+  set(AZZS_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT_ENABLED 1)
+endif()
+set(AZZS_STARTUP_DIAGNOSTIC_CONFIG_DIRECTORY
+    "${CMAKE_CURRENT_SOURCE_DIR}/out/obj/winui/generated")
+file(MAKE_DIRECTORY "${AZZS_STARTUP_DIAGNOSTIC_CONFIG_DIRECTORY}")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/startup_diagnostic_config.hpp.in"
+  "${AZZS_STARTUP_DIAGNOSTIC_CONFIG_DIRECTORY}/startup_diagnostic_config.hpp"
+  @ONLY
+)
+
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")

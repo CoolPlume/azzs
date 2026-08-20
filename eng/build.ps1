@@ -3,7 +3,9 @@ param(
     [ValidateSet("x64", "ARM64")]
     [string]$Architecture = "x64",
 
-    [switch]$SkipCoreSmoke
+    [switch]$SkipCoreSmoke,
+
+    [switch]$EnableStartupDiagnosticDeviceDataRoot
 )
 
 Set-StrictMode -Version Latest
@@ -152,13 +154,15 @@ if (@($windowsSdkProducts).Count -eq 0) {
 }
 
 $writeManifest = Join-Path $PSScriptRoot "write-build-manifest.ps1"
-& $writeManifest -Architecture $Architecture -Result started -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath
+$startupDiagnosticDeviceDataRootEnabled = [bool]$EnableStartupDiagnosticDeviceDataRoot
+& $writeManifest -Architecture $Architecture -Result started -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath -StartupDiagnosticDeviceDataRootEnabled $startupDiagnosticDeviceDataRootEnabled
 
 Push-Location $repositoryRoot
 try {
     $presetArchitecture = $Architecture.ToLowerInvariant()
     $configurePreset = "windows-$presetArchitecture"
     $buildPreset = "$configurePreset-release"
+    $startupDiagnosticDeviceDataRoot = if ($startupDiagnosticDeviceDataRootEnabled) { "ON" } else { "OFF" }
     $coreLibraryDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/lib/Release"
     $winuiVersionedResourceDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/generated/winui"
 
@@ -175,7 +179,8 @@ try {
     Write-Log "Building $Architecture Release core and Windows adapter."
     Invoke-NativeCommand -FilePath $cmakePath -Arguments @(
         "--preset", $configurePreset,
-        "-DCMAKE_GENERATOR_INSTANCE=$visualStudioPath"
+        "-DCMAKE_GENERATOR_INSTANCE=$visualStudioPath",
+        "-DAZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT=$startupDiagnosticDeviceDataRoot"
     )
     Invoke-NativeCommand -FilePath $cmakePath -Arguments @("--build", "--preset", $buildPreset)
 
@@ -213,11 +218,11 @@ try {
         throw "The WinUI build completed without the expected executable: $executablePath"
     }
 
-    & $writeManifest -Architecture $Architecture -Result succeeded -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath
+    & $writeManifest -Architecture $Architecture -Result succeeded -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath -StartupDiagnosticDeviceDataRootEnabled $startupDiagnosticDeviceDataRootEnabled
     Write-Log "Build evidence: $manifestPath"
 } catch {
     $failureMessage = $_.Exception.Message
-    & $writeManifest -Architecture $Architecture -Result failed -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath -FailureMessage $failureMessage
+    & $writeManifest -Architecture $Architecture -Result failed -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath -StartupDiagnosticDeviceDataRootEnabled $startupDiagnosticDeviceDataRootEnabled -FailureMessage $failureMessage
     Write-Log "Build failed: $failureMessage"
     throw
 } finally {

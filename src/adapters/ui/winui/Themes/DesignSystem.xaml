@@ -127,6 +127,7 @@
     <Thickness x:Key="AzzsCommandPadding">16,8</Thickness>
     <Thickness x:Key="AzzsShellStatusMargin">24,16,24,0</Thickness>
     <Thickness x:Key="AzzsStageItemMargin">0,0,8,8</Thickness>
+    <Thickness x:Key="AzzsTopMarginLarge">0,24,0,0</Thickness>
     <Thickness x:Key="AzzsBorderThickness">1</Thickness>
 
     <CornerRadius x:Key="AzzsCornerRadiusSmall">4</CornerRadius>

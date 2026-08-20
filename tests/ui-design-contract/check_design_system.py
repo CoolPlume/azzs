@@ -13,6 +13,7 @@ XAML_NS = "http://schemas.microsoft.com/winfx/2006/xaml/presentation"
 X_NS = "http://schemas.microsoft.com/winfx/2006/xaml"
 MSBUILD_NS = "http://schemas.microsoft.com/developer/msbuild/2003"
 X_KEY = f"{{{X_NS}}}Key"
+X_NAME = f"{{{X_NS}}}Name"
 
 
 class ContractFailure(RuntimeError):
@@ -189,6 +190,7 @@ def verify_resource_dictionary(root: Path) -> None:
         "AzzsSectionPadding",
         "AzzsListRowPadding",
         "AzzsStageItemMargin",
+        "AzzsTopMarginLarge",
         "AzzsTouchTargetMinHeight",
         "AzzsStageMinimumWidth",
         "AzzsWideLayoutMinWidth",
@@ -241,6 +243,15 @@ def verify_resource_dictionary(root: Path) -> None:
     require(required_root_keys <= set(direct_keys),
             "layout, type, icon, motion, and reusable component keys are incomplete")
 
+    thickness_values = {
+        element.attrib[X_KEY]: (element.text or "").strip()
+        for element in theme_root
+        if local_name(element.tag) == "Thickness"
+    }
+    require(
+        thickness_values.get("AzzsTopMarginLarge") == "0,24,0,0",
+        "the local large top margin must preserve the large spacing token")
+
     durations = {
         element.attrib[X_KEY]: (element.text or "").strip()
         for element in theme_root
@@ -288,10 +299,29 @@ def verify_app_and_pages(root: Path) -> None:
     require(controls_index >= 0 and design_index > controls_index,
             "App.xaml must merge the design dictionary after framework resources")
 
+    def page_root_grid(xaml_root: ET.Element) -> ET.Element | None:
+        return next(
+            (element for element in xaml_root.iter()
+             if element.attrib.get(X_NAME) == "PageRoot"),
+            None,
+        )
+
     page_paths = sorted((ui_root / "Pages").glob("*.xaml"))
     require(len(page_paths) == 8, "the shared design contract expects eight pages")
     for page_path in page_paths:
         text = read(page_path)
+        page_root = parse_xml(page_path)
+        page_grid = page_root_grid(page_root)
+        require(page_grid is not None, f"{page_path.name} needs a PageRoot grid")
+        require(local_name(page_grid.tag) == "Grid" and
+                page_grid.attrib.get("Style") ==
+                "{StaticResource AzzsPageRootGridStyle}",
+                f"{page_path.name} PageRoot must be the shared styled Grid")
+        for child in page_grid:
+            margin = child.attrib.get("Margin")
+            require(margin is None or re.fullmatch(r"0(?:,0){0,3}", margin),
+                    f"{page_path.name} PageRoot rows must rely on shared "
+                    f"RowSpacing, not Margin={margin}")
         require("AzzsPageScrollViewerStyle" in text and
                 "AzzsPageRootGridStyle" in text and
                 "AzzsPageTitleTextStyle" in text,
@@ -307,6 +337,92 @@ def verify_app_and_pages(root: Path) -> None:
 
     production_xaml = sorted(ui_root.rglob("*.xaml"))
     resource_path = ui_root / "Themes/DesignSystem.xaml"
+    resource_root = parse_xml(resource_path)
+    resource_types = {
+        element.attrib[X_KEY]: local_name(element.tag)
+        for element in resource_root
+        if element.attrib.get(X_KEY) is not None
+    }
+    metric_resource_types = {
+        "BorderThickness": "Thickness",
+        "CornerRadius": "CornerRadius",
+        "FontSize": "Double",
+        "Width": "Double",
+        "Height": "Double",
+        "Margin": "Thickness",
+        "MaxHeight": "Double",
+        "MaxWidth": "Double",
+        "MinHeight": "Double",
+        "MinWidth": "Double",
+        "Padding": "Thickness",
+        "Spacing": "Double",
+        "RowSpacing": "Double",
+        "ColumnSpacing": "Double",
+        "MinWindowWidth": "Double",
+        "MinWindowHeight": "Double",
+        "MaxWindowWidth": "Double",
+        "MaxWindowHeight": "Double",
+    }
+
+    def verify_metric_resource_type(property_name: str, value: str,
+                                    context: str,
+                                    element: ET.Element | None = None,
+                                    target: str = "") -> None:
+        if "StaticResource" not in value:
+            return
+        match = re.fullmatch(
+            r"\{StaticResource (?P<key>Azzs[A-Za-z0-9]+)\}", value)
+        require(match is not None,
+                f"{context} must use one complete design StaticResource")
+        if property_name not in metric_resource_types:
+            return
+        key = match.group("key")
+        require(key in resource_types,
+                f"{context} references unknown design resource {key}")
+        expected = metric_resource_types.get(property_name)
+        if property_name in {"Width", "Height"}:
+            target_object = target.rsplit(".", 1)[0] if "." in target else ""
+            is_grid_length = (
+                element is not None and
+                local_name(element.tag) in {"ColumnDefinition", "RowDefinition"}
+            ) or target_object.endswith(("Column", "Row"))
+            expected = "GridLength" if is_grid_length else "Double"
+        if expected is None:
+            return
+        require(resource_types[key] == expected,
+                f"{context} requires {expected}, but {key} is "
+                f"{resource_types[key]}")
+
+    def setter_value(element: ET.Element, context: str) -> str:
+        value = element.attrib.get("Value")
+        if value is not None:
+            return value
+        value_nodes = [child for child in element
+                       if local_name(child.tag) == "Setter.Value"]
+        if not value_nodes:
+            return ""
+        require(len(value_nodes) == 1,
+                f"{context} must have one Setter.Value element")
+        children = list(value_nodes[0])
+        require(len(children) == 1 and
+                local_name(children[0].tag) == "StaticResource",
+                f"{context} must use a complete design StaticResource")
+        key = (children[0].attrib.get("ResourceKey") or
+               children[0].attrib.get(X_KEY))
+        require(key is not None,
+                f"{context} StaticResource needs ResourceKey")
+        return f"{{StaticResource {key}}}"
+
+    for setter in resource_root.iter():
+        if local_name(setter.tag) != "Setter":
+            continue
+        target = setter.attrib.get("Property", setter.attrib.get("Target", ""))
+        property_name = target.rsplit(".", 1)[-1].rstrip(")")
+        value = setter_value(setter, f"DesignSystem.xaml setter {target}")
+        verify_metric_resource_type(
+            property_name, value,
+            f"DesignSystem.xaml setter {target}", setter, target)
+
     automation_ids: dict[str, Path] = {}
     for xaml_path in production_xaml:
         xaml_root = parse_xml(xaml_path)
@@ -327,11 +443,17 @@ def verify_app_and_pages(root: Path) -> None:
             "FontSize", "CornerRadius", "Padding", "Margin", "Spacing",
             "RowSpacing", "ColumnSpacing", "MinHeight", "MinWidth",
         }
+        page_grid = page_root_grid(xaml_root)
+        page_root_child_names = {
+            child.attrib.get(X_NAME)
+            for child in (page_grid if page_grid is not None else ())
+            if child.attrib.get(X_NAME) is not None
+        }
 
         def is_semantic_metric(value: str) -> bool:
-            return all(component == "0" or
-                       component.startswith("{StaticResource Azzs")
-                       for component in value.split(","))
+            return (re.fullmatch(r"0(?:,0){0,3}", value) is not None or
+                    re.fullmatch(r"\{StaticResource Azzs[A-Za-z0-9]+\}",
+                                 value) is not None)
 
         for element in xaml_root.iter():
             for attribute, value in element.attrib.items():
@@ -341,6 +463,9 @@ def verify_app_and_pages(root: Path) -> None:
                             value.startswith("{StaticResource Azzs"),
                             f"{xaml_path.name} must not fix {attribute_name} "
                             f"to {value}")
+                verify_metric_resource_type(
+                    attribute_name, value,
+                    f"{xaml_path.name} {attribute_name}", element)
                 if attribute_name not in tokenized_metrics:
                     continue
                 require(is_semantic_metric(value),
@@ -351,9 +476,18 @@ def verify_app_and_pages(root: Path) -> None:
             target = element.attrib.get("Property",
                                         element.attrib.get("Target", ""))
             property_name = target.rsplit(".", 1)[-1].rstrip(")")
+            value = setter_value(element, f"{xaml_path.name} setter {target}")
+            verify_metric_resource_type(
+                property_name, value, f"{xaml_path.name} setter {target}",
+                element, target)
+            target_object = target.rsplit(".", 1)[0] if "." in target else ""
+            if (property_name == "Margin" and
+                    target_object in {"PageRoot", *page_root_child_names}):
+                require(re.fullmatch(r"0(?:,0){0,3}", value) is not None,
+                        f"{xaml_path.name} PageRoot rows must not set "
+                        f"non-zero Margin through a Setter")
             if property_name not in tokenized_metrics:
                 continue
-            value = element.attrib.get("Value", "")
             require(is_semantic_metric(value),
                     f"{xaml_path.name} setter {target} must use a semantic "
                     "resource")
@@ -627,6 +761,25 @@ def verify_motion_and_ownership(root: Path) -> None:
     require("NavigationThemeTransition" not in main_window_cpp and
             "DrillInNavigationTransitionInfo" not in main_window_cpp,
             "top-level navigation must not add a page transition")
+    navigate_calls = re.findall(r"ContentFrame\(\)\.Navigate\(",
+                                main_window_cpp)
+    guarded_navigate_calls = re.findall(
+        r"if\s*\(\s*!ContentFrame\(\)\.Navigate\(", main_window_cpp)
+    require(len(navigate_calls) == 8 and
+            len(guarded_navigate_calls) == len(navigate_calls),
+            "all eight frame navigation calls must handle a false result")
+    require("displayed_page_ = page;\n  return true;" in main_window_cpp,
+            "the displayed page may update only after navigation succeeds")
+    require("navigation_item_for_page" in main_window_cpp and
+            "restoring_navigation_selection_" in main_window_cpp and
+            "auto const previous_page = displayed_page_;" in main_window_cpp,
+            "navigation failure must restore the previous selected page")
+    main_window_header = read(ui_root / "MainWindow.xaml.h")
+    composition_root = read(root / "src/composition/windows/composition_root.cpp")
+    require("[[nodiscard]] bool show_initial_page();" in main_window_header and
+            "if (!window->show_initial_page())" in composition_root and
+            "StartupAssemblyStage::main_window_navigation" in composition_root,
+            "initial navigation failure must remain a typed startup failure")
 
 
 def verify_xaml_project_metadata(root: Path) -> None:

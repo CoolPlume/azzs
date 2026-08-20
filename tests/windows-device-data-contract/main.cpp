@@ -11,6 +11,7 @@
 #include <Sddl.h>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
@@ -32,6 +33,7 @@
 #include "azzs/adapters/windows/windows_state_file_system.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/testing/fixed_clock.hpp"
+#include "azzs/testing/windows_device_data_environment_test_seam.hpp"
 
 namespace {
 
@@ -41,9 +43,10 @@ using azzs::adapters::windows::WindowsDeviceDataEnvironment;
 using azzs::adapters::windows::WindowsStateFileSystem;
 using azzs::adapters::infrastructure::LocalFileLogStorage;
 using azzs::adapters::infrastructure::StructuredExecutionLog;
+using azzs::testing::WindowsDeviceDataIdentityEvidence;
+using azzs::testing::WindowsDeviceDataTestOptions;
 
 using LocalMemory = std::unique_ptr<void, decltype(&::LocalFree)>;
-
 struct SecurityInfo final {
   LocalMemory descriptor{nullptr, &::LocalFree};
   PSID owner{};
@@ -118,6 +121,92 @@ struct SecurityInfo final {
   }
   auto const* user = reinterpret_cast<TOKEN_USER const*>(bytes.data());
   return sid_string(user->User.Sid);
+}
+
+[[nodiscard]] std::string token_integrity_label() {
+  HANDLE raw_token = nullptr;
+  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &raw_token)) {
+    return "unavailable";
+  }
+  std::unique_ptr<void, decltype(&::CloseHandle)> token{raw_token,
+                                                         &::CloseHandle};
+  DWORD required = 0;
+  ::SetLastError(ERROR_SUCCESS);
+  ::GetTokenInformation(token.get(), TokenIntegrityLevel, nullptr, 0,
+                        &required);
+  if (required == 0 || ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+    return "unavailable";
+  }
+  std::vector<std::byte> bytes(required);
+  if (!::GetTokenInformation(token.get(), TokenIntegrityLevel, bytes.data(),
+                             required, &required)) {
+    return "unavailable";
+  }
+  auto const* label =
+      reinterpret_cast<TOKEN_MANDATORY_LABEL const*>(bytes.data());
+  if (!::IsValidSid(label->Label.Sid)) {
+    return "unavailable";
+  }
+  auto const count = *::GetSidSubAuthorityCount(label->Label.Sid);
+  if (count == 0) {
+    return "unavailable";
+  }
+  auto const integrity =
+      *::GetSidSubAuthority(label->Label.Sid, static_cast<DWORD>(count - 1));
+  if (integrity >= SECURITY_MANDATORY_SYSTEM_RID) {
+    return "system";
+  }
+  if (integrity >= SECURITY_MANDATORY_HIGH_RID) {
+    return "high";
+  }
+  if (integrity >= SECURITY_MANDATORY_MEDIUM_RID) {
+    return "medium";
+  }
+  if (integrity >= SECURITY_MANDATORY_LOW_RID) {
+    return "low";
+  }
+  return "untrusted";
+}
+
+[[nodiscard]] std::optional<std::filesystem::path> isolated_contract_path(
+    std::wstring_view name) {
+  auto const required = ::GetEnvironmentVariableW(
+      L"AZZS_WINDOWS_DEVICE_DATA_CONTRACT_ROOT", nullptr, 0);
+  if (required == 0) {
+    return std::nullopt;
+  }
+  std::vector<wchar_t> root_buffer(required);
+  auto const copied = ::GetEnvironmentVariableW(
+      L"AZZS_WINDOWS_DEVICE_DATA_CONTRACT_ROOT", root_buffer.data(),
+      static_cast<DWORD>(root_buffer.size()));
+  if (copied == 0 || copied >= root_buffer.size()) {
+    return std::nullopt;
+  }
+  auto const base = std::filesystem::path{root_buffer.data()};
+  std::error_code error;
+  std::filesystem::create_directories(base, error);
+  if (error) {
+    return std::nullopt;
+  }
+  static std::atomic_uint64_t sequence{0};
+  for (;;) {
+    auto const candidate =
+        base / (std::wstring{name} + L"-" +
+                std::to_wstring(::GetCurrentProcessId()) + L"-" +
+                std::to_wstring(::GetTickCount64()) + L"-" +
+                std::to_wstring(sequence.fetch_add(1)));
+    ::SetLastError(ERROR_SUCCESS);
+    auto const attributes = ::GetFileAttributesW(candidate.c_str());
+    auto const last_error = ::GetLastError();
+    if (attributes == INVALID_FILE_ATTRIBUTES &&
+        (last_error == ERROR_FILE_NOT_FOUND ||
+         last_error == ERROR_PATH_NOT_FOUND)) {
+      return candidate;
+    }
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+      return std::nullopt;
+    }
+  }
 }
 
 [[nodiscard]] std::optional<SecurityInfo> security_info(
@@ -227,16 +316,12 @@ struct SecurityInfo final {
 }
 
 [[nodiscard]] bool verify_layout_acl_and_slots() {
-  wchar_t temp_buffer[MAX_PATH]{};
-  auto const length = ::GetTempPathW(MAX_PATH, temp_buffer);
-  if (length == 0 || length >= MAX_PATH) {
-    return expect(false, "a temporary directory must be available");
+  auto const root = isolated_contract_path(L"layout");
+  if (!root.has_value()) {
+    return expect(false,
+                  "the Windows device data contract root must be available");
   }
-  auto const root = std::filesystem::path{temp_buffer} /
-                    (L"azzs-device-data-contract-" +
-                     std::to_wstring(::GetCurrentProcessId()));
   std::error_code cleanup_error;
-  std::filesystem::remove_all(root, cleanup_error);
 
   auto const current_sid_text = current_user_sid();
   bool passed = expect(current_sid_text.has_value(),
@@ -244,9 +329,12 @@ struct SecurityInfo final {
   if (!current_sid_text.has_value()) {
     return passed;
   }
-  auto first_result = WindowsDeviceDataEnvironment::prepare(
-      DeviceDataEnvironmentOptions{.root_override_utf8 = utf8(root),
-                                   .subject_override = *current_sid_text});
+  auto first_result = azzs::testing::prepare_windows_device_data_for_test(
+      WindowsDeviceDataTestOptions{.root_override_utf8 = utf8(*root),
+                                   .test_identity_evidence =
+                                       WindowsDeviceDataIdentityEvidence{
+                                           .process_sid = *current_sid_text,
+                                           .wts_session_sid = *current_sid_text}});
   passed &= expect(static_cast<bool>(first_result),
                    "an isolated Windows device root must be prepared");
   if (!first_result) {
@@ -254,8 +342,12 @@ struct SecurityInfo final {
   }
 
   constexpr auto administrators_sid_text = "S-1-5-32-544";
-  auto second_result = WindowsDeviceDataEnvironment::prepare(
-      DeviceDataEnvironmentOptions{.root_override_utf8 = utf8(root),
+  auto second_result = azzs::testing::prepare_windows_device_data_for_test(
+      WindowsDeviceDataTestOptions{.root_override_utf8 = utf8(*root),
+                                   .test_identity_evidence =
+                                       WindowsDeviceDataIdentityEvidence{
+                                           .process_sid = *current_sid_text,
+                                           .wts_session_sid = *current_sid_text},
                                    .subject_override =
                                        administrators_sid_text});
   passed &= expect(static_cast<bool>(second_result),
@@ -266,14 +358,14 @@ struct SecurityInfo final {
 
   auto const& environment = *first_result.environment;
   auto const subject_path =
-      root / L"subjects" / std::filesystem::path{environment.subject_id};
+      *root / L"subjects" / std::filesystem::path{environment.subject_id};
   auto const second_subject_path =
-      root / L"subjects" / L"S-1-5-32-544";
+      *root / L"subjects" / L"S-1-5-32-544";
   passed &= expect(
-      environment.uses_test_root && fixed_local_volume(root) &&
-          std::filesystem::is_directory(root / L"device" / L"state") &&
-          std::filesystem::is_directory(root / L"locks") &&
-          std::filesystem::is_directory(root / L"subjects") &&
+      fixed_local_volume(*root) &&
+          std::filesystem::is_directory(*root / L"device" / L"state") &&
+          std::filesystem::is_directory(*root / L"locks") &&
+          std::filesystem::is_directory(*root / L"subjects") &&
           std::filesystem::is_directory(subject_path / L"state") &&
           std::filesystem::is_directory(subject_path / L"logs") &&
           std::filesystem::is_directory(subject_path / L"exports") &&
@@ -302,8 +394,8 @@ struct SecurityInfo final {
     std::array<PSID, 2> const machine_sids{system_buffer,
                                           administrators_buffer};
     for (auto const& path :
-         {root, root / L"device", root / L"device" / L"state",
-          root / L"locks", root / L"subjects"}) {
+         {*root, *root / L"device", *root / L"device" / L"state",
+          *root / L"locks", *root / L"subjects"}) {
       passed &= expect(
           secure_directory_matches(path, administrators_buffer, machine_sids),
           "machine directories must be protected for system and administrators only");
@@ -351,7 +443,7 @@ struct SecurityInfo final {
       "two Windows filesystem adapters must share one validated authority");
   passed &= expect(
       std::filesystem::is_regular_file(
-          root / L"device" / L"state" / L"windows-adapter-contract" /
+          *root / L"device" / L"state" / L"windows-adapter-contract" /
           L"authority.state"),
       "the Windows adapter must persist device state below the injected root");
 
@@ -372,7 +464,7 @@ struct SecurityInfo final {
     std::array<PSID, 2> const machine_sids{system_buffer,
                                           administrators_buffer};
     auto const machine_aggregate =
-        root / L"device" / L"state" / L"windows-adapter-contract";
+        *root / L"device" / L"state" / L"windows-adapter-contract";
     passed &= expect(
         secure_directory_matches(machine_aggregate, administrators_buffer,
                                  machine_sids) &&
@@ -392,7 +484,7 @@ struct SecurityInfo final {
 
     bool observed_lock = false;
     for (auto const& entry :
-         std::filesystem::directory_iterator{root / L"locks"}) {
+         std::filesystem::directory_iterator{*root / L"locks"}) {
       if (entry.path().filename().wstring().starts_with(L"state-") &&
           entry.path().extension() == L".lock") {
         observed_lock = true;
@@ -426,7 +518,7 @@ struct SecurityInfo final {
     auto const execution_log_path = subject_path / L"logs" / L"execution.log";
     auto const diagnostic_path = path_from_utf8(exported.file_name);
     auto const log_lock_path =
-        root / L"locks" /
+        *root / L"locks" /
         std::filesystem::path{L"execution-log-" +
                               std::wstring{current_sid_wide} + L".lock"};
     if (!logged.persisted) {
@@ -452,7 +544,7 @@ struct SecurityInfo final {
         "execution log lock files must retain protected machine file ACLs");
 
     auto const outside_target =
-        root.parent_path() /
+        root->parent_path() /
         (L"azzs-log-reparse-target-" +
          std::to_wstring(::GetCurrentProcessId()) + L".txt");
     auto const transaction_link =
@@ -518,7 +610,7 @@ struct SecurityInfo final {
   auto const slot_key = azzs::domain::StateKey::machine(
       azzs::domain::AggregateId{"windows-slot-contract"});
   auto const slot_directory =
-      root / L"device" / L"state" / L"windows-slot-contract";
+      *root / L"device" / L"state" / L"windows-slot-contract";
   std::array<std::byte, 1> const marker{std::byte{0x2a}};
   std::array slot_contracts{
       std::pair{azzs::application::StateFileSlot::checkpoint_staging,
@@ -572,7 +664,7 @@ struct SecurityInfo final {
       rejected_key, azzs::application::StateFileSlot::candidate,
       replaced_bytes);
   auto const rejected_target =
-      root / L"device" / L"state" / L"windows-replace-rejection-contract" /
+      *root / L"device" / L"state" / L"windows-replace-rejection-contract" /
       L"authority.state";
   std::error_code rejected_target_error;
   auto const rejected_target_created =
@@ -594,13 +686,13 @@ struct SecurityInfo final {
       "replace must reject an invalid target without consuming the source");
   std::filesystem::remove(rejected_target, rejected_target_error);
 
-  std::filesystem::remove_all(root, cleanup_error);
+  std::filesystem::remove_all(*root, cleanup_error);
   return passed;
 }
 
 [[nodiscard]] bool verify_non_local_root_is_rejected() {
-  auto const result = WindowsDeviceDataEnvironment::prepare(
-      DeviceDataEnvironmentOptions{
+  auto const result = azzs::testing::prepare_windows_device_data_for_test(
+      WindowsDeviceDataTestOptions{
           .root_override_utf8 =
               R"(\\127.0.0.1\azzs-unreachable\device-data)",
           .subject_override = "S-1-5-32-544"});
@@ -611,19 +703,38 @@ struct SecurityInfo final {
       "UNC and non-fixed roots must be rejected before storage access");
 }
 
+[[nodiscard]] bool verify_diagnostic_root_guards() {
+  auto const empty = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{.diagnostic_root_utf8 = ""});
+  auto const relative = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{
+          .diagnostic_root_utf8 = "diagnostic-device-data-root"});
+  auto const wrong_drive = WindowsDeviceDataEnvironment::prepare(
+      DeviceDataEnvironmentOptions{
+          .diagnostic_root_utf8 = R"(C:\azzs-diagnostic-contract)"});
+  return expect(!empty &&
+                    empty.error ==
+                        DeviceDataEnvironmentError::unsupported_storage_location,
+                "an empty diagnostic root must fail closed") &&
+         expect(!relative &&
+                    relative.error ==
+                        DeviceDataEnvironmentError::unsupported_storage_location,
+                "a relative diagnostic root must fail closed") &&
+         expect(!wrong_drive &&
+                    wrong_drive.error ==
+                        DeviceDataEnvironmentError::unsupported_storage_location,
+                "a diagnostic root outside drive D: must fail closed");
+}
+
 [[nodiscard]] bool verify_reparse_root_is_rejected() {
-  wchar_t temp_buffer[MAX_PATH]{};
-  auto const length = ::GetTempPathW(MAX_PATH, temp_buffer);
-  if (length == 0 || length >= MAX_PATH) {
-    return expect(false, "a temporary directory must be available");
+  auto const base = isolated_contract_path(L"reparse");
+  if (!base.has_value()) {
+    return expect(false,
+                  "the Windows reparse contract root must be available");
   }
-  auto const base = std::filesystem::path{temp_buffer} /
-                    (L"azzs-reparse-contract-" +
-                     std::to_wstring(::GetCurrentProcessId()));
-  auto const target = base / L"target";
-  auto const link = base / L"device-data";
+  auto const target = *base / L"target";
+  auto const link = *base / L"device-data";
   std::error_code error;
-  std::filesystem::remove_all(base, error);
   std::filesystem::create_directories(target, error);
   if (error) {
     return expect(false, "the reparse test target must be created");
@@ -638,8 +749,8 @@ struct SecurityInfo final {
   bool passed = expect(created != FALSE,
                        "the reparse contract requires a directory symlink");
   if (created) {
-    auto const result = WindowsDeviceDataEnvironment::prepare(
-        DeviceDataEnvironmentOptions{.root_override_utf8 = utf8(link),
+    auto const result = azzs::testing::prepare_windows_device_data_for_test(
+        WindowsDeviceDataTestOptions{.root_override_utf8 = utf8(link),
                                      .subject_override = "S-1-5-32-544"});
     passed &= expect(
         !result &&
@@ -647,34 +758,84 @@ struct SecurityInfo final {
         "a reparse point in the managed root must fail closed");
     ::RemoveDirectoryW(link.c_str());
   }
-  std::filesystem::remove_all(base, error);
+  std::filesystem::remove_all(*base, error);
+  return passed;
+}
+
+[[nodiscard]] bool verify_existing_insecure_root_is_rejected() {
+  auto const base = isolated_contract_path(L"insecure-acl");
+  if (!base.has_value()) {
+    return expect(false,
+                  "the existing ACL contract root must be available");
+  }
+  std::error_code error;
+  std::filesystem::create_directories(*base, error);
+  if (error) {
+    return expect(false, "the existing ACL contract directory must be created");
+  }
+
+  auto const root = *base / L"device-data";
+  PSECURITY_DESCRIPTOR raw_descriptor = nullptr;
+  auto const descriptor_created =
+      ::ConvertStringSecurityDescriptorToSecurityDescriptorW(
+          L"D:P(A;OICI;FA;;;WD)", SDDL_REVISION_1, &raw_descriptor, nullptr);
+  LocalMemory descriptor{raw_descriptor, &::LocalFree};
+  bool passed = expect(
+      descriptor_created != FALSE && raw_descriptor != nullptr,
+      "the insecure ACL descriptor must be prepared");
+  if (descriptor_created != FALSE && raw_descriptor != nullptr) {
+    SECURITY_ATTRIBUTES attributes{
+        .nLength = sizeof(SECURITY_ATTRIBUTES),
+        .lpSecurityDescriptor = raw_descriptor,
+        .bInheritHandle = FALSE,
+    };
+    auto const created = ::CreateDirectoryW(root.c_str(), &attributes);
+    passed &= expect(
+        created != FALSE,
+        "the existing insecure ACL root must be created before preparation");
+  }
+
+  if (passed) {
+    auto const result = azzs::testing::prepare_windows_device_data_for_test(
+        WindowsDeviceDataTestOptions{.root_override_utf8 = utf8(root),
+                                     .subject_override = "S-1-5-32-544"});
+    passed &= expect(
+        !result &&
+            result.error == DeviceDataEnvironmentError::unsafe_storage_path &&
+            result.raw_error == ERROR_INVALID_SECURITY_DESCR,
+        "an existing root with an insecure ACL must fail closed");
+    passed &= expect(
+        std::filesystem::is_directory(root) &&
+            !std::filesystem::exists(root / L"device") &&
+            !std::filesystem::exists(root / L"locks") &&
+            !std::filesystem::exists(root / L"subjects"),
+        "an insecure existing root must not receive managed child directories");
+  }
+
+  std::filesystem::remove_all(*base, error);
   return passed;
 }
 
 [[nodiscard]] bool verify_nested_reparse_is_rejected() {
-  wchar_t temp_buffer[MAX_PATH]{};
-  auto const length = ::GetTempPathW(MAX_PATH, temp_buffer);
-  if (length == 0 || length >= MAX_PATH) {
-    return expect(false, "a temporary directory must be available");
+  auto const base = isolated_contract_path(L"nested-reparse");
+  if (!base.has_value()) {
+    return expect(false,
+                  "the nested reparse contract root must be available");
   }
-  auto const base = std::filesystem::path{temp_buffer} /
-                    (L"azzs-nested-reparse-contract-" +
-                     std::to_wstring(::GetCurrentProcessId()));
-  auto const root = base / L"device-data";
-  auto const target = base / L"target";
+  auto const root = *base / L"device-data";
+  auto const target = *base / L"target";
   std::error_code error;
-  std::filesystem::remove_all(base, error);
   std::filesystem::create_directories(target, error);
   if (error) {
     return expect(false, "the nested reparse target must be created");
   }
-  auto environment = WindowsDeviceDataEnvironment::prepare(
-      DeviceDataEnvironmentOptions{.root_override_utf8 = utf8(root),
+  auto environment = azzs::testing::prepare_windows_device_data_for_test(
+      WindowsDeviceDataTestOptions{.root_override_utf8 = utf8(root),
                                    .subject_override = "S-1-5-32-544"});
   bool passed = expect(static_cast<bool>(environment),
                        "the nested reparse test root must be prepared");
   if (!environment) {
-    std::filesystem::remove_all(base, error);
+    std::filesystem::remove_all(*base, error);
     return passed;
   }
 
@@ -702,28 +863,214 @@ struct SecurityInfo final {
         "state writes must not follow a reparse aggregate introduced after preparation");
     ::RemoveDirectoryW(aggregate_link.c_str());
   }
-  std::filesystem::remove_all(base, error);
+  std::filesystem::remove_all(*base, error);
   return passed;
 }
 
-[[nodiscard]] bool verify_override_guard() {
-  auto const result = WindowsDeviceDataEnvironment::prepare(
-      DeviceDataEnvironmentOptions{.subject_override = "S-1-5-18"});
-  return expect(!result &&
-                    result.error ==
-                        DeviceDataEnvironmentError::invalid_test_override,
-                "a subject override must never affect the production root");
+[[nodiscard]] bool verify_interactive_identity_evidence() {
+  auto const base = isolated_contract_path(L"identity");
+  if (!base.has_value()) {
+    return expect(false,
+                  "the Windows identity contract root must be available");
+  }
+  std::error_code cleanup_error;
+  std::filesystem::create_directories(*base, cleanup_error);
+  if (cleanup_error) {
+    return expect(false, "the isolated identity contract directory must be created");
+  }
+
+  auto const current_sid = current_user_sid();
+  bool passed = expect(current_sid.has_value(),
+                       "the identity fallback contract requires a process SID");
+  if (!current_sid.has_value()) {
+    std::filesystem::remove_all(*base, cleanup_error);
+    return passed;
+  }
+
+  auto const wts_mismatch_root = *base / L"wts-mismatch";
+  auto const wts_mismatch =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .wts_session_sid = "S-1-5-32-544",
+              .desktop_shell_sid = *current_sid,
+          });
+  passed &= expect(
+      !wts_mismatch &&
+          wts_mismatch.error ==
+              DeviceDataEnvironmentError::alternate_credentials_not_supported &&
+          wts_mismatch.raw_error == ERROR_ACCESS_DENIED &&
+          !std::filesystem::exists(wts_mismatch_root),
+      "a different WTS SID must reject before a matching shell fallback is considered");
+
+  auto const wts_matching_root = *base / L"matching-wts";
+  auto const wts_matching =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .wts_session_sid = *current_sid,
+              .desktop_shell_sid = "S-1-5-32-544",
+          });
+  passed &= expect(
+      static_cast<bool>(wts_matching) && wts_matching.subject_id == *current_sid,
+      "a matching WTS SID must be authoritative even when shell evidence differs");
+
+  auto const missing_domain_root = *base / L"missing-domain";
+  auto const missing_domain =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .wts_user_name = "unqualified-account-must-not-be-looked-up",
+              .wts_domain_name = std::string{},
+              .desktop_shell_raw_error = ERROR_NOT_FOUND,
+          });
+  passed &= expect(
+      !missing_domain &&
+          missing_domain.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          missing_domain.raw_error == ERROR_NONE_MAPPED &&
+          !std::filesystem::exists(missing_domain_root),
+      "a WTS username without a domain must not be resolved as an account name");
+
+  auto const domain_rpc_matching =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = *current_sid,
+              .wts_user_name = "wts-user-with-unavailable-domain",
+              .wts_domain_raw_error = RPC_S_SERVER_UNAVAILABLE,
+              .desktop_shell_session_matches = true,
+          });
+  passed &= expect(
+      static_cast<bool>(domain_rpc_matching) &&
+          domain_rpc_matching.subject_id == *current_sid,
+      "a WTS domain RPC failure may use a matching same-session shell SID");
+
+  auto const domain_rpc_unavailable =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .wts_user_name = "wts-user-with-unavailable-domain",
+              .wts_domain_raw_error = RPC_S_SERVER_UNAVAILABLE,
+              .desktop_shell_raw_error = ERROR_NOT_FOUND,
+          });
+  passed &= expect(
+      !domain_rpc_unavailable &&
+          domain_rpc_unavailable.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          domain_rpc_unavailable.raw_error == RPC_S_SERVER_UNAVAILABLE,
+      "a WTS domain RPC error must survive an unavailable shell fallback");
+
+  auto const matching_root = *base / L"matching-shell";
+  auto const matching =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = *current_sid,
+              .wts_raw_error = RPC_S_SERVER_UNAVAILABLE,
+              .desktop_shell_session_matches = true,
+          });
+  passed &= expect(
+      static_cast<bool>(matching) && matching.subject_id == *current_sid,
+      "an unavailable WTS/RPC path may use a matching same-session shell SID");
+
+  auto const non_rpc_wts_failure =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = *current_sid,
+              .wts_raw_error = ERROR_ACCESS_DENIED,
+              .desktop_shell_session_matches = true,
+          });
+  passed &= expect(
+      !non_rpc_wts_failure &&
+          non_rpc_wts_failure.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          non_rpc_wts_failure.raw_error == ERROR_ACCESS_DENIED,
+      "a non-RPC WTS failure must not use a matching shell fallback");
+
+  auto const unmapped_wts_identity =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = *current_sid,
+              .wts_raw_error = ERROR_NONE_MAPPED,
+              .desktop_shell_session_matches = true,
+          });
+  passed &= expect(
+      !unmapped_wts_identity &&
+          unmapped_wts_identity.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          unmapped_wts_identity.raw_error == ERROR_NONE_MAPPED,
+      "an unmapped WTS identity must fail closed despite a matching shell SID");
+
+  auto const mismatched_session_root =
+      *base / L"mismatched-shell-session";
+  auto const mismatched_session =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = *current_sid,
+              .wts_raw_error = RPC_S_SERVER_UNAVAILABLE,
+              .desktop_shell_session_matches = false,
+          });
+  passed &= expect(
+      !mismatched_session &&
+          mismatched_session.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          mismatched_session.raw_error == RPC_S_SERVER_UNAVAILABLE &&
+          !std::filesystem::exists(mismatched_session_root),
+      "a shell from another session must not become the fallback subject");
+
+  auto const alternate_root = *base / L"alternate-shell";
+  auto const alternate =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .desktop_shell_sid = "S-1-5-32-544",
+              .wts_raw_error = RPC_S_SERVER_UNAVAILABLE,
+              .desktop_shell_session_matches = true,
+          });
+  passed &= expect(
+      !alternate &&
+          alternate.error ==
+              DeviceDataEnvironmentError::alternate_credentials_not_supported &&
+          alternate.raw_error == ERROR_ACCESS_DENIED &&
+          !std::filesystem::exists(alternate_root),
+      "a different desktop shell SID must reject alternate administrator credentials");
+
+  auto const unavailable_root = *base / L"missing-shell";
+  auto const unavailable =
+      azzs::testing::resolve_windows_device_data_subject_for_test(
+          WindowsDeviceDataIdentityEvidence{
+              .process_sid = *current_sid,
+              .wts_raw_error = RPC_S_SERVER_UNAVAILABLE,
+              .desktop_shell_raw_error = ERROR_NOT_FOUND,
+          });
+  passed &= expect(
+      !unavailable &&
+          unavailable.error ==
+              DeviceDataEnvironmentError::interactive_subject_unavailable &&
+          unavailable.raw_error == RPC_S_SERVER_UNAVAILABLE &&
+          !std::filesystem::exists(unavailable_root),
+      "the primary WTS/RPC error must survive an unavailable shell fallback");
+
+  std::filesystem::remove_all(*base, cleanup_error);
+  return passed;
 }
 
 }  // namespace
 
 int main() {
+  std::cout << "token integrity: " << token_integrity_label() << '\n';
   bool passed = true;
   passed &= verify_layout_acl_and_slots();
   passed &= verify_non_local_root_is_rejected();
+  passed &= verify_diagnostic_root_guards();
   passed &= verify_reparse_root_is_rejected();
+  passed &= verify_existing_insecure_root_is_rejected();
   passed &= verify_nested_reparse_is_rejected();
-  passed &= verify_override_guard();
+  passed &= verify_interactive_identity_evidence();
   if (!passed) {
     return EXIT_FAILURE;
   }
