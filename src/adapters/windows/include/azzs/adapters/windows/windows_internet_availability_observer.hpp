@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "azzs/application/driver_acquisition.hpp"
+#include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/software_selection.hpp"
 
 namespace azzs::adapters::windows {
@@ -19,7 +20,8 @@ class WindowsInternetAvailabilityQuery {
 
 class WindowsInternetAvailabilityObserver final
     : public application::driver_acquisition::DriverNetworkObserver,
-      public application::software_selection::NetworkObserver {
+      public application::software_selection::NetworkObserver,
+      public application::offline_package_cache::PackageCacheNetworkObserver {
  public:
   WindowsInternetAvailabilityObserver();
   explicit WindowsInternetAvailabilityObserver(
