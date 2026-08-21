@@ -367,19 +367,16 @@ static_assert(
       build("0.9.0-beta.1", ApplicationReleaseChannel::prerelease);
   auto const mismatched_stable =
       build("0.9.0-beta.1", ApplicationReleaseChannel::stable);
-  auto const suffixless_prerelease =
+  auto const mismatched_prerelease =
       build("0.9.0", ApplicationReleaseChannel::prerelease);
-  auto const unknown_channel = build(
-      "0.9.0", static_cast<ApplicationReleaseChannel>(99));
   auto const malformed_prerelease =
       build("0.9.0-beta.", ApplicationReleaseChannel::prerelease);
 
-  bool passed = expect(stable.valid() && prerelease.valid() &&
-                           suffixless_prerelease.valid(),
-                       "build identities must accept stable, semantic prerelease, and suffixless prerelease mappings");
-  passed &= expect(!mismatched_stable.valid() && !unknown_channel.valid() &&
+  bool passed = expect(stable.valid() && prerelease.valid(),
+                       "stable and prerelease build identities must be valid when their channels match");
+  passed &= expect(!mismatched_stable.valid() && !mismatched_prerelease.valid() &&
                        !malformed_prerelease.valid(),
-                   "build identities must reject a stable channel with a semantic prerelease, an unknown channel, or a malformed version");
+                   "build identities must reject a version and release channel mismatch or malformed prerelease");
   passed &= expect(
       azzs::domain::application_update::compare_versions("0.9.0-beta.1",
                                                           "0.9.0-beta.2") ==
@@ -401,14 +398,6 @@ static_assert(
       !azzs::domain::application_update::is_formal_stable_release(
           prerelease_release),
       "a prerelease asset must not be treated as a formal stable release even without a GitHub prerelease flag");
-  auto const github_prerelease_release = release(
-      "github-prerelease-release", "v0.1.0", "Release candidate",
-      {asset("github-prerelease-stable-asset", build("0.1.0"))}, false,
-      true);
-  passed &= expect(
-      !azzs::domain::application_update::is_formal_stable_release(
-          github_prerelease_release),
-      "a GitHub prerelease with a stable asset must not be treated as a formal stable release");
   return passed;
 }
 

@@ -3,23 +3,13 @@
 #include "SoftwareInstallationPage.xaml.h"
 
 #include <algorithm>
-#include <atomic>
-#include <chrono>
-#include <ranges>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #include "DesignSystem/Controls/ReadOnlyPresentationSurface.xaml.h"
 #include "DesignSystem/presentation_contract.hpp"
 #include "DesignSystem/software_selection_presentation.hpp"
-#include "azzs/application/software_catalog_lifecycle.hpp"
 #include "azzs/application/restart_resume.hpp"
-
-#include <winrt/Microsoft.UI.Xaml.Automation.h>
-#include <winrt/Microsoft.UI.Xaml.Controls.h>
-#include <winrt/Microsoft.UI.Xaml.h>
-#include <winrt/Microsoft.Windows.ApplicationModel.Resources.h>
 
 #if __has_include("Pages/SoftwareInstallationPage.g.cpp")
 #include "Pages/SoftwareInstallationPage.g.cpp"
@@ -29,46 +19,6 @@ namespace {
 
 namespace batch = azzs::domain::installation_batch;
 namespace presentation = azzs::ui::presentation;
-
-using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
-using winrt::Microsoft::UI::Xaml::Controls::Border;
-using winrt::Microsoft::UI::Xaml::Controls::CheckBox;
-using winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity;
-using winrt::Microsoft::UI::Xaml::Controls::StackPanel;
-using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
-using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
-
-std::atomic<std::uint64_t> batch_sequence{0};
-
-[[nodiscard]] winrt::hstring resource_string(wchar_t const* key) {
-  return ResourceLoader{}.GetString(key);
-}
-
-[[nodiscard]] winrt::hstring software_name(
-    azzs::domain::software_catalog::RuntimeSoftwareCatalog const& catalog,
-    std::string_view software_id) {
-  auto const found = std::ranges::find_if(
-      catalog.software, [software_id](
-                           azzs::domain::software_catalog::RuntimeSoftware const& item) {
-        return item.definition.id == software_id;
-      });
-  if (found == catalog.software.end() || found->definition.name.empty()) {
-    return winrt::to_hstring(std::string{software_id});
-  }
-  return winrt::to_hstring(found->definition.name);
-}
-
-[[nodiscard]] std::int64_t now_milliseconds() noexcept {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::system_clock::now().time_since_epoch())
-      .count();
-}
-
-[[nodiscard]] std::string next_batch_identity(std::int64_t now) {
-  auto const sequence = batch_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
-  return "installation-batch-" + std::to_string(now) + "-" +
-         std::to_string(sequence);
-}
 
 void add_batch_command(presentation::ComponentProjection& component,
                        std::string id,
@@ -293,92 +243,13 @@ void SoftwareInstallationPage::project(
     azzs::application::software_selection::SoftwareSelectionSnapshot const& snapshot,
     azzs::application::offline_package_cache::OfflinePackageCacheSnapshot const& cache,
     azzs::domain::installation_batch::InstallationBatchSnapshot const& batch) {
+  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   auto const resources = ResourceLoader{};
-  projecting_ = true;
-  struct ProjectionGuard final {
-    bool& value;
-    ~ProjectionGuard() { value = false; }
-  } projection_guard{projecting_};
   LocalTrialInfoBar().IsOpen(
       snapshot.active_catalog.has_value() &&
       snapshot.active_catalog->identity ==
           azzs::application::software_catalog::EffectiveCatalogIdentity::
               local_trial);
-  BasicSoftwareItems().Children().Clear();
-  NormalSoftwareItems().Children().Clear();
-
-  auto const catalog_snapshot =
-      services_ ? services_->software_catalog().snapshot()
-                : azzs::application::software_catalog::SoftwareCatalogLifecycleSnapshot{};
-  if (!catalog_snapshot.current_catalog.has_value()) {
-    set_catalog_status(
-        snapshot.error.empty()
-            ? resource_string(L"SoftwareInstallationNoCurrentCatalog")
-            : winrt::to_hstring(snapshot.error),
-        InfoBarSeverity::Warning);
-  } else {
-    SoftwareCatalogStatusInfoBar().IsOpen(false);
-  }
-
-  auto const add_item = [&](StackPanel target,
-                            azzs::domain::software_selection::SelectionItem const& item) {
-    auto card = Border{};
-    card.BorderThickness({1, 1, 1, 1});
-    card.CornerRadius({4, 4, 4, 4});
-    card.Padding({12, 12, 12, 12});
-    auto content = StackPanel{};
-    content.Spacing(6);
-    auto const name = software_name(*catalog_snapshot.current_catalog, item.software_id);
-    auto check_box = CheckBox{};
-    check_box.Content(winrt::box_value(name));
-    check_box.Tag(winrt::box_value(winrt::to_hstring(item.software_id)));
-    check_box.IsChecked(item.selected);
-    auto const enabled = item.available && !item.requires_reselection &&
-                         snapshot.subject_writable &&
-                         snapshot.mode ==
-                             azzs::application::software_selection::SelectionLifecycleMode::
-                                 ready;
-    check_box.IsEnabled(enabled);
-    AutomationProperties::SetName(check_box, name);
-    check_box.Checked({this, &SoftwareInstallationPage::OnSoftwareSelectionChanged});
-    check_box.Unchecked({this, &SoftwareInstallationPage::OnSoftwareSelectionChanged});
-    content.Children().Append(check_box);
-    if (!enabled) {
-      auto reason = TextBlock{};
-      reason.Text(item.reason.empty()
-                      ? resource_string(L"SoftwareInstallationUnavailableReason")
-                      : winrt::to_hstring(item.reason));
-      reason.TextWrapping(winrt::Microsoft::UI::Xaml::TextWrapping::Wrap);
-      content.Children().Append(reason);
-    }
-    card.Child(content);
-    target.Children().Append(card);
-  };
-
-  if (catalog_snapshot.current_catalog.has_value()) {
-    for (auto const& item : snapshot.items) {
-      if (item.basic) {
-        add_item(BasicSoftwareItems(), item);
-      } else {
-        add_item(NormalSoftwareItems(), item);
-      }
-    }
-  }
-  BasicSoftwareGroup().Visibility(
-      BasicSoftwareItems().Children().Size() == 0
-          ? winrt::Microsoft::UI::Xaml::Visibility::Collapsed
-          : winrt::Microsoft::UI::Xaml::Visibility::Visible);
-  NormalSoftwareGroup().Visibility(
-      NormalSoftwareItems().Children().Size() == 0
-          ? winrt::Microsoft::UI::Xaml::Visibility::Collapsed
-          : winrt::Microsoft::UI::Xaml::Visibility::Visible);
-  auto const selected_count = std::ranges::count_if(
-      snapshot.items, [](auto const& item) { return item.selected; });
-  CreateBatchButton().IsEnabled(catalog_snapshot.current_catalog.has_value() &&
-                                snapshot.mode ==
-                                    azzs::application::software_selection::SelectionLifecycleMode::
-                                        ready &&
-                                selected_count != 0);
   auto text = azzs::ui::presentation::SoftwareSelectionPresentationText{
       .accessible_name = winrt::to_string(
           resources.GetString(L"SoftwareSelectionStatusAccessibleName")),
@@ -438,91 +309,6 @@ void SoftwareInstallationPage::project(
         }
       },
       0, "SoftwareInstallation");
-}
-
-void SoftwareInstallationPage::set_catalog_status(
-    winrt::hstring const& message, InfoBarSeverity severity) {
-  SoftwareCatalogStatusInfoBar().Title(
-      resource_string(L"SoftwareInstallationCatalogStatusTitle"));
-  SoftwareCatalogStatusInfoBar().Message(message);
-  SoftwareCatalogStatusInfoBar().Severity(severity);
-  SoftwareCatalogStatusInfoBar().IsOpen(!message.empty());
-}
-
-void SoftwareInstallationPage::OnSoftwareSelectionChanged(
-    winrt::Windows::Foundation::IInspectable const& sender,
-    Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (projecting_ || !services_) {
-    return;
-  }
-  try {
-    auto const check_box = sender.try_as<CheckBox>();
-    if (!check_box || !check_box.Tag()) {
-      return;
-    }
-    auto const software_id =
-        winrt::to_string(winrt::unbox_value<winrt::hstring>(check_box.Tag()));
-    auto const selected = check_box.IsChecked() && check_box.IsChecked().Value();
-    auto const result = services_->software_selection().select(software_id, selected);
-    refresh();
-    if (!result.succeeded()) {
-      set_catalog_status(
-          result.message.empty()
-              ? resource_string(L"SoftwareInstallationSelectionRejected")
-              : winrt::to_hstring(result.message),
-          InfoBarSeverity::Warning);
-    }
-  } catch (...) {
-    set_catalog_status(resource_string(L"SoftwareInstallationSelectionRejected"),
-                      InfoBarSeverity::Error);
-  }
-}
-
-void SoftwareInstallationPage::OnCreateBatch(
-    winrt::Windows::Foundation::IInspectable const&,
-    Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (!services_) {
-    return;
-  }
-  auto const selection = services_->software_selection().snapshot();
-  auto request =
-      azzs::application::installation_batch::InstallationBatchCreateRequest{};
-  auto const frozen_at = now_milliseconds();
-  request.batch_id = next_batch_identity(frozen_at);
-  request.correlation_id = request.batch_id;
-  request.frozen_at_milliseconds = frozen_at > 0 ? frozen_at : 1;
-  for (auto const& item : selection.items) {
-    if (!item.selected) {
-      continue;
-    }
-    azzs::application::installation_batch::InstallationPackageChoice choice{
-        .software_id = item.software_id};
-    auto const source = std::ranges::find_if(
-        selection.sources, [&](auto const& candidate) {
-          return candidate.software_id == item.software_id &&
-                 candidate.declared_purpose ==
-                     azzs::domain::software_catalog::SourcePurpose::primary;
-        });
-    if (source != selection.sources.end()) {
-      choice.declared_purpose = source->declared_purpose;
-      choice.declared_address = source->declared_address;
-      if (!source->packages.empty()) {
-        choice.package_identity = source->packages.front().candidate.identity;
-      }
-    }
-    request.packages.push_back(std::move(choice));
-  }
-  auto const result = services_->installation_batch_creation().create(request);
-  refresh();
-  if (result.assessment.ready() && result.batch.succeeded()) {
-    set_catalog_status(resource_string(L"SoftwareInstallationBatchCreated"),
-                      InfoBarSeverity::Success);
-  } else {
-    auto const detail = result.assessment.detail.empty()
-                            ? resource_string(L"SoftwareInstallationBatchCreateFailed")
-                            : winrt::to_hstring(result.assessment.detail);
-    set_catalog_status(detail, InfoBarSeverity::Warning);
-  }
 }
 
 void SoftwareInstallationPage::handle_installation_batch_intent(

@@ -1,6 +1,5 @@
 add_library(azzs_installation_batch_runner_application STATIC
   src/installation_batch.cpp
-  src/installation_batch_creation.cpp
 )
 
 add_library(azzs::installation_batch_runner_application ALIAS

@@ -40,4 +40,10 @@ class WindowsDriverHandoffPlatform final
   std::unique_ptr<WindowsRescueFolderExplorer> rescue_folder_explorer_;
 };
 
+class WindowsDriverNetworkObserver final
+    : public application::driver_acquisition::DriverNetworkObserver {
+ public:
+  [[nodiscard]] bool available() const noexcept override;
+};
+
 }  // namespace azzs::adapters::windows

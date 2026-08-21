@@ -142,13 +142,8 @@ bool BuildIdentity::valid() const noexcept {
       architecture == SystemArchitecture::unknown) {
     return false;
   }
-  switch (channel) {
-    case ReleaseChannel::stable:
-      return parsed->prerelease_size == 0;
-    case ReleaseChannel::prerelease:
-      return true;
-  }
-  return false;
+  auto const has_prerelease = parsed->prerelease_size != 0;
+  return (channel == ReleaseChannel::prerelease) == has_prerelease;
 }
 
 bool GithubApplicationAsset::valid() const noexcept {

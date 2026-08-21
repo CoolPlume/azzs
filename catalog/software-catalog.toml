@@ -1,7 +1,7 @@
 schema_version = 1
 catalog_id = "software"
 revision = 1
-release_state = "release"
+release_state = "draft"
 default_locale = "zh-CN"
 
 # 这是软件目录的权威维护文件，工作台直接读取并校验它。
@@ -56,7 +56,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = ["large_offline"]
 notice = ""
-install_profile = "qq-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -90,7 +89,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "可能触发安全软件或反作弊机制；请勿用于联网游戏或账号环境。"
-install_profile = "game-cheats-manager-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -107,7 +105,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "可能触发安全软件或反作弊机制；请勿用于联网游戏或账号环境。"
-install_profile = "cheat-engine-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -124,7 +121,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "请自行确认 Office 版本、账户和商业许可责任；当前候选资源未经项目验证。"
-install_profile = "office-tool-plus-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -141,7 +137,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "请自行确认商业许可责任；当前候选资源未经项目验证。"
-install_profile = "internet-download-manager-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -158,7 +153,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "请自行确认商业许可责任；当前候选资源未经项目验证。"
-install_profile = "the-geometers-sketchpad-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -166,7 +160,7 @@ address = "https://www.dynamicgeometry.com/General_Resources/Sketchpad_About.htm
 
 [[software]]
 id = "java-runtime"
-enabled = true
+enabled = false
 name = "Java"
 tier = "normal"
 category_id = "runtime"
@@ -175,7 +169,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "当前目录只声明 Oracle JDK 25 LTS 分支；安装资源与受控执行能力仍待发布级验证。"
-install_profile = "java-runtime-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -183,7 +176,7 @@ address = "https://www.oracle.com/java/technologies/downloads/"
 
 [[software]]
 id = "dotnet-runtime"
-enabled = true
+enabled = false
 name = ".NET"
 tier = "normal"
 category_id = "runtime"
@@ -192,7 +185,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "当前目录声明 .NET 10 LTS；安装资源与受控执行能力仍待发布级验证。"
-install_profile = "dotnet-runtime-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -200,7 +192,7 @@ address = "https://dotnet.microsoft.com/download/dotnet"
 
 [[software]]
 id = "directx-runtime"
-enabled = true
+enabled = false
 name = "DirectX"
 tier = "normal"
 category_id = "runtime"
@@ -210,7 +202,6 @@ fixed_version = "9.29.1974.1"
 dependencies = []
 bundled_editions = []
 notice = "当前目录仅声明官方 Web Installer；安装资源与受控执行能力仍待发布级验证。"
-install_profile = "directx-runtime-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -218,7 +209,7 @@ address = "https://www.microsoft.com/en-us/download/details.aspx?id=35"
 
 [[software]]
 id = "powershell-7"
-enabled = true
+enabled = false
 name = "PowerShell 7"
 tier = "normal"
 category_id = "runtime"
@@ -227,7 +218,6 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "当前目录声明 PowerShell 7 Windows 稳定发行分支；受控执行能力仍待发布级验证。"
-install_profile = "powershell-7-controlled-v1"
 
 [[software.sources]]
 purpose = "primary"

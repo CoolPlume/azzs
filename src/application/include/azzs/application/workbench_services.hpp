@@ -14,17 +14,12 @@ namespace software_selection {
 class SoftwareSelectionLifecycle;
 }
 
-namespace software_catalog {
-class SoftwareCatalogLifecycle;
-}
-
 namespace offline_package_cache {
 class OfflinePackageCacheService;
 }
 
 namespace installation_batch {
 class InstallationBatchService;
-class InstallationBatchCreationService;
 }
 
 namespace software_optimization_batch {
@@ -92,8 +87,6 @@ class WorkbenchServices {
       noexcept = 0;
   [[nodiscard]] virtual architecture_selection::ArchitectureSelectionLifecycle&
   architecture_selection() noexcept = 0;
-  [[nodiscard]] virtual software_catalog::SoftwareCatalogLifecycle&
-  software_catalog() noexcept = 0;
   [[nodiscard]] virtual software_selection::SoftwareSelectionLifecycle&
   software_selection() noexcept = 0;
   [[nodiscard]] virtual HardwareOverviewService& hardware_overview()
@@ -106,8 +99,6 @@ class WorkbenchServices {
   // its snapshot or submit typed commands through this service.
   [[nodiscard]] virtual installation_batch::InstallationBatchService&
   installation_batches() noexcept = 0;
-  [[nodiscard]] virtual installation_batch::InstallationBatchCreationService&
-  installation_batch_creation() noexcept = 0;
   [[nodiscard]] virtual software_optimization_batch::SoftwareOptimizationBatchService&
   software_optimization_batches() noexcept = 0;
   [[nodiscard]] virtual restart_resume::RestartResumeService&
