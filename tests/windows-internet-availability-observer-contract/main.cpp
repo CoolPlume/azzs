@@ -11,6 +11,7 @@ namespace {
 using azzs::adapters::windows::WindowsInternetAvailabilityObserver;
 using azzs::adapters::windows::WindowsInternetAvailabilityQuery;
 using azzs::application::driver_acquisition::DriverNetworkObserver;
+using azzs::application::offline_package_cache::PackageCacheNetworkObserver;
 using azzs::application::software_selection::NetworkObserver;
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
@@ -57,8 +58,10 @@ class FakeAvailabilityQuery final : public WindowsInternetAvailabilityQuery {
   auto observer = observer_for(FakeAvailabilityQuery::Response::internet_access);
   DriverNetworkObserver const& driver_network = observer;
   NetworkObserver const& selection_network = observer;
-  return expect(driver_network.available() && selection_network.available(),
-                "both observation ports must expose the same availability fact");
+  PackageCacheNetworkObserver const& cache_network = observer;
+  return expect(driver_network.available() && selection_network.available() &&
+                    cache_network.available(),
+                "all observation ports must expose the same availability fact");
 }
 
 [[nodiscard]] bool absent_or_non_internet_profile_is_unavailable() {
