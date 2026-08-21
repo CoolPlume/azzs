@@ -158,6 +158,15 @@
   <data name="SystemSettingsRecoveryRestoreFailed" xml:space="preserve"><value>恢复失败，可重试</value></data>
   <data name="SystemSettingsRecoveryPending" xml:space="preserve"><value>正在保存或恢复，暂时不能删除</value></data>
   <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
+  <data name="SoftwareInstallationCreateBatch.Content" xml:space="preserve"><value>创建安装批次</value></data>
+  <data name="SoftwareInstallationBasicTitle.Text" xml:space="preserve"><value>基础软件</value></data>
+  <data name="SoftwareInstallationNormalTitle.Text" xml:space="preserve"><value>普通软件</value></data>
+  <data name="SoftwareInstallationCatalogStatusTitle" xml:space="preserve"><value>软件安装模块</value></data>
+  <data name="SoftwareInstallationNoCurrentCatalog" xml:space="preserve"><value>当前没有可用的软件目录，软件安装暂不可用。</value></data>
+  <data name="SoftwareInstallationUnavailableReason" xml:space="preserve"><value>该软件当前不可用。</value></data>
+  <data name="SoftwareInstallationSelectionRejected" xml:space="preserve"><value>软件选择未能应用，请检查当前目录和项目状态。</value></data>
+  <data name="SoftwareInstallationBatchCreated" xml:space="preserve"><value>安装批次已创建，尚未开始执行。</value></data>
+  <data name="SoftwareInstallationBatchCreateFailed" xml:space="preserve"><value>安装批次创建失败。</value></data>
   <data name="InstallationBatchStatusAccessibleName" xml:space="preserve"><value>安装批次进度</value></data>
   <data name="InstallationBatchStatusTitle" xml:space="preserve"><value>安装批次进度</value></data>
   <data name="InstallationBatchNoActiveBody" xml:space="preserve"><value>当前没有正在处理的安装批次。</value></data>
