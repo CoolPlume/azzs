@@ -58,17 +58,16 @@ def validate_mapping(version: dict[str, Any], contract: Contract) -> None:
     windows = version.get("windowsVersion")
     wix = version.get("wixVersion")
     contract.require(isinstance(application, str) and bool(APPLICATION_VERSION.fullmatch(application)), "applicationVersion is not a supported semantic version")
-    contract.require(channel in RELEASE_CHANNELS, "releaseChannel must be stable or prerelease")
+    contract.require(isinstance(channel, str) and channel in RELEASE_CHANNELS, "releaseChannel must be stable or prerelease")
     contract.require(isinstance(cmake, str) and bool(NUMERIC_VERSION.fullmatch(cmake)), "cmakeVersion is not a three-part numeric version")
     contract.require(isinstance(windows, str) and bool(WINDOWS_VERSION.fullmatch(windows)), "windowsVersion is not a four-part numeric version")
     contract.require(isinstance(wix, str) and bool(NUMERIC_VERSION.fullmatch(wix)), "wixVersion is not a three-part numeric version")
-    if isinstance(application, str) and channel in RELEASE_CHANNELS:
-        expected_channel = "prerelease" if "-" in application else "stable"
-        contract.equal(channel, expected_channel, "releaseChannel must match the applicationVersion prerelease suffix")
+    if isinstance(application, str) and "-" in application:
+        contract.equal(channel, "prerelease", "a semantic prerelease applicationVersion requires releaseChannel prerelease")
     if isinstance(application, str) and bool(NUMERIC_VERSION.fullmatch(application)):
-        contract.equal(cmake, application, "stable CMake version must derive directly from applicationVersion")
-        contract.equal(wix, application, "stable WiX version must derive directly from applicationVersion")
-        contract.equal(windows, f"{application}.0", "stable Windows version must derive directly from applicationVersion")
+        contract.equal(cmake, application, "numeric CMake version must derive directly from applicationVersion")
+        contract.equal(wix, application, "numeric WiX version must derive directly from applicationVersion")
+        contract.equal(windows, f"{application}.0", "numeric Windows version must derive directly from applicationVersion")
 
 
 def check_consumers(root: Path, version: dict[str, Any], contract: Contract) -> None:
@@ -306,7 +305,7 @@ def validate_powershell_helper(
         )
 
 
-def validate_build_rejects_invalid_windows_version(
+def validate_build_rejects_invalid_version_mappings(
     root: Path,
     powershell_command: str | None,
     version: dict[str, Any],
@@ -317,8 +316,99 @@ def validate_build_rejects_invalid_windows_version(
 
     output_parent = root / "out"
     fixture_root: Path | None = None
-    invalid_version = dict(version)
-    invalid_version["windowsVersion"] = "0.1.0"
+    invalid_mappings = (
+        ("invalid four-part Windows version", {"windowsVersion": "0.1.0"}),
+        ("newline-terminated application version", {"applicationVersion": "0.1.0\n"}),
+        ("newline-terminated Windows version", {"windowsVersion": "0.1.0.0\n"}),
+        ("case-mismatched release channel", {"releaseChannel": "PRErelease"}),
+        ("newline-terminated release channel", {"releaseChannel": "prerelease\n"}),
+        ("non-string release channel", {"releaseChannel": ["prerelease"]}),
+    )
+    for description, changes in invalid_mappings:
+        fixture_root = None
+        invalid_version = dict(version)
+        invalid_version.update(changes)
+        try:
+            output_parent.mkdir(parents=True, exist_ok=True)
+            fixture_root = Path(
+                tempfile.mkdtemp(prefix="release-version-powershell-repo-", dir=output_parent)
+            )
+            (fixture_root / "eng").mkdir()
+            (fixture_root / "release").mkdir()
+            for relative in (
+                "eng/build.ps1",
+                "eng/portable-artifact-content.ps1",
+                "eng/msbuild-arguments.ps1",
+            ):
+                destination = fixture_root / relative
+                shutil.copy2(root / relative, destination)
+            source_path = fixture_root / "release/product-version.json"
+            build_script = fixture_root / "eng/build.ps1"
+            source_path.write_text(
+                json.dumps(invalid_version, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            environment = os.environ.copy()
+            environment["ProgramFiles(x86)"] = str(
+                fixture_root / "missing-program-files-x86"
+            )
+            result = subprocess.run(
+                [
+                    powershell_command,
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-File",
+                    str(build_script),
+                    "-Architecture",
+                    "x64",
+                    "-SkipCoreSmoke",
+                ],
+                cwd=fixture_root,
+                env=environment,
+                capture_output=True,
+                check=False,
+                text=True,
+                errors="replace",
+            )
+            output = result.stdout + result.stderr
+            contract.require(
+                result.returncode != 0,
+                f"build.ps1 accepted {description}; " + powershell_diagnostic(result),
+            )
+            contract.require(
+                "unsupported version mapping" in output.lower(),
+                f"build.ps1 did not reject {description} at its version gate; "
+                + powershell_diagnostic(result),
+            )
+            contract.require(
+                "vswhere.exe was not found" not in output.lower(),
+                f"build.ps1 reached toolchain discovery after rejecting {description}; "
+                + powershell_diagnostic(result),
+            )
+        except OSError as error:
+            contract.require(False, f"build.ps1 invalid-input contract failed: {error}")
+        finally:
+            if fixture_root is not None:
+                shutil.rmtree(fixture_root, ignore_errors=True)
+
+
+def validate_build_accepts_suffixless_prerelease(
+    root: Path, powershell_command: str | None, contract: Contract
+) -> None:
+    if powershell_command is None:
+        return
+
+    output_parent = root / "out"
+    fixture_root: Path | None = None
+    suffixless_prerelease = {
+        "schemaVersion": 1,
+        "applicationVersion": "0.1.0",
+        "releaseChannel": "prerelease",
+        "cmakeVersion": "0.1.0",
+        "windowsVersion": "0.1.0.0",
+        "wixVersion": "0.1.0",
+    }
     try:
         output_parent.mkdir(parents=True, exist_ok=True)
         fixture_root = Path(
@@ -336,8 +426,12 @@ def validate_build_rejects_invalid_windows_version(
         source_path = fixture_root / "release/product-version.json"
         build_script = fixture_root / "eng/build.ps1"
         source_path.write_text(
-            json.dumps(invalid_version, ensure_ascii=False, indent=2) + "\n",
+            json.dumps(suffixless_prerelease, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
+        )
+        environment = os.environ.copy()
+        environment["ProgramFiles(x86)"] = str(
+            fixture_root / "missing-program-files-x86"
         )
         result = subprocess.run(
             [
@@ -352,7 +446,7 @@ def validate_build_rejects_invalid_windows_version(
                 "-SkipCoreSmoke",
             ],
             cwd=fixture_root,
-            env=os.environ.copy(),
+            env=environment,
             capture_output=True,
             check=False,
             text=True,
@@ -361,21 +455,22 @@ def validate_build_rejects_invalid_windows_version(
         output = result.stdout + result.stderr
         contract.require(
             result.returncode != 0,
-            "build.ps1 accepted an invalid four-part Windows version input; "
+            "build.ps1 unexpectedly completed with a suffixless prerelease version; "
             + powershell_diagnostic(result),
         )
         contract.require(
-            "unsupported version mapping" in output.lower(),
-            "build.ps1 did not reject invalid Windows version input at its version gate; "
+            "vswhere.exe was not found" in output.lower(),
+            "build.ps1 did not pass the suffixless prerelease version gate before the controlled toolchain stop; "
             + powershell_diagnostic(result),
         )
         contract.require(
-            "msbuild.exe" not in output.lower(),
-            "build.ps1 reached MSBuild after rejecting an invalid Windows version input; "
+            "prerelease application version requires" not in output.lower()
+            and "unsupported version mapping" not in output.lower(),
+            "build.ps1 rejected a suffixless prerelease version at its version gate; "
             + powershell_diagnostic(result),
         )
     except OSError as error:
-        contract.require(False, f"build.ps1 invalid-input contract failed: {error}")
+        contract.require(False, f"build.ps1 suffixless-prerelease contract failed: {error}")
     finally:
         if fixture_root is not None:
             shutil.rmtree(fixture_root, ignore_errors=True)
@@ -639,6 +734,14 @@ def mutation_contract(root: Path, cmake_command: str, contract: Contract) -> Non
             "windowsVersion": "7.13.17.29",
             "wixVersion": "7.13.17",
         },
+        {
+            "schemaVersion": 1,
+            "applicationVersion": "7.13.17",
+            "releaseChannel": "prerelease",
+            "cmakeVersion": "7.13.17",
+            "windowsVersion": "7.13.17.0",
+            "wixVersion": "7.13.17",
+        },
     ):
         validate_mapping(version, contract)
         validate_mutated_cmake_consumers(root, cmake_command, version, contract)
@@ -680,9 +783,45 @@ def main() -> int:
         "explicit prerelease version mappings must remain supported: "
         + "; ".join(beta_mapping_contract.failures),
     )
+    stable_semantic_prerelease_mapping_contract = Contract()
+    validate_mapping(
+        {
+            "schemaVersion": 1,
+            "applicationVersion": "0.9.0-beta.1",
+            "releaseChannel": "stable",
+            "cmakeVersion": "0.9.0",
+            "windowsVersion": "0.9.0.42",
+            "wixVersion": "0.9.0",
+        },
+        stable_semantic_prerelease_mapping_contract,
+    )
+    contract.require(
+        bool(stable_semantic_prerelease_mapping_contract.failures),
+        "a stable channel with a semantic prerelease applicationVersion must be rejected",
+    )
+    suffixless_prerelease_mapping_contract = Contract()
+    validate_mapping(
+        {
+            "schemaVersion": 1,
+            "applicationVersion": "0.1.0",
+            "releaseChannel": "prerelease",
+            "cmakeVersion": "0.1.0",
+            "windowsVersion": "0.1.0.0",
+            "wixVersion": "0.1.0",
+        },
+        suffixless_prerelease_mapping_contract,
+    )
+    contract.require(
+        not suffixless_prerelease_mapping_contract.failures,
+        "suffixless prerelease version mappings must remain supported: "
+        + "; ".join(suffixless_prerelease_mapping_contract.failures),
+    )
     check_consumers(root, version, contract)
-    validate_build_rejects_invalid_windows_version(
+    validate_build_rejects_invalid_version_mappings(
         root, powershell_executable(), version, contract
+    )
+    validate_build_accepts_suffixless_prerelease(
+        root, powershell_executable(), contract
     )
     msbuild_contract_skipped = validate_msbuild_windows_version_argument(
         root,
