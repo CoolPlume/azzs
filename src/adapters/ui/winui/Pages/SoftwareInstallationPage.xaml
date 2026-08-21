@@ -24,6 +24,10 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock
                 x:Uid="SoftwareInstallationPageTitle"
@@ -41,15 +45,57 @@
                 IsOpen="False"
                 Severity="Warning"
                 Style="{StaticResource AzzsWarningStatusBandStyle}" />
+            <InfoBar
+                x:Name="SoftwareCatalogStatusInfoBar"
+                Grid.Row="2"
+                AutomationProperties.AutomationId="AzzsSoftwareInstallationCatalogStatus"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False"
+                Style="{StaticResource AzzsStatusBandStyle}" />
+            <StackPanel
+                Grid.Row="3"
+                Orientation="Horizontal"
+                Spacing="{StaticResource AzzsSpaceSmall}">
+                <Button
+                    x:Name="CreateBatchButton"
+                    x:Uid="SoftwareInstallationCreateBatch"
+                    AutomationProperties.AutomationId="AzzsSoftwareInstallationCreateBatch"
+                    Click="OnCreateBatch" />
+            </StackPanel>
+            <StackPanel
+                x:Name="BasicSoftwareGroup"
+                Grid.Row="4"
+                Spacing="{StaticResource AzzsSpaceSmall}"
+                AutomationProperties.AutomationId="AzzsSoftwareInstallationBasic">
+                <TextBlock
+                    x:Uid="SoftwareInstallationBasicTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <StackPanel x:Name="BasicSoftwareItems" Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
+            <StackPanel
+                x:Name="NormalSoftwareGroup"
+                Grid.Row="5"
+                Spacing="{StaticResource AzzsSpaceSmall}"
+                AutomationProperties.AutomationId="AzzsSoftwareInstallationNormal">
+                <TextBlock
+                    x:Uid="SoftwareInstallationNormalTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <StackPanel x:Name="NormalSoftwareItems" Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
             <controls:ReadOnlyPresentationSurface
                 x:Name="SoftwareSelectionStatus"
-                Grid.Row="2" />
+                Grid.Row="6" />
             <controls:ReadOnlyPresentationSurface
                 x:Name="OfflinePackageCacheStatus"
-                Grid.Row="3" />
+                Grid.Row="7" />
             <controls:ReadOnlyPresentationSurface
                 x:Name="InstallationBatchStatus"
-                Grid.Row="4" />
+                Grid.Row="8" />
         </Grid>
     </ScrollViewer>
 </Page>
