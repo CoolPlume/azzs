@@ -49,6 +49,8 @@ Evidence freshness: 仅对当前候选提交、锁定工具链与输入和本次
 
 ## Comments
 
+- 2026-08-21：ADR-0048 为 `v0.1.0` 增设单 `standard-x64-portable` Beta 的限定例外。该 Beta 由事项 38 与 40 追踪，既不满足也不改变本事项的八制品、ARM64、WiX/MSI、安装生命周期或真实验证门禁；本事项保持 `Resolution: open`。
+
 - 2026-08-20：针对精确 integration 提交 `d3f990e1d08b93c8dca7a1a654126a5c63aa68cd`，在全新 D 盘 worktree 完成 x64 Release、standard portable 打包和独立 verifier。构建 manifest 为 `result=succeeded`、`source.dirty=false`，记录 305 个输出；ZIP 为 46,168,410 bytes，SHA-256 `E058862719D4B6340BB47FB56A30297CF76632B1F25DCB5C5BCABD08BA3E45A3`，package manifest 的 `sourceCommit` 与当前 SHA 一致，包内携带两个目录资源。staging 与解压后的同一 ZIP 各完成 12/12 启动采样，进程保持存活、有响应窗口，标题为“Windows 初装工作台”；采样后由脚本主动终止。完整 CTest 仍为 38/42，4 项受当前 medium-integrity 宿主的 ACL、符号链接和隔离设备 reparse fixture 前置阻断，不能写成全绿。ARM64、MSI/WiX、安装生命周期、真实 UAC/设备仍未执行；rescue/large-offline 的 `inputs=[]` 和 `release_state="draft"` 继续 fail-closed，因此本轮只形成 standard x64 portable 候选，未改变事项 21 的 `Resolution: open`。详细记录见 [issue-21-x64-standard-candidate-d3f990e.md](../issue-21-x64-standard-candidate-d3f990e.md)。
 
 - 2026-08-17：构建证据路径增量 `4350339` 让 `eng/build.ps1` 在创建日志、MSBuild 日志、binlog、manifest 和 CTest XML 前复用统一路径链检查，发现父路径或目标为 reparse point 时 fail-closed。仅完成源码、Git diff/diff-check 静态核对，未运行构建、CTest、EXE、调试器或任何 C 盘写入；事项 21 的 `Status`、`Resolution`、`Blocked by` 与八制品门禁保持不变。
