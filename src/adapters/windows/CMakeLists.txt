@@ -68,6 +68,7 @@ if(WIN32)
     src/windows_emergency_withdrawal_notice_source.cpp
     src/windows_external_address_launcher.cpp
     src/windows_hardware_observer.cpp
+    src/windows_internet_availability_observer.cpp
     src/windows_installation_batch_adapters.cpp
     src/windows_lease_token_source.cpp
     src/windows_platform_info.cpp
@@ -114,6 +115,7 @@ azzs_project_target(
     rpcrt4
     shell32
     user32
+    windowsapp
     wbemuuid
     winhttp
     wtsapi32
