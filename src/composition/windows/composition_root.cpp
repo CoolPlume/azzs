@@ -36,7 +36,6 @@
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_external_address_launcher.hpp"
 #include "azzs/adapters/windows/windows_hardware_observer.hpp"
-#include "azzs/adapters/windows/windows_internet_availability_observer.hpp"
 #include "azzs/adapters/windows/windows_installation_batch_adapters.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
@@ -59,7 +58,6 @@
 #include "azzs/application/hardware_overview.hpp"
 #include "azzs/application/history_and_logs.hpp"
 #include "azzs/application/installation_batch.hpp"
-#include "azzs/application/installation_batch_creation.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 #include "azzs/application/operation_occupancy.hpp"
 #include "azzs/application/restart_resume.hpp"
@@ -171,8 +169,9 @@ class UnavailableControlledSourceResolver final
   }
 };
 
-class OfflinePackageCacheNetworkObserver final
-    : public application::offline_package_cache::PackageCacheNetworkObserver {
+class OfflineNetworkObserver final
+    : public application::software_selection::NetworkObserver,
+      public application::offline_package_cache::PackageCacheNetworkObserver {
  public:
   [[nodiscard]] bool available() const noexcept override { return false; }
 };
@@ -689,9 +688,9 @@ class WindowsWorkbenchServices final
         emergency_preflight_correlation_(log_.begin_correlation()),
         debug_mode_preferences_(std::move(debug_mode_preferences)),
         driver_handoff_platform_{},
-        internet_availability_{},
+        driver_network_{},
         driver_acquisition_(states_, hardware_overview_, driver_handoff_platform_,
-                            internet_availability_, log_, restart_resume_),
+                            driver_network_, log_, restart_resume_),
         emergency_notice_source_(),
         emergency_withdrawals_(
             states_, clock_, emergency_notice_source_,
@@ -746,22 +745,19 @@ class WindowsWorkbenchServices final
                 .create_if_missing = true}}),
         cache_downloader_{},
         live_offline_package_cache_(
-            cache_storage_, cache_downloader_, offline_package_cache_network_,
-            clock_, cache_root_,
+            cache_storage_, cache_downloader_, network_, clock_, cache_root_,
             cache_retention_preferences_
                 ? cache_retention_preferences_->retention()
                 : domain::offline_package_cache::CacheRetentionPolicy::
                       retain_seven_days),
         batch_offline_package_cache_(
-            cache_storage_, cache_downloader_, offline_package_cache_network_,
-            clock_, cache_root_,
+            cache_storage_, cache_downloader_, network_, clock_, cache_root_,
             cache_retention_preferences_
                 ? cache_retention_preferences_->retention()
                 : domain::offline_package_cache::CacheRetentionPolicy::
                       retain_seven_days),
         software_selection_(states_, clock_, log_, architecture_selection_,
-                            source_resolver_, internet_availability_,
-                            presence_detector_,
+                            source_resolver_, network_, presence_detector_,
                             external_launcher_, state_subject_),
         software_optimization_catalog_(
             states_, log_, occupancy_, optimization_catalog_file_,
@@ -957,11 +953,6 @@ class WindowsWorkbenchServices final
     return software_selection_;
   }
 
-  [[nodiscard]] application::software_catalog::SoftwareCatalogLifecycle&
-  software_catalog() noexcept override {
-    return software_catalog_;
-  }
-
   void shutdown() noexcept {
     try {
       std::call_once(shutdown_started_, [this] {
@@ -992,11 +983,6 @@ class WindowsWorkbenchServices final
   [[nodiscard]] application::installation_batch::InstallationBatchService&
   installation_batches() noexcept override {
     return installation_batches_;
-  }
-
-  [[nodiscard]] application::installation_batch::InstallationBatchCreationService&
-  installation_batch_creation() noexcept override {
-    return installation_batch_creation_;
   }
 
   [[nodiscard]] application::software_optimization_batch::
@@ -1079,7 +1065,7 @@ class WindowsWorkbenchServices final
   std::shared_ptr<application::DebugModePreferenceStore>
       debug_mode_preferences_;
   adapters::windows::WindowsDriverHandoffPlatform driver_handoff_platform_;
-  adapters::windows::WindowsInternetAvailabilityObserver internet_availability_;
+  adapters::windows::WindowsDriverNetworkObserver driver_network_;
   application::driver_acquisition::DriverAcquisitionService driver_acquisition_;
   std::once_flag emergency_preflight_started_;
   std::once_flag shutdown_started_;
@@ -1149,7 +1135,7 @@ class WindowsWorkbenchServices final
       domain::software_catalog::initial_software_catalog_policy(),
       *debug_mode_catalog_editor_, state_subject_};
   UnavailableControlledSourceResolver source_resolver_;
-  OfflinePackageCacheNetworkObserver offline_package_cache_network_;
+  OfflineNetworkObserver network_;
   application::offline_package_cache::ControlledCacheRoot cache_root_;
   adapters::infrastructure::LocalPackageCacheStorage cache_storage_;
   adapters::infrastructure::UnavailableControlledPackageDownloader
@@ -1194,20 +1180,10 @@ class WindowsWorkbenchServices final
       batch_offline_package_cache_};
   adapters::windows::WindowsInstallationResultVerifier batch_verifier_;
   adapters::windows::WindowsInstallationFactSink batch_facts_{log_};
-  application::installation_batch::FrozenBatchAssetRegistry batch_assets_;
-  application::installation_batch::LiveInstallationBatchPlanningState
-      batch_planning_state_{software_catalog_, software_selection_,
-                            batch_offline_package_cache_};
-  application::installation_batch::InitialControlledInstallProfileCatalog
-      controlled_profiles_;
   application::installation_batch::InstallationBatchService installation_batches_{
       states_, occupancy_, log_, batch_download_, batch_executor_, batch_readiness_,
-      batch_verifier_, batch_facts_, batch_assets_,
+      batch_verifier_, batch_facts_, software_catalog_, software_selection_,
       &restart_resume_};
-  application::installation_batch::InstallationBatchCreationService
-      installation_batch_creation_{installation_batches_, batch_planning_state_,
-                                  batch_readiness_, controlled_profiles_,
-                                  batch_assets_};
   std::shared_ptr<application::DebugLogPolicyProvider const>
       debug_log_policy_provider_;
   application::DebugLogPolicyReader debug_log_policy_;

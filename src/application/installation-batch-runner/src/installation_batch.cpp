@@ -759,9 +759,6 @@ class InstallationBatchService::Impl final {
     active_ = std::move(decoded->active);
     history_ = std::move(decoded->history);
     revision_ = read.snapshot->revision;
-    if (active_.has_value() && admission_ != nullptr) {
-      admission_->observe_restored(active_->plan);
-    }
     writable_ = true;
     error_.clear();
     auto const was_waiting_restart =
