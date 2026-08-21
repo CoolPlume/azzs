@@ -274,6 +274,11 @@ class FrozenBatchPlanAdmissionPort {
       batch_domain::FrozenBatchPlan const& plan) const = 0;
   [[nodiscard]] virtual FrozenBatchPlanAdmission admit_retry(
       batch_domain::FrozenBatchPlan const& plan) const = 0;
+  // The batch service owns durable state. An admission owner may rebuild its
+  // opaque frozen-asset registry from the durable frozen plan during a local
+  // restore, without consulting live catalog or selection state. Persistence
+  // may redact private source/package fields at that boundary.
+  virtual void observe_restored(batch_domain::FrozenBatchPlan const&) const noexcept {}
 };
 
 enum class InstallationBatchActionCode {
