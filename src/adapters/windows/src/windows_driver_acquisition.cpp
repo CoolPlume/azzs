@@ -10,8 +10,6 @@
 #include <shellapi.h>
 #include <shlobj_core.h>
 
-#include <winrt/Windows.Networking.Connectivity.h>
-
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -305,19 +303,6 @@ bool WindowsDriverHandoffPlatform::open_rescue_folder(RescueToolTarget target,
     return false;
   }
   return rescue_folder_explorer_->open_folder(directory->path, error);
-}
-
-bool WindowsDriverNetworkObserver::available() const noexcept {
-  try {
-    auto const profile =
-        winrt::Windows::Networking::Connectivity::NetworkInformation::
-            GetInternetConnectionProfile();
-    return profile && profile.GetNetworkConnectivityLevel() ==
-                          winrt::Windows::Networking::Connectivity::
-                              NetworkConnectivityLevel::InternetAccess;
-  } catch (...) {
-    return false;
-  }
 }
 
 }  // namespace azzs::adapters::windows
