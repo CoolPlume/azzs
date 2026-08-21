@@ -36,6 +36,7 @@
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_external_address_launcher.hpp"
 #include "azzs/adapters/windows/windows_hardware_observer.hpp"
+#include "azzs/adapters/windows/windows_internet_availability_observer.hpp"
 #include "azzs/adapters/windows/windows_installation_batch_adapters.hpp"
 #include "azzs/adapters/windows/windows_lease_token_source.hpp"
 #include "azzs/adapters/windows/windows_platform_info.hpp"
@@ -169,9 +170,8 @@ class UnavailableControlledSourceResolver final
   }
 };
 
-class OfflineNetworkObserver final
-    : public application::software_selection::NetworkObserver,
-      public application::offline_package_cache::PackageCacheNetworkObserver {
+class OfflinePackageCacheNetworkObserver final
+    : public application::offline_package_cache::PackageCacheNetworkObserver {
  public:
   [[nodiscard]] bool available() const noexcept override { return false; }
 };
@@ -688,9 +688,9 @@ class WindowsWorkbenchServices final
         emergency_preflight_correlation_(log_.begin_correlation()),
         debug_mode_preferences_(std::move(debug_mode_preferences)),
         driver_handoff_platform_{},
-        driver_network_{},
+        internet_availability_{},
         driver_acquisition_(states_, hardware_overview_, driver_handoff_platform_,
-                            driver_network_, log_, restart_resume_),
+                            internet_availability_, log_, restart_resume_),
         emergency_notice_source_(),
         emergency_withdrawals_(
             states_, clock_, emergency_notice_source_,
@@ -745,19 +745,22 @@ class WindowsWorkbenchServices final
                 .create_if_missing = true}}),
         cache_downloader_{},
         live_offline_package_cache_(
-            cache_storage_, cache_downloader_, network_, clock_, cache_root_,
+            cache_storage_, cache_downloader_, offline_package_cache_network_,
+            clock_, cache_root_,
             cache_retention_preferences_
                 ? cache_retention_preferences_->retention()
                 : domain::offline_package_cache::CacheRetentionPolicy::
                       retain_seven_days),
         batch_offline_package_cache_(
-            cache_storage_, cache_downloader_, network_, clock_, cache_root_,
+            cache_storage_, cache_downloader_, offline_package_cache_network_,
+            clock_, cache_root_,
             cache_retention_preferences_
                 ? cache_retention_preferences_->retention()
                 : domain::offline_package_cache::CacheRetentionPolicy::
                       retain_seven_days),
         software_selection_(states_, clock_, log_, architecture_selection_,
-                            source_resolver_, network_, presence_detector_,
+                            source_resolver_, internet_availability_,
+                            presence_detector_,
                             external_launcher_, state_subject_),
         software_optimization_catalog_(
             states_, log_, occupancy_, optimization_catalog_file_,
@@ -1065,7 +1068,7 @@ class WindowsWorkbenchServices final
   std::shared_ptr<application::DebugModePreferenceStore>
       debug_mode_preferences_;
   adapters::windows::WindowsDriverHandoffPlatform driver_handoff_platform_;
-  adapters::windows::WindowsDriverNetworkObserver driver_network_;
+  adapters::windows::WindowsInternetAvailabilityObserver internet_availability_;
   application::driver_acquisition::DriverAcquisitionService driver_acquisition_;
   std::once_flag emergency_preflight_started_;
   std::once_flag shutdown_started_;
@@ -1135,7 +1138,7 @@ class WindowsWorkbenchServices final
       domain::software_catalog::initial_software_catalog_policy(),
       *debug_mode_catalog_editor_, state_subject_};
   UnavailableControlledSourceResolver source_resolver_;
-  OfflineNetworkObserver network_;
+  OfflinePackageCacheNetworkObserver offline_package_cache_network_;
   application::offline_package_cache::ControlledCacheRoot cache_root_;
   adapters::infrastructure::LocalPackageCacheStorage cache_storage_;
   adapters::infrastructure::UnavailableControlledPackageDownloader
