@@ -252,7 +252,9 @@ class SoftwareCatalogLifecycle final {
       SoftwareCatalogCodec& codec,
       domain::software_catalog::SoftwareCatalogPolicy policy,
       CatalogMaintenanceAccess& maintenance_access,
-      domain::StateSubject state_subject);
+      domain::StateSubject state_subject,
+      domain::software_catalog::SoftwareCatalogReleaseGateMode release_gate_mode =
+          domain::software_catalog::SoftwareCatalogReleaseGateMode::formal);
   ~SoftwareCatalogLifecycle();
 
   SoftwareCatalogLifecycle(SoftwareCatalogLifecycle const&) = delete;

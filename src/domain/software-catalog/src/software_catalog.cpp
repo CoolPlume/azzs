@@ -708,11 +708,14 @@ RuntimeCatalogLoad validate_for_runtime(
   return result;
 }
 
-SoftwareCatalogReleaseGate evaluate_release_gate(
+namespace {
+
+SoftwareCatalogReleaseGate evaluate_release_gate_with_mode(
     SoftwareCatalogDocument const& document,
     RuntimeCatalogLoad const& runtime,
     SoftwareCatalogPolicy const& policy,
-    std::string_view identity) {
+    std::string_view identity,
+    SoftwareCatalogReleaseGateMode mode) {
   SoftwareCatalogReleaseGate gate;
   if (!runtime.accepted()) {
     gate.outcome = ReleaseGateOutcome::not_evaluated;
@@ -759,10 +762,12 @@ SoftwareCatalogReleaseGate evaluate_release_gate(
         &RequiredReleaseInstallFacts::software_id);
     if (requirement == policy.required_release_install_facts.end() ||
         !requirement->complete()) {
-      add_issue(issues, CatalogIssueScope::release,
-                CatalogIssueCode::unknown_execution_semantics,
-                "software." + required_id + ".install_facts", required_id,
-                "required first-release install facts remain unknown");
+      if (mode == SoftwareCatalogReleaseGateMode::formal) {
+        add_issue(issues, CatalogIssueScope::release,
+                  CatalogIssueCode::unknown_execution_semantics,
+                  "software." + required_id + ".install_facts", required_id,
+                  "required first-release install facts remain unknown");
+      }
     }
   }
 
@@ -776,7 +781,8 @@ SoftwareCatalogReleaseGate evaluate_release_gate(
     }
     auto const* support = find_profile(policy, *software.install_profile);
     if (support == nullptr || !profile_applies(*support, software.id) ||
-        !support->release_ready) {
+        (mode == SoftwareCatalogReleaseGateMode::formal &&
+         !support->release_ready)) {
       add_issue(issues, CatalogIssueScope::release,
                 CatalogIssueCode::install_profile_not_release_ready,
                 "software." + software.id + ".install_profile", software.id,
@@ -831,6 +837,28 @@ SoftwareCatalogReleaseGate evaluate_release_gate(
   gate.outcome =
       issues.empty() ? ReleaseGateOutcome::passed : ReleaseGateOutcome::failed;
   return gate;
+}
+
+}  // namespace
+
+SoftwareCatalogReleaseGate evaluate_release_gate(
+    SoftwareCatalogDocument const& document,
+    RuntimeCatalogLoad const& runtime,
+    SoftwareCatalogPolicy const& policy,
+    std::string_view identity) {
+  return evaluate_release_gate_with_mode(
+      document, runtime, policy, identity,
+      SoftwareCatalogReleaseGateMode::formal);
+}
+
+SoftwareCatalogReleaseGate evaluate_beta_candidate_release_gate(
+    SoftwareCatalogDocument const& document,
+    RuntimeCatalogLoad const& runtime,
+    SoftwareCatalogPolicy const& policy,
+    std::string_view identity) {
+  return evaluate_release_gate_with_mode(
+      document, runtime, policy, identity,
+      SoftwareCatalogReleaseGateMode::v0_1_0_beta_candidate);
 }
 
 std::string content_identity(std::string_view bytes) {

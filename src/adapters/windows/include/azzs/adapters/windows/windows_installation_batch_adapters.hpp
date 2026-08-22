@@ -1,10 +1,18 @@
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
 #include "azzs/application/execution_log.hpp"
 #include "azzs/application/installation_batch.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 
 namespace azzs::adapters::windows {
+
+class WindowsRegistrySoftwarePresenceDetector;
 
 // This port talks to the batch-owned cache service only. It deliberately
 // receives opaque cache identities rather than a filename or a source URL.
@@ -52,6 +60,7 @@ class WindowsOpaqueCacheInstallerLauncher final
   explicit WindowsOpaqueCacheInstallerLauncher(
       application::offline_package_cache::OfflinePackageCacheService& cache)
       : cache_(cache) {}
+  ~WindowsOpaqueCacheInstallerLauncher() override;
 
   [[nodiscard]] application::installation_batch::ControlledInstallerObservation
   launch(application::installation_batch::ControlledInstallerLaunch const& request)
@@ -66,7 +75,28 @@ class WindowsOpaqueCacheInstallerLauncher final
       override;
 
  private:
+  struct OwnedProcess final {
+    void* process{};
+    std::filesystem::path payload;
+    std::string item_id;
+    std::string profile_id;
+    domain::software_catalog::InstallerBaseline baseline;
+    domain::offline_package_cache::CacheAssetIdentity cache_asset_identity;
+    domain::offline_package_cache::ControlledCacheRoot cache_root;
+  };
+
+  void cleanup_operation_locked(
+      std::unordered_map<std::string, OwnedProcess>::iterator found,
+      bool terminate) noexcept;
+  [[nodiscard]] bool operation_matches_target(
+      OwnedProcess const& operation,
+      application::installation_batch::InstallationEffectTarget const& target)
+      const noexcept;
+
   application::offline_package_cache::OfflinePackageCacheService& cache_;
+  std::mutex mutex_;
+  std::uint64_t next_operation_{1};
+  std::unordered_map<std::string, OwnedProcess> operations_;
 };
 
 // Process exit is never converted into success here. Until an exact
@@ -75,9 +105,16 @@ class WindowsOpaqueCacheInstallerLauncher final
 class WindowsInstallationResultVerifier final
     : public application::installation_batch::InstallResultVerifier {
  public:
+  explicit WindowsInstallationResultVerifier(
+      WindowsRegistrySoftwarePresenceDetector& presence)
+      : presence_(presence) {}
+
   [[nodiscard]] application::installation_batch::InstallVerificationObservation
   verify(application::installation_batch::InstallVerificationRequest const& request)
       override;
+
+ private:
+  WindowsRegistrySoftwarePresenceDetector& presence_;
 };
 
 // This records only bounded, stable identifiers and state names. It never

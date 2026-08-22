@@ -209,9 +209,9 @@ validate_software_install_facts(std::span<SoftwareInstallFacts const> facts);
 validate_controlled_install_profiles(
     std::span<ControlledInstallProfile const> profiles);
 
-// Produces the policy consumed by the existing catalog validator. Until a
-// Windows execution owner is registered, every profile remains unavailable and
-// keeps formal release blocked without changing catalog lifecycle semantics.
+// Produces the policy consumed by the existing catalog validator. Registered
+// project-owned executors are available to the runtime catalog; real vendor
+// installation evidence remains a separate validation concern.
 [[nodiscard]] SoftwareCatalogPolicy initial_software_catalog_policy();
 
 }  // namespace azzs::domain::software_catalog

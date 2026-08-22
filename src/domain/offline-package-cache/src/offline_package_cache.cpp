@@ -1,5 +1,6 @@
 #include "azzs/domain/offline_package_cache.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,14 @@ constexpr std::size_t kMaxRootId = 96;
     }
   }
   return true;
+}
+
+[[nodiscard]] bool valid_sha256(std::string_view value) noexcept {
+  return value.size() == 64U &&
+         std::ranges::all_of(value, [](unsigned char character) {
+           return (character >= '0' && character <= '9') ||
+                  (character >= 'a' && character <= 'f');
+         });
 }
 
 [[nodiscard]] bool root_id_character(unsigned char character) noexcept {
@@ -80,7 +89,8 @@ std::string CacheAssetIdentity::stable_key() const {
 
 bool CacheAsset::valid() const noexcept {
   return identity.valid() &&
-         (!expected_bytes.has_value() || *expected_bytes > 0);
+         (!expected_bytes.has_value() || *expected_bytes > 0) &&
+         (!expected_sha256.has_value() || valid_sha256(*expected_sha256));
 }
 
 bool CacheAsset::cacheable() const noexcept {

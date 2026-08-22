@@ -54,6 +54,20 @@ struct CompletedCacheList final {
   std::string detail;
 };
 
+enum class CompletedCachePayloadReadCode {
+  found,
+  absent,
+  root_unavailable,
+  failed,
+};
+
+struct CompletedCachePayloadRead final {
+  CompletedCachePayloadReadCode code{
+      CompletedCachePayloadReadCode::failed};
+  std::vector<std::byte> bytes;
+  std::string detail;
+};
+
 enum class CacheWriteCode {
   succeeded,
   failed,
@@ -127,6 +141,13 @@ class PackageCacheStorage {
   [[nodiscard]] virtual CompletedCacheRead read_completed(
       ControlledCacheRoot const& root,
       CacheAssetIdentity const& identity) = 0;
+  // A payload read is deliberately a non-pure extension. Existing test and
+  // alternate storage implementations remain valid and fail closed until
+  // they opt into serving completed bytes to a registered installer.
+  [[nodiscard]] virtual CompletedCachePayloadRead read_completed_payload(
+      ControlledCacheRoot const&, CacheAssetIdentity const&) {
+    return {.detail = "completed cache payload reading is unavailable"};
+  }
   [[nodiscard]] virtual CompletedCacheList list_completed(
       ControlledCacheRoot const& root) = 0;
   [[nodiscard]] virtual CacheWriteBegin begin_write(
@@ -303,6 +324,11 @@ class OfflinePackageCacheService final {
   void set_retention(CacheRetentionPolicy retention) noexcept;
 
   [[nodiscard]] OfflinePackageCacheSnapshot snapshot();
+  // Reads a completed payload only for an asset currently admitted by this
+  // service and the selected controlled root. The filesystem remains owned
+  // by the storage adapter; callers receive bytes, never a path.
+  [[nodiscard]] CompletedCachePayloadRead read_completed_payload(
+      CacheAssetIdentity const& identity);
   [[nodiscard]] CacheActionResult download(CacheAssetIdentity const& identity);
   [[nodiscard]] CacheActionResult resume(CacheAssetIdentity const& identity);
   // Discards only this in-process unfinished transfer and its temporary

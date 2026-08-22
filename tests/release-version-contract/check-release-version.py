@@ -630,7 +630,7 @@ def validate_mutated_cmake_consumers(
             root,
             fixture_root,
             dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns(".git", ".scratch", "out"),
+            ignore=shutil.ignore_patterns(".git", ".gitnexus", ".scratch", "out"),
         )
         source_path = fixture_root / "release/product-version.json"
         build_directory = Path(

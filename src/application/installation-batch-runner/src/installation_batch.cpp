@@ -25,7 +25,8 @@ namespace catalog = domain::software_catalog;
 namespace cache = domain::offline_package_cache;
 namespace selection = domain::software_selection;
 
-constexpr std::uint32_t k_format_version = 5;
+constexpr std::uint32_t k_format_version = 6;
+constexpr std::uint32_t k_legacy_format_version = 5;
 constexpr std::size_t k_max_payload_bytes = 2U * 1024U * 1024U;
 constexpr std::size_t k_max_text_bytes = 1024U * 1024U;
 constexpr std::size_t k_max_items = 128;
@@ -152,19 +153,58 @@ void write_package(Writer& writer, selection::ResolvedPackage const& value) {
   write_enum(writer, value.package_type);
   writer.u8(value.complete_package ? 1 : 0);
   writer.u8(value.network_required ? 1 : 0);
+  writer.u8(value.expected_bytes.has_value() ? 1 : 0);
+  if (value.expected_bytes.has_value()) {
+    writer.u64(*value.expected_bytes);
+  }
+  writer.u8(value.expected_sha256.has_value() ? 1 : 0);
+  if (value.expected_sha256.has_value()) {
+    writer.text(*value.expected_sha256);
+  }
 }
 
-[[nodiscard]] bool read_package(Reader& reader, selection::ResolvedPackage& value) {
+[[nodiscard]] bool read_package(Reader& reader, selection::ResolvedPackage& value,
+                                bool with_integrity) {
   std::uint8_t complete{};
   std::uint8_t network{};
-  return reader.text(value.candidate.software_id, 256) &&
-         read_enum(reader, value.candidate.architecture) &&
-         reader.text(value.candidate.version, 256) &&
-         reader.text(value.candidate.identity, 256) &&
-         read_enum(reader, value.package_type) && reader.u8(complete) &&
-         reader.u8(network) && complete <= 1 && network <= 1 &&
-         ((value.complete_package = complete != 0), true) &&
-         ((value.network_required = network != 0), true);
+  if (!reader.text(value.candidate.software_id, 256) ||
+      !read_enum(reader, value.candidate.architecture)) {
+    return false;
+  }
+  if (!reader.text(value.candidate.version, 256) ||
+      !reader.text(value.candidate.identity, 256) ||
+      !read_enum(reader, value.package_type) || !reader.u8(complete) ||
+      !reader.u8(network) || complete > 1 || network > 1) {
+    return false;
+  }
+  value.complete_package = complete != 0;
+  value.network_required = network != 0;
+  if (!with_integrity) {
+    return true;
+  }
+  std::uint8_t expected_bytes_present{};
+  std::uint8_t expected_sha256_present{};
+  if (!reader.u8(expected_bytes_present) || expected_bytes_present > 1) {
+    return false;
+  }
+  if (expected_bytes_present != 0) {
+    std::uint64_t expected_bytes{};
+    if (!reader.u64(expected_bytes)) {
+      return false;
+    }
+    value.expected_bytes = expected_bytes;
+  }
+  if (!reader.u8(expected_sha256_present) || expected_sha256_present > 1) {
+    return false;
+  }
+  if (expected_sha256_present != 0) {
+    std::string expected_sha256;
+    if (!reader.text(expected_sha256, 128) || expected_sha256.size() != 64U) {
+      return false;
+    }
+    value.expected_sha256 = std::move(expected_sha256);
+  }
+  return true;
 }
 
 void write_source(Writer& writer, selection::ResolvedSourceSnapshot const& value) {
@@ -185,7 +225,8 @@ void write_source(Writer& writer, selection::ResolvedSourceSnapshot const& value
 }
 
 [[nodiscard]] bool read_source(Reader& reader,
-                               selection::ResolvedSourceSnapshot& value) {
+                               selection::ResolvedSourceSnapshot& value,
+                               bool with_integrity) {
   std::uint32_t count{};
   std::uint8_t network{};
   if (!reader.text(value.software_id, 256) ||
@@ -200,7 +241,7 @@ void write_source(Writer& writer, selection::ResolvedSourceSnapshot const& value
   value.packages.reserve(count);
   for (std::uint32_t index = 0; index < count; ++index) {
     selection::ResolvedPackage package;
-    if (!read_package(reader, package)) {
+    if (!read_package(reader, package, with_integrity)) {
       return false;
     }
     value.packages.push_back(std::move(package));
@@ -222,9 +263,14 @@ void write_asset(Writer& writer, cache::CacheAsset const& value) {
   if (value.expected_bytes.has_value()) {
     writer.u64(*value.expected_bytes);
   }
+  writer.u8(value.expected_sha256.has_value() ? 1 : 0);
+  if (value.expected_sha256.has_value()) {
+    writer.text(*value.expected_sha256);
+  }
 }
 
-[[nodiscard]] bool read_asset(Reader& reader, cache::CacheAsset& value) {
+[[nodiscard]] bool read_asset(Reader& reader, cache::CacheAsset& value,
+                              bool with_integrity) {
   std::uint8_t resume{};
   std::uint8_t expected{};
   if (!reader.text(value.identity.software_id, 256) ||
@@ -243,6 +289,20 @@ void write_asset(Writer& writer, cache::CacheAsset const& value) {
       return false;
     }
     value.expected_bytes = bytes;
+  }
+  value.expected_sha256.reset();
+  if (with_integrity) {
+    std::uint8_t expected_sha256_present{};
+    if (!reader.u8(expected_sha256_present) || expected_sha256_present > 1) {
+      return false;
+    }
+    if (expected_sha256_present != 0) {
+      std::string expected_sha256;
+      if (!reader.text(expected_sha256, 128) || expected_sha256.size() != 64U) {
+        return false;
+      }
+      value.expected_sha256 = std::move(expected_sha256);
+    }
   }
   return true;
 }
@@ -306,7 +366,8 @@ void write_item(Writer& writer, batch_domain::FrozenInstallationItem const& valu
 }
 
 [[nodiscard]] bool read_item(Reader& reader,
-                             batch_domain::FrozenInstallationItem& value) {
+                             batch_domain::FrozenInstallationItem& value,
+                             bool with_integrity) {
   std::uint32_t count{};
   if (!reader.text(value.item_id, 256) || !reader.u32(count) || count > k_max_items) {
     return false;
@@ -320,9 +381,11 @@ void write_item(Writer& writer, batch_domain::FrozenInstallationItem const& valu
     }
     value.dependencies.push_back(std::move(dependency));
   }
-  return read_source(reader, value.source) && read_package(reader, value.selected_package) &&
+  return read_source(reader, value.source, with_integrity) &&
+         read_package(reader, value.selected_package, with_integrity) &&
          read_profile(reader, value.execution_profile) &&
-         read_enum(reader, value.resource_kind) && read_asset(reader, value.cache_asset) &&
+         read_enum(reader, value.resource_kind) &&
+         read_asset(reader, value.cache_asset, with_integrity) &&
          read_enum(reader, value.cache_root.kind) && reader.text(value.cache_root.id, 256);
 }
 
@@ -347,7 +410,8 @@ void write_plan(Writer& writer, batch_domain::FrozenBatchPlan const& value) {
   writer.i64(value.frozen_at_milliseconds);
 }
 
-[[nodiscard]] bool read_plan(Reader& reader, batch_domain::FrozenBatchPlan& value) {
+[[nodiscard]] bool read_plan(Reader& reader, batch_domain::FrozenBatchPlan& value,
+                             bool with_integrity) {
   std::uint8_t retry{};
   std::uint8_t local_trial{};
   std::uint32_t count{};
@@ -376,7 +440,7 @@ void write_plan(Writer& writer, batch_domain::FrozenBatchPlan const& value) {
   value.items.reserve(count);
   for (std::uint32_t index = 0; index < count; ++index) {
     batch_domain::FrozenInstallationItem item;
-    if (!read_item(reader, item)) {
+    if (!read_item(reader, item, with_integrity)) {
       return false;
     }
     value.items.push_back(std::move(item));
@@ -480,12 +544,14 @@ void write_record(Writer& writer, batch_domain::InstallationBatchRecord const& v
 }
 
 [[nodiscard]] bool read_record(Reader& reader,
-                               batch_domain::InstallationBatchRecord& value) {
+                               batch_domain::InstallationBatchRecord& value,
+                               bool with_integrity) {
   std::uint8_t closing{};
   std::uint8_t stopping{};
   std::uint32_t count{};
   std::uint8_t has_lease{};
-  if (!read_plan(reader, value.plan) || !read_enum(reader, value.state) ||
+  if (!read_plan(reader, value.plan, with_integrity) ||
+      !read_enum(reader, value.state) ||
       !reader.u8(closing) || !reader.u8(stopping) || closing > 1 || stopping > 1 ||
       !reader.u32(count) || count > k_max_items) {
     return false;
@@ -525,9 +591,12 @@ void write_history(Writer& writer, batch_domain::InstallationBatchHistory const&
   writer.text("batch-history-retained");
 }
 
-[[nodiscard]] bool read_history(Reader& reader, batch_domain::InstallationBatchHistory& value) {
+[[nodiscard]] bool read_history(Reader& reader,
+                                batch_domain::InstallationBatchHistory& value,
+                                bool with_integrity) {
   std::uint32_t count{};
-  if (!read_plan(reader, value.plan) || !read_enum(reader, value.final_state) ||
+  if (!read_plan(reader, value.plan, with_integrity) ||
+      !read_enum(reader, value.final_state) ||
       !reader.u32(count) || count > k_max_items) {
     return false;
   }
@@ -578,14 +647,16 @@ struct PersistedState final {
   Reader reader{bytes};
   std::uint32_t version{};
   std::uint8_t has_active{};
-  if (!reader.u32(version) || version != k_format_version ||
+  if (!reader.u32(version) ||
+      (version != k_format_version && version != k_legacy_format_version) ||
       !reader.u8(has_active) || has_active > 1) {
     return std::nullopt;
   }
   PersistedState state;
   if (has_active != 0) {
     batch_domain::InstallationBatchRecord record;
-    if (!read_record(reader, record) || !record.valid()) {
+    if (!read_record(reader, record, version == k_format_version) ||
+        !record.valid()) {
       return std::nullopt;
     }
     state.active = std::move(record);
@@ -597,7 +668,8 @@ struct PersistedState final {
   state.history.reserve(history_count);
   for (std::uint32_t index = 0; index < history_count; ++index) {
     batch_domain::InstallationBatchHistory history;
-    if (!read_history(reader, history) || !history.valid()) {
+    if (!read_history(reader, history, version == k_format_version) ||
+        !history.valid()) {
       return std::nullopt;
     }
     state.history.push_back(std::move(history));
