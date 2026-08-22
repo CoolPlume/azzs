@@ -1,9 +1,12 @@
 #include "pch.h"
 
 #include "MainWindow.xaml.h"
+#include "native_resource_fallback.hpp"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 
@@ -21,6 +24,8 @@
 #include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_settings.hpp"
 #include "azzs/application/debug_mode_catalog_editor.hpp"
+#include "azzs/application/execution_log.hpp"
+#include "azzs/application/sidebar_width_preferences.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench_services.hpp"
@@ -38,6 +43,43 @@ using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
 using winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragDeltaEventArgs;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragStartedEventArgs;
+
+struct SettingsNavigationPreparationError final {
+  azzs::ui::presentation::SettingsNavigationFailureStage stage{
+      azzs::ui::presentation::SettingsNavigationFailureStage::unknown};
+  char const* detail{"settings page preparation failed"};
+};
+
+// Keep the failure surface useful even if both PRI and the compiled string
+// table are unavailable. This is an emergency presentation fallback, not a
+// second localization source for normal UI rendering.
+constexpr wchar_t kSettingsNavigationFailureTitle[] =
+    L"\u5E94\u7528\u8BBE\u7F6E\u6682\u65F6\u65E0\u6CD5\u6253\u5F00";
+constexpr wchar_t kSettingsNavigationFailureMessage[] =
+    L"\u8BBE\u7F6E\u6570\u636E\u6216\u9875\u9762\u8D44\u6E90\u8BFB\u53D6\u5931\u8D25\u3002\u73B0\u6709\u9875\u9762\u5DF2\u4FDD\u7559\uFF0C\u8BF7\u91CD\u8BD5\u6216\u8FD4\u56DE\u5F53\u524D\u9875\u9762\u3002";
+
+[[nodiscard]] std::string_view settings_navigation_stage_name(
+    azzs::ui::presentation::SettingsNavigationFailureStage stage) noexcept {
+  using Stage = azzs::ui::presentation::SettingsNavigationFailureStage;
+  switch (stage) {
+    case Stage::optional_value_missing:
+      return "optional-value";
+    case Stage::snapshot_read:
+      return "snapshot-read";
+    case Stage::page_binding:
+      return "page-binding";
+    case Stage::resource_projection:
+      return "resource-projection";
+    case Stage::commit:
+      return "commit";
+    case Stage::unknown:
+      return "unknown";
+  }
+  return "unknown";
+}
 
 [[nodiscard]] std::wstring version_text(SystemVersion const version) {
   return std::to_wstring(version.major) + L"." +
@@ -72,14 +114,21 @@ void MainWindow::bind(
     std::shared_ptr<azzs::application::SystemSettingsApplyService>
         system_settings,
     std::shared_ptr<azzs::application::AdvancedViewPreferences>
-        advanced_view_preferences) {
+        advanced_view_preferences,
+    std::shared_ptr<azzs::application::SidebarWidthPreferences>
+        sidebar_width_preferences) {
   workbench_ = std::move(workbench);
   motion_preferences_ = std::move(motion_preferences);
   system_settings_ = std::move(system_settings);
   advanced_view_preferences_ = std::move(advanced_view_preferences);
+  sidebar_width_preferences_ = std::move(sidebar_width_preferences);
   advanced_view_ = advanced_view_preferences_
                        ? advanced_view_preferences_->enabled()
                        : false;
+  sidebar_width_dip_ = sidebar_width_preferences_
+                           ? sidebar_width_preferences_->width_dip()
+                           : azzs::application::kSidebarWidthDefaultDip;
+  apply_sidebar_width(sidebar_width_dip_, false);
   project(workbench_->snapshot());
 }
 
@@ -87,7 +136,31 @@ bool MainWindow::show_initial_page() {
   if (!workbench_) {
     return false;
   }
-  return navigate_to(workbench_->snapshot().current_page);
+  // Startup restoration uses the same settings transaction as user navigation,
+  // but a recoverable settings failure must still leave an activatable window.
+  auto const initial_page = workbench_->snapshot().current_page;
+  if (navigate_and_commit(initial_page)) {
+    return true;
+  }
+  if (initial_page != PageId::application_settings) {
+    return false;
+  }
+
+  // There is no prior visible page during startup. Keep the workbench usable
+  // on the overview while the settings failure InfoBar remains actionable.
+  if (!navigate_to(PageId::overview)) {
+    return false;
+  }
+  workbench_->navigate(PageId::overview);
+  project(workbench_->snapshot());
+  auto const navigation_item = navigation_item_for_page(PageId::overview);
+  if (navigation_item) {
+    restoring_navigation_selection_ = true;
+    PrimaryNavigation().SelectedItem(navigation_item);
+    restoring_navigation_selection_ = false;
+  }
+  handle_settings_navigation_failure();
+  return true;
 }
 
 void MainWindow::confirm_started_healthy() {
@@ -124,18 +197,7 @@ void MainWindow::OnNavigationSelectionChanged(
     return;
   }
 
-  auto const previous_page = displayed_page_;
-  if (!navigate_and_commit(*page)) {
-    if (previous_page.has_value()) {
-      auto const previous_item = navigation_item_for_page(*previous_page);
-      if (previous_item) {
-        restoring_navigation_selection_ = true;
-        PrimaryNavigation().SelectedItem(previous_item);
-        restoring_navigation_selection_ = false;
-      }
-    }
-    return;
-  }
+  static_cast<void>(navigate_and_commit(*page));
 }
 
 void MainWindow::OnWindowClosing(
@@ -276,6 +338,18 @@ void MainWindow::OnContinueRecoveredCatalogEditorClick(
   }
 }
 
+void MainWindow::OnRetrySettingsNavigationClick(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  static_cast<void>(settings_navigation_bridge_.retry());
+}
+
+void MainWindow::OnReturnToCurrentPageClick(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  settings_navigation_bridge_.return_to_current();
+}
+
 std::optional<PageId> MainWindow::page_for_item(
     NavigationViewItem const& item) {
   if (item == OverviewItem()) {
@@ -329,18 +403,257 @@ NavigationViewItem MainWindow::navigation_item_for_page(PageId page) {
 }
 
 bool MainWindow::navigate_and_commit(PageId page) {
+  if (page == PageId::application_settings) {
+    try {
+      return settings_navigation_bridge_.navigate({
+          .already_visible = [this] {
+            try {
+              auto const content = ContentFrame().Content();
+              return displayed_page_ == PageId::application_settings &&
+                     content.try_as<Pages::ApplicationSettingsPage>();
+            } catch (...) {
+              return false;
+            }
+          },
+          .prepare =
+              [this] {
+                // Capture recovery context for every attempt, including a
+                // retry. No callback retains an earlier page snapshot.
+                auto const previous_page = displayed_page_;
+                auto previous_core_page =
+                    previous_page.value_or(PageId::overview);
+                Windows::Foundation::IInspectable previous_content{nullptr};
+                try {
+                  previous_content = ContentFrame().Content();
+                } catch (...) {
+                  ::OutputDebugStringW(
+                      L"WinUI application-settings previous content snapshot failed.\n");
+                }
+                try {
+                  if (workbench_) {
+                    previous_core_page = workbench_->snapshot().current_page;
+                  }
+                } catch (...) {
+                  ::OutputDebugStringW(
+                      L"WinUI application-settings core page snapshot failed.\n");
+                }
+                auto recover =
+                    [this, previous_page, previous_core_page,
+                     previous_content]() noexcept {
+                      restore_settings_navigation_state(
+                          previous_page, previous_core_page, previous_content);
+                    };
+                try {
+                  auto const prepared = prepare_application_settings_page();
+                  return azzs::ui::presentation::
+                      SettingsNavigationPreparation{
+                          .commit = [this, prepared, previous_page] {
+                            commit_application_settings_page(prepared,
+                                                             previous_page);
+                          },
+                          .recover = std::move(recover)};
+                } catch (SettingsNavigationPreparationError const& error) {
+                  return azzs::ui::presentation::
+                      SettingsNavigationPreparation{
+                          .failure = azzs::ui::presentation::
+                              SettingsNavigationFailure{
+                                  .stage = error.stage,
+                                  .detail = error.detail},
+                          .recover = std::move(recover)};
+                } catch (...) {
+                  return azzs::ui::presentation::
+                      SettingsNavigationPreparation{
+                          .failure = azzs::ui::presentation::
+                              SettingsNavigationFailure{
+                                  .stage = azzs::ui::presentation::
+                                      SettingsNavigationFailureStage::unknown,
+                                  .detail =
+                                      "settings page preparation failed"},
+                          .recover = std::move(recover)};
+                }
+              },
+          .present_failure =
+              [this](azzs::ui::presentation::SettingsNavigationFailure const& failure) {
+                record_settings_navigation_failure(failure);
+                handle_settings_navigation_failure();
+              },
+          .clear_failure = [this] { clear_settings_navigation_failure(); },
+      });
+    } catch (...) {
+      record_settings_navigation_failure(
+          {.stage = azzs::ui::presentation::SettingsNavigationFailureStage::unknown,
+           .detail = "settings navigation transaction threw"});
+      settings_navigation_bridge_.return_to_current();
+      handle_settings_navigation_failure();
+      return false;
+    }
+  }
+
   if (!workbench_ || !navigate_to(page)) {
     return false;
   }
   workbench_->navigate(page);
   project(workbench_->snapshot());
+
   auto const navigation_item = navigation_item_for_page(page);
   if (navigation_item) {
     restoring_navigation_selection_ = true;
     PrimaryNavigation().SelectedItem(navigation_item);
     restoring_navigation_selection_ = false;
   }
+  clear_settings_navigation_failure();
+  settings_navigation_bridge_.invalidate();
   return true;
+}
+
+Windows::Foundation::IInspectable
+MainWindow::prepare_application_settings_page() {
+  if (!workbench_) {
+    throw SettingsNavigationPreparationError{
+        .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+            optional_value_missing,
+        .detail = "workbench is unavailable"};
+  }
+  auto const services = workbench_->services();
+  if (!services) {
+    throw SettingsNavigationPreparationError{
+        .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+            optional_value_missing,
+        .detail = "settings services are unavailable"};
+  }
+
+  // Snapshot and bind the candidate while the existing Frame content remains
+  // visible. Any resource, persistence, or projection exception therefore
+  // leaves both the old page and the core page untouched.
+  auto& settings = services->application_settings();
+  azzs::application::WorkbenchSnapshot workbench_snapshot;
+  azzs::application::ApplicationSettingsSnapshot settings_snapshot;
+  try {
+    workbench_snapshot = workbench_->snapshot();
+    settings_snapshot = settings.snapshot();
+  } catch (...) {
+    throw SettingsNavigationPreparationError{
+        .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+            snapshot_read,
+        .detail = "settings snapshot read failed"};
+  }
+
+  Pages::ApplicationSettingsPage page{nullptr};
+  try {
+    auto const page_owner =
+        winrt::make_self<Pages::implementation::ApplicationSettingsPage>();
+    page = page_owner.as<Pages::ApplicationSettingsPage>();
+  } catch (...) {
+    throw SettingsNavigationPreparationError{
+        .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+            page_binding,
+        .detail = "settings page construction failed"};
+  }
+
+  try {
+    winrt::get_self<Pages::implementation::ApplicationSettingsPage>(page)
+        ->bind(
+            workbench_, settings, workbench_snapshot.update, settings_snapshot,
+            advanced_view_, [weak_this = get_weak()](bool enabled) {
+              if (auto self = weak_this.get()) {
+                return self->set_advanced_view(enabled);
+              }
+              return false;
+            },
+            [weak_this = get_weak()] {
+              if (auto self = weak_this.get(); self && self->workbench_) {
+                static_cast<void>(self->navigate_and_commit(
+                    PageId::software_catalog_editor));
+              }
+            });
+  } catch (...) {
+    throw SettingsNavigationPreparationError{
+        .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+            resource_projection,
+        .detail = "settings page binding projection failed"};
+  }
+
+  return page;
+}
+
+void MainWindow::commit_application_settings_page(
+    Windows::Foundation::IInspectable const& page,
+    std::optional<PageId> const previous_page) {
+  auto const prepared = page.try_as<Pages::ApplicationSettingsPage>();
+  if (!prepared || !workbench_) {
+    throw winrt::hresult_error(E_FAIL);
+  }
+  auto const navigation_item = navigation_item_for_page(
+      PageId::application_settings);
+  if (!navigation_item) {
+    throw winrt::hresult_error(E_FAIL);
+  }
+
+  restoring_navigation_selection_ = true;
+  try {
+    PrimaryNavigation().SelectedItem(navigation_item);
+  } catch (...) {
+    restoring_navigation_selection_ = false;
+    throw;
+  }
+  restoring_navigation_selection_ = false;
+
+  ContentFrame().Content(prepared);
+  displayed_page_ = PageId::application_settings;
+  workbench_->navigate(PageId::application_settings);
+
+  if (previous_page == PageId::software_catalog_editor) {
+    if (auto const services = workbench_->services()) {
+      services->debug_mode_catalog_editor().end_temporary_close_recovery();
+    }
+  }
+  // A post-commit projection is part of the transaction boundary. Let any
+  // exception escape so SettingsNavigationBridge performs the single recovery
+  // path; swallowing it would report navigation success with a partial shell.
+  project(workbench_->snapshot());
+}
+
+void MainWindow::restore_settings_navigation_state(
+    std::optional<PageId> previous_page, PageId previous_core_page,
+    Windows::Foundation::IInspectable const& previous_content) noexcept {
+  restoring_navigation_selection_ = false;
+  try {
+    ContentFrame().Content(previous_content);
+  } catch (...) {
+    ::OutputDebugStringW(
+        L"WinUI application-settings previous content restore failed.\n");
+  }
+
+  displayed_page_ = previous_page;
+  if (workbench_) {
+    try {
+      workbench_->navigate(previous_core_page);
+    } catch (...) {
+      ::OutputDebugStringW(
+          L"WinUI application-settings previous core-page restore failed.\n");
+    }
+    try {
+      project(workbench_->snapshot());
+    } catch (...) {
+      ::OutputDebugStringW(
+          L"WinUI application-settings previous projection restore failed.\n");
+    }
+  }
+
+  try {
+    if (previous_page.has_value()) {
+      auto const previous_item = navigation_item_for_page(*previous_page);
+      if (previous_item) {
+        restoring_navigation_selection_ = true;
+        PrimaryNavigation().SelectedItem(previous_item);
+        restoring_navigation_selection_ = false;
+      }
+    }
+  } catch (...) {
+    restoring_navigation_selection_ = false;
+    ::OutputDebugStringW(
+        L"WinUI application-settings previous selection restore failed.\n");
+  }
 }
 
 bool MainWindow::navigate_to(PageId page) {
@@ -456,31 +769,9 @@ bool MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::application_settings:
-      if (!ContentFrame().Navigate(
-              xaml_typename<Pages::ApplicationSettingsPage>(), nullptr,
-              transition)) {
-        return false;
-      }
-      if (auto settings = ContentFrame().Content().try_as<
-              Pages::ApplicationSettingsPage>();
-          settings && workbench_->services()) {
-        winrt::get_self<Pages::implementation::ApplicationSettingsPage>(
-            settings)
-            ->bind(workbench_, workbench_->services()->application_settings(),
-                   advanced_view_, [weak_this = get_weak()](bool enabled) {
-               if (auto self = weak_this.get()) {
-                 return self->set_advanced_view(enabled);
-               }
-              return false;
-            }, [weak_this = get_weak()] {
-              if (auto self = weak_this.get(); self && self->workbench_) {
-                if (!self->navigate_and_commit(PageId::software_catalog_editor)) {
-                  return;
-                }
-              }
-            });
-      }
-      break;
+      // Application settings owns a prepare/commit/recovery transaction and
+      // must never be entered through the generic Navigate path.
+      return false;
     case PageId::software_catalog_editor:
       if (!ContentFrame().Navigate(
               xaml_typename<Pages::SoftwareCatalogEditorPage>(), nullptr,
@@ -506,11 +797,209 @@ bool MainWindow::navigate_to(PageId page) {
   return true;
 }
 
+void MainWindow::record_settings_navigation_failure(
+    azzs::ui::presentation::SettingsNavigationFailure const& failure) noexcept {
+  if (!workbench_) {
+    return;
+  }
+
+  try {
+    auto const services = workbench_->services();
+    if (!services) {
+      return;
+    }
+
+    auto& log = services->execution_log();
+    auto const correlation = log.begin_correlation();
+    if (correlation.value.empty()) {
+      return;
+    }
+
+    auto const stage = settings_navigation_stage_name(failure.stage);
+    std::vector<azzs::application::DiagnosticField> fields;
+    fields.push_back({"detail", failure.detail,
+                      azzs::application::DiagnosticValueDisposition::retain});
+    static_cast<void>(log.append(
+        correlation,
+        azzs::application::ExecutionEvent{
+            .kind = azzs::application::ExecutionEventKind::adapter_result,
+            .component = "winui-settings-navigation",
+            .stage = std::string{stage},
+            .result = azzs::application::ExecutionResult::failed,
+            .error = azzs::application::ExecutionError{
+                .source = "winui",
+                .message = failure.detail,
+            },
+            .fields = std::move(fields),
+        }));
+  } catch (...) {
+    ::OutputDebugStringW(
+        L"WinUI application-settings structured failure logging failed.\n");
+  }
+}
+
+void MainWindow::handle_settings_navigation_failure() noexcept {
+  restoring_navigation_selection_ = false;
+  try {
+    using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
+    auto title =
+        azzs::ui::winui::native_resources::localized_or_native_string(
+            L"MainWindowSettingsNavigationFailed.Title",
+            AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_TITLE);
+    auto message =
+        azzs::ui::winui::native_resources::localized_or_native_string(
+            L"MainWindowSettingsNavigationFailed.Message",
+            AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_MESSAGE);
+    if (title.empty()) {
+      title = kSettingsNavigationFailureTitle;
+    }
+    if (message.empty()) {
+      message = kSettingsNavigationFailureMessage;
+    }
+    SettingsNavigationFailureInfoBar().Message(message);
+    SettingsNavigationFailureInfoBar().Title(title);
+    AutomationProperties::SetName(SettingsNavigationFailureInfoBar(), title);
+  } catch (...) {
+    try {
+      auto const title = azzs::ui::winui::native_resources::load_string(
+          AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_TITLE);
+      auto const message = azzs::ui::winui::native_resources::load_string(
+          AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_MESSAGE);
+      auto safe_title = title.empty() ? winrt::hstring{
+                                             kSettingsNavigationFailureTitle}
+                                      : winrt::hstring{title};
+      auto safe_message = message.empty() ? winrt::hstring{
+                                               kSettingsNavigationFailureMessage}
+                                          : winrt::hstring{message};
+      SettingsNavigationFailureInfoBar().Title(safe_title);
+      SettingsNavigationFailureInfoBar().Message(safe_message);
+      using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
+      AutomationProperties::SetName(SettingsNavigationFailureInfoBar(),
+                                     safe_title);
+    } catch (...) {
+      ::OutputDebugStringW(
+          L"WinUI application-settings fallback message projection failed.\n");
+    }
+    ::OutputDebugStringW(L"WinUI application-settings navigation recovery failed.\n");
+  }
+
+  try {
+    SettingsNavigationFailureInfoBar().IsOpen(true);
+  } catch (...) {
+    ::OutputDebugStringW(L"WinUI application-settings failure state projection failed.\n");
+  }
+}
+
+void MainWindow::clear_settings_navigation_failure() noexcept {
+  try {
+    SettingsNavigationFailureInfoBar().IsOpen(false);
+  } catch (...) {
+    ::OutputDebugStringW(L"WinUI application-settings failure state clear failed.\n");
+  }
+}
+
 bool MainWindow::set_advanced_view(bool enabled) {
   if (advanced_view_preferences_) {
     advanced_view_ = advanced_view_preferences_->set_enabled(enabled);
   }
   return advanced_view_;
+}
+
+void MainWindow::apply_sidebar_width(double width_dip, bool persist) {
+  auto const clamped = azzs::application::SidebarWidthPreferences::clamp(width_dip);
+  sidebar_width_dip_ = persist && sidebar_width_preferences_
+                           ? sidebar_width_preferences_->set_width_dip(clamped)
+                           : clamped;
+  PrimaryNavigation().OpenPaneLength(sidebar_width_dip_);
+  update_sidebar_resize_thumb();
+}
+
+void MainWindow::update_sidebar_resize_thumb() {
+  if (!SidebarResizeThumb()) {
+    return;
+  }
+
+  auto const display_mode = PrimaryNavigation().DisplayMode();
+  auto const expanded =
+      display_mode ==
+          Microsoft::UI::Xaml::Controls::NavigationViewDisplayMode::Expanded &&
+      PrimaryNavigation().IsPaneOpen();
+  SidebarResizeThumb().Visibility(
+      expanded ? Microsoft::UI::Xaml::Visibility::Visible
+               : Microsoft::UI::Xaml::Visibility::Collapsed);
+  if (expanded) {
+    SidebarResizeThumb().Margin(
+        Microsoft::UI::Xaml::Thickness{std::max(0.0, sidebar_width_dip_ - 4.0),
+                                       0.0, 0.0, 0.0});
+  }
+}
+
+void MainWindow::OnNavigationDisplayModeChanged(
+    Microsoft::UI::Xaml::Controls::NavigationView const&,
+    Microsoft::UI::Xaml::Controls::NavigationViewDisplayModeChangedEventArgs const&) {
+  update_sidebar_resize_thumb();
+}
+
+void MainWindow::OnShellSizeChanged(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::SizeChangedEventArgs const&) {
+  update_sidebar_resize_thumb();
+}
+
+void MainWindow::OnSidebarResizeDragStarted(
+    Windows::Foundation::IInspectable const&,
+                                            DragStartedEventArgs const&) {
+  sidebar_drag_active_ = true;
+  sidebar_drag_width_dip_ = sidebar_width_dip_;
+}
+
+void MainWindow::OnSidebarResizeDragDelta(
+    Windows::Foundation::IInspectable const&,
+                                          DragDeltaEventArgs const& args) {
+  if (!sidebar_drag_active_) {
+    return;
+  }
+  // DragDelta reports the change since the previous event. Accumulate it so
+  // a continuous drag follows the pointer instead of jumping from its start.
+  sidebar_drag_width_dip_ =
+      azzs::application::SidebarWidthPreferences::clamp(
+          sidebar_drag_width_dip_ + args.HorizontalChange());
+  apply_sidebar_width(sidebar_drag_width_dip_, false);
+}
+
+void MainWindow::OnSidebarResizeDragCompleted(
+    Windows::Foundation::IInspectable const&, DragCompletedEventArgs const&) {
+  if (!sidebar_drag_active_) {
+    return;
+  }
+  sidebar_drag_active_ = false;
+  apply_sidebar_width(sidebar_drag_width_dip_, true);
+}
+
+void MainWindow::OnSidebarResizeKeyDown(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args) {
+  using winrt::Windows::System::VirtualKey;
+  auto const current = sidebar_width_dip_;
+  double next = current;
+  switch (args.Key()) {
+    case VirtualKey::Left:
+      next = current - 8.0;
+      break;
+    case VirtualKey::Right:
+      next = current + 8.0;
+      break;
+    case VirtualKey::Home:
+      next = azzs::application::kSidebarWidthMinimumDip;
+      break;
+    case VirtualKey::End:
+      next = azzs::application::kSidebarWidthMaximumDip;
+      break;
+    default:
+      return;
+  }
+  args.Handled(true);
+  apply_sidebar_width(next, true);
 }
 
 void MainWindow::refresh_drivers_page() {

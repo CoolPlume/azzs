@@ -8,19 +8,28 @@
 namespace azzs::application {
 
 bool HardwareObservation::usable() const noexcept {
-  return !cpu.empty() || !gpu.empty() || !motherboard.empty() ||
-         !network_adapter.empty() || !oem_model.empty();
+  return has_confirmed_physical_hardware();
+}
+
+bool HardwareObservation::has_confirmed_physical_hardware() const noexcept {
+  for (auto const& device : devices) {
+    if (device.confirmed_physical()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 std::string HardwareObservation::model_fingerprint() const {
   // Keep the cache key limited to non-unique model text. Never add serial
   // numbers, MAC/IP addresses, computer names, or other device identifiers.
-  std::array<std::string_view, 5> const fields{
+  std::array<std::string_view, 6> const fields{
       cpu,
       gpu,
       motherboard,
       network_adapter,
       oem_model,
+      to_string(oem_vendor),
   };
   std::string result;
   for (auto const field : fields) {
@@ -29,7 +38,87 @@ std::string HardwareObservation::model_fingerprint() const {
     result.append(field);
     result.push_back('|');
   }
+  for (auto const& device : devices) {
+    auto const append_field = [&result](std::string_view field) {
+      result.append(std::to_string(field.size()));
+      result.push_back(':');
+      result.append(field);
+      result.push_back('|');
+    };
+    append_field(to_string(device.kind));
+    append_field(device.name);
+    append_field(to_string(device.vendor));
+    append_field(to_string(device.status));
+    append_field(to_string(device.physicality));
+  }
   return result;
+}
+
+char const* to_string(HardwareDeviceKind value) noexcept {
+  switch (value) {
+    case HardwareDeviceKind::cpu: return "cpu";
+    case HardwareDeviceKind::gpu: return "gpu";
+    case HardwareDeviceKind::motherboard: return "motherboard";
+    case HardwareDeviceKind::network_adapter: return "network-adapter";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareDevicePhysicality value) noexcept {
+  switch (value) {
+    case HardwareDevicePhysicality::confirmed_physical:
+      return "confirmed-physical";
+    case HardwareDevicePhysicality::virtual_device: return "virtual";
+    case HardwareDevicePhysicality::software: return "software";
+    case HardwareDevicePhysicality::vpn: return "vpn";
+    case HardwareDevicePhysicality::loopback: return "loopback";
+    case HardwareDevicePhysicality::unknown: return "unknown";
+    case HardwareDevicePhysicality::conflicting: return "conflicting";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareObservationSource value) noexcept {
+  switch (value) {
+    case HardwareObservationSource::wmi: return "wmi";
+    case HardwareObservationSource::setup_api: return "setup-api";
+    case HardwareObservationSource::unknown: return "unknown";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareObservationConfidence value) noexcept {
+  switch (value) {
+    case HardwareObservationConfidence::confirmed: return "confirmed";
+    case HardwareObservationConfidence::inferred: return "inferred";
+    case HardwareObservationConfidence::unknown: return "unknown";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareDeviceStatus value) noexcept {
+  switch (value) {
+    case HardwareDeviceStatus::enabled: return "enabled";
+    case HardwareDeviceStatus::disabled: return "disabled";
+    case HardwareDeviceStatus::no_driver: return "no-driver";
+    case HardwareDeviceStatus::error: return "error";
+    case HardwareDeviceStatus::unknown: return "unknown";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareVendor value) noexcept {
+  switch (value) {
+    case HardwareVendor::unknown: return "unknown";
+    case HardwareVendor::amd: return "amd";
+    case HardwareVendor::intel: return "intel";
+    case HardwareVendor::nvidia: return "nvidia";
+    case HardwareVendor::dell: return "dell";
+    case HardwareVendor::hp: return "hp";
+    case HardwareVendor::lenovo: return "lenovo";
+    case HardwareVendor::asus: return "asus";
+  }
+  return "unknown";
 }
 
 HardwareOverviewService::HardwareOverviewService(HardwareObserver& observer,

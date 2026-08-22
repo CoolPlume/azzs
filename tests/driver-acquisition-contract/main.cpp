@@ -32,6 +32,12 @@ using azzs::application::ExecutionLogReceipt;
 using azzs::application::HardwareObservation;
 using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareObservationResult;
+using azzs::application::HardwareDeviceKind;
+using azzs::application::HardwareDevicePhysicality;
+using azzs::application::HardwareDeviceStatus;
+using azzs::application::HardwareObservationConfidence;
+using azzs::application::HardwareObservationSource;
+using azzs::application::HardwareVendor;
 using azzs::application::HardwareObserver;
 using azzs::application::HardwareOverviewService;
 using azzs::application::HardwareOverviewState;
@@ -77,17 +83,70 @@ class FixtureHardwareObserver final : public HardwareObserver {
  public:
   [[nodiscard]] HardwareObservationResult observe(std::stop_token) override {
     ++observe_calls;
+    HardwareObservation observation{
+        .cpu = "AMD Ryzen 7",
+        .gpu = "NVIDIA GeForce RTX",
+        .motherboard = "ASUS PRIME",
+        .network_adapter = "Intel Ethernet",
+        .oem_model = "Dell Desktop",
+        .oem_vendor = HardwareVendor::dell,
+    };
+    observation.devices = {
+        {.kind = HardwareDeviceKind::cpu,
+         .name = observation.cpu,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::amd,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+        {.kind = HardwareDeviceKind::gpu,
+         .name = observation.gpu,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::nvidia,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+        {.kind = HardwareDeviceKind::motherboard,
+         .name = observation.motherboard,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::asus,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+        {.kind = HardwareDeviceKind::network_adapter,
+         .name = observation.network_adapter,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::intel,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+    };
+    if (disable_gpu) {
+      observation.devices[1].status = HardwareDeviceStatus::disabled;
+    }
+    if (!report_physical_hardware) {
+      for (auto& device : observation.devices) {
+        device.physicality = HardwareDevicePhysicality::virtual_device;
+        device.confidence = HardwareObservationConfidence::unknown;
+        device.physically_present = false;
+        device.filter_reason = "contract fixture is virtual-only";
+      }
+    }
     return {.code = HardwareObservationCode::succeeded,
-            .observation = HardwareObservation{
-                .cpu = "AMD Ryzen 7",
-                .gpu = "NVIDIA GeForce RTX",
-                .motherboard = "ASUS PRIME",
-                .network_adapter = "Intel Ethernet",
-                .oem_model = "Dell Desktop",
-            }};
+            .observation = std::move(observation)};
   }
 
   std::size_t observe_calls{0};
+  bool report_physical_hardware{true};
+  bool disable_gpu{false};
 };
 
 class FixturePlatform final : public drivers::DriverHandoffPlatform {
@@ -241,6 +300,10 @@ struct Fixture final {
                                          drivers::DriverEntrypoint::dell_support) !=
                            snapshot.recommended_entrypoints.end(),
                    "recognized hardware must recommend matching fixed entrypoints");
+  auto const dell_count = std::ranges::count(
+      snapshot.recommended_entrypoints, drivers::DriverEntrypoint::dell_support);
+  passed &= expect(dell_count == 1,
+                   "the OEM summary must not duplicate a vendor recommendation");
   auto started = fixture.service.begin_external_handoff(
       drivers::DriverEntrypoint::nvidia_drivers);
   return passed && expect(started.succeeded() &&
@@ -248,6 +311,41 @@ struct Fixture final {
                               fixture.platform.requests.front().action ==
                                   drivers::DriverAssistantAction::open_page,
                           "a fixed vendor page must remain available without a package match");
+}
+
+[[nodiscard]] bool no_confirmed_physical_hardware_keeps_fixed_entrypoints() {
+  Fixture fixture;
+  fixture.hardware_observer.report_physical_hardware = false;
+  bool passed = expect(fixture.restore(),
+                       "the virtual-only fixture must restore the driver service");
+  auto const hardware = fixture.hardware.refresh();
+  auto const snapshot = fixture.service.snapshot();
+  passed &= expect(
+      hardware.state == HardwareOverviewState::unrecognized &&
+          !hardware.observation.has_value() &&
+          snapshot.recommended_entrypoints.empty(),
+      "virtual-only observations must fail closed without driver recommendations");
+  auto started = fixture.service.begin_external_handoff(
+      drivers::DriverEntrypoint::intel_driver_assistant);
+  return passed && expect(
+      started.succeeded() && fixture.platform.requests.size() == 1 &&
+          fixture.platform.requests.front().action ==
+              drivers::DriverAssistantAction::open_page,
+      "fixed official entrypoints must remain usable without physical hardware");
+}
+
+[[nodiscard]] bool disabled_physical_devices_remain_recommended() {
+  Fixture fixture;
+  fixture.hardware_observer.disable_gpu = true;
+  bool passed = expect(fixture.restore(),
+                       "the disabled-physical fixture must restore the driver service");
+  static_cast<void>(fixture.hardware.refresh());
+  auto const snapshot = fixture.service.snapshot();
+  auto const nvidia = std::ranges::find(
+      snapshot.recommended_entrypoints, drivers::DriverEntrypoint::nvidia_drivers);
+  return passed && expect(
+      nvidia != snapshot.recommended_entrypoints.end(),
+      "a disabled but confirmed physical GPU must retain its vendor recommendation");
 }
 
 [[nodiscard]] azzs::domain::StateBytes legacy_driver_handoff_payload() {
@@ -617,6 +715,8 @@ struct Fixture final {
 int main() {
   return external_completion_is_observed_but_never_verified() &&
                  recommendations_and_fixed_pages_remain_independent() &&
+                 no_confirmed_physical_hardware_keeps_fixed_entrypoints() &&
+                 disabled_physical_devices_remain_recommended() &&
                  fixed_rescue_folders_require_an_explicit_return_and_never_claim_success() &&
                  rescue_handoff_restores_to_the_same_explicit_decision_boundary() &&
                  rescue_restore_persistence_failure_keeps_the_target_in_diagnostics() &&

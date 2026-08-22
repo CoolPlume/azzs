@@ -2,6 +2,7 @@
 
 #include "App.xaml.h"
 #include "../../../composition/windows/composition_root.hpp"
+#include "native_resource_fallback.hpp"
 
 #include <utility>
 
@@ -12,30 +13,34 @@
 namespace winrt::Azzs::Ui::implementation {
 namespace {
 
-void show_last_resort_startup_failure(wchar_t const* message_key) noexcept {
-  try {
-    using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
-
-    auto const resources = ResourceLoader{};
-    auto const title = resources.GetString(L"AppStartupFailureTitle");
-    auto const message = resources.GetString(message_key);
-    if (!title.empty() && !message.empty()) {
-      ::OutputDebugStringW(message.c_str());
-      ::OutputDebugStringW(L"\n");
-      (void)::MessageBoxW(nullptr, message.c_str(), title.c_str(),
-                          MB_OK | MB_ICONERROR | MB_TOPMOST);
-      return;
-    }
-  } catch (...) {
-    // Resource loading can fail while the application is still bootstrapping.
+[[nodiscard]] wchar_t const* startup_failure_resource_key(
+    unsigned int message_id) noexcept {
+  switch (message_id) {
+    case AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_RESOURCES:
+      return L"AppStartupFailureResources";
+    case AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_WINDOW:
+      return L"AppStartupFailureWindow";
+    case AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_UNEXPECTED:
+      return L"AppStartupFailureUnexpected";
+    default:
+      return L"AppStartupFailureUnexpected";
   }
+}
 
-  // Keep this last-resort boundary no-throw and independent of WinUI assets,
-  // including the case where the loader returns an empty resource.
-  ::OutputDebugStringW(L"Startup failure.\n");
-  (void)::MessageBoxW(nullptr, L"Startup failure.",
-                      L"Windows Initial Setup Workbench",
-                      MB_OK | MB_ICONERROR | MB_TOPMOST);
+void show_last_resort_startup_failure(unsigned int message_id) noexcept {
+  auto const title = azzs::ui::winui::native_resources::localized_or_native_string(
+      L"AppStartupFailureTitle", AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_TITLE);
+  auto const message =
+      azzs::ui::winui::native_resources::localized_or_native_string(
+          startup_failure_resource_key(message_id), message_id);
+  if (!title.empty() && !message.empty()) {
+    ::OutputDebugStringW(message.c_str());
+    ::OutputDebugStringW(L"\n");
+    (void)::MessageBoxW(nullptr, message.c_str(), title.c_str(),
+                        MB_OK | MB_ICONERROR | MB_TOPMOST);
+  } else {
+    ::OutputDebugStringW(L"WinUI startup failure resources unavailable.\n");
+  }
 }
 
 void record_unexpected_startup_failure(
@@ -63,7 +68,8 @@ App::App() {
 
 void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
   if (bootstrap_failed_) {
-    show_last_resort_startup_failure(L"AppStartupFailureResources");
+    show_last_resort_startup_failure(
+        AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_RESOURCES);
     return;
   }
 
@@ -72,7 +78,8 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
     startup_status_ = std::move(startup.status);
     window_ = std::move(startup.window);
     if (!window_) {
-      show_last_resort_startup_failure(L"AppStartupFailureWindow");
+      show_last_resort_startup_failure(
+          AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_WINDOW);
     }
   } catch (...) {
     // The composition root normally converts failures to a static failure
@@ -80,7 +87,8 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
     // no-throw platform-level signal instead of returning with no active window.
     record_unexpected_startup_failure(startup_status_);
     window_ = nullptr;
-    show_last_resort_startup_failure(L"AppStartupFailureUnexpected");
+    show_last_resort_startup_failure(
+        AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_UNEXPECTED);
   }
 }
 

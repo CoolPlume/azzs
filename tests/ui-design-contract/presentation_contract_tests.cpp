@@ -428,6 +428,29 @@ class InMemoryAdvancedViewPreferenceStore final
                        component->body.find("program-data") != std::string::npos,
                    "offline cache projection must preserve typed location and accessibility");
 
+  auto empty_text =
+      azzs::ui::presentation::OfflinePackageCachePresentationText{};
+  empty_text.accessible_name.clear();
+  empty_text.available_title.clear();
+  empty_text.unavailable_title.clear();
+  empty_text.available_body_prefix.clear();
+  empty_text.unavailable_body_prefix.clear();
+  empty_text.item_suffix.clear();
+  empty_text.network_suffix.clear();
+  auto const fallback =
+      azzs::ui::presentation::make_offline_package_cache_presentation(
+          source, std::move(empty_text));
+  auto const* fallback_component =
+      fallback->find_component("offline-package-cache.status");
+  passed &= expect(
+      fallback_component != nullptr &&
+          fallback_component->accessible_name == "离线资源缓存状态" &&
+          fallback_component->title == "离线资源缓存" &&
+          fallback_component->body.find("受控缓存位置： program-data") == 0 &&
+          fallback_component->body.find("0 个已缓存资源") != std::string::npos &&
+          fallback_component->body.find("当前无法联网") != std::string::npos,
+      "empty offline cache resources must use Chinese presentation defaults");
+
   source.location_state = CacheLocationState::unavailable;
   source.location_detail = "removable media is unavailable";
   auto const unavailable =
@@ -458,21 +481,87 @@ class InMemoryAdvancedViewPreferenceStore final
   bool passed = true;
   passed &= expect(status != nullptr &&
                        status->state == PresentationState::waiting_for_network &&
-                       status->body.find("No current effective catalog") !=
+                       status->accessible_name == "软件选择状态" &&
+                       status->title == "当前有效目录尚未加载" &&
+                       status->body.find("尚未加载当前有效目录") !=
                            std::string::npos,
-                   "software installation must honestly expose an absent current catalog");
+                   "software installation fallback must remain Simplified Chinese");
   passed &= expect(std::addressof(standard.source()) ==
                        std::addressof(advanced.source()),
                    "software standard and advanced views must share one snapshot");
   passed &= expect(status != nullptr && standard.visible(*status) &&
                        advanced.visible(*status) &&
-                       !status->advanced_detail.empty(),
-                   "the absent-catalog warning must remain visible while advanced adds detail");
+                       status->advanced_detail.find("当前页面不会") == 0,
+                   "the absent-catalog warning must remain visible while advanced adds localized detail");
+
+  auto available = source;
+  available.has_current_catalog = true;
+  available.mode = azzs::application::software_selection::SelectionLifecycleMode::ready;
+  auto empty_text = azzs::ui::presentation::SoftwareSelectionPresentationText{};
+  empty_text.accessible_name.clear();
+  empty_text.available_title.clear();
+  empty_text.available_body_prefix.clear();
+  empty_text.available_body_suffix.clear();
+  empty_text.absent_catalog_title.clear();
+  empty_text.absent_catalog_body.clear();
+  empty_text.not_restored_body.clear();
+  empty_text.restore_failed_body.clear();
+  empty_text.advanced_available.clear();
+  empty_text.advanced_absent_catalog.clear();
+  auto const fallback_snapshot =
+      azzs::ui::presentation::make_software_selection_presentation(
+          available, std::move(empty_text));
+  auto const* fallback_status =
+      fallback_snapshot->find_component("software-selection.status");
+  passed &= expect(fallback_status != nullptr &&
+                       fallback_status->accessible_name == "软件选择状态" &&
+                       fallback_status->title == "软件选择" &&
+                       fallback_status->body.find("已保留 0 个软件选择") == 0 &&
+                       fallback_status->advanced_detail.find("标准与高级视图") == 0,
+                   "empty resource strings must use Chinese presentation defaults");
+
+  available.mode =
+      azzs::application::software_selection::SelectionLifecycleMode::failed;
+  available.has_current_catalog = false;
+  available.error = "HRESULT 0x80070005";
+  auto const failed_snapshot =
+      azzs::ui::presentation::make_software_selection_presentation(available);
+  auto const* failed_status =
+      failed_snapshot->find_component("software-selection.status");
+  passed &= expect(failed_status != nullptr &&
+                       failed_status->body == "HRESULT 0x80070005",
+                   "unknown software selection errors must retain their original text");
   return passed;
 }
 
 [[nodiscard]] bool verify_guided_initialization_projection() {
   namespace guided = azzs::application::guided_initialization;
+
+  auto const defaults =
+      azzs::ui::presentation::GuidedInitializationPresentationText{};
+  bool passed = true;
+  passed &= expect(
+      defaults.summary_accessible_name == "推荐初始化摘要" &&
+          defaults.summary_title == "推荐初始化" &&
+          defaults.summary_prefix == "已完成：" &&
+          defaults.summary_error_suffix ==
+              "。请先查看当前阶段，再继续操作。" &&
+          defaults.start_command == "开始推荐初始化" &&
+          defaults.local_trial_title == "正在使用本机试用目录" &&
+          defaults.read_only_title == "推荐初始化处于只读状态" &&
+          defaults.drivers_stage_title == "驱动" &&
+          defaults.stage_completed_body == "已完成" &&
+          defaults.stage_not_executed_body == "未执行",
+      "guided presentation defaults must be Simplified Chinese");
+
+  azzs::ui::presentation::GuidedInitializationPresentationText localized_text;
+  localized_text.summary_title = "推荐初始化";
+  localized_text.summary_prefix = "已完成：";
+  localized_text.stage_completed_body = "已完成";
+  localized_text.stage_partial_body = "部分完成";
+  localized_text.stage_waiting_restart_body = "等待 Windows 重启";
+  localized_text.stage_withdrawn_body = "已紧急撤回";
+  localized_text.raw_detail_prefix = "原始系统信息：";
 
   guided::Snapshot source;
   source.mode = guided::LifecycleMode::ready;
@@ -493,12 +582,19 @@ class InMemoryAdvancedViewPreferenceStore final
   };
   source.evidence.restart_gate = guided::RestartGateState::awaiting_user_continue;
 
-  auto projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+  auto projected = azzs::ui::presentation::make_guided_initialization_presentation(
+      source, localized_text);
+  auto const* localized_summary = projected->find_component("guided.summary");
+  bool has_localized_projection =
+      localized_summary != nullptr &&
+      localized_summary->title == "推荐初始化" &&
+      localized_summary->body.find("已完成：") != std::string::npos;
   auto const* restart_stage =
       projected->find_component("guided.stage.system-optimization");
-  bool passed = expect(restart_stage != nullptr,
-                       "guided projection must expose the current restart stage");
+  passed &= expect(has_localized_projection,
+                   "guided projection must use injected Simplified Chinese text");
+  passed &= expect(restart_stage != nullptr,
+                   "guided projection must expose the current restart stage");
   bool has_restart_continue = false;
   if (restart_stage != nullptr) {
     auto const restart_continue = std::ranges::find_if(
@@ -519,7 +615,8 @@ class InMemoryAdvancedViewPreferenceStore final
   source.active->stages[0].state = guided::StageState::failed;
   source.evidence.restart_gate = guided::RestartGateState::none;
   projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
   auto const* failed_stage = projected->find_component("guided.stage.drivers");
   bool has_retry = false;
   if (failed_stage != nullptr) {
@@ -542,6 +639,61 @@ class InMemoryAdvancedViewPreferenceStore final
   }
   passed &= expect(has_history,
                    "guided summary must expose a typed history and logs entry");
+
+  source.active->stages[0].state = guided::StageState::completed;
+  source.active->stages[0].detail = "driver stage marked complete by the user";
+  projected =
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
+  auto const* completed_stage =
+      projected->find_component("guided.stage.drivers");
+  passed &= expect(completed_stage != nullptr &&
+                       completed_stage->body == "已完成",
+                   "known guided stage details must be localized");
+
+  source.active->stages[0].state = guided::StageState::partial;
+  source.active->stages[0].detail =
+      "external installation remains an explicitly recognized fact";
+  projected =
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
+  auto const* partial_stage = projected->find_component("guided.stage.drivers");
+  passed &= expect(partial_stage != nullptr &&
+                       partial_stage->body == "部分完成",
+                   "partial guided stages must use the localized state label");
+
+  source.active->stages[0].state = guided::StageState::waiting_for_restart;
+  source.active->stages[0].detail =
+      "restart barrier is available only for read-only recovery";
+  projected =
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
+  auto const* read_only_restart_stage =
+      projected->find_component("guided.stage.drivers");
+  passed &= expect(read_only_restart_stage != nullptr &&
+                       read_only_restart_stage->body == "等待 Windows 重启",
+                   "known read-only restart details must be localized");
+
+  source.active->stages[0].state = guided::StageState::emergency_withdrawn;
+  source.active->stages[0].detail = "controlled emergency withdrawal";
+  projected =
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
+  auto const* withdrawn_stage = projected->find_component("guided.stage.drivers");
+  passed &= expect(withdrawn_stage != nullptr &&
+                       withdrawn_stage->body == "已紧急撤回",
+                   "withdrawn guided stages must use the localized state label");
+
+  source.active->stages[0].state = guided::StageState::failed;
+  source.active->stages[0].detail = "vendor-specific failure 0x80070005";
+  projected =
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
+  auto const* raw_stage = projected->find_component("guided.stage.drivers");
+  passed &= expect(raw_stage != nullptr &&
+                       raw_stage->body.find("原始系统信息：vendor-specific failure") ==
+                           0,
+                   "unknown guided stage details must retain a Chinese context");
   return passed;
 }
 
