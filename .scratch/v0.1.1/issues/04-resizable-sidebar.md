@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: 03, 18
+Blocked by: 03
 Owner: issue-04
 Claimed by: none
 Consumers: 07
@@ -32,3 +32,7 @@ Evidence freshness: 绑定 NavigationView 模板、偏好服务、设置键、�
 `V011-G04`、`V011-SIDEBAR-01` 至 `V011-SIDEBAR-07`、ADR-0050、事项 03、事项 18、`CONTEXT.md`
 
 ## Comments
+
+- 2026-08-23（集成证据核对）：侧栏实现提交 `11dfde5b9acb5e62b72e743f16d2b3a503f89d06` 已通过普通合并 `80713109b1cd71be19689f0c4fbbc4775d413797`（合并父项 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c` 与 `11dfde5`）进入当前本地候选；远端 `origin/codex/v1-integration` 尚未包含该合并。实现范围包括默认 248 DIP、216-360 边界、拖拽/键盘和偏好持久化回退。
+- 事项仍需最小合同与 Windows x64 行为验证，特别是 DragDelta 累计增量、Double/Int32 持久化、写入失败回退和 compact 不丢状态；不得把源码审查写成拖拽或重启已通过。
+- 未验证边界：真实 x64 鼠标/触摸/键盘、窄窗 compact、DPI/高文本缩放、Narrator、ARM64、安装生命周期和多显示器均未验证。

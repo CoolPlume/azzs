@@ -33,3 +33,7 @@ Evidence freshness: 绑定最终 0.1.1 候选提交、Windows/SDK、显示器/DP
 `V011-ACCEPT-01` 至 `V011-ACCEPT-08`、事项 01 至 06、事项 24、`docs/agents/windows-native-takeover.md`
 
 ## Comments
+
+- 2026-08-23（集成证据核对）：当前本地候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`，其普通合并链依次包含共享页头 `da12eb5ea087cf0d9645148c30d0a7a706a837c7`、物理硬件 `67810a87014b50c28847b580c9bb35e8d1b8dba9`、驱动 `ec80d9ed68bf547481adb38c15d0fbfcd4407693`、设置恢复 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c` 和侧栏 `80713109b1cd71be19689f0c4fbbc4775d413797`。事项 07 仍为 ready-for-human/open，未以静态合同结票。
+- 待执行证据包括 Windows 11 x64 宽/窄窗口、100%/高 DPI、键盘/触摸、Narrator、减少动画/透明度、高对比度、重复导航和设置异常恢复；需绑定最终候选 SHA、构建目录、截图/日志及实际环境。
+- 未验证边界：ARM64 实机、DPI/多显示器专项、安装/卸载/升级生命周期、真实硬件样本、触摸和屏幕阅读器均未执行；任何自动合同或 macOS/CI 结果都不能替代真实 Windows 视觉验收。
