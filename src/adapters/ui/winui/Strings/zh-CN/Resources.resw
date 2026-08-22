@@ -55,6 +55,7 @@
   <data name="AppStartupFailureResources" xml:space="preserve"><value>界面资源初始化失败。请重新启动工作台；如果问题持续，请收集诊断资料。</value></data>
   <data name="AppStartupFailureWindow" xml:space="preserve"><value>工作台未能创建启动窗口。请重新启动工作台；如果问题持续，请收集诊断资料。</value></data>
   <data name="AppStartupFailureUnexpected" xml:space="preserve"><value>工作台启动失败。请重新启动工作台；如果问题持续，请收集诊断资料。</value></data>
+  <data name="PageHeaderFallbackTitle" xml:space="preserve"><value>页面</value></data>
   <data name="NavigationOverview.Content" xml:space="preserve"><value>概览</value></data>
   <data name="NavigationDrivers.Content" xml:space="preserve"><value>驱动</value></data>
   <data name="NavigationSystemOptimization.Content" xml:space="preserve"><value>系统优化</value></data>
