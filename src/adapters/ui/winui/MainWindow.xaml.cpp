@@ -602,15 +602,17 @@ void MainWindow::commit_application_settings_page(
   displayed_page_ = PageId::application_settings;
   workbench_->navigate(PageId::application_settings);
 
+  // A post-commit projection is part of the transaction boundary. Let any
+  // exception escape so SettingsNavigationBridge performs the single recovery
+  // path; swallowing it would report navigation success with a partial shell.
+  // Keep the catalog editor's temporary access until projection succeeds so a
+  // failed projection can restore the exact prior core state.
+  project(workbench_->snapshot());
   if (previous_page == PageId::software_catalog_editor) {
     if (auto const services = workbench_->services()) {
       services->debug_mode_catalog_editor().end_temporary_close_recovery();
     }
   }
-  // A post-commit projection is part of the transaction boundary. Let any
-  // exception escape so SettingsNavigationBridge performs the single recovery
-  // path; swallowing it would report navigation success with a partial shell.
-  project(workbench_->snapshot());
 }
 
 void MainWindow::restore_settings_navigation_state(
