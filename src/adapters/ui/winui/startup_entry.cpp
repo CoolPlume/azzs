@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "native_resource_fallback.hpp"
 
 // App.xaml.g.hpp renames its generated entry point when the project defines
 // DISABLE_XAML_GENERATED_MAIN. Keep the wrapper at the process boundary so
@@ -9,9 +10,16 @@ namespace {
 
 void show_startup_failure() noexcept {
   ::OutputDebugStringW(L"Azzs WinUI startup failed before the application was created.\n");
-  (void)::MessageBoxW(
-      nullptr, L"工作台未能启动。请重新启动工作台；如果问题持续，请收集诊断资料。",
-      L"无法进入工作台", MB_OK | MB_ICONERROR | MB_TOPMOST);
+  auto const title = azzs::ui::winui::native_resources::load_string(
+      AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_TITLE);
+  auto const message = azzs::ui::winui::native_resources::load_string(
+      AZZS_NATIVE_STRING_STARTUP_FAILURE);
+  if (!title.empty() && !message.empty()) {
+    (void)::MessageBoxW(nullptr, message.c_str(), title.c_str(),
+                        MB_OK | MB_ICONERROR | MB_TOPMOST);
+  } else {
+    ::OutputDebugStringW(L"WinUI startup failure resources unavailable.\n");
+  }
 }
 
 }  // namespace

@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "MainWindow.xaml.h"
+#include "native_resource_fallback.hpp"
 
 #include <algorithm>
 #include <string>
@@ -844,9 +845,12 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
     AutomationProperties::SetName(SettingsNavigationFailureInfoBar(), title);
   } catch (...) {
     try {
-      SettingsNavigationFailureInfoBar().Title(L"应用设置暂时无法打开");
-      SettingsNavigationFailureInfoBar().Message(
-          L"设置数据或页面资源读取失败。现有页面已保留，请重试或返回当前页面。");
+      auto const title = native_resources::load_string(
+          AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_TITLE);
+      auto const message = native_resources::load_string(
+          AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_MESSAGE);
+      SettingsNavigationFailureInfoBar().Title(winrt::hstring{title});
+      SettingsNavigationFailureInfoBar().Message(winrt::hstring{message});
     } catch (...) {
       ::OutputDebugStringW(
           L"WinUI application-settings fallback message projection failed.\n");
