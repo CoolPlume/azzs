@@ -33,4 +33,7 @@ Evidence freshness: 绑定 NavigationView 模板、偏好服务、设置键、�
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：侧栏源提交 `11dfde5b9acb5e62b72e743f16d2b3a503f89d06` 及根字典修复 `65e7e591c0a9df043d1ce284df88663bd7c5a772` 经普通合并 `80713109b1cd71be19689f0c4fbbc4775d413797` 进入候选链；当前远端头为 `d8a4367adc1e322351126e8ab3676d30584475d5`。受影响侧栏合同包含在定向 CTest 10/10 通过结果中，但未完成真实拖拽/键盘/重启 UI 验收。
+- 未验证边界：持久化故障回退、窄窗 compact 状态保留、DPI、触摸、屏幕阅读器和 ARM64 均未完成，事项保持 `Resolution: open`。
+
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/18-application-settings.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前 `Blocked by` 仅保留同 effort 的事项 03。

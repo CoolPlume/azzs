@@ -32,6 +32,9 @@ Evidence freshness: 绑定资源文件、presentation contract、页面文本生
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：共享页头源提交 `96c80e63e1059017f810d7fed2a460b6a39b1d17` 经 `da12eb5ea087cf0d9645148c30d0a7a706a837c7` 合入；概览本地化提交 `6f13dbf15ea90ade52fc5bc9d4b459cf46a8bee0`、资源驱动回退 `2685c937fe0debfef9e80583d450e6b186ecca83`、软件选择回退 `2e56a5d10e17cd0e4b26423fef81a03a188dbfdb`/`14dcacae592d89ed7cf487622b58dda785ef086d`/`bf04fd368981f1daf0e7231e7e0617a0099c8c42` 及原生资源回退 `53089a64838031a0f9c196e886a24c4603709c87` 均已在当前普通合并链；最终候选头为 `d8a4367adc1e322351126e8ab3676d30584475d5`，事项仍 `Resolution: open`。
+- 当前候选头的 `check_design_system.py` 与 `check_winui_async_contract.py` 均通过。完整全局文案扫描、资源缺失运行时回退、窄窗/大文本/屏幕阅读器和真实 Windows 页面仍未完成；品牌、型号、版本及必要原始系统/WMI 错误原文仍按规格保留。
+
 - 2026-08-23（集成证据核对）：共享页头/资源接缝来自 `96c80e63e1059017f810d7fed2a460b6a39b1d17`，已由普通合并 `da12eb5ea087cf0d9645148c30d0a7a706a837c7` 集成；驱动状态文案来自 `02c52d62b21d2797d87ea13a891878d63f8cfa8d`，经 `ec80d9ed68bf547481adb38c15d0fbfcd4407693` 集成。当前本地候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`，资源仍有后续中文化工作，事项保持 open。
 - 当前审查发现概览 guided-initialization 动态 presentation 仍有英文默认标题、阶段和状态文本，需在 UI 适配器通过资源构造 `GuidedInitializationPresentationText` 后再结票。`draft` 作为协议/测试字段可保留，用户可见的“内置 draft 目录”须使用简体中文上下文。
 - 未验证边界：动态概览中文化后的资源回退、完整全局可见文案扫描、窄窗/大文本/屏幕阅读器呈现、ARM64、DPI 和真实 Windows UI 均未验证；品牌、型号、版本及必要原始系统/WMI 错误才可保留原文。
