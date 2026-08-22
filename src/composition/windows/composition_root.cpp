@@ -48,6 +48,7 @@
 #include "azzs/application/application_settings.hpp"
 #include "azzs/application/architecture_selection.hpp"
 #include "azzs/application/advanced_view_preferences.hpp"
+#include "azzs/application/sidebar_width_preferences.hpp"
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/debug_mode_catalog_editor.hpp"
@@ -1305,6 +1306,8 @@ StartupAssemblyResult assemble_startup() {
         std::make_shared<adapters::windows::WindowsViewPreferences>();
     auto advanced_view_preferences =
         std::make_shared<application::AdvancedViewPreferences>(view_preferences);
+    auto sidebar_width_preferences =
+        std::make_shared<application::SidebarWidthPreferences>(view_preferences);
     auto architecture_preferences =
         std::make_shared<application::ArchitecturePreferences>(view_preferences);
     auto cache_retention_preferences =
@@ -1354,7 +1357,8 @@ StartupAssemblyResult assemble_startup() {
     try {
       window->bind(std::move(workbench), std::move(motion_preferences),
                    std::move(system_settings),
-                   std::move(advanced_view_preferences));
+                   std::move(advanced_view_preferences),
+                   std::move(sidebar_width_preferences));
       result.Closed([services](auto&&, auto&&) {
         services->shutdown();
       });
