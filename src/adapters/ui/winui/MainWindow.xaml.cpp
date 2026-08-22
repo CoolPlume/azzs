@@ -53,6 +53,14 @@ struct SettingsNavigationPreparationError final {
   char const* detail{"settings page preparation failed"};
 };
 
+// Keep the failure surface useful even if both PRI and the compiled string
+// table are unavailable. This is an emergency presentation fallback, not a
+// second localization source for normal UI rendering.
+constexpr wchar_t kSettingsNavigationFailureTitle[] =
+    L"应用设置暂时无法打开";
+constexpr wchar_t kSettingsNavigationFailureMessage[] =
+    L"设置数据或页面资源读取失败。现有页面已保留，请重试或返回当前页面。";
+
 [[nodiscard]] std::string_view settings_navigation_stage_name(
     azzs::ui::presentation::SettingsNavigationFailureStage stage) noexcept {
   using Stage = azzs::ui::presentation::SettingsNavigationFailureStage;
@@ -834,14 +842,20 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
   restoring_navigation_selection_ = false;
   try {
     using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
-    auto const title =
+    auto title =
         azzs::ui::winui::native_resources::localized_or_native_string(
             L"MainWindowSettingsNavigationFailed.Title",
             AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_TITLE);
-    auto const message =
+    auto message =
         azzs::ui::winui::native_resources::localized_or_native_string(
             L"MainWindowSettingsNavigationFailed.Message",
             AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_MESSAGE);
+    if (title.empty()) {
+      title = kSettingsNavigationFailureTitle;
+    }
+    if (message.empty()) {
+      message = kSettingsNavigationFailureMessage;
+    }
     SettingsNavigationFailureInfoBar().Message(message);
     SettingsNavigationFailureInfoBar().Title(title);
     AutomationProperties::SetName(SettingsNavigationFailureInfoBar(), title);
@@ -851,8 +865,17 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
           AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_TITLE);
       auto const message = azzs::ui::winui::native_resources::load_string(
           AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_MESSAGE);
-      SettingsNavigationFailureInfoBar().Title(winrt::hstring{title});
-      SettingsNavigationFailureInfoBar().Message(winrt::hstring{message});
+      auto safe_title = title.empty() ? winrt::hstring{
+                                             kSettingsNavigationFailureTitle}
+                                      : winrt::hstring{title};
+      auto safe_message = message.empty() ? winrt::hstring{
+                                               kSettingsNavigationFailureMessage}
+                                          : winrt::hstring{message};
+      SettingsNavigationFailureInfoBar().Title(safe_title);
+      SettingsNavigationFailureInfoBar().Message(safe_message);
+      using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
+      AutomationProperties::SetName(SettingsNavigationFailureInfoBar(),
+                                     safe_title);
     } catch (...) {
       ::OutputDebugStringW(
           L"WinUI application-settings fallback message projection failed.\n");

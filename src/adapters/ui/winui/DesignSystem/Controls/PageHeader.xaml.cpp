@@ -27,7 +27,7 @@ PageHeader::PageHeader() {
         azzs::ui::winui::native_resources::localized_or_native_string(
             L"PageHeaderFallbackTitle",
             AZZS_NATIVE_STRING_PAGE_HEADER_FALLBACK_TITLE);
-    fallback.Text(resource);
+    fallback.Text(resource.empty() ? winrt::hstring{L"页面"} : resource);
     fallback.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
     TitleContent(fallback);
   }
