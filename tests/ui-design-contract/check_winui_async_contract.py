@@ -362,6 +362,15 @@ def verify(root: Path) -> None:
         "workbench_->navigate(PageId::application_settings);" in commit_body,
         "settings commit must publish the candidate only after preparation succeeds",
     )
+    projection_index = commit_body.find("project(workbench_->snapshot());")
+    temporary_access_end_index = commit_body.find(
+        "end_temporary_close_recovery();"
+    )
+    require(
+        projection_index >= 0 and
+        temporary_access_end_index > projection_index,
+        "settings commit must revoke temporary catalog access only after post-commit projection succeeds",
+    )
     require(
         "navigate_to(previous_page)" not in navigate_body and
         "navigate_and_commit(previous_page)" not in navigate_body,
