@@ -194,6 +194,10 @@ def verify_resource_dictionary(root: Path) -> None:
         "AzzsTouchTargetMinHeight",
         "AzzsStageMinimumWidth",
         "AzzsWideLayoutMinWidth",
+        "AzzsPageHeaderWideLayoutMinWidth",
+        "AzzsPageHeaderSummaryMargin",
+        "AzzsPageHeaderCommandMargin",
+        "AzzsPageHeaderCommandNarrowMargin",
         "AzzsCornerRadiusSmall",
         "AzzsCornerRadiusMedium",
         "AzzsFontFamily",
@@ -334,6 +338,70 @@ def verify_app_and_pages(root: Path) -> None:
                 "AzzsPagePaddingNarrow" in text and
                 "AzzsPagePadding}" in text,
                 f"{page_path.name} must consume narrow and wide page states")
+        headers = [element for element in page_root.iter()
+                   if local_name(element.tag) == "PageHeader"]
+        require(len(headers) == 1,
+                f"{page_path.name} must use exactly one shared PageHeader")
+        require(text.count("<controls:PageHeader.TitleContent>") == 1,
+                f"{page_path.name} must provide one PageHeader title slot")
+        require(text.count('AutomationProperties.HeadingLevel="Level1"') == 1,
+                f"{page_path.name} must expose one level-one page heading")
+        if "PageHeader.CommandContent" in text:
+            require("Click=" in text or "Command=" in text,
+                    f"{page_path.name} command slots must remain owned by the page")
+
+    header_path = ui_root / "DesignSystem/Controls/PageHeader.xaml"
+    header_root = parse_xml(header_path)
+    header_text = read(header_path)
+    require(header_root.attrib.get(f"{{{X_NS}}}Class") ==
+            "Azzs.Ui.DesignSystem.Controls.PageHeader",
+            "PageHeader must expose the shared runtime class")
+    require(header_root.attrib.get("IsTabStop") == "False" and
+            header_root.attrib.get("AutomationProperties.AutomationId") ==
+            "AzzsPageHeader",
+            "PageHeader must be non-focusable and automation-addressable")
+    presenters = {
+        element.attrib.get(X_NAME)
+        for element in header_root.iter()
+        if local_name(element.tag) == "ContentPresenter"
+    }
+    require({"TitlePresenter", "SummaryPresenter", "CommandHost"} <= presenters,
+            "PageHeader must own title, summary, and command presenters")
+    require("VisualStateGroup" in header_text and
+            "NarrowPageHeader" in header_text and
+            "WidePageHeader" in header_text and
+            "AzzsPageHeaderWideLayoutMinWidth" in header_text and
+            "AzzsPageHeaderCommandNarrowMargin" in header_text and
+            "AzzsPageHeaderCommandMargin" in header_text,
+            "PageHeader must provide shared narrow and wide command layout")
+    require("CommandHost.(Grid.Row)" in header_text and
+            "CommandHost.(Grid.Column)" in header_text and
+            "CommandHost.(Grid.RowSpan)" in header_text,
+            "PageHeader command placement must be state-driven")
+
+    header_cpp = read(header_path.with_suffix(".xaml.cpp"))
+    header_idl = read(header_path.with_suffix(".idl"))
+    header_h = read(header_path.with_suffix(".xaml.h"))
+    require("runtimeclass PageHeader" in header_idl and
+            all(f"Object {slot}" in header_idl
+                for slot in ("TitleContent", "SummaryContent", "CommandContent")),
+            "PageHeader IDL must expose all three content slots")
+    require("PageHeaderT<PageHeader>" in header_h and
+            "update_visibility" in header_h and
+            all(slot in header_h
+                for slot in ("TitleContent", "SummaryContent", "CommandContent")),
+            "PageHeader native projection must own typed slot accessors")
+    require("InitializeComponent" in header_cpp and
+            "TitlePresenter().Content(value)" in header_cpp and
+            "SummaryPresenter().Content(value)" in header_cpp and
+            "CommandHost().Content(value)" in header_cpp and
+            "Visibility::Collapsed" in header_cpp and
+            "Visibility::Visible" in header_cpp,
+            "PageHeader code-behind must project slots and collapse empty ones")
+    require(not any(token in header_cpp + header_text for token in (
+        "Storyboard", "ConnectedAnimation", "CompositionAnimation",
+        "ShellExecute", "CreateProcess", "std::filesystem", "std::fstream",
+    )), "PageHeader must remain a static, presentation-only shell")
 
     production_xaml = sorted(ui_root.rglob("*.xaml"))
     resource_path = ui_root / "Themes/DesignSystem.xaml"
@@ -807,6 +875,11 @@ def verify_xaml_project_metadata(root: Path) -> None:
 
     require("Themes/DesignSystem.xaml" in pages,
             "the independent design ResourceDictionary must be a Page item")
+    require("DesignSystem/Controls/PageHeader.xaml" in pages and
+            "DesignSystem/Controls/PageHeader.xaml.h" in cl_includes and
+            "DesignSystem/Controls/PageHeader.xaml.cpp" in cl_compiles and
+            "DesignSystem/Controls/PageHeader.idl" in midl,
+            "the shared PageHeader must be present in every WinUI project item group")
     require("DesignSystem/Controls/ReadOnlyPresentationSurface.xaml" in pages,
             "the typed-intent projection surface must compile on Windows")
     fixture_xaml = "DesignSystem/Fixtures/DesignSystemFixturePage.xaml"
@@ -875,9 +948,12 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "NavigationOverview.Content",
         "NavigationApplicationSettings.Content",
         "VersionRiskTitle",
+        "PageHeaderFallbackTitle",
     ):
         require(required in resource_names,
                 f"existing localized shell resource disappeared: {required}")
+    require("PageHeaderFallbackSummary" not in resource_names,
+            "PageHeader must not retain an unused summary fallback resource")
 
     required_settings_resources = {
         "ApplicationSettingsCatalogHeading.Text",

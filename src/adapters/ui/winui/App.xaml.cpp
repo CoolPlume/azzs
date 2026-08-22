@@ -32,9 +32,9 @@ void show_last_resort_startup_failure(wchar_t const* message_key) noexcept {
 
   // Keep this last-resort boundary no-throw and independent of WinUI assets,
   // including the case where the loader returns an empty resource.
-  ::OutputDebugStringW(L"Startup failure.\n");
-  (void)::MessageBoxW(nullptr, L"Startup failure.",
-                      L"Windows Initial Setup Workbench",
+  ::OutputDebugStringW(L"WinUI startup failure.\n");
+  (void)::MessageBoxW(nullptr, L"工作台启动失败。请重新启动工作台；如果问题持续，请收集诊断资料。",
+                      L"无法进入工作台",
                       MB_OK | MB_ICONERROR | MB_TOPMOST);
 }
 
