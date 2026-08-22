@@ -32,6 +32,10 @@ Evidence freshness: 绑定 GitHub 分支清单、保护设置、集成提交和�
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（再次实时 GitHub 核对，supersedes earlier candidate facts）：远端 `0.1.1` 指向 `180cb20ee60ee58915b917a6b91b4781aaba570b`，远端 `codex/v1-integration` 指向 `d8a4367adc1e322351126e8ab3676d30584475d5`；merge-base 为 `180cb20ee60ee58915b917a6b91b4781aaba570b`，集成分支相对版本分支 ahead 42、behind 0。GitHub 分支清单只发现裸 `0.1.1`，未发现 `v0.1.1`、`codex/v0.1.1` 或同版本长期别名。
+- 使用已认证 `gh api repos/CoolPlume/azzs/branches/0.1.1/protection --include` 得到 HTTP 404 `Branch not protected`；保护规则未配置/未确认，不能写成已保护。未创建 tag/Release、未合入 `main`、未接受 WiX 条款；关联 PR/CI 未在本次核对中虚构。
+- `Resolution: open` 保持不变。当前仅有静态合同和 Git 关系证据；ARM64、DPI、安装生命周期、实机 UI/无障碍以及后续保护/CI 放行仍未验证。
+
 - 2026-08-23 06:58:09（Asia/Shanghai，实时 Git/GitHub 核对）：远端分支 [`0.1.1`](https://github.com/CoolPlume/azzs/tree/0.1.1) 指向 [`180cb20ee60ee58915b917a6b91b4781aaba570b`](https://github.com/CoolPlume/azzs/commit/180cb20ee60ee58915b917a6b91b4781aaba570b)，远端集成分支 [`codex/v1-integration`](https://github.com/CoolPlume/azzs/tree/codex/v1-integration) 指向 [`ccca70b6562b52d6ac8d9a77545decd886bd2733`](https://github.com/CoolPlume/azzs/commit/ccca70b6562b52d6ac8d9a77545decd886bd2733)。Git 复核确认集成分支相对 `0.1.1` 为 ahead 37、behind 0，merge-base 为 `180cb20ee60ee58915b917a6b91b4781aaba570b`（[compare](https://github.com/CoolPlume/azzs/compare/0.1.1...codex/v1-integration)）；此前记录的 `ec80d9e`、`6b0e8e25...` 和“少 19 个祖先提交”均已过时，不再作为当前事实。
 - 同一时刻的远端分支清单仅发现一个裸 `0.1.1` 长期版本分支；未发现 `v0.1.1`、`codex/v0.1.1` 或其他同版本长期别名。`0.1.1` 的分支保护查询返回 HTTP 404 `Branch not protected`（[protection API](https://api.github.com/repos/CoolPlume/azzs/branches/0.1.1/protection)），所以保护规则未确认/未配置，不能写成已保护；`main` 的保护状态与本事项无关。
 - GitHub 对 `codex/v1-integration`、`0.1.1` 及其当前头提交的关联 PR 查询未返回结果，故本次核对不虚构 PR 号或合并链接；分支、提交和 compare 链接如上。当前远端分支清单可确认保留 `codex/v0.1.0-controlled-acquisition`，但未列出裸 `v0.1.0`；本轮未删除或改名任何历史分支。未创建 tag/Release、未合入 `main`、未接受 WiX 条款。
