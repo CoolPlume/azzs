@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace azzs::domain::offline_package_cache {
 
@@ -13,6 +14,7 @@ enum class CacheArchitecture {
   arm64,
   architecture_independent,
   unknown,
+  x86,
 };
 
 enum class CacheAssetKind {
@@ -21,6 +23,7 @@ enum class CacheAssetKind {
   online_only,
   managed_source,
   unsupported,
+  archive_package,
 };
 
 // The source identity is an opaque stable fingerprint produced from one
@@ -45,6 +48,7 @@ struct CacheAsset final {
   bool resume_supported{false};
   std::optional<std::uint64_t> expected_bytes;
   std::optional<std::string> expected_sha256;
+  std::vector<std::string> archive_members;
 
   [[nodiscard]] bool valid() const noexcept;
   [[nodiscard]] bool cacheable() const noexcept;

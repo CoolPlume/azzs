@@ -3,14 +3,47 @@
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "azzs/application/execution_log.hpp"
 #include "azzs/application/installation_batch.hpp"
 #include "azzs/application/offline_package_cache.hpp"
 
 namespace azzs::adapters::windows {
+
+// ZIP archives are accepted only as a complete, reviewed byte sequence.  The
+// inspection result is intentionally a value type so contract tests can cover
+// malformed archives without starting a third-party process.
+enum class WindowsArchiveValidationCode {
+  valid,
+  malformed,
+  unsupported,
+  member_mismatch,
+  architecture_mismatch,
+};
+
+struct WindowsArchiveMemberInspection final {
+  std::string path;
+  std::uint16_t compression_method{};
+  std::uint64_t compressed_size{};
+  std::uint64_t uncompressed_size{};
+  std::uint16_t pe_machine{};
+};
+
+struct WindowsArchiveInspection final {
+  WindowsArchiveValidationCode code{
+      WindowsArchiveValidationCode::malformed};
+  std::vector<WindowsArchiveMemberInspection> members;
+  std::string detail;
+};
+
+[[nodiscard]] WindowsArchiveInspection inspect_windows_controlled_archive(
+    std::span<std::byte const> archive,
+    std::span<std::string const> allowed_members,
+    domain::offline_package_cache::CacheArchitecture expected_architecture);
 
 class WindowsRegistrySoftwarePresenceDetector;
 
@@ -78,6 +111,7 @@ class WindowsOpaqueCacheInstallerLauncher final
   struct OwnedProcess final {
     void* process{};
     std::filesystem::path payload;
+    std::filesystem::path cleanup_directory;
     std::string item_id;
     std::string profile_id;
     domain::software_catalog::InstallerBaseline baseline;

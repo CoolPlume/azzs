@@ -55,6 +55,9 @@ enum class PackageType {
   full_package,
   online_installer,
   external_handoff,
+  // A fixed ZIP container whose explicitly registered members are the only
+  // executable payloads. The archive itself is never passed to a launcher.
+  archive_package,
 };
 
 struct ResolvedPackage final {
@@ -64,6 +67,9 @@ struct ResolvedPackage final {
   bool network_required{false};
   std::optional<std::uint64_t> expected_bytes;
   std::optional<std::string> expected_sha256;
+  // Non-empty only for archive_package. Members are exact ZIP paths, in the
+  // order declared by the reviewed source registration.
+  std::vector<std::string> archive_members;
 
   auto operator<=>(ResolvedPackage const&) const = default;
 };

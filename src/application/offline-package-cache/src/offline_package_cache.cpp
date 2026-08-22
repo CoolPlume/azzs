@@ -31,6 +31,8 @@ using cache_domain::CacheAssetKind;
       return CacheArchitecture::architecture_independent;
     case SourceArchitecture::unknown:
       return CacheArchitecture::unknown;
+    case SourceArchitecture::x86:
+      return CacheArchitecture::x86;
   }
   return CacheArchitecture::unknown;
 }
@@ -42,6 +44,8 @@ using cache_domain::CacheAssetKind;
       return CacheAssetKind::full_package;
     case selection_domain::PackageType::online_installer:
       return CacheAssetKind::online_installer;
+    case selection_domain::PackageType::archive_package:
+      return CacheAssetKind::archive_package;
     case selection_domain::PackageType::external_handoff:
       return CacheAssetKind::managed_source;
   }
@@ -743,9 +747,11 @@ std::optional<CacheAsset> make_cache_asset(
       .kind = kind,
       .resume_supported = !package.expected_sha256.has_value() &&
                           (kind == CacheAssetKind::full_package ||
-                           kind == CacheAssetKind::online_installer),
+                           kind == CacheAssetKind::online_installer ||
+                           kind == CacheAssetKind::archive_package),
       .expected_bytes = package.expected_bytes,
       .expected_sha256 = package.expected_sha256,
+      .archive_members = package.archive_members,
   };
   if (!asset.valid()) {
     return std::nullopt;
