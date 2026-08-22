@@ -9,24 +9,21 @@
 namespace azzs::ui::presentation {
 
 struct SoftwareSelectionPresentationText final {
-  std::string accessible_name{"Software selection status"};
-  std::string available_title{"Software selection"};
-  std::string available_body_prefix{"Retained "};
+  std::string accessible_name{"软件选择状态"};
+  std::string available_title{"软件选择"};
+  std::string available_body_prefix{"已保留 "};
   std::string available_body_suffix{
-      " software selections. Catalog changes require explicit reconfirmation."};
-  std::string absent_catalog_title{"No current effective catalog"};
+      " 个软件选择。受目录变化影响的项目需要重新确认。"};
+  std::string absent_catalog_title{"当前有效目录尚未加载"};
   std::string absent_catalog_body{
-      "No current effective catalog is loaded. Software selection, source "
-      "resolution, and external handoff do not start automatically."};
+      "尚未加载当前有效目录。软件选择、来源解析和外部交接均不会自动开始。"};
   std::string not_restored_body{
-      "Software selection state is not restored. Network and software "
-      "detection do not start automatically."};
-  std::string restore_failed_body{"Software selection state could not be restored."};
+      "软件选择状态尚未恢复；不会自动访问网络或检测软件。"};
+  std::string restore_failed_body{"无法恢复软件选择状态。"};
   std::string advanced_available{
-      "Standard and advanced views share the same selection state."};
+      "标准与高级视图共享相同的软件选择状态。"};
   std::string advanced_absent_catalog{
-      "This page does not treat the built-in draft catalog as current, and "
-      "does not start source resolution, a browser, or software detection."};
+      "当前页面不会将内置草稿目录当作当前有效目录，也不会启动来源解析、浏览器或软件检测。"};
 };
 
 [[nodiscard]] std::shared_ptr<PresentationSnapshot const>
@@ -35,14 +32,14 @@ make_software_selection_presentation(
     SoftwareSelectionPresentationText text = {});
 
 struct OfflinePackageCachePresentationText final {
-  std::string accessible_name{"Offline package cache status"};
-  std::string available_title{"Offline package cache"};
-  std::string unavailable_title{"Offline package cache unavailable"};
-  std::string available_body_prefix{"Controlled cache location: "};
+  std::string accessible_name{"离线资源缓存状态"};
+  std::string available_title{"离线资源缓存"};
+  std::string unavailable_title{"离线资源缓存不可用"};
+  std::string available_body_prefix{"受控缓存位置： "};
   std::string unavailable_body_prefix{
-      "Controlled cache location is unavailable: "};
-  std::string item_suffix{" cached package assets"};
-  std::string network_suffix{"; network unavailable"};
+      "受控缓存位置不可用： "};
+  std::string item_suffix{" 个已缓存资源"};
+  std::string network_suffix{"；当前无法联网"};
 };
 
 [[nodiscard]] std::shared_ptr<PresentationSnapshot const>
