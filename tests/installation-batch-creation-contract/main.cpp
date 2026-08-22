@@ -393,6 +393,49 @@ struct Fixture final {
                 "a mixed request must retain an executable item and explain a missing profile");
 }
 
+[[nodiscard]] bool mixed_request_keeps_ready_item_when_source_is_unresolved() {
+  Fixture fixture;
+  if (!fixture.restore()) {
+    return false;
+  }
+
+  auto& planning = fixture.planning.value;
+  planning.catalog.current_catalog->software.front().definition.dependencies.clear();
+  auto cheat_engine = software_for("cheat-engine");
+  planning.catalog.current_catalog->software.push_back(std::move(cheat_engine));
+  fixture.profiles.values.push_back(profile_for("cheat-engine"));
+  planning.selection.selection.selected_software_ids = {"editor", "cheat-engine"};
+  planning.selection.items = {{.software_id = "editor", .selected = true, .available = true},
+                              {.software_id = "cheat-engine",
+                               .selected = true,
+                               .available = true}};
+
+  auto request = create_request();
+  request.packages = {{.software_id = "editor",
+                       .declared_purpose = catalog::SourcePurpose::primary,
+                       .declared_address = "https://declared.example/editor",
+                       .package_identity = "editor-1.2.3-x64"},
+                      {.software_id = "cheat-engine",
+                       .declared_purpose = catalog::SourcePurpose::primary}};
+  auto const assessed = fixture.creation.assess(request);
+  auto const created = fixture.creation.create(request);
+  auto const editor = std::ranges::find(assessed.items, "editor",
+                                        [](batch_app::InstallationBatchItemAssessment const& item) {
+                                          return item.item_id;
+                                        });
+  auto const cheat = std::ranges::find(assessed.items, "cheat-engine",
+                                       [](batch_app::InstallationBatchItemAssessment const& item) {
+                                         return item.item_id;
+                                       });
+  auto const active = fixture.service.snapshot().active;
+  return expect(assessed.ready() && created.batch.succeeded() && editor != assessed.items.end() &&
+                    editor->ready() && cheat != assessed.items.end() &&
+                    cheat->code == batch_app::InstallationBatchCreationCode::source_unresolved &&
+                    active.has_value() && active->plan.items.size() == 1 &&
+                    active->plan.items.front().item_id == "editor",
+                "a source-unresolved item must not discard an independently executable item");
+}
+
 [[nodiscard]] bool retry_without_active_batch_is_rejected_without_staged_assets() {
   Fixture fixture;
   if (!fixture.restore()) {
@@ -477,6 +520,7 @@ int main() {
                  create_freezes_complete_dependency_closure() &&
                  incomplete_inputs_do_not_create_a_batch() &&
                  mixed_request_keeps_independent_item_and_reports_unavailable_profile() &&
+                 mixed_request_keeps_ready_item_when_source_is_unresolved() &&
                  retry_without_active_batch_is_rejected_without_staged_assets() &&
                  failed_create_retains_assets_when_the_batch_is_durable() &&
                  restore_rebuilds_redacted_frozen_assets() &&

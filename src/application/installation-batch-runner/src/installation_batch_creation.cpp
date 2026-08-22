@@ -228,8 +228,8 @@ InstallationBatchCreationService::assess_plan(
 
   std::unordered_set<std::string> request_ids;
   for (auto const& choice : request.packages) {
-    if (!catalog::valid_stable_id(choice.software_id) || choice.declared_address.empty() ||
-        choice.package_identity.empty() || !request_ids.insert(choice.software_id).second) {
+    if (!catalog::valid_stable_id(choice.software_id) ||
+        !request_ids.insert(choice.software_id).second) {
       return {.assessment = assessment(InstallationBatchCreationCode::invalid_request,
                                        "each selected package must have one stable identity")};
     }
