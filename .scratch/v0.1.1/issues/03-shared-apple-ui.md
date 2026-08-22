@@ -34,3 +34,4 @@ Evidence freshness: 绑定主题、控件模板、页头/按钮组件和 WinUI/S
 ## Comments
 
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
+- 2026-08-23 07:20:51 +08:00（最终候选证据）：UI design、async 和 presentation 合同在 `d8a4367adc1e322351126e8ab3676d30584475d5` 上通过，并已普通合并到 `0.1.1` 的 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b`。这只证明静态/合同约束；真实浅色深色、高对比度、减少透明度、宽窄窗口和键盘/触摸视觉验收仍未执行。

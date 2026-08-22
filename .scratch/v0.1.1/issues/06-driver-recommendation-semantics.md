@@ -34,3 +34,4 @@ Evidence freshness: 绑定物理硬件契约、驱动推荐规则、页面资源
 ## Comments
 
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/14-driver-acquisition-page.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前 `Blocked by` 仅保留同 effort 的事项 05。
+- 2026-08-23 07:20:51 +08:00（最终候选证据）：驱动推荐/外部交接合同在 `d8a4367adc1e322351126e8ab3676d30584475d5` 上通过，并随 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b` 进入 `0.1.1`。真实厂商设备和官方页面交接、网络策略、ARM64 及 UI 无障碍仍未验证；实现不下载或安装驱动。
