@@ -1027,7 +1027,8 @@ class WindowsWorkbenchServices final
               asset->identity, source.actual_address, asset->expected_bytes,
               asset->expected_sha256.has_value()
                   ? std::optional<std::string_view>{*asset->expected_sha256}
-                  : std::nullopt));
+                  : std::nullopt,
+              asset->archive_members));
           assets.push_back(std::move(*asset));
         }
       }

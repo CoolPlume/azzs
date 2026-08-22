@@ -116,6 +116,9 @@ constexpr std::uint64_t kMaximumPayloadReadBytes =
   if (value == "independent") {
     return cache_domain::CacheArchitecture::architecture_independent;
   }
+  if (value == "x86") {
+    return cache_domain::CacheArchitecture::x86;
+  }
   return std::nullopt;
 }
 

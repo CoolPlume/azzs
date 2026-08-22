@@ -60,6 +60,7 @@ SelectionResult select_package(
   auto const independent = first_architecture(
       matches, PackageArchitecture::architecture_independent);
   auto const x64 = first_architecture(matches, PackageArchitecture::x64);
+  auto const x86 = first_architecture(matches, PackageArchitecture::x86);
   auto const arm64 = first_architecture(matches, PackageArchitecture::arm64);
   auto const unknown = first_architecture(matches, PackageArchitecture::unknown);
 
@@ -95,6 +96,11 @@ SelectionResult select_package(
       return selected(std::move(software_id), observation, *independent,
                       SelectionStatus::selected_architecture_independent,
                       "architecture-independent package is compatible with x64");
+    }
+    if (x86.has_value()) {
+      return selected(std::move(software_id), observation, *x86,
+                      SelectionStatus::selected_compatibility_fallback,
+                      "x86 package uses the Windows x64 compatibility layer");
     }
     if (unknown.has_value()) {
       return SelectionResult{
@@ -190,6 +196,8 @@ char const* to_string(SystemArchitecture architecture) noexcept {
 
 char const* to_string(PackageArchitecture architecture) noexcept {
   switch (architecture) {
+    case PackageArchitecture::x86:
+      return "x86";
     case PackageArchitecture::x64:
       return "x64";
     case PackageArchitecture::arm64:

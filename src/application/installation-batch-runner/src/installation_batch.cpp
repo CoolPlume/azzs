@@ -161,6 +161,12 @@ void write_package(Writer& writer, selection::ResolvedPackage const& value) {
   if (value.expected_sha256.has_value()) {
     writer.text(*value.expected_sha256);
   }
+  if (value.package_type == selection::PackageType::archive_package) {
+    writer.u32(static_cast<std::uint32_t>(value.archive_members.size()));
+    for (auto const& member : value.archive_members) {
+      writer.text(member);
+    }
+  }
 }
 
 [[nodiscard]] bool read_package(Reader& reader, selection::ResolvedPackage& value,
@@ -180,6 +186,21 @@ void write_package(Writer& writer, selection::ResolvedPackage const& value) {
   value.complete_package = complete != 0;
   value.network_required = network != 0;
   if (!with_integrity) {
+    if (value.package_type == selection::PackageType::archive_package) {
+      std::uint32_t member_count{};
+      if (!reader.u32(member_count) || member_count == 0 || member_count > 64) {
+        return false;
+      }
+      value.archive_members.clear();
+      value.archive_members.reserve(member_count);
+      for (std::uint32_t index = 0; index < member_count; ++index) {
+        std::string member;
+        if (!reader.text(member, 512) || member.empty()) {
+          return false;
+        }
+        value.archive_members.push_back(std::move(member));
+      }
+    }
     return true;
   }
   std::uint8_t expected_bytes_present{};
@@ -203,6 +224,21 @@ void write_package(Writer& writer, selection::ResolvedPackage const& value) {
       return false;
     }
     value.expected_sha256 = std::move(expected_sha256);
+  }
+  if (value.package_type == selection::PackageType::archive_package) {
+    std::uint32_t member_count{};
+    if (!reader.u32(member_count) || member_count == 0 || member_count > 64) {
+      return false;
+    }
+    value.archive_members.clear();
+    value.archive_members.reserve(member_count);
+    for (std::uint32_t index = 0; index < member_count; ++index) {
+      std::string member;
+      if (!reader.text(member, 512) || member.empty()) {
+        return false;
+      }
+      value.archive_members.push_back(std::move(member));
+    }
   }
   return true;
 }
@@ -267,6 +303,12 @@ void write_asset(Writer& writer, cache::CacheAsset const& value) {
   if (value.expected_sha256.has_value()) {
     writer.text(*value.expected_sha256);
   }
+  if (value.kind == cache::CacheAssetKind::archive_package) {
+    writer.u32(static_cast<std::uint32_t>(value.archive_members.size()));
+    for (auto const& member : value.archive_members) {
+      writer.text(member);
+    }
+  }
 }
 
 [[nodiscard]] bool read_asset(Reader& reader, cache::CacheAsset& value,
@@ -302,6 +344,21 @@ void write_asset(Writer& writer, cache::CacheAsset const& value) {
         return false;
       }
       value.expected_sha256 = std::move(expected_sha256);
+    }
+    if (value.kind == cache::CacheAssetKind::archive_package) {
+      std::uint32_t member_count{};
+      if (!reader.u32(member_count) || member_count == 0 || member_count > 64) {
+        return false;
+      }
+      value.archive_members.clear();
+      value.archive_members.reserve(member_count);
+      for (std::uint32_t index = 0; index < member_count; ++index) {
+        std::string member;
+        if (!reader.text(member, 512) || member.empty()) {
+          return false;
+        }
+        value.archive_members.push_back(std::move(member));
+      }
     }
   }
   return true;

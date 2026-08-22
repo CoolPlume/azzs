@@ -109,7 +109,7 @@ std::array<ControlledInstallProfile, 11> const k_initial_profiles{{
     {
         .id = "office-tool-plus-windows-v1",
         .software_id = "office-tool-plus",
-        .baselines = {{.id = "office-tool-plus-windows-11.5.7.0", .version = "11.5.7.0"}},
+        .baselines = {{.id = "office-tool-plus-windows-11.6.6.0", .version = "11.6.6.0"}},
          .execution = WindowsExecutionReadiness::project_executor_registered,
         .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
         .post_install_behavior = PostInstallBehavior::none,

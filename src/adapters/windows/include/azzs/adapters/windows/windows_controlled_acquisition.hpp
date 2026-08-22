@@ -166,7 +166,8 @@ class WindowsControlledPackageDownloader final
                                       std::optional<std::uint64_t> expected_bytes =
                                           std::nullopt,
                                       std::optional<std::string_view>
-                                          expected_sha256 = std::nullopt);
+                                          expected_sha256 = std::nullopt,
+                                      std::vector<std::string> archive_members = {});
   void clear_registered_sources() noexcept;
 
   [[nodiscard]] application::offline_package_cache::ControlledDownloadResult
@@ -180,6 +181,7 @@ class WindowsControlledPackageDownloader final
     std::vector<std::string> allowed_redirect_hosts;
     std::optional<std::uint64_t> expected_bytes;
     std::optional<std::string> expected_sha256;
+    std::vector<std::string> archive_members;
   };
 
   ControlledCacheRoot root_;
