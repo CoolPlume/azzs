@@ -33,6 +33,4 @@ Evidence freshness: 绑定主题、控件模板、页头/按钮组件和 WinUI/S
 
 ## Comments
 
-- 2026-08-23（集成证据核对）：共享页头和统一按钮/主题实现提交 `96c80e63e1059017f810d7fed2a460b6a39b1d17` 已通过普通合并 `da12eb5ea087cf0d9645148c30d0a7a706a837c7` 进入候选链，当前本地头为 `80713109b1cd71be19689f0c4fbbc4775d413797`。此前静态检查 `python tests/ui-design-contract/check_design_system.py .` 与 `python tests/ui-design-contract/check_winui_async_contract.py .` 均通过。
-- 静态通过不等于视觉验收；仍需在当前候选头执行浅色/深色/高对比度/减少动画、宽窄窗口和键盘/触摸/无障碍快速反向，并记录 `apple-design`、`emil-design-eng` 审查证据。
-- 未验证边界：真实 Windows x64 视觉/UIA、DPI、触摸、Narrator、ARM64、安装生命周期和性能/减少透明度实机行为均未验证。
+- 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
