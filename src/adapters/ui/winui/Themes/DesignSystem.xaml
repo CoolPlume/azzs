@@ -127,6 +127,7 @@
     <Thickness x:Key="AzzsListRowPadding">12,10</Thickness>
     <Thickness x:Key="AzzsCommandPadding">16,8</Thickness>
     <Thickness x:Key="AzzsShellStatusMargin">24,16,24,0</Thickness>
+    <Thickness x:Key="AzzsSidebarResizeThumbInitialMargin">244,0,0,0</Thickness>
     <Thickness x:Key="AzzsStageItemMargin">0,0,8,8</Thickness>
     <Thickness x:Key="AzzsTopMarginLarge">0,24,0,0</Thickness>
     <Thickness x:Key="AzzsBorderThickness">1</Thickness>
@@ -224,6 +225,13 @@
         <Setter Property="IsSettingsVisible" Value="False" />
         <Setter Property="PaneDisplayMode" Value="Auto" />
         <Setter Property="Background" Value="{ThemeResource AzzsMaterialRootFallbackBrush}" />
+    </Style>
+
+    <Style x:Key="AzzsSidebarResizeThumbStyle" TargetType="primitives:Thumb"
+           xmlns:primitives="using:Microsoft.UI.Xaml.Controls.Primitives">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Opacity" Value="0.85" />
     </Style>
 
     <Style x:Key="AzzsSectionSurfaceStyle" TargetType="Border">
