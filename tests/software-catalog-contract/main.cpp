@@ -555,40 +555,32 @@ struct DebugModeCatalogEditorFixture final {
   passed &= expect(runtime.accepted() && runtime.catalog.has_value(),
                    "the authoritative release catalog must runtime-load");
   passed &= expect(runtime.catalog.has_value() &&
-                       runtime.catalog->software.size() == 11 &&
-                       runtime.catalog->drivers.size() == 3,
+                        runtime.catalog->software.size() == 11 &&
+                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
-  if (runtime.catalog.has_value()) {
-    auto cheat_engine = std::ranges::find_if(
-        runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
-          return item.definition.id == "cheat-engine";
-        });
-    auto geometers = std::ranges::find_if(
-        runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
-          return item.definition.id == "the-geometers-sketchpad";
-        });
-    passed &= expect(
-        cheat_engine != runtime.catalog->software.end() &&
-            cheat_engine->availability ==
-                catalog::ItemAvailability::install_profile_unavailable &&
-            geometers != runtime.catalog->software.end() &&
-            geometers->availability ==
-                catalog::ItemAvailability::install_profile_unavailable,
-        "unresolved controlled profiles must disable only their own catalog items");
-    passed &= expect(
-        std::ranges::count_if(
-            runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
-              return item.availability == catalog::ItemAvailability::available;
-            }) == 9,
-        "the nine registered controlled profiles must remain independently available");
-    passed &= expect(
-        std::ranges::all_of(
-            runtime.issues, [](catalog::CatalogIssue const& issue) {
-              return issue.code != catalog::CatalogIssueCode::install_profile_unavailable ||
-                     issue.scope == catalog::CatalogIssueScope::item;
-            }),
-        "a missing profile must be reported at item scope rather than rejecting the package");
-  }
+  auto const* cheat_engine_runtime = find_by_id(
+      runtime.catalog->software, "cheat-engine",
+      [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id;
+      });
+  auto const* geometers_runtime = find_by_id(
+      runtime.catalog->software, "the-geometers-sketchpad",
+      [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id;
+      });
+  auto const unavailable_runtime_count = std::ranges::count_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.availability ==
+               catalog::ItemAvailability::install_profile_unavailable;
+      });
+  passed &= expect(
+      cheat_engine_runtime != nullptr && geometers_runtime != nullptr &&
+          cheat_engine_runtime->availability ==
+              catalog::ItemAvailability::install_profile_unavailable &&
+          geometers_runtime->availability ==
+              catalog::ItemAvailability::install_profile_unavailable &&
+          unavailable_runtime_count == 2,
+      "the two known missing install profiles must remain item-level unavailable");
   auto const sogou_runtime = std::ranges::find_if(
       runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
         return item.definition.id == "sogou-input";
@@ -603,8 +595,28 @@ struct DebugModeCatalogEditorFixture final {
                              catalog::CatalogIssueCode::unknown_execution_semantics,
                              "qq", catalog::CatalogIssueScope::release),
       "unknown third-party facts must block the formal release gate");
+  passed &= expect(
+      !has_issue_for_item(
+          formal_gate.issues,
+          catalog::CatalogIssueCode::install_profile_not_release_ready,
+          "cheat-engine", catalog::CatalogIssueScope::release) &&
+          !has_issue_for_item(
+              formal_gate.issues,
+              catalog::CatalogIssueCode::install_profile_not_release_ready,
+              "the-geometers-sketchpad", catalog::CatalogIssueScope::release),
+      "missing catalog identities must not enter the nine-item release profile gate");
   passed &= expect(beta_gate.passed(),
                    "the explicit v0.1.0 Beta candidate gate must pass the authoritative catalog");
+  passed &= expect(
+      !has_issue_for_item(
+          beta_gate.issues,
+          catalog::CatalogIssueCode::install_profile_not_release_ready,
+          "cheat-engine", catalog::CatalogIssueScope::release) &&
+          !has_issue_for_item(
+              beta_gate.issues,
+              catalog::CatalogIssueCode::install_profile_not_release_ready,
+              "the-geometers-sketchpad", catalog::CatalogIssueScope::release),
+      "Beta must inherit the nine-item release profile policy without a missing-profile exception");
 
   auto const encoded = codec.encode(*decoded.document);
   auto round_trip = codec.decode(encoded);
@@ -673,12 +685,13 @@ struct DebugModeCatalogEditorFixture final {
 
   auto const profiles = catalog::initial_controlled_install_profiles();
   auto const facts = catalog::initial_software_install_facts();
-  std::vector<std::string> executable_ids{
+  std::vector<std::string> expected_real_ids{
       "qq", "sogou-input", "game-cheats-manager", "office-tool-plus",
       "internet-download-manager", "java-runtime", "dotnet-runtime",
       "directx-runtime", "powershell-7"};
+  std::ranges::sort(expected_real_ids);
   passed &= expect(profiles.size() == 9 && facts.size() == 9,
-                   "initial declarations must cover nine executable profiles and nine software facts");
+                   "initial declarations must contain nine real profiles and nine real software facts");
   passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
                        catalog::validate_software_install_facts(facts).accepted(),
                    "initial declaration registries must satisfy their value contracts");
@@ -698,9 +711,21 @@ struct DebugModeCatalogEditorFixture final {
         "initial third-party installation facts must remain explicitly unknown");
   }
   std::ranges::sort(fact_ids);
-  std::ranges::sort(executable_ids);
-  passed &= expect(fact_ids == executable_ids,
-                   "typed install facts must cover the nine executable software ids");
+  passed &= expect(fact_ids == expected_real_ids,
+                   "typed install facts must cover exactly the nine supported software ids");
+  std::vector<std::string> profile_software_ids;
+  profile_software_ids.reserve(profiles.size());
+  for (auto const& profile : profiles) {
+    profile_software_ids.push_back(profile.software_id);
+  }
+  std::ranges::sort(profile_software_ids);
+  passed &= expect(profile_software_ids == expected_real_ids &&
+                       std::ranges::none_of(
+                           profiles, [](catalog::ControlledInstallProfile const& profile) {
+                             return profile.software_id == "cheat-engine" ||
+                                    profile.software_id == "the-geometers-sketchpad";
+                           }),
+                   "real controlled profiles must cover nine ids and exclude the two missing supports");
   auto const dotnet_facts = std::ranges::find(
       facts, "dotnet-runtime", &catalog::SoftwareInstallFacts::software_id);
   passed &= expect(dotnet_facts != facts.end() &&
@@ -778,9 +803,10 @@ struct DebugModeCatalogEditorFixture final {
 
   std::vector<std::string> required = policy.required_release_software;
   std::ranges::sort(required);
-  passed &= expect(required == executable_ids && policy.supported_driver_hardware_kinds ==
+  passed &= expect(required == expected_real_ids &&
+                       policy.supported_driver_hardware_kinds ==
                        std::vector<std::string>{"gpu"},
-                   "the initial policy must require the nine executable software ids and the registered GPU kind");
+                   "the initial policy must require nine executable software ids and the registered GPU kind");
   std::vector<std::string> release_fact_ids;
   release_fact_ids.reserve(policy.required_release_install_facts.size());
   for (auto const& requirement : policy.required_release_install_facts) {
@@ -789,7 +815,7 @@ struct DebugModeCatalogEditorFixture final {
                      "unvalidated third-party facts must not be release-ready");
   }
   std::ranges::sort(release_fact_ids);
-  passed &= expect(release_fact_ids == executable_ids,
+  passed &= expect(release_fact_ids == expected_real_ids,
                    "the release policy must consume install facts for every executable software id");
   auto const* sogou_profile = find_by_id(
       policy.install_profiles, "sogou-input-defaults-v1",
@@ -798,15 +824,54 @@ struct DebugModeCatalogEditorFixture final {
                        sogou_profile->runtime_status ==
                            catalog::InstallProfileRuntimeStatus::available &&
                        !sogou_profile->release_ready &&
-                       policy.required_install_profiles.size() == 9,
-                   "registered controlled profiles must be runtime-available without release evidence");
+                       policy.required_install_profiles.size() == 11,
+                   "the policy must retain eleven catalog profile identities while registered profiles remain release-incomplete");
+  std::vector<std::string> required_profile_software_ids;
+  required_profile_software_ids.reserve(policy.required_install_profiles.size());
+  for (auto const& requirement : policy.required_install_profiles) {
+    required_profile_software_ids.push_back(requirement.software_id);
+  }
+  std::ranges::sort(required_profile_software_ids);
+  passed &= expect(required_profile_software_ids == expected_ids,
+                   "required install profiles must cover all eleven catalog identities");
+  auto const* cheat_engine_support = find_by_id(
+      policy.install_profiles, "cheat-engine-windows-v1",
+      &catalog::InstallProfileSupport::id);
+  auto const* geometers_support = find_by_id(
+      policy.install_profiles, "the-geometers-sketchpad-windows-v1",
+      &catalog::InstallProfileSupport::id);
+  auto const available_support_count = std::ranges::count_if(
+      policy.install_profiles, [](catalog::InstallProfileSupport const& support) {
+        return support.runtime_status ==
+               catalog::InstallProfileRuntimeStatus::available;
+      });
+  auto const missing_support_count = std::ranges::count_if(
+      policy.install_profiles, [](catalog::InstallProfileSupport const& support) {
+        return support.runtime_status ==
+               catalog::InstallProfileRuntimeStatus::missing;
+      });
+  passed &= expect(
+      cheat_engine_support != nullptr && geometers_support != nullptr &&
+          cheat_engine_support->software_ids == std::vector<std::string>{"cheat-engine"} &&
+          geometers_support->software_ids ==
+              std::vector<std::string>{"the-geometers-sketchpad"} &&
+          cheat_engine_support->runtime_status ==
+              catalog::InstallProfileRuntimeStatus::missing &&
+          geometers_support->runtime_status ==
+              catalog::InstallProfileRuntimeStatus::missing &&
+          !cheat_engine_support->release_ready &&
+          !geometers_support->release_ready && available_support_count == 9 &&
+          missing_support_count == 2,
+      "policy must expose exactly nine available profiles and two explicit missing supports");
   passed &= expect(
       std::ranges::all_of(policy.install_profiles, [](auto const& support) {
-        return support.runtime_status ==
-                   catalog::InstallProfileRuntimeStatus::available &&
-               !support.release_ready;
+        return !support.release_ready &&
+               (support.runtime_status ==
+                    catalog::InstallProfileRuntimeStatus::available ||
+                support.runtime_status ==
+                    catalog::InstallProfileRuntimeStatus::missing);
       }),
-      "every initial controlled profile must separate runtime availability from release readiness");
+      "every policy profile must have an explicit available or missing runtime status");
 
   auto released = codec.decode(file.bytes);
   passed &= expect(released.document.has_value() && released.issues.empty(),

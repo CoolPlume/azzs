@@ -324,12 +324,25 @@ normalize_presence_registrations(
   return path.ends_with(".exe") || path.ends_with(".msi") || path.ends_with(".zip");
 }
 
-[[nodiscard]] bool valid_sha256(std::string_view value) noexcept {
-  return value.size() == 64U &&
-         std::ranges::all_of(value, [](unsigned char character) {
-           return (character >= '0' && character <= '9') ||
-                  (character >= 'a' && character <= 'f');
-         });
+[[nodiscard]] std::optional<std::string> normalize_sha256(
+    std::string_view value) {
+  if (value.size() != 64U) {
+    return std::nullopt;
+  }
+  std::string normalized;
+  normalized.reserve(value.size());
+  for (unsigned char character : value) {
+    if (character >= '0' && character <= '9') {
+      normalized.push_back(static_cast<char>(character));
+    } else if (character >= 'a' && character <= 'f') {
+      normalized.push_back(static_cast<char>(character));
+    } else if (character >= 'A' && character <= 'F') {
+      normalized.push_back(static_cast<char>(character - 'A' + 'a'));
+    } else {
+      return std::nullopt;
+    }
+  }
+  return normalized;
 }
 
 [[nodiscard]] bool github_release_asset_path_is_canonical(
@@ -695,6 +708,14 @@ using UniqueWinHttpHandle = std::unique_ptr<void, WinHttpCloser>;
     std::uint64_t resume_from, std::optional<std::uint64_t> expected_bytes,
     std::optional<std::string> const& expected_sha256) {
   constexpr std::size_t kMaximumRedirects = 5;
+  std::optional<std::string> normalized_expected_sha256;
+  if (expected_sha256.has_value()) {
+    normalized_expected_sha256 = normalize_sha256(*expected_sha256);
+    if (!normalized_expected_sha256.has_value()) {
+      return {.code = cache::ControlledDownloadCode::failed,
+              .detail = "registered SHA-256 is malformed"};
+    }
+  }
   auto const registered_identity = parse_controlled_address_identity(address);
   if (!registered_identity.has_value()) {
     return {.code = cache::ControlledDownloadCode::failed,
@@ -849,8 +870,7 @@ using UniqueWinHttpHandle = std::unique_ptr<void, WinHttpCloser>;
                                              *target_identity);
     auto const github_cdn_identity =
         target_identity.has_value() &&
-        expected_bytes.has_value() && expected_sha256.has_value() &&
-        valid_sha256(*expected_sha256) &&
+        expected_bytes.has_value() && normalized_expected_sha256.has_value() &&
         windows_controlled_github_release_redirect_matches(
             *registered_identity, *target_identity);
     if (!target_identity.has_value() || (!exact_identity && !github_cdn_identity) ||
@@ -919,21 +939,17 @@ using UniqueWinHttpHandle = std::unique_ptr<void, WinHttpCloser>;
     return {.code = cache::ControlledDownloadCode::failed,
             .detail = "controlled HTTPS response byte count did not match the registered asset"};
   }
-  if (expected_sha256.has_value()) {
+  if (normalized_expected_sha256.has_value()) {
     if (resume_from != 0) {
       return {.code = cache::ControlledDownloadCode::failed,
               .detail = "摘要绑定资产不允许续传"};
-    }
-    if (!valid_sha256(*expected_sha256)) {
-      return {.code = cache::ControlledDownloadCode::failed,
-              .detail = "registered SHA-256 is malformed"};
     }
     auto const digest = sha256_hex(bytes);
     if (!digest.has_value()) {
       return {.code = cache::ControlledDownloadCode::failed,
               .detail = "Windows SHA-256 verification could not be completed"};
     }
-    if (*digest != *expected_sha256) {
+    if (*digest != *normalized_expected_sha256) {
       return {.code = cache::ControlledDownloadCode::failed,
               .detail = "downloaded bytes did not match the registered SHA-256"};
     }
@@ -987,7 +1003,17 @@ selection::SourceResolutionResult WindowsRegisteredSourceResolver::resolve(
       !valid_fixed_installer_address(found->actual_address) ||
       found->version.empty() || found->hosting_mechanism.empty() || found->branch.empty() ||
       found->capability_version.empty() || found->packages.empty()) {
-    return {.error = "no complete controlled source registration matches the declaration"};
+      return {.error = "no complete controlled source registration matches the declaration"};
+  }
+  auto packages = found->packages;
+  for (auto& package : packages) {
+    if (package.expected_sha256.has_value()) {
+      auto normalized = normalize_sha256(*package.expected_sha256);
+      if (!normalized.has_value()) {
+        return {.error = "controlled source registration contains a malformed SHA-256"};
+      }
+      package.expected_sha256 = std::move(*normalized);
+    }
   }
   selection::SourceResolutionResult result;
   result.snapshot = domain::software_selection::ResolvedSourceSnapshot{
@@ -998,7 +1024,7 @@ selection::SourceResolutionResult WindowsRegisteredSourceResolver::resolve(
       .actual_address = found->actual_address,
       .hosting_mechanism = found->hosting_mechanism,
       .branch = found->branch,
-      .packages = found->packages,
+      .packages = std::move(packages),
       .network_required = found->network_required,
       .resolved_at_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
                                       std::chrono::system_clock::now().time_since_epoch())
@@ -1021,19 +1047,21 @@ bool WindowsControlledPackageDownloader::register_source(
     std::optional<std::uint64_t> expected_bytes,
     std::optional<std::string_view> expected_sha256,
     std::vector<std::string> archive_members) {
+  std::optional<std::string> normalized_sha256;
+  if (expected_sha256.has_value()) {
+    normalized_sha256 = normalize_sha256(*expected_sha256);
+  }
   if (!root_.valid() || !identity.valid() ||
       !valid_fixed_installer_address(actual_address) ||
       (expected_bytes.has_value() && *expected_bytes == 0) ||
-      (expected_sha256.has_value() && !valid_sha256(*expected_sha256))) {
+      (expected_sha256.has_value() && !normalized_sha256.has_value())) {
     return false;
   }
   auto found = std::ranges::find(sources_, identity, &RegisteredSource::identity);
   if (found != sources_.end()) {
     return found->address == actual_address &&
            found->expected_bytes == expected_bytes &&
-           found->expected_sha256.has_value() == expected_sha256.has_value() &&
-           (!expected_sha256.has_value() ||
-            *found->expected_sha256 == *expected_sha256) &&
+           found->expected_sha256 == normalized_sha256 &&
            found->archive_members == archive_members;
   }
   sources_.push_back({.identity = identity,
@@ -1041,10 +1069,7 @@ bool WindowsControlledPackageDownloader::register_source(
                       .allowed_redirect_hosts =
                           allowed_redirect_hosts(identity.software_id),
                       .expected_bytes = expected_bytes,
-                      .expected_sha256 = expected_sha256.has_value()
-                                             ? std::optional<std::string>{
-                                                   std::string{*expected_sha256}}
-                                             : std::nullopt,
+                      .expected_sha256 = std::move(normalized_sha256),
                       .archive_members = std::move(archive_members)});
   return true;
 }
@@ -1203,7 +1228,8 @@ initial_windows_source_registrations() {
                 .identity = std::move(identity),
             },
             .package_type = package_type,
-            .complete_package = package_type == PackageType::full_package,
+            .complete_package = package_type == PackageType::full_package ||
+                                package_type == PackageType::archive_package,
             .network_required = package_type != PackageType::full_package,
             .expected_bytes = expected_bytes,
             .expected_sha256 = expected_sha256,
@@ -1259,7 +1285,7 @@ initial_windows_source_registrations() {
             "https://github.com/YerongAI/Office-Tool/releases/download/v11.6.6.0/Office_Tool_v11.6.6.0_x64.zip",
             "github-release-archive", "Windows x64 portable release", "office-tool-plus-11.6.6.0-x64",
             PackageType::archive_package, PackageArchitecture::x64, 10698489ULL,
-            "43BA169E4D07C8E45ED4846D7171BFBC521E8F61EFFF366112B7C6EF9DAE627B",
+            "43ba169e4d07c8e45ed4846d7171bfbc521e8f61efff366112b7c6ef9dae627b",
             {"Office Tool/Office Tool Plus.exe"}),
   };
 }
