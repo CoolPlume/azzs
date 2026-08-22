@@ -7,10 +7,82 @@
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <vector>
 
 #include "azzs/application/clock.hpp"
 
 namespace azzs::application {
+
+// Hardware records are deliberately typed at the portable core boundary.
+// The Windows adapter owns the classification decision; consumers must not
+// infer physicality from display names.
+enum class HardwareDeviceKind {
+  cpu,
+  gpu,
+  motherboard,
+  network_adapter,
+};
+
+enum class HardwareDevicePhysicality {
+  confirmed_physical,
+  virtual_device,
+  software,
+  vpn,
+  loopback,
+  unknown,
+  conflicting,
+};
+
+enum class HardwareObservationSource {
+  wmi,
+  setup_api,
+  unknown,
+};
+
+enum class HardwareObservationConfidence {
+  confirmed,
+  inferred,
+  unknown,
+};
+
+enum class HardwareDeviceStatus {
+  enabled,
+  disabled,
+  no_driver,
+  error,
+  unknown,
+};
+
+enum class HardwareVendor {
+  unknown,
+  amd,
+  intel,
+  nvidia,
+  dell,
+  hp,
+  lenovo,
+  asus,
+};
+
+struct HardwareDeviceRecord final {
+  HardwareDeviceKind kind{HardwareDeviceKind::cpu};
+  std::string name;
+  HardwareDevicePhysicality physicality{HardwareDevicePhysicality::unknown};
+  HardwareObservationSource source{HardwareObservationSource::unknown};
+  HardwareObservationConfidence confidence{
+      HardwareObservationConfidence::unknown};
+  HardwareDeviceStatus status{HardwareDeviceStatus::unknown};
+  HardwareVendor vendor{HardwareVendor::unknown};
+  bool physically_present{false};
+  std::string filter_reason;
+
+  [[nodiscard]] bool confirmed_physical() const noexcept {
+    return physically_present &&
+           physicality == HardwareDevicePhysicality::confirmed_physical &&
+           confidence == HardwareObservationConfidence::confirmed &&
+           source != HardwareObservationSource::unknown && !name.empty();
+  }
+};
 
 // The adapter returns facts only. It never starts a driver, downloads a
 // package, benchmarks hardware, or changes system state.
@@ -20,8 +92,11 @@ struct HardwareObservation final {
   std::string motherboard;
   std::string network_adapter;
   std::string oem_model;
+  HardwareVendor oem_vendor{HardwareVendor::unknown};
+  std::vector<HardwareDeviceRecord> devices;
 
   [[nodiscard]] bool usable() const noexcept;
+  [[nodiscard]] bool has_confirmed_physical_hardware() const noexcept;
   // Produces a cache-only key from non-unique model text. It intentionally
   // excludes serial numbers, MAC/IP addresses, computer names, and all other
   // device identifiers.
@@ -89,6 +164,13 @@ enum class HardwareOverviewTrigger {
   hardware_changed,
   cache_expired,
 };
+
+[[nodiscard]] char const* to_string(HardwareDeviceKind value) noexcept;
+[[nodiscard]] char const* to_string(HardwareDevicePhysicality value) noexcept;
+[[nodiscard]] char const* to_string(HardwareObservationSource value) noexcept;
+[[nodiscard]] char const* to_string(HardwareObservationConfidence value) noexcept;
+[[nodiscard]] char const* to_string(HardwareDeviceStatus value) noexcept;
+[[nodiscard]] char const* to_string(HardwareVendor value) noexcept;
 
 // Owns the session-only ten-minute cache and the user-visible hardware state.
 // Calls are synchronous and must be made by the application/use-case layer;

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -16,6 +17,8 @@ using azzs::adapters::windows::WindowsHardwareQueryCode;
 using azzs::adapters::windows::WindowsHardwareQueryExecutor;
 using azzs::adapters::windows::WindowsHardwareQueryResult;
 using azzs::application::HardwareObservationCode;
+using azzs::application::HardwareDeviceKind;
+using azzs::application::HardwareDeviceStatus;
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
   if (!condition) {
@@ -69,18 +72,32 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
 
 [[nodiscard]] std::vector<ExpectedQuery> full_queries() {
   return {
-      {"Win32_Processor", {"Name"},
+      {"Win32_Processor",
+       {"Name", "Manufacturer", "PNPDeviceID", "Status",
+        "ConfigManagerErrorCode"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"AMD Ryzen 7"}}}},
-      {"Win32_VideoController", {"Name"},
+        .rows = {{"AMD Ryzen 7", "AuthenticAMD",
+                  "ACPI\\AuthenticAMD_0000", "OK", "0"}}}},
+      {"Win32_VideoController",
+       {"Name", "AdapterCompatibility", "PNPDeviceID", "Status",
+        "ConfigManagerErrorCode", "VideoProcessor"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"NVIDIA GeForce RTX"}, {"AMD Radeon"}}}},
-      {"Win32_BaseBoard", {"Manufacturer", "Product"},
+        .rows = {{"NVIDIA GeForce RTX", "NVIDIA",
+                  "PCI\\VEN_10DE&DEV_0001", "OK", "0", "RTX"},
+                 {"AMD Radeon", "AMD", "PCI\\VEN_1002&DEV_0002", "OK",
+                  "0", "Radeon"}}}},
+      {"Win32_BaseBoard",
+       {"Manufacturer", "Product", "HostingBoard", "Status",
+        "ConfigManagerErrorCode"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"ASUS", "PRIME B650"}}}},
-      {"Win32_NetworkAdapter", {"Name"},
+        .rows = {{"ASUS", "PRIME B650", "TRUE", "OK", "0"}}}},
+      {"Win32_NetworkAdapter",
+       {"Name", "Manufacturer", "AdapterType", "PhysicalAdapter",
+        "PNPDeviceID", "Status", "ConfigManagerErrorCode", "ServiceName",
+        "NetConnectionStatus"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"Intel Ethernet"}}}},
+        .rows = {{"Intel Ethernet", "Intel", "Ethernet 802.3", "TRUE",
+                  "PCI\\VEN_8086&DEV_0003", "OK", "0", "e1iexpress", "2"}}}},
       {"Win32_ComputerSystem", {"Manufacturer", "Model"},
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"ASUS", "ROG"}}}},
@@ -101,14 +118,95 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
          expect(!raw_executor->mismatch && raw_executor->calls == 5,
                 "the adapter must use exactly the five approved read-only "
                 "model queries") &&
-         expect(result.observation->cpu == "AMD Ryzen 7" &&
+                expect(result.observation->cpu == "AMD Ryzen 7" &&
                     result.observation->gpu ==
                         "NVIDIA GeForce RTX; AMD Radeon" &&
                     result.observation->motherboard == "ASUS PRIME B650" &&
                     result.observation->network_adapter == "Intel Ethernet" &&
-                    result.observation->oem_model == "ASUS ROG",
+                    result.observation->oem_model == "ASUS ROG" &&
+                    result.observation->devices.size() == 5 &&
+                    result.observation->has_confirmed_physical_hardware(),
                 "CPU, GPU, board, network, and OEM model facts must map "
-                "without serial, MAC, IP, or computer-name fields");
+                "without serial, MAC, IP, or computer-name fields and only "
+                "confirmed physical records");
+}
+
+[[nodiscard]] bool disabled_driverless_and_error_devices_are_retained() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[1].result.rows = {
+      {"Microsoft Basic Display Adapter", "Microsoft",
+       "PCI\\VEN_1234&DEV_0001", "Error", "28", ""}};
+  raw_executor->expected[2].result.rows = {
+      {"ASUS", "PRIME B650", "TRUE", "Disabled", "22"}};
+  raw_executor->expected[3].result.rows = {
+      {"Intel Ethernet", "Intel", "Ethernet 802.3", "TRUE",
+       "PCI\\VEN_8086&DEV_0003", "Error", "10", "e1iexpress", "2"}};
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  if (!expect(result.code == HardwareObservationCode::succeeded &&
+                  result.observation.has_value() &&
+                  result.observation->devices.size() == 4,
+              "physical devices with degraded states must remain visible")) {
+    return false;
+  }
+  auto const& devices = result.observation->devices;
+  return expect(std::ranges::any_of(
+                    devices, [](auto const& device) {
+                      return device.kind == HardwareDeviceKind::gpu &&
+                             device.status == HardwareDeviceStatus::no_driver;
+                    }),
+                "a physical display without a driver must remain visible") &&
+         expect(std::ranges::any_of(
+                    devices, [](auto const& device) {
+                      return device.kind == HardwareDeviceKind::motherboard &&
+                             device.status == HardwareDeviceStatus::disabled;
+                    }),
+                "a disabled physical board must remain visible") &&
+         expect(std::ranges::any_of(
+                    devices, [](auto const& device) {
+                      return device.kind == HardwareDeviceKind::network_adapter &&
+                             device.status == HardwareDeviceStatus::error;
+                    }),
+                "an error-state physical network adapter must remain visible");
+}
+
+[[nodiscard]] bool virtual_software_vpn_loopback_and_unknown_rows_are_filtered() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[0].result.rows = {
+      {"Virtual CPU", "Microsoft", "ROOT\\VIRTUALCPU", "OK", "0"}};
+  raw_executor->expected[1].result.rows = {
+      {"Microsoft Remote Display", "Microsoft", "ROOT\\RDP_MF", "OK",
+       "0", ""},
+      {"VMware SVGA", "VMware", "PCI\\VEN_15AD&DEV_0405", "OK", "0",
+       ""}};
+  raw_executor->expected[2].result.rows = {
+      {"Microsoft", "Virtual Machine", "TRUE", "OK", "0"}};
+  raw_executor->expected[3].result.rows = {
+      {"TAP-Windows Adapter V9", "OpenVPN", "VPN", "FALSE",
+       "ROOT\\TAP0901", "OK", "0", "tap0901", "2"},
+      {"Loopback Pseudo-Interface", "Microsoft", "Loopback", "FALSE",
+       "SWD\\LOOPBACK", "OK", "0", "", "2"},
+      {"Hyper-V Virtual Ethernet", "Microsoft", "Ethernet", "TRUE",
+       "VMBUS\\NETVSC", "OK", "0", "netvsc", "2"},
+      {"Unknown adapter", "Unknown", "Ethernet", "TRUE", "", "OK", "0",
+       "unknown", "2"}};
+  raw_executor->expected[4].result.rows =
+      {{"Microsoft Corporation", "Virtual Machine"}};
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.code == HardwareObservationCode::failed,
+                "an observation with no confirmed physical hardware must fail closed") &&
+         expect(result.observation.has_value() &&
+                    !result.observation->has_confirmed_physical_hardware() &&
+                    result.observation->cpu.empty() && result.observation->gpu.empty() &&
+                    result.observation->motherboard.empty() &&
+                    result.observation->network_adapter.empty() &&
+                    result.observation->devices.empty(),
+                "virtual, software, VPN, loopback, and unknown rows must not enter summaries");
 }
 
 [[nodiscard]] bool partial_failure_preserves_usable_model_facts() {
@@ -188,6 +286,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
 int main() {
   bool passed = true;
   passed &= complete_read_only_model_facts_are_mapped();
+  passed &= disabled_driverless_and_error_devices_are_retained();
+  passed &= virtual_software_vpn_loopback_and_unknown_rows_are_filtered();
   passed &= partial_failure_preserves_usable_model_facts();
   passed &= permission_denial_and_cancellation_are_terminal();
   passed &= model_change_probe_requires_complete_facts();

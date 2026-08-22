@@ -1648,7 +1648,8 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
                  "no timezone projection was provided by the host");
 
   auto const hardware = hardware_overview_.snapshot();
-  if (hardware.observation.has_value()) {
+  if (hardware.observation.has_value() &&
+      hardware.observation->has_confirmed_physical_hardware()) {
     auto const& observed = *hardware.observation;
     if (!observed.oem_model.empty()) {
       append_retained(context, "hardware_model", observed.oem_model);
@@ -1656,15 +1657,30 @@ DiagnosticContext HistoryAndLogsService::diagnostic_context(
       append_missing(context, "hardware_model",
                      "hardware owner did not provide a non-unique model");
     }
-    if (!observed.cpu.empty()) {
-      append_retained(context, "hardware_cpu", observed.cpu);
+    auto summary_for = [&observed](HardwareDeviceKind kind) {
+      std::string summary;
+      for (auto const& device : observed.devices) {
+        if (!device.confirmed_physical() || device.kind != kind) {
+          continue;
+        }
+        if (!summary.empty()) {
+          summary.append("; ");
+        }
+        summary.append(device.name);
+      }
+      return summary;
+    };
+    auto const cpu = summary_for(HardwareDeviceKind::cpu);
+    auto const gpu = summary_for(HardwareDeviceKind::gpu);
+    auto const network = summary_for(HardwareDeviceKind::network_adapter);
+    if (!cpu.empty()) {
+      append_retained(context, "hardware_cpu", cpu);
     }
-    if (!observed.gpu.empty()) {
-      append_retained(context, "hardware_gpu", observed.gpu);
+    if (!gpu.empty()) {
+      append_retained(context, "hardware_gpu", gpu);
     }
-    if (!observed.network_adapter.empty()) {
-      append_retained(context, "network_adapter_category",
-                      observed.network_adapter);
+    if (!network.empty()) {
+      append_retained(context, "network_adapter_category", network);
     }
   } else {
     append_missing(context, "hardware_model",
