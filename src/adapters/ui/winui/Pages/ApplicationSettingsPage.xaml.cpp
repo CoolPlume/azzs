@@ -161,7 +161,10 @@ ApplicationSettingsPage::ApplicationSettingsPage() {
 
 void ApplicationSettingsPage::bind(
     std::shared_ptr<azzs::application::Workbench> workbench,
-    azzs::application::ApplicationSettingsService& settings, bool advanced_view,
+    azzs::application::ApplicationSettingsService& settings,
+    azzs::application::UpdateSnapshot const& update_snapshot,
+    azzs::application::ApplicationSettingsSnapshot const& snapshot,
+    bool advanced_view,
     AdvancedViewChangedHandler advanced_view_changed,
     CatalogEditorRequestedHandler catalog_editor_requested) {
   workbench_ = std::move(workbench);
@@ -169,10 +172,8 @@ void ApplicationSettingsPage::bind(
   advanced_view_ = advanced_view;
   advanced_view_changed_ = std::move(advanced_view_changed);
   catalog_editor_requested_ = std::move(catalog_editor_requested);
-  if (workbench_) {
-    project_update(workbench_->snapshot().update);
-  }
-  project(settings_->snapshot());
+  project_update(update_snapshot);
+  project(snapshot);
 }
 
 void ApplicationSettingsPage::OnAdvancedViewToggled(

@@ -833,9 +833,17 @@ def verify_motion_and_ownership(root: Path) -> None:
                                 main_window_cpp)
     guarded_navigate_calls = re.findall(
         r"if\s*\(\s*!ContentFrame\(\)\.Navigate\(", main_window_cpp)
-    require(len(navigate_calls) == 8 and
+    # Settings navigation is prepared off-frame and committed by assigning the
+    # bound candidate. The generic page switch therefore has seven frame
+    # navigations; each remaining call must still handle a false result.
+    require(len(navigate_calls) == 7 and
             len(guarded_navigate_calls) == len(navigate_calls),
-            "all eight frame navigation calls must handle a false result")
+            "all generic frame navigation calls must handle a false result")
+    settings_case = main_window_cpp.split("case PageId::application_settings:", 1)
+    require(len(settings_case) == 2 and
+            "ContentFrame().Navigate(" not in
+            settings_case[1].split("case PageId::software_catalog_editor:", 1)[0],
+            "application settings must not bypass its prepare/commit recovery boundary")
     require("displayed_page_ = page;\n  return true;" in main_window_cpp,
             "the displayed page may update only after navigation succeeds")
     require("navigation_item_for_page" in main_window_cpp and
