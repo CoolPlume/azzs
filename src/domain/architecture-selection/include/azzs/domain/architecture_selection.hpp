@@ -16,6 +16,7 @@ enum class PackageArchitecture {
   arm64,
   architecture_independent,
   unknown,
+  x86,
 };
 
 enum class ArchitecturePreference {

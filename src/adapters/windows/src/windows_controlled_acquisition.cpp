@@ -321,7 +321,7 @@ normalize_presence_registrations(
   }
   // A release page, dynamic channel, HTML document or redirect endpoint is
   // not an installer asset. Only an explicitly frozen PE/MSI path is valid.
-  return path.ends_with(".exe") || path.ends_with(".msi");
+  return path.ends_with(".exe") || path.ends_with(".msi") || path.ends_with(".zip");
 }
 
 [[nodiscard]] bool valid_sha256(std::string_view value) noexcept {
@@ -1019,7 +1019,8 @@ WindowsControlledPackageDownloader::WindowsControlledPackageDownloader(
 bool WindowsControlledPackageDownloader::register_source(
     CacheAssetIdentity const& identity, std::string_view actual_address,
     std::optional<std::uint64_t> expected_bytes,
-    std::optional<std::string_view> expected_sha256) {
+    std::optional<std::string_view> expected_sha256,
+    std::vector<std::string> archive_members) {
   if (!root_.valid() || !identity.valid() ||
       !valid_fixed_installer_address(actual_address) ||
       (expected_bytes.has_value() && *expected_bytes == 0) ||
@@ -1032,7 +1033,8 @@ bool WindowsControlledPackageDownloader::register_source(
            found->expected_bytes == expected_bytes &&
            found->expected_sha256.has_value() == expected_sha256.has_value() &&
            (!expected_sha256.has_value() ||
-            *found->expected_sha256 == *expected_sha256);
+            *found->expected_sha256 == *expected_sha256) &&
+           found->archive_members == archive_members;
   }
   sources_.push_back({.identity = identity,
                       .address = std::string{actual_address},
@@ -1042,7 +1044,8 @@ bool WindowsControlledPackageDownloader::register_source(
                       .expected_sha256 = expected_sha256.has_value()
                                              ? std::optional<std::string>{
                                                    std::string{*expected_sha256}}
-                                             : std::nullopt});
+                                             : std::nullopt,
+                      .archive_members = std::move(archive_members)});
   return true;
 }
 
@@ -1063,7 +1066,8 @@ cache::ControlledDownloadResult WindowsControlledPackageDownloader::transfer(
             .detail = "controlled package identity has no registered HTTPS source"};
   }
   if (request.asset.expected_bytes != found->expected_bytes ||
-      request.asset.expected_sha256 != found->expected_sha256) {
+      request.asset.expected_sha256 != found->expected_sha256 ||
+      request.asset.archive_members != found->archive_members) {
     return {.code = cache::ControlledDownloadCode::failed,
             .detail = "controlled package metadata is not bound to the registered asset"};
   }
@@ -1179,7 +1183,8 @@ initial_windows_source_registrations() {
                  PackageArchitecture package_architecture =
                      PackageArchitecture::x64,
                  std::optional<std::uint64_t> expected_bytes = std::nullopt,
-                 std::optional<std::string> expected_sha256 = std::nullopt) {
+                 std::optional<std::string> expected_sha256 = std::nullopt,
+                 std::vector<std::string> archive_members = {}) {
     auto candidate_software_id = software_id;
     auto candidate_version = version;
     return WindowsSourceResolutionRegistration{
@@ -1202,6 +1207,7 @@ initial_windows_source_registrations() {
             .network_required = package_type != PackageType::full_package,
             .expected_bytes = expected_bytes,
             .expected_sha256 = expected_sha256,
+            .archive_members = std::move(archive_members),
         }},
         .network_required = package_type != PackageType::full_package,
         .capability_version = "windows-controlled-source-v1",
@@ -1248,6 +1254,13 @@ initial_windows_source_registrations() {
            "github-release-asset", "Windows stable release", "powershell-7.6.4-x64",
             PackageType::full_package, PackageArchitecture::x64, 115515392ULL,
             "d11942df52fd12470169797abfa4781d9480efdc81000ba4fa55a5b921ed8dd0"),
+       make("office-tool-plus", "https://otp.landian.vip/en-us/download.html",
+            "11.6.6.0",
+            "https://github.com/YerongAI/Office-Tool/releases/download/v11.6.6.0/Office_Tool_v11.6.6.0_x64.zip",
+            "github-release-archive", "Windows x64 portable release", "office-tool-plus-11.6.6.0-x64",
+            PackageType::archive_package, PackageArchitecture::x64, 10698489ULL,
+            "43BA169E4D07C8E45ED4846D7171BFBC521E8F61EFFF366112B7C6EF9DAE627B",
+            {"Office Tool/Office Tool Plus.exe"}),
   };
 }
 

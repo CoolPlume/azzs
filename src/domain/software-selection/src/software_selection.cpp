@@ -128,6 +128,8 @@ bool ResolvedSourceSnapshot::valid() const noexcept {
             package.network_required || network_required) &&
            (package.package_type != PackageType::full_package ||
             package.complete_package) &&
+           (package.package_type != PackageType::archive_package ||
+            (package.complete_package && !package.archive_members.empty())) &&
            (!package.expected_bytes.has_value() ||
             *package.expected_bytes > 0) &&
            (!package.expected_sha256.has_value() ||
@@ -373,6 +375,8 @@ char const* to_string(PackageType type) noexcept {
       return "full-package";
     case PackageType::online_installer:
       return "online-installer";
+    case PackageType::archive_package:
+      return "archive-package";
     case PackageType::external_handoff:
       return "external-handoff";
   }

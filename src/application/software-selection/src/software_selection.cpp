@@ -169,6 +169,8 @@ class ByteReader final {
 [[nodiscard]] std::optional<std::uint8_t> encode_architecture(
     architecture_selection::selection_domain::PackageArchitecture architecture) {
   switch (architecture) {
+    case architecture_selection::selection_domain::PackageArchitecture::x86:
+      return 5;
     case architecture_selection::selection_domain::PackageArchitecture::x64:
       return 1;
     case architecture_selection::selection_domain::PackageArchitecture::arm64:
@@ -188,6 +190,8 @@ decode_architecture(std::uint8_t value) {
   using Architecture = architecture_selection::selection_domain::
       PackageArchitecture;
   switch (value) {
+    case 5:
+      return Architecture::x86;
     case 1:
       return Architecture::x64;
     case 2:
@@ -210,6 +214,8 @@ decode_architecture(std::uint8_t value) {
       return 2;
     case selection_domain::PackageType::external_handoff:
       return 3;
+    case selection_domain::PackageType::archive_package:
+      return 4;
   }
   return std::nullopt;
 }
@@ -223,6 +229,8 @@ decode_architecture(std::uint8_t value) {
       return selection_domain::PackageType::online_installer;
     case 3:
       return selection_domain::PackageType::external_handoff;
+    case 4:
+      return selection_domain::PackageType::archive_package;
     default:
       return std::nullopt;
   }
@@ -409,6 +417,12 @@ void write_snapshot(ByteWriter& writer,
     if (package.expected_sha256.has_value()) {
       writer.text(*package.expected_sha256);
     }
+    if (package.package_type == selection_domain::PackageType::archive_package) {
+      writer.u32(static_cast<std::uint32_t>(package.archive_members.size()));
+      for (auto const& member : package.archive_members) {
+        writer.text(member);
+      }
+    }
   }
 }
 
@@ -485,6 +499,21 @@ void write_snapshot(ByteWriter& writer,
           return false;
         }
         package.expected_sha256 = std::move(expected_sha256);
+      }
+    }
+    if (package.package_type == selection_domain::PackageType::archive_package) {
+      std::uint32_t member_count{};
+      if (!reader.u32(member_count) || member_count == 0 || member_count > 64) {
+        return false;
+      }
+      package.archive_members.reserve(member_count);
+      for (std::uint32_t member_index = 0; member_index < member_count;
+           ++member_index) {
+        std::string member;
+        if (!reader.text(member) || member.empty() || member.size() > 512) {
+          return false;
+        }
+        package.archive_members.push_back(std::move(member));
       }
     }
     snapshot.packages.push_back(std::move(package));
