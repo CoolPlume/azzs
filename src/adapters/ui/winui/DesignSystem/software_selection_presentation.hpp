@@ -32,14 +32,14 @@ make_software_selection_presentation(
     SoftwareSelectionPresentationText text = {});
 
 struct OfflinePackageCachePresentationText final {
-  std::string accessible_name{"Offline package cache status"};
-  std::string available_title{"Offline package cache"};
-  std::string unavailable_title{"Offline package cache unavailable"};
-  std::string available_body_prefix{"Controlled cache location: "};
+  std::string accessible_name{"离线资源缓存状态"};
+  std::string available_title{"离线资源缓存"};
+  std::string unavailable_title{"离线资源缓存不可用"};
+  std::string available_body_prefix{"受控缓存位置： "};
   std::string unavailable_body_prefix{
-      "Controlled cache location is unavailable: "};
-  std::string item_suffix{" cached package assets"};
-  std::string network_suffix{"; network unavailable"};
+      "受控缓存位置不可用： "};
+  std::string item_suffix{" 个已缓存资源"};
+  std::string network_suffix{"；当前无法联网"};
 };
 
 [[nodiscard]] std::shared_ptr<PresentationSnapshot const>

@@ -423,10 +423,33 @@ class InMemoryAdvancedViewPreferenceStore final
                    "offline cache projection must expose one stable component");
   passed &= expect(component != nullptr &&
                        component->automation_id ==
-                           "AzzsOfflinePackageCacheStatus" &&
+                       "AzzsOfflinePackageCacheStatus" &&
                        !component->accessible_name.empty() &&
                        component->body.find("program-data") != std::string::npos,
                    "offline cache projection must preserve typed location and accessibility");
+
+  auto empty_text =
+      azzs::ui::presentation::OfflinePackageCachePresentationText{};
+  empty_text.accessible_name.clear();
+  empty_text.available_title.clear();
+  empty_text.unavailable_title.clear();
+  empty_text.available_body_prefix.clear();
+  empty_text.unavailable_body_prefix.clear();
+  empty_text.item_suffix.clear();
+  empty_text.network_suffix.clear();
+  auto const fallback =
+      azzs::ui::presentation::make_offline_package_cache_presentation(
+          source, std::move(empty_text));
+  auto const* fallback_component =
+      fallback->find_component("offline-package-cache.status");
+  passed &= expect(
+      fallback_component != nullptr &&
+          fallback_component->accessible_name == "离线资源缓存状态" &&
+          fallback_component->title == "离线资源缓存" &&
+          fallback_component->body.find("受控缓存位置： program-data") == 0 &&
+          fallback_component->body.find("0 个已缓存资源") != std::string::npos &&
+          fallback_component->body.find("当前无法联网") != std::string::npos,
+      "empty offline cache resources must use Chinese presentation defaults");
 
   source.location_state = CacheLocationState::unavailable;
   source.location_detail = "removable media is unavailable";
