@@ -24,12 +24,10 @@ PageHeader::PageHeader() {
                        box_value(L"AzzsPageTitleTextStyle"))
                        .as<Microsoft::UI::Xaml::Style>());
     auto const resource =
-        winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader{}
-            .GetString(L"PageHeaderFallbackTitle");
-    auto const native_resource =
-        azzs::ui::winui::native_resources::load_string(
+        azzs::ui::winui::native_resources::localized_or_native_string(
+            L"PageHeaderFallbackTitle",
             AZZS_NATIVE_STRING_PAGE_HEADER_FALLBACK_TITLE);
-    fallback.Text(resource.empty() ? winrt::hstring{native_resource} : resource);
+    fallback.Text(resource);
     fallback.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
     TitleContent(fallback);
   }
