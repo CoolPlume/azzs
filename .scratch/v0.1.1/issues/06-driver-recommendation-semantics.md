@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: 05, 14
+Blocked by: 05, .scratch/windows-initial-setup-workbench/issues/14-driver-acquisition-page.md
 Owner: issue-06
 Claimed by: none
 Consumers: 07

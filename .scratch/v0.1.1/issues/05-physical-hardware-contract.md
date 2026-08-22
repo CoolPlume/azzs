@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: 13, 24
+Blocked by: .scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md, .scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md
 Owner: issue-05
 Claimed by: none
 Consumers: 06, 07
