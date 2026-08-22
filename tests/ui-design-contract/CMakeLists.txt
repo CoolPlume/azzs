@@ -16,6 +16,23 @@ azzs_register_test(
   LABELS headless contract
 )
 
+add_executable(azzs_settings_navigation_contract_tests
+  settings_navigation_contract.cpp
+)
+
+azzs_project_target(
+  TARGET azzs_settings_navigation_contract_tests
+  ROLE test
+  PRIVATE_LINKS
+    azzs::ui_presentation_contract
+)
+
+azzs_register_test(
+  NAME ui.settings-navigation.contract
+  TARGET azzs_settings_navigation_contract_tests
+  LABELS headless contract
+)
+
 find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
 
 azzs_register_test(
