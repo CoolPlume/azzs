@@ -3,9 +3,10 @@
 Type: task  
 Status: ready-for-agent  
 Resolution: open
-Blocked by: 38
+Blocked by: none
 Owner: issue-40
 Consumers: 39
+Claimed by: v0.1.0
 Verification: 从干净的 `v0.1.0` 分支提交生成并验证唯一 `standard-x64-portable`，普通合入 `main` 后核对 `v0.1.0` GitHub prerelease、tag、资产和准确发行说明。
 Evidence freshness: 绑定发布提交、产品版本、目录修订、x64 制品、GitHub tag/Release 和发布说明；任一项变化后重新验证。
 
@@ -32,3 +33,16 @@ ADR-0048，事项 21、22、34、38、39，`REL-01` 至 `REL-13`。
 ## Comments
 
 - 2026-08-21：这是 ADR-0048 的版本限定发布事项。事项 21、22、34 的长期八制品/正式发行范围继续保持 open，不能被本 Beta 的单制品结果改变。
+
+## Answer
+
+发布准备已启动。事项 38 已在 `v0.1.0` 候选分支完成并记录生产装配、11 项目录和项级不可用边界；本事项仍须完成发行说明、最终候选制品、普通合入 `main`、`v0.1.0` tag 及 GitHub prerelease，完成前保持 `Resolution: open`。
+
+当前候选制品（尚待文档提交后重新生成）绑定提交 `59c169d90cfbbcdb12bbcc59f37d42e381b6e906`：
+
+- x64 Release build manifest：`out/manifests/windows-x64-release.json`，`result = succeeded`，`source.dirty = false`。
+- standard x64 portable package manifest：`out/manifests/package-standard-x64-portable.json`，`sourceCommit` 与 build manifest 一致。
+- ZIP：`out/packages/Azzs-standard-x64-portable.zip`，当前旧候选大小 `46,263,656` bytes，SHA-256 `10a18a3af3b1b111c1cf22804c141b78c1f580b44cbf6037d8bf55a521053855`；文档提交后必须重新生成并更新该值。
+- `release.version.contract`、生产目录/来源/安装相关合同和独立便携 verifier 已通过；完整 package/bundled-resource 合同的 reparse 负例被宿主权限阻断，不能写成全绿。
+
+发行说明不得把 mock、安装器退出码或便携进程存活采样写成真实安装成功；事项 39 的真实 Windows 11 x64 安装验证继续保持 open。
