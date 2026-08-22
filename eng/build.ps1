@@ -3,6 +3,8 @@ param(
     [ValidateSet("x64", "ARM64")]
     [string]$Architecture = "x64",
 
+    [string]$CMakeBinaryDirectory,
+
     [switch]$SkipCoreSmoke,
 
     [switch]$EnableStartupDiagnosticDeviceDataRoot
@@ -163,10 +165,16 @@ Push-Location $repositoryRoot
 try {
     $presetArchitecture = $Architecture.ToLowerInvariant()
     $configurePreset = "windows-$presetArchitecture"
-    $buildPreset = "$configurePreset-release"
     $startupDiagnosticDeviceDataRoot = if ($startupDiagnosticDeviceDataRootEnabled) { "ON" } else { "OFF" }
-    $coreLibraryDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/lib/Release"
-    $winuiVersionedResourceDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/generated/winui"
+    $cmakeBinaryDirectory = if ($PSBoundParameters.ContainsKey("CMakeBinaryDirectory")) {
+        Assert-PathChainWithoutReparsePoint `
+            -Path $CMakeBinaryDirectory `
+            -Context "CMake binary directory"
+    } else {
+        Join-Path $repositoryRoot "out/build/$configurePreset"
+    }
+    $coreLibraryDirectory = Join-Path $cmakeBinaryDirectory "lib/Release"
+    $winuiVersionedResourceDirectory = Join-Path $cmakeBinaryDirectory "generated/winui"
 
     Write-Log "Restoring the locked C++/WinRT and XAML host packages."
     Invoke-NativeCommand -FilePath $msbuildPath -Arguments @(
@@ -181,15 +189,20 @@ try {
     Write-Log "Building $Architecture Release core and Windows adapter."
     Invoke-NativeCommand -FilePath $cmakePath -Arguments @(
         "--preset", $configurePreset,
+        "-B", $cmakeBinaryDirectory,
         "-DCMAKE_GENERATOR_INSTANCE=$visualStudioPath",
         "-DAZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT=$startupDiagnosticDeviceDataRoot"
     )
-    Invoke-NativeCommand -FilePath $cmakePath -Arguments @("--build", "--preset", $buildPreset)
+    Invoke-NativeCommand -FilePath $cmakePath -Arguments @(
+        "--build", $cmakeBinaryDirectory,
+        "--config", "Release"
+    )
 
     if ($Architecture -eq "x64" -and -not $SkipCoreSmoke) {
         Write-Log "Running the x64 headless core smoke test."
         Invoke-NativeCommand -FilePath $ctestPath -Arguments @(
-            "--preset", "windows-x64-release",
+            "--test-dir", $cmakeBinaryDirectory,
+            "--build-config", "Release",
             "--no-tests=error",
             "--output-junit", $testResultPath
         )
