@@ -33,4 +33,7 @@ Windows 硬件适配器负责取得原始观测并在单一过滤接缝确认物
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：确认物理硬件源提交 `0b9fa245e45b2a09e1e56e49d8770cff4c72f2bc` 与数值变体修复 `3941b75635ab19e59159b477030d5f9c3d651dbf` 经普通合并 `67810a87014b50c28847b580c9bb35e8d1b8dba9` 进入候选链；当前远端头为 `d8a4367adc1e322351126e8ab3676d30584475d5`。定向硬件/日志/驱动合同包含在 CTest 10/10 通过结果中；未知物理性仍按 fail-closed，未做代表性真实设备人工验收。
+- 未验证边界：ARM64、真实设备矩阵、权限不足/SetupAPI 实机故障、DPI 和安装生命周期均未完成，事项保持 `Resolution: open`。
+
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md` 与 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 均已核实；这些记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
