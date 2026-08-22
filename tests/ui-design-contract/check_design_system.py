@@ -194,6 +194,10 @@ def verify_resource_dictionary(root: Path) -> None:
         "AzzsTouchTargetMinHeight",
         "AzzsStageMinimumWidth",
         "AzzsWideLayoutMinWidth",
+        "AzzsPageHeaderWideLayoutMinWidth",
+        "AzzsPageHeaderSummaryMargin",
+        "AzzsPageHeaderCommandMargin",
+        "AzzsPageHeaderCommandNarrowMargin",
         "AzzsCornerRadiusSmall",
         "AzzsCornerRadiusMedium",
         "AzzsFontFamily",
@@ -334,6 +338,70 @@ def verify_app_and_pages(root: Path) -> None:
                 "AzzsPagePaddingNarrow" in text and
                 "AzzsPagePadding}" in text,
                 f"{page_path.name} must consume narrow and wide page states")
+        headers = [element for element in page_root.iter()
+                   if local_name(element.tag) == "PageHeader"]
+        require(len(headers) == 1,
+                f"{page_path.name} must use exactly one shared PageHeader")
+        require(text.count("<controls:PageHeader.TitleContent>") == 1,
+                f"{page_path.name} must provide one PageHeader title slot")
+        require(text.count('AutomationProperties.HeadingLevel="Level1"') == 1,
+                f"{page_path.name} must expose one level-one page heading")
+        if "PageHeader.CommandContent" in text:
+            require("Click=" in text or "Command=" in text,
+                    f"{page_path.name} command slots must remain owned by the page")
+
+    header_path = ui_root / "DesignSystem/Controls/PageHeader.xaml"
+    header_root = parse_xml(header_path)
+    header_text = read(header_path)
+    require(header_root.attrib.get(f"{{{X_NS}}}Class") ==
+            "Azzs.Ui.DesignSystem.Controls.PageHeader",
+            "PageHeader must expose the shared runtime class")
+    require(header_root.attrib.get("IsTabStop") == "False" and
+            header_root.attrib.get("AutomationProperties.AutomationId") ==
+            "AzzsPageHeader",
+            "PageHeader must be non-focusable and automation-addressable")
+    presenters = {
+        element.attrib.get(X_NAME)
+        for element in header_root.iter()
+        if local_name(element.tag) == "ContentPresenter"
+    }
+    require({"TitlePresenter", "SummaryPresenter", "CommandHost"} <= presenters,
+            "PageHeader must own title, summary, and command presenters")
+    require("VisualStateGroup" in header_text and
+            "NarrowPageHeader" in header_text and
+            "WidePageHeader" in header_text and
+            "AzzsPageHeaderWideLayoutMinWidth" in header_text and
+            "AzzsPageHeaderCommandNarrowMargin" in header_text and
+            "AzzsPageHeaderCommandMargin" in header_text,
+            "PageHeader must provide shared narrow and wide command layout")
+    require("CommandHost.(Grid.Row)" in header_text and
+            "CommandHost.(Grid.Column)" in header_text and
+            "CommandHost.(Grid.RowSpan)" in header_text,
+            "PageHeader command placement must be state-driven")
+
+    header_cpp = read(header_path.with_suffix(".xaml.cpp"))
+    header_idl = read(header_path.with_suffix(".idl"))
+    header_h = read(header_path.with_suffix(".xaml.h"))
+    require("runtimeclass PageHeader" in header_idl and
+            all(f"Object {slot}" in header_idl
+                for slot in ("TitleContent", "SummaryContent", "CommandContent")),
+            "PageHeader IDL must expose all three content slots")
+    require("PageHeaderT<PageHeader>" in header_h and
+            "update_visibility" in header_h and
+            all(slot in header_h
+                for slot in ("TitleContent", "SummaryContent", "CommandContent")),
+            "PageHeader native projection must own typed slot accessors")
+    require("InitializeComponent" in header_cpp and
+            "TitlePresenter().Content(value)" in header_cpp and
+            "SummaryPresenter().Content(value)" in header_cpp and
+            "CommandHost().Content(value)" in header_cpp and
+            "Visibility::Collapsed" in header_cpp and
+            "Visibility::Visible" in header_cpp,
+            "PageHeader code-behind must project slots and collapse empty ones")
+    require(not any(token in header_cpp + header_text for token in (
+        "Storyboard", "ConnectedAnimation", "CompositionAnimation",
+        "ShellExecute", "CreateProcess", "std::filesystem", "std::fstream",
+    )), "PageHeader must remain a static, presentation-only shell")
 
     production_xaml = sorted(ui_root.rglob("*.xaml"))
     resource_path = ui_root / "Themes/DesignSystem.xaml"
@@ -721,7 +789,9 @@ def verify_motion_and_ownership(root: Path) -> None:
     xaml_text = "\n".join(read(path) for path in xaml_paths)
     require('EnableDependentAnimation="True"' not in xaml_text,
             "dependent layout animations are forbidden")
-    require("Completed=" not in xaml_text,
+    # Do not confuse control events such as DragCompleted with the animation
+    # Completed property. Only a standalone XAML attribute is a boundary.
+    require(not re.search(r"(?:^|\s)Completed\s*=", xaml_text),
             "XAML animation completion must not become a business boundary")
     layout_animation_properties = (
         "Width", "Height", "Margin", "Padding", "GridLength",
@@ -765,9 +835,17 @@ def verify_motion_and_ownership(root: Path) -> None:
                                 main_window_cpp)
     guarded_navigate_calls = re.findall(
         r"if\s*\(\s*!ContentFrame\(\)\.Navigate\(", main_window_cpp)
-    require(len(navigate_calls) == 8 and
+    # Settings navigation is prepared off-frame and committed by assigning the
+    # bound candidate. The generic page switch therefore has seven frame
+    # navigations; each remaining call must still handle a false result.
+    require(len(navigate_calls) == 7 and
             len(guarded_navigate_calls) == len(navigate_calls),
-            "all eight frame navigation calls must handle a false result")
+            "all generic frame navigation calls must handle a false result")
+    settings_case = main_window_cpp.split("case PageId::application_settings:", 1)
+    require(len(settings_case) == 2 and
+            "ContentFrame().Navigate(" not in
+            settings_case[1].split("case PageId::software_catalog_editor:", 1)[0],
+            "application settings must not bypass its prepare/commit recovery boundary")
     require("displayed_page_ = page;\n  return true;" in main_window_cpp,
             "the displayed page may update only after navigation succeeds")
     require("navigation_item_for_page" in main_window_cpp and
@@ -807,6 +885,11 @@ def verify_xaml_project_metadata(root: Path) -> None:
 
     require("Themes/DesignSystem.xaml" in pages,
             "the independent design ResourceDictionary must be a Page item")
+    require("DesignSystem/Controls/PageHeader.xaml" in pages and
+            "DesignSystem/Controls/PageHeader.xaml.h" in cl_includes and
+            "DesignSystem/Controls/PageHeader.xaml.cpp" in cl_compiles and
+            "DesignSystem/Controls/PageHeader.idl" in midl,
+            "the shared PageHeader must be present in every WinUI project item group")
     require("DesignSystem/Controls/ReadOnlyPresentationSurface.xaml" in pages,
             "the typed-intent projection surface must compile on Windows")
     fixture_xaml = "DesignSystem/Fixtures/DesignSystemFixturePage.xaml"
@@ -875,9 +958,12 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "NavigationOverview.Content",
         "NavigationApplicationSettings.Content",
         "VersionRiskTitle",
+        "PageHeaderFallbackTitle",
     ):
         require(required in resource_names,
                 f"existing localized shell resource disappeared: {required}")
+    require("PageHeaderFallbackSummary" not in resource_names,
+            "PageHeader must not retain an unused summary fallback resource")
 
     required_settings_resources = {
         "ApplicationSettingsCatalogHeading.Text",
@@ -1027,6 +1113,27 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     }
     require(rescue_resources <= resource_names,
             "driver rescue handoff commands and decisions must remain localized")
+
+    driver_recommendation_resources = {
+        "DriverRecommendationTitle",
+        "DriverRecommendationUnavailableTitle",
+        "DriverRecommendationHandoffSuffix",
+        "DriverRecommendationDegradedHardwareSuffix",
+        "DriverRecommendationNoPhysicalMessage",
+        "DriverRecommendationNoMatchMessage",
+    }
+    require(driver_recommendation_resources <= resource_names,
+            "driver recommendation states must remain localized")
+    require(
+        "has_confirmed_physical_hardware" in drivers_cpp and
+        "has_degraded_physical_hardware" in drivers_cpp and
+        "driver_snapshot.writable" in drivers_cpp and
+        "DriverRecommendation().IsOpen(true)" in drivers_cpp and
+        "DriverRecommendationNoPhysicalMessage" in drivers_cpp and
+        "DriverRecommendationNoMatchMessage" in drivers_cpp and
+        "AzzsFixedDriverEntrypoints" in drivers_xaml,
+        "driver recommendations must fail closed while fixed official entrypoints remain visible",
+    )
     require(
         resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
         "通用网卡驱动救援工具" and
@@ -1034,6 +1141,87 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "断网诊断与修复工具",
         "driver rescue slots must expose the frozen display names",
     )
+    guided_resources = (
+        "OverviewGuidedSummaryAccessibleName",
+        "OverviewGuidedSummaryTitle",
+        "OverviewGuidedSummaryCompletedPrefix",
+        "OverviewGuidedSummaryExternalPrefix",
+        "OverviewGuidedSummaryPartialPrefix",
+        "OverviewGuidedSummaryFailedPrefix",
+        "OverviewGuidedSummarySkippedPrefix",
+        "OverviewGuidedSummaryNoApplicablePrefix",
+        "OverviewGuidedSummaryNotExecutedPrefix",
+        "OverviewGuidedSummaryConfirmationPrefix",
+        "OverviewGuidedSummaryExplorerRestartPrefix",
+        "OverviewGuidedSummaryRestartPrefix",
+        "OverviewGuidedSummaryWithdrawnPrefix",
+        "OverviewGuidedSummaryErrorSuffix",
+        "OverviewGuidedStartCommand",
+        "OverviewGuidedRefreshCommand",
+        "OverviewGuidedCancelCommand",
+        "OverviewGuidedHistoryCommand",
+        "OverviewGuidedSkipCommand",
+        "OverviewGuidedContinueCommand",
+        "OverviewGuidedRetryCommand",
+        "OverviewGuidedOpenCommand",
+        "OverviewGuidedLocalTrialAccessibleName",
+        "OverviewGuidedLocalTrialTitle",
+        "OverviewGuidedLocalTrialBody",
+        "OverviewGuidedHandoffAccessibleName",
+        "OverviewGuidedHandoffTitle",
+        "OverviewGuidedHandoffWaitingBody",
+        "OverviewGuidedHandoffRecognizedBody",
+        "OverviewGuidedHandoffContinueCommand",
+        "OverviewGuidedReadOnlyAccessibleName",
+        "OverviewGuidedReadOnlyTitle",
+        "OverviewGuidedReadOnlyBody",
+        "OverviewGuidedReadOnlyDisabledReason",
+        "OverviewGuidedStageEmptyBody",
+        "OverviewGuidedRawDetailPrefix",
+        "OverviewGuidedRawErrorPrefix",
+        "OverviewGuidedDriversStageTitle",
+        "OverviewGuidedSystemOptimizationStageTitle",
+        "OverviewGuidedSoftwareInstallationStageTitle",
+        "OverviewGuidedSoftwareOptimizationStageTitle",
+        "OverviewGuidedUnknownStageTitle",
+        "OverviewGuidedStagePendingBody",
+        "OverviewGuidedStageActiveBody",
+        "OverviewGuidedStageCompletedBody",
+        "OverviewGuidedStageSkippedBody",
+        "OverviewGuidedStageNoApplicableBody",
+        "OverviewGuidedStagePartialBody",
+        "OverviewGuidedStageFailedBody",
+        "OverviewGuidedStageConfirmationBody",
+        "OverviewGuidedStageWaitingExplorerBody",
+        "OverviewGuidedStageWaitingRestartBody",
+        "OverviewGuidedStageWithdrawnBody",
+        "OverviewGuidedStageExternalHandoffBody",
+        "OverviewGuidedStageNotExecutedBody",
+    )
+    require(set(guided_resources) <= resource_names,
+            "overview guided initialization text must remain localized")
+    overview_cpp = read(root / "src/adapters/ui/winui/Pages/OverviewPage.xaml.cpp")
+    require("ResourceLoader" in overview_cpp and
+            "load_presentation_text" in overview_cpp and
+            "make_guided_initialization_presentation(\n      snapshot, load_presentation_text())" in overview_cpp,
+            "overview must inject localized dynamic presentation text")
+    mapped_keys = re.findall(
+        r'PresentationResource\{L"([^\"]+)"', overview_cpp
+    )
+    require(mapped_keys == list(guided_resources),
+            "overview presentation resource keys must keep the frozen order")
+    native_resource_line = read(root / "src/adapters/ui/winui/app.rc")
+    native_resource_match = re.search(
+        r'AZZS_NATIVE_STRING_OVERVIEW_GUIDED_PRESENTATION\s+"([^\"]*)"',
+        native_resource_line,
+    )
+    if native_resource_match is None:
+        require(False, "overview native presentation fallback resource is missing")
+    else:
+        native_fields = native_resource_match.group(1).split("|")
+        require(len(native_fields) == len(guided_resources) and
+                all(native_fields),
+                "overview native presentation fallback must contain 55 non-empty fields")
     for automation_id in (
         "AzzsFixedRescueToolFolders",
         "AzzsGenericNetworkDriverRescueFolder",

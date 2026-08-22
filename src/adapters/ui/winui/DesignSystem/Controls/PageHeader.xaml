@@ -1,0 +1,67 @@
+<UserControl
+    x:Class="Azzs.Ui.DesignSystem.Controls.PageHeader"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    AutomationProperties.AutomationId="AzzsPageHeader"
+    IsTabStop="False">
+    <Grid
+        x:Name="HeaderLayout"
+        Style="{StaticResource AzzsPageHeaderGridStyle}">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="PageHeaderLayoutStates">
+                <VisualState x:Name="NarrowPageHeader">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="CommandHost.(Grid.Row)" Value="2" />
+                        <Setter Target="CommandHost.(Grid.Column)" Value="0" />
+                        <Setter Target="CommandHost.(Grid.RowSpan)" Value="1" />
+                        <Setter Target="CommandHost.HorizontalAlignment" Value="Left" />
+                        <Setter Target="CommandHost.Margin" Value="{StaticResource AzzsPageHeaderCommandNarrowMargin}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="WidePageHeader">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="{StaticResource AzzsPageHeaderWideLayoutMinWidth}" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="CommandHost.(Grid.Row)" Value="0" />
+                        <Setter Target="CommandHost.(Grid.Column)" Value="1" />
+                        <Setter Target="CommandHost.(Grid.RowSpan)" Value="2" />
+                        <Setter Target="CommandHost.HorizontalAlignment" Value="Right" />
+                        <Setter Target="CommandHost.Margin" Value="{StaticResource AzzsPageHeaderCommandMargin}" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ContentPresenter
+            x:Name="TitlePresenter"
+            Grid.Row="0"
+            Grid.Column="0"
+            HorizontalAlignment="Stretch" />
+        <ContentPresenter
+            x:Name="SummaryPresenter"
+            Grid.Row="1"
+            Grid.Column="0"
+            HorizontalAlignment="Stretch"
+            Margin="{StaticResource AzzsPageHeaderSummaryMargin}" />
+        <ContentPresenter
+            x:Name="CommandHost"
+            Grid.Row="0"
+            Grid.Column="1"
+            Grid.RowSpan="2"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="{StaticResource AzzsPageHeaderCommandMargin}" />
+    </Grid>
+</UserControl>

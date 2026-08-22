@@ -16,6 +16,11 @@ using namespace std::chrono_literals;
 using azzs::application::HardwareObservation;
 using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareObservationResult;
+using azzs::application::HardwareDeviceKind;
+using azzs::application::HardwareDevicePhysicality;
+using azzs::application::HardwareObservationConfidence;
+using azzs::application::HardwareObservationSource;
+using azzs::application::HardwareVendor;
 using azzs::application::HardwareObserver;
 using azzs::application::HardwareOverviewService;
 using azzs::application::HardwareOverviewState;
@@ -35,13 +40,37 @@ using azzs::testing::FixedClock;
     std::string motherboard = "ASUS PRIME",
     std::string network_adapter = "Intel Ethernet",
     std::string oem_model = "ASUS Desktop") {
-  return {
+  HardwareObservation result{
       .cpu = std::move(cpu),
       .gpu = std::move(gpu),
       .motherboard = std::move(motherboard),
       .network_adapter = std::move(network_adapter),
       .oem_model = std::move(oem_model),
+      .oem_vendor = HardwareVendor::asus,
   };
+  auto add = [&result](HardwareDeviceKind kind, std::string const& name,
+                       HardwareVendor vendor) {
+    if (name.empty()) {
+      return;
+    }
+    result.devices.push_back({
+        .kind = kind,
+        .name = name,
+        .physicality = HardwareDevicePhysicality::confirmed_physical,
+        .source = HardwareObservationSource::wmi,
+        .confidence = HardwareObservationConfidence::confirmed,
+        .status = azzs::application::HardwareDeviceStatus::enabled,
+        .vendor = vendor,
+        .physically_present = true,
+        .filter_reason = "contract fixture",
+    });
+  };
+  add(HardwareDeviceKind::cpu, result.cpu, HardwareVendor::amd);
+  add(HardwareDeviceKind::gpu, result.gpu, HardwareVendor::nvidia);
+  add(HardwareDeviceKind::motherboard, result.motherboard, HardwareVendor::asus);
+  add(HardwareDeviceKind::network_adapter, result.network_adapter,
+      HardwareVendor::intel);
+  return result;
 }
 
 class FakeHardwareObserver final : public HardwareObserver {

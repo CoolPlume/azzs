@@ -125,6 +125,7 @@
 
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml" />
+    <Page Include="DesignSystem\Controls\PageHeader.xaml" />
     <Page Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml" />
     <Page Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml" />
     <Page Include="MainWindow.xaml" />
@@ -145,6 +146,9 @@
     <ClInclude Include="MainWindow.xaml.h">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </ClInclude>
+    <ClInclude Include="DesignSystem\Controls\PageHeader.xaml.h">
+      <DependentUpon>PageHeader.xaml</DependentUpon>
+    </ClInclude>
     <ClInclude Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml.h">
       <DependentUpon>ReadOnlyPresentationSurface.xaml</DependentUpon>
     </ClInclude>
@@ -155,9 +159,12 @@
     <ClInclude Include="DesignSystem\motion_contract.hpp" />
     <ClInclude Include="DesignSystem\motion_preferences.hpp" />
     <ClInclude Include="DesignSystem\presentation_contract.hpp" />
+    <ClInclude Include="DesignSystem\settings_navigation_recovery.hpp" />
     <ClInclude Include="DesignSystem\guided_initialization_presentation.hpp" />
     <ClInclude Include="DesignSystem\software_selection_presentation.hpp" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="native_resource_fallback.hpp" />
+    <ClInclude Include="resource_ids.h" />
     <ClInclude Include="Pages\ApplicationSettingsPage.xaml.h">
       <DependentUpon>ApplicationSettingsPage.xaml</DependentUpon>
     </ClInclude>
@@ -188,6 +195,7 @@
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="App.xaml.cpp" />
     <ClCompile Include="startup_entry.cpp" />
+    <ClCompile Include="DesignSystem\Controls\PageHeader.xaml.cpp" />
     <ClCompile Include="DesignSystem\Controls\ReadOnlyPresentationSurface.xaml.cpp" />
     <ClCompile Include="DesignSystem\Fixtures\DesignSystemFixturePage.xaml.cpp" />
     <ClCompile Include="DesignSystem\Fixtures\design_system_fixture.cpp">
@@ -218,6 +226,7 @@
     <ClCompile Include="..\..\..\composition\windows\composition_root.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Midl Include="DesignSystem\Controls\PageHeader.idl" />
     <Midl Include="DesignSystem\Controls\ReadOnlyPresentationSurface.idl" />
     <Midl Include="DesignSystem\Fixtures\DesignSystemFixturePage.idl" />
     <Midl Include="MainWindow.idl" />

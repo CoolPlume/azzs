@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -168,24 +167,12 @@ class Decoder final {
   return mode == StateReadMode::writable || mode == StateReadMode::recovered_previous;
 }
 
-[[nodiscard]] std::string lowercase(std::string_view value) {
-  std::string result{value};
-  std::ranges::transform(result, result.begin(), [](unsigned char character) {
-    return static_cast<char>(std::tolower(character));
-  });
-  return result;
-}
-
-[[nodiscard]] bool contains(std::string_view haystack,
-                            std::string_view needle) {
-  return lowercase(haystack).find(needle) != std::string::npos;
-}
-
 [[nodiscard]] std::vector<DriverEntrypoint> recommendations_for(
     HardwareOverviewSnapshot const& hardware) {
   std::vector<DriverEntrypoint> result;
   if (hardware.state != HardwareOverviewState::ready ||
-      !hardware.observation.has_value()) {
+      !hardware.observation.has_value() ||
+      !hardware.observation->has_confirmed_physical_hardware()) {
     return result;
   }
   auto const& facts = *hardware.observation;
@@ -194,26 +181,54 @@ class Decoder final {
       result.push_back(entrypoint);
     }
   };
-  if (contains(facts.cpu, "amd") || contains(facts.gpu, "amd")) {
-    append_if_missing(DriverEntrypoint::amd_software);
+  for (auto const& device : facts.devices) {
+    if (!device.confirmed_physical()) {
+      continue;
+    }
+    switch (device.vendor) {
+      case HardwareVendor::amd:
+        if (device.kind == HardwareDeviceKind::cpu ||
+            device.kind == HardwareDeviceKind::gpu) {
+          append_if_missing(DriverEntrypoint::amd_software);
+        }
+        break;
+      case HardwareVendor::intel:
+        if (device.kind == HardwareDeviceKind::cpu ||
+            device.kind == HardwareDeviceKind::network_adapter) {
+          append_if_missing(DriverEntrypoint::intel_driver_assistant);
+        }
+        break;
+      case HardwareVendor::nvidia:
+        if (device.kind == HardwareDeviceKind::gpu) {
+          append_if_missing(DriverEntrypoint::nvidia_drivers);
+        }
+        break;
+      case HardwareVendor::unknown:
+      case HardwareVendor::dell:
+      case HardwareVendor::hp:
+      case HardwareVendor::lenovo:
+      case HardwareVendor::asus:
+        break;
+    }
   }
-  if (contains(facts.cpu, "intel") || contains(facts.network_adapter, "intel")) {
-    append_if_missing(DriverEntrypoint::intel_driver_assistant);
-  }
-  if (contains(facts.gpu, "nvidia")) {
-    append_if_missing(DriverEntrypoint::nvidia_drivers);
-  }
-  if (contains(facts.oem_model, "dell")) {
-    append_if_missing(DriverEntrypoint::dell_support);
-  }
-  if (contains(facts.oem_model, "hp")) {
-    append_if_missing(DriverEntrypoint::hp_support);
-  }
-  if (contains(facts.oem_model, "lenovo")) {
-    append_if_missing(DriverEntrypoint::lenovo_support);
-  }
-  if (contains(facts.oem_model, "asus")) {
-    append_if_missing(DriverEntrypoint::asus_support);
+  switch (facts.oem_vendor) {
+    case HardwareVendor::dell:
+      append_if_missing(DriverEntrypoint::dell_support);
+      break;
+    case HardwareVendor::hp:
+      append_if_missing(DriverEntrypoint::hp_support);
+      break;
+    case HardwareVendor::lenovo:
+      append_if_missing(DriverEntrypoint::lenovo_support);
+      break;
+    case HardwareVendor::asus:
+      append_if_missing(DriverEntrypoint::asus_support);
+      break;
+    case HardwareVendor::unknown:
+    case HardwareVendor::amd:
+    case HardwareVendor::intel:
+    case HardwareVendor::nvidia:
+      break;
   }
   return result;
 }
