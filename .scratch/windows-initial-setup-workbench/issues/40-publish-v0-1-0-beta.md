@@ -36,13 +36,13 @@ ADR-0048，事项 21、22、34、38、39，`REL-01` 至 `REL-13`。
 
 ## Answer
 
-发布准备已启动。事项 38 已在 `v0.1.0` 候选分支完成并记录生产装配、11 项目录和项级不可用边界；本事项仍须完成发行说明、最终候选制品、普通合入 `main`、`v0.1.0` tag 及 GitHub prerelease，完成前保持 `Resolution: open`。
+发布准备已完成，正在收口候选的 GitHub 交付。事项 38 已在 `v0.1.0` 候选分支完成并记录生产装配、11 项目录和项级不可用边界；本事项在普通合入 `main`、创建 `v0.1.0` tag/prerelease 并核对唯一资产前保持 `Resolution: open`。
 
-当前候选制品（尚待文档提交后重新生成）绑定提交 `59c169d90cfbbcdb12bbcc59f37d42e381b6e906`：
+当前自动化证据（最终候选提交变化后按同一命令重跑）：
 
-- x64 Release build manifest：`out/manifests/windows-x64-release.json`，`result = succeeded`，`source.dirty = false`。
-- standard x64 portable package manifest：`out/manifests/package-standard-x64-portable.json`，`sourceCommit` 与 build manifest 一致。
-- ZIP：`out/packages/Azzs-standard-x64-portable.zip`，当前旧候选大小 `46,263,656` bytes，SHA-256 `10a18a3af3b1b111c1cf22804c141b78c1f580b44cbf6037d8bf55a521053855`；文档提交后必须重新生成并更新该值。
-- `release.version.contract`、生产目录/来源/安装相关合同和独立便携 verifier 已通过；完整 package/bundled-resource 合同的 reparse 负例被宿主权限阻断，不能写成全绿。
+- `release/product-version.json` 为应用版本 `0.1.0`、发行通道 `prerelease`，`release.version.contract` 通过。
+- x64 Release build manifest `out/manifests/windows-x64-release.json` 为 `result = succeeded`、`source.dirty = false`；package manifest 与构建 manifest 绑定同一提交。
+- `standard-x64-portable` 的内置打包 verifier 与独立 `eng/verify-portable-package.ps1` 均通过；最终 ZIP 大小与 SHA-256 在合入提交生成并上传后，以 GitHub Release asset digest 和本事项后续证据为准。
+- 生产目录/来源/安装相关合同确认 11 项保留、Cheat Engine 与几何画板只在自身条目下不可用；完整 package/bundled-resource 合同的 reparse 负例受当前宿主权限阻断，不能写成全绿。
 
-发行说明不得把 mock、安装器退出码或便携进程存活采样写成真实安装成功；事项 39 的真实 Windows 11 x64 安装验证继续保持 open。
+尚未完成的发布动作：推送 `v0.1.0`、创建并合入 `main` 的 PR、创建 `v0.1.0` tag/prerelease、上传唯一 ZIP，以及回填合入 SHA、Release URL、资产大小和 SHA-256。发行说明不得把 mock、安装器退出码或便携进程存活采样写成真实安装成功；事项 39 的真实 Windows 11 x64 安装验证继续保持 open。
