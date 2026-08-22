@@ -33,6 +33,4 @@ Windows 硬件适配器负责取得原始观测并在单一过滤接缝确认物
 
 ## Comments
 
-- 2026-08-23（集成证据核对）：物理硬件实现提交 `0b9fa245e45b2a09e1e56e49d8770cff4c72f2bc` 与 Variant/WMI 兼容修复 `3941b75635ab19e59159b477030d5f9c3d651dbf` 已由普通合并 `67810a87014b50c28847b580c9bb35e8d1b8dba9` 集成，并由后续 `ec80d9ed68bf547481adb38c15d0fbfcd4407693` 作为远端集成基线；当前本地候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`。
-- 代码审查确认 CPU/GPU/主板/网卡在物理性字段缺失、Variant 不可解析、来源未知或 PNP/PhysicalAdapter 未确认时 fail-closed；禁用但确认真实的物理设备保留。概览、日志和驱动推荐均再次使用确认物理过滤。仍需运行硬件/驱动/日志合同并核对当前 mock 查询列顺序。
-- 未验证边界：真实 Windows x64 代表性设备、WMI/SetupAPI 权限/异常、ARM64、DPI/UI 展示和安装生命周期未验证；虚拟、VPN、回环、软件及未知项不得以名称猜测为物理设备。
+- 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md` 与 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 均已核实；这些记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
