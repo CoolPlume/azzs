@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include "app_resource_ids.h"
+
 #define IDI_APP_ICON 101
 
 #ifndef AZZS_APPLICATION_VERSION
@@ -15,6 +17,17 @@
 #endif
 
 IDI_APP_ICON ICON "..\\..\\..\\..\\assets\\product\\generated\\windows\\windows-initial-setup-workbench.ico"
+
+STRINGTABLE
+BEGIN
+  IDS_AZZS_STARTUP_FAILURE_TITLE "无法进入工作台"
+  IDS_AZZS_STARTUP_FAILURE_RESOURCES "界面资源初始化失败。请重新启动工作台；如果问题持续，请收集诊断资料。"
+  IDS_AZZS_STARTUP_FAILURE_WINDOW "工作台未能创建启动窗口。请重新启动工作台；如果问题持续，请收集诊断资料。"
+  IDS_AZZS_STARTUP_FAILURE_UNEXPECTED "工作台启动失败。请重新启动工作台；如果问题持续，请收集诊断资料。"
+  IDS_AZZS_PAGE_HEADER_FALLBACK_TITLE "页面"
+  IDS_AZZS_SETTINGS_NAVIGATION_FAILURE_TITLE "应用设置暂时无法打开"
+  IDS_AZZS_SETTINGS_NAVIGATION_FAILURE_MESSAGE "设置数据或页面资源读取失败。现有页面已保留，请重试或返回当前页面。"
+END
 
 1 VERSIONINFO
  FILEVERSION AZZS_WINDOWS_VERSION_COMMAS
