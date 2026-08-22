@@ -33,4 +33,7 @@ Evidence freshness: 绑定物理硬件契约、驱动推荐规则、页面资源
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：驱动推荐源提交 `02c52d62b21d2797d87ea13a891878d63f8cfa8d` 经普通合并 `ec80d9ed68bf547481adb38c15d0fbfcd4407693` 进入候选链；当前远端头为 `d8a4367adc1e322351126e8ab3676d30584475d5`。定向驱动/物理硬件/presentation 合同包含在 CTest 10/10 通过结果中，入口仅交接官方页面/助手；未执行真实厂商页面、下载或安装流程。
+- 未验证边界：真实 Windows 页面、禁用物理设备样本、ARM64、DPI、安装生命周期和网络交接均未完成，事项保持 `Resolution: open`。
+
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/14-driver-acquisition-page.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前 `Blocked by` 仅保留同 effort 的事项 05。
