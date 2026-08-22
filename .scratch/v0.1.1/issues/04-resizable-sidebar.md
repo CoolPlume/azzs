@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: 03, 18
+Blocked by: 03, .scratch/windows-initial-setup-workbench/issues/18-application-settings.md
 Owner: issue-04
 Claimed by: none
 Consumers: 07
