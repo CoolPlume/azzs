@@ -1141,7 +1141,7 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "断网诊断与修复工具",
         "driver rescue slots must expose the frozen display names",
     )
-    guided_resources = {
+    guided_resources = (
         "OverviewGuidedSummaryAccessibleName",
         "OverviewGuidedSummaryTitle",
         "OverviewGuidedSummaryCompletedPrefix",
@@ -1197,14 +1197,31 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "OverviewGuidedStageWithdrawnBody",
         "OverviewGuidedStageExternalHandoffBody",
         "OverviewGuidedStageNotExecutedBody",
-    }
-    require(guided_resources <= resource_names,
+    )
+    require(set(guided_resources) <= resource_names,
             "overview guided initialization text must remain localized")
     overview_cpp = read(root / "src/adapters/ui/winui/Pages/OverviewPage.xaml.cpp")
     require("ResourceLoader" in overview_cpp and
             "load_presentation_text" in overview_cpp and
             "make_guided_initialization_presentation(\n      snapshot, load_presentation_text())" in overview_cpp,
             "overview must inject localized dynamic presentation text")
+    mapped_keys = re.findall(
+        r'PresentationResource\{L"([^\"]+)"', overview_cpp
+    )
+    require(mapped_keys == list(guided_resources),
+            "overview presentation resource keys must keep the frozen order")
+    native_resource_line = read(root / "src/adapters/ui/winui/app.rc")
+    native_resource_match = re.search(
+        r'AZZS_NATIVE_STRING_OVERVIEW_GUIDED_PRESENTATION\s+"([^\"]*)"',
+        native_resource_line,
+    )
+    if native_resource_match is None:
+        require(False, "overview native presentation fallback resource is missing")
+    else:
+        native_fields = native_resource_match.group(1).split("|")
+        require(len(native_fields) == len(guided_resources) and
+                all(native_fields),
+                "overview native presentation fallback must contain 55 non-empty fields")
     for automation_id in (
         "AzzsFixedRescueToolFolders",
         "AzzsGenericNetworkDriverRescueFolder",

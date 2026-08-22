@@ -537,6 +537,23 @@ class InMemoryAdvancedViewPreferenceStore final
 [[nodiscard]] bool verify_guided_initialization_projection() {
   namespace guided = azzs::application::guided_initialization;
 
+  auto const defaults =
+      azzs::ui::presentation::GuidedInitializationPresentationText{};
+  bool passed = true;
+  passed &= expect(
+      defaults.summary_accessible_name == "推荐初始化摘要" &&
+          defaults.summary_title == "推荐初始化" &&
+          defaults.summary_prefix == "已完成：" &&
+          defaults.summary_error_suffix ==
+              "。请先查看当前阶段，再继续操作。" &&
+          defaults.start_command == "开始推荐初始化" &&
+          defaults.local_trial_title == "正在使用本机试用目录" &&
+          defaults.read_only_title == "推荐初始化处于只读状态" &&
+          defaults.drivers_stage_title == "驱动" &&
+          defaults.stage_completed_body == "已完成" &&
+          defaults.stage_not_executed_body == "未执行",
+      "guided presentation defaults must be Simplified Chinese");
+
   azzs::ui::presentation::GuidedInitializationPresentationText localized_text;
   localized_text.summary_title = "推荐初始化";
   localized_text.summary_prefix = "已完成：";
@@ -574,8 +591,8 @@ class InMemoryAdvancedViewPreferenceStore final
       localized_summary->body.find("已完成：") != std::string::npos;
   auto const* restart_stage =
       projected->find_component("guided.stage.system-optimization");
-  bool passed = expect(has_localized_projection,
-                       "guided projection must use injected Simplified Chinese text");
+  passed &= expect(has_localized_projection,
+                   "guided projection must use injected Simplified Chinese text");
   passed &= expect(restart_stage != nullptr,
                    "guided projection must expose the current restart stage");
   bool has_restart_continue = false;
