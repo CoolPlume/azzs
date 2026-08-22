@@ -90,12 +90,20 @@ std::string CacheAssetIdentity::stable_key() const {
 bool CacheAsset::valid() const noexcept {
   return identity.valid() &&
          (!expected_bytes.has_value() || *expected_bytes > 0) &&
-         (!expected_sha256.has_value() || valid_sha256(*expected_sha256));
+         (!expected_sha256.has_value() || valid_sha256(*expected_sha256)) &&
+         (kind != CacheAssetKind::archive_package ||
+          (!archive_members.empty() &&
+           std::ranges::all_of(archive_members, [](std::string const& member) {
+             return !member.empty() && member.front() != '/' &&
+                    member.find('\\') == std::string::npos &&
+                    member.find("..") == std::string::npos;
+           })));
 }
 
 bool CacheAsset::cacheable() const noexcept {
   return kind == CacheAssetKind::full_package ||
-         kind == CacheAssetKind::online_installer;
+         kind == CacheAssetKind::online_installer ||
+         kind == CacheAssetKind::archive_package;
 }
 
 bool CacheAsset::requires_network() const noexcept {
@@ -105,7 +113,8 @@ bool CacheAsset::requires_network() const noexcept {
 }
 
 bool BuiltInPackageResource::valid() const noexcept {
-  return asset.valid() && asset.kind == CacheAssetKind::full_package;
+  return asset.valid() && (asset.kind == CacheAssetKind::full_package ||
+                           asset.kind == CacheAssetKind::archive_package);
 }
 
 bool ControlledCacheRoot::valid() const noexcept {
@@ -122,6 +131,8 @@ bool ControlledCacheRoot::valid() const noexcept {
 
 char const* to_string(CacheArchitecture value) noexcept {
   switch (value) {
+    case CacheArchitecture::x86:
+      return "x86";
     case CacheArchitecture::x64:
       return "x64";
     case CacheArchitecture::arm64:
@@ -140,6 +151,8 @@ char const* to_string(CacheAssetKind value) noexcept {
       return "full-package";
     case CacheAssetKind::online_installer:
       return "online-installer";
+    case CacheAssetKind::archive_package:
+      return "archive-package";
     case CacheAssetKind::online_only:
       return "online-only";
     case CacheAssetKind::managed_source:
