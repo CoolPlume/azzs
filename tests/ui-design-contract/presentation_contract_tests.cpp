@@ -423,7 +423,7 @@ class InMemoryAdvancedViewPreferenceStore final
                    "offline cache projection must expose one stable component");
   passed &= expect(component != nullptr &&
                        component->automation_id ==
-                       "AzzsOfflinePackageCacheStatus" &&
+                           "AzzsOfflinePackageCacheStatus" &&
                        !component->accessible_name.empty() &&
                        component->body.find("program-data") != std::string::npos,
                    "offline cache projection must preserve typed location and accessibility");
