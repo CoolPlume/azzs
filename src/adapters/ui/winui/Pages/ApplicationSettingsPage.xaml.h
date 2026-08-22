@@ -20,6 +20,8 @@ struct ApplicationSettingsPage
 
   void bind(std::shared_ptr<azzs::application::Workbench> workbench,
             azzs::application::ApplicationSettingsService& settings,
+            azzs::application::UpdateSnapshot const& update_snapshot,
+            azzs::application::ApplicationSettingsSnapshot const& snapshot,
             bool advanced_view,
             AdvancedViewChangedHandler advanced_view_changed,
             CatalogEditorRequestedHandler catalog_editor_requested);

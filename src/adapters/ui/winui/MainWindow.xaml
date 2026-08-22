@@ -72,6 +72,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <InfoBar
@@ -104,9 +105,35 @@
                     </Button>
                 </InfoBar.ActionButton>
             </InfoBar>
+            <InfoBar
+                x:Name="SettingsNavigationFailureInfoBar"
+                Grid.Row="2"
+                x:Uid="MainWindowSettingsNavigationFailed"
+                AutomationProperties.AutomationId="AzzsSettingsNavigationFailureInfoBar"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False"
+                Margin="{StaticResource AzzsShellStatusMargin}"
+                Severity="Error"
+                Style="{StaticResource AzzsErrorStatusBandStyle}">
+                <InfoBar.ActionButton>
+                    <Button
+                        x:Name="RetrySettingsNavigationButton"
+                        x:Uid="MainWindowRetrySettingsNavigation"
+                        AutomationProperties.AutomationId="AzzsRetrySettingsNavigation"
+                        Click="OnRetrySettingsNavigationClick" />
+                </InfoBar.ActionButton>
+                <InfoBar.Content>
+                    <Button
+                        x:Name="ReturnToCurrentPageButton"
+                        x:Uid="MainWindowReturnToCurrentPage"
+                        AutomationProperties.AutomationId="AzzsReturnToCurrentPage"
+                        Click="OnReturnToCurrentPageClick" />
+                </InfoBar.Content>
+            </InfoBar>
             <Frame
                 x:Name="ContentFrame"
-                Grid.Row="2"
+                Grid.Row="3"
                 AutomationProperties.AutomationId="AzzsContentFrame"
                 IsNavigationStackEnabled="False" />
         </Grid>
