@@ -41,6 +41,11 @@ class LocalPackageCacheStorage final
       application::offline_package_cache::ControlledCacheRoot const& root,
       application::offline_package_cache::CacheAssetIdentity const& identity)
       override;
+  [[nodiscard]] application::offline_package_cache::CompletedCachePayloadRead
+  read_completed_payload(
+      application::offline_package_cache::ControlledCacheRoot const& root,
+      application::offline_package_cache::CacheAssetIdentity const& identity)
+      override;
   [[nodiscard]] application::offline_package_cache::CompletedCacheList
   list_completed(
       application::offline_package_cache::ControlledCacheRoot const& root)

@@ -438,14 +438,18 @@ static_assert(
     !CallerSuppliesCatalogEditorAccess<lifecycle::SoftwareCatalogLifecycle>);
 
 struct LifecycleFixture final {
-  LifecycleFixture()
+  explicit LifecycleFixture(
+      catalog::SoftwareCatalogPolicy configured_policy = default_policy(),
+      catalog::SoftwareCatalogReleaseGateMode release_gate_mode =
+          catalog::SoftwareCatalogReleaseGateMode::formal)
       : states(state_files, clock),
         tokens("catalog-lease-"),
         occupancy(occupancy_storage, tokens),
-        policy(default_policy()),
+        policy(std::move(configured_policy)),
         catalog_lifecycle(states, log, occupancy, files, codec, policy,
                           maintenance_access,
-                          StateSubject{"catalog-test-user"}) {}
+                          StateSubject{"catalog-test-user"},
+                          release_gate_mode) {}
 
   InMemoryStateFileSystem state_files;
   FixedClock clock{WallClockTime{1234ms}};
@@ -542,13 +546,16 @@ struct DebugModeCatalogEditorFixture final {
   }
   auto policy = catalog::initial_software_catalog_policy();
   auto runtime = catalog::validate_for_runtime(*decoded.document, policy);
-  auto gate = catalog::evaluate_release_gate(
+  auto formal_gate = catalog::evaluate_release_gate(
+      *decoded.document, runtime, policy,
+      catalog::content_identity(file.bytes));
+  auto beta_gate = catalog::evaluate_beta_candidate_release_gate(
       *decoded.document, runtime, policy,
       catalog::content_identity(file.bytes));
   passed &= expect(runtime.accepted() && runtime.catalog.has_value(),
-                   "the draft authoritative catalog must runtime-load");
+                   "the authoritative release catalog must runtime-load");
   passed &= expect(runtime.catalog.has_value() &&
-                       runtime.catalog->software.size() == 7 &&
+                       runtime.catalog->software.size() == 11 &&
                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
   auto const sogou_runtime = std::ranges::find_if(
@@ -557,16 +564,16 @@ struct DebugModeCatalogEditorFixture final {
       });
   passed &= expect(sogou_runtime != runtime.catalog->software.end() &&
                        sogou_runtime->availability ==
-                           catalog::ItemAvailability::install_profile_unavailable,
-                   "the declaration-only Sogou profile must remain unavailable to execution");
-  passed &= expect(!gate.passed() &&
-                       has_issue(gate.issues,
-                                 catalog::CatalogIssueCode::draft_release_state,
-                                 catalog::CatalogIssueScope::release) &&
-                       has_issue(gate.issues,
-                                 catalog::CatalogIssueCode::install_profile_not_release_ready,
-                                 catalog::CatalogIssueScope::release),
-                   "draft state and missing Windows execution must block formal release");
+                           catalog::ItemAvailability::available,
+                   "the registered Sogou profile must be available to the Beta runtime");
+  passed &= expect(
+      !formal_gate.passed() &&
+          has_issue_for_item(formal_gate.issues,
+                             catalog::CatalogIssueCode::unknown_execution_semantics,
+                             "qq", catalog::CatalogIssueScope::release),
+      "unknown third-party facts must block the formal release gate");
+  passed &= expect(beta_gate.passed(),
+                   "the explicit v0.1.0 Beta candidate gate must pass the authoritative catalog");
 
   auto const encoded = codec.encode(*decoded.document);
   auto round_trip = codec.decode(encoded);
@@ -635,8 +642,8 @@ struct DebugModeCatalogEditorFixture final {
 
   auto const profiles = catalog::initial_controlled_install_profiles();
   auto const facts = catalog::initial_software_install_facts();
-  passed &= expect(profiles.size() == 1 && facts.size() == 11,
-                   "initial declarations must cover one controlled profile and eleven software facts");
+  passed &= expect(profiles.size() == 11 && facts.size() == 11,
+                   "initial declarations must cover eleven controlled profiles and eleven software facts");
   passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
                        catalog::validate_software_install_facts(facts).accepted(),
                    "initial declaration registries must satisfy their value contracts");
@@ -645,18 +652,15 @@ struct DebugModeCatalogEditorFixture final {
   for (auto const& fact : facts) {
     fact_ids.push_back(fact.software_id);
     passed &= expect(
-        fact.capabilities.offline_install == catalog::CapabilitySupport::unknown &&
-            fact.capabilities.silent_install ==
-                catalog::CapabilitySupport::unknown &&
-            fact.capabilities.completion_boundary ==
-                catalog::CapabilitySupport::unknown &&
-            fact.capabilities.post_install_behavior ==
-                catalog::CapabilitySupport::unknown &&
-            fact.capabilities.restart_verification ==
-                catalog::CapabilitySupport::unknown &&
-            fact.capabilities.result_detection ==
-                catalog::CapabilitySupport::unknown,
-        "unobserved install capabilities must remain unknown");
+        fact.capabilities.architectures.knowledge == catalog::FactKnowledge::unknown &&
+            fact.capabilities.architectures.values.empty() &&
+            fact.capabilities.offline_install == catalog::CapabilitySupport::unknown &&
+            fact.capabilities.silent_install == catalog::CapabilitySupport::unknown &&
+            fact.capabilities.completion_boundary == catalog::CapabilitySupport::unknown &&
+            fact.capabilities.post_install_behavior == catalog::CapabilitySupport::unknown &&
+            fact.capabilities.restart_verification == catalog::CapabilitySupport::unknown &&
+            fact.capabilities.result_detection == catalog::CapabilitySupport::unknown,
+        "initial third-party installation facts must remain explicitly unknown");
   }
   std::ranges::sort(fact_ids);
   passed &= expect(fact_ids == expected_ids,
@@ -667,7 +671,7 @@ struct DebugModeCatalogEditorFixture final {
                        dotnet_facts->capabilities.architectures.knowledge ==
                            catalog::FactKnowledge::unknown &&
                        dotnet_facts->capabilities.architectures.values.empty(),
-                   "unobserved .NET installer architecture must remain unknown");
+                    "the initial .NET architecture fact must remain unknown");
   if (!profiles.empty()) {
     auto const& profile = profiles.front();
     passed &= expect(profile.id == "sogou-input-defaults-v1" &&
@@ -675,8 +679,9 @@ struct DebugModeCatalogEditorFixture final {
                          profile.execution_kind ==
                              catalog::ControlledWindowsExecutionKind::
                                  project_owned_windows_executor &&
-                         profile.execution ==
-                             catalog::WindowsExecutionReadiness::declaration_only &&
+                          profile.execution ==
+                              catalog::WindowsExecutionReadiness::
+                                  project_executor_registered &&
                          profile.completion_boundary ==
                              catalog::InstallationCompletionBoundary::
                                  post_install_then_result_detection &&
@@ -693,7 +698,7 @@ struct DebugModeCatalogEditorFixture final {
                          profile.baselines.size() == 1 &&
                          profile.baselines.front().version == "16.7" &&
                          profile.preferences.size() == 2,
-                     "Sogou must freeze closed project-owned completion and interaction semantics without registering an executor");
+                       "Sogou must freeze closed project-owned completion and interaction semantics");
     if (profile.preferences.size() == 2) {
       auto const& first = profile.preferences[0];
       auto const& second = profile.preferences[1];
@@ -745,7 +750,7 @@ struct DebugModeCatalogEditorFixture final {
   for (auto const& requirement : policy.required_release_install_facts) {
     release_fact_ids.push_back(requirement.software_id);
     passed &= expect(!requirement.complete(),
-                     "unknown initial installation facts must not be release-ready");
+                     "unvalidated third-party facts must not be release-ready");
   }
   std::ranges::sort(release_fact_ids);
   passed &= expect(release_fact_ids == expected_ids,
@@ -755,13 +760,19 @@ struct DebugModeCatalogEditorFixture final {
       &catalog::InstallProfileSupport::id);
   passed &= expect(sogou_profile != nullptr &&
                        sogou_profile->runtime_status ==
-                           catalog::InstallProfileRuntimeStatus::missing &&
+                           catalog::InstallProfileRuntimeStatus::available &&
                        !sogou_profile->release_ready &&
-                       policy.required_install_profiles.size() == 1,
-                   "the Sogou profile must remain declaration-only and release-incomplete");
+                       policy.required_install_profiles.size() == 11,
+                   "registered controlled profiles must be runtime-available without release evidence");
+  passed &= expect(
+      std::ranges::all_of(policy.install_profiles, [](auto const& support) {
+        return support.runtime_status ==
+                   catalog::InstallProfileRuntimeStatus::available &&
+               !support.release_ready;
+      }),
+      "every initial controlled profile must separate runtime availability from release readiness");
 
-  auto released = codec.decode(replace_once(
-      file.bytes, "release_state = \"draft\"", "release_state = \"release\""));
+  auto released = codec.decode(file.bytes);
   passed &= expect(released.document.has_value() && released.issues.empty(),
                    "a release-gate candidate must retain the authoritative TOML shape");
   if (!released.document.has_value() || !released.issues.empty()) {
@@ -774,20 +785,45 @@ struct DebugModeCatalogEditorFixture final {
         candidate, runtime, candidate_policy, catalog::content_identity(file.bytes));
     return std::pair{std::move(runtime), std::move(gate)};
   };
+  auto evaluate_beta_candidate = [&](catalog::SoftwareCatalogDocument const& candidate,
+                                     catalog::SoftwareCatalogPolicy const& candidate_policy) {
+    auto runtime = catalog::validate_for_runtime(candidate, candidate_policy);
+    auto gate = catalog::evaluate_beta_candidate_release_gate(
+        candidate, runtime, candidate_policy, catalog::content_identity(file.bytes));
+    return std::pair{std::move(runtime), std::move(gate)};
+  };
   auto release_only = evaluate_release_candidate(*released.document, policy);
   passed &= expect(
       release_only.first.accepted() && !release_only.second.passed() &&
-          static_cast<std::size_t>(std::ranges::count_if(
-              release_only.second.issues, [](catalog::CatalogIssue const& issue) {
-                return issue.scope == catalog::CatalogIssueScope::release &&
-                       issue.code ==
-                           catalog::CatalogIssueCode::unknown_execution_semantics;
-              })) == expected_ids.size() &&
           has_issue_for_item(
               release_only.second.issues,
               catalog::CatalogIssueCode::unknown_execution_semantics, "qq",
               catalog::CatalogIssueScope::release),
-      "changing only release_state must leave every unknown first-release install fact blocked");
+      "the formal gate must reject the candidate while third-party facts are unknown");
+  auto beta_only = evaluate_beta_candidate(*released.document, policy);
+  passed &= expect(beta_only.first.accepted() && beta_only.second.passed(),
+                   "the explicit Beta candidate gate must skip only unknown installation facts");
+
+  auto unknown_facts_policy = policy;
+  unknown_facts_policy.required_release_install_facts.front().
+      result_detection_confirmed = false;
+  auto unknown_facts = evaluate_release_candidate(*released.document,
+                                                  unknown_facts_policy);
+  passed &= expect(
+      unknown_facts.first.accepted() && !unknown_facts.second.passed() &&
+          has_issue_for_item(
+              unknown_facts.second.issues,
+              catalog::CatalogIssueCode::unknown_execution_semantics, "qq",
+              catalog::CatalogIssueScope::release),
+      "an unknown execution fact must still block the release gate");
+  auto unknown_facts_beta =
+      evaluate_beta_candidate(*released.document, unknown_facts_policy);
+  passed &= expect(unknown_facts_beta.first.accepted() &&
+                       unknown_facts_beta.second.passed() &&
+                       !has_issue(unknown_facts_beta.second.issues,
+                                  catalog::CatalogIssueCode::unknown_execution_semantics,
+                                  catalog::CatalogIssueScope::release),
+                   "the explicit Beta candidate gate may defer unknown installation facts");
 
   auto sogou_ready_policy = policy;
   auto sogou_profile_support = std::ranges::find(
@@ -799,15 +835,23 @@ struct DebugModeCatalogEditorFixture final {
   sogou_profile_support->runtime_status =
       catalog::InstallProfileRuntimeStatus::available;
   sogou_profile_support->release_ready = true;
+  for (auto& support : sogou_ready_policy.install_profiles) {
+    support.runtime_status = catalog::InstallProfileRuntimeStatus::available;
+    support.release_ready = true;
+  }
+  for (auto& requirement : sogou_ready_policy.required_release_install_facts) {
+    requirement.architectures_confirmed = true;
+    requirement.offline_install_confirmed = true;
+    requirement.silent_install_confirmed = true;
+    requirement.completion_boundary_confirmed = true;
+    requirement.post_install_behavior_confirmed = true;
+    requirement.restart_verification_confirmed = true;
+    requirement.result_detection_confirmed = true;
+  }
   auto sogou_only =
       evaluate_release_candidate(*released.document, sogou_ready_policy);
-  passed &= expect(
-      sogou_only.first.accepted() && !sogou_only.second.passed() &&
-          has_issue_for_item(
-              sogou_only.second.issues,
-              catalog::CatalogIssueCode::unknown_execution_semantics,
-              "game-cheats-manager", catalog::CatalogIssueScope::release),
-      "making only the Sogou profile ready must not release the remaining unknown facts");
+  passed &= expect(sogou_only.first.accepted() && sogou_only.second.passed(),
+                   "explicitly evidenced profiles and facts may pass the formal release gate");
 
   auto const* required_amd = find_by_id(
       policy.required_release_drivers, "amd-auto-detect-and-install",
@@ -857,6 +901,7 @@ struct DebugModeCatalogEditorFixture final {
   }
   missing_intel.drivers.erase(missing_intel_driver);
   auto missing_intel_result = evaluate_release_candidate(missing_intel, policy);
+  auto missing_intel_beta = evaluate_beta_candidate(missing_intel, policy);
   passed &= expect(
       missing_intel_result.first.accepted() &&
           has_issue_for_item(
@@ -864,6 +909,13 @@ struct DebugModeCatalogEditorFixture final {
               catalog::CatalogIssueCode::required_item_missing,
               "intel-gpu-driver-page", catalog::CatalogIssueScope::release),
       "deleting a required initial driver must block release");
+  passed &= expect(
+      missing_intel_beta.first.accepted() &&
+          has_issue_for_item(missing_intel_beta.second.issues,
+                             catalog::CatalogIssueCode::required_item_missing,
+                             "intel-gpu-driver-page",
+                             catalog::CatalogIssueScope::release),
+      "the Beta candidate gate must still require every initial driver");
 
   auto disabled_nvidia = *released.document;
   auto disabled_nvidia_driver = std::ranges::find(
@@ -875,6 +927,7 @@ struct DebugModeCatalogEditorFixture final {
   disabled_nvidia_driver->enabled = false;
   auto disabled_nvidia_result =
       evaluate_release_candidate(disabled_nvidia, policy);
+  auto disabled_nvidia_beta = evaluate_beta_candidate(disabled_nvidia, policy);
   passed &= expect(
       disabled_nvidia_result.first.accepted() &&
           has_issue_for_item(
@@ -882,6 +935,13 @@ struct DebugModeCatalogEditorFixture final {
               catalog::CatalogIssueCode::required_item_disabled,
               "nvidia-gpu-driver-page", catalog::CatalogIssueScope::release),
       "disabling a required initial driver must block release");
+  passed &= expect(
+      disabled_nvidia_beta.first.accepted() &&
+          has_issue_for_item(disabled_nvidia_beta.second.issues,
+                             catalog::CatalogIssueCode::required_item_disabled,
+                             "nvidia-gpu-driver-page",
+                             catalog::CatalogIssueScope::release),
+      "the Beta candidate gate must still reject disabled drivers");
 
   auto wrong_amd_type = *released.document;
   auto wrong_amd_driver = std::ranges::find(
@@ -893,6 +953,7 @@ struct DebugModeCatalogEditorFixture final {
   wrong_amd_driver->entry_type = catalog::DriverEntryType::vendor_page;
   auto wrong_amd_type_result =
       evaluate_release_candidate(wrong_amd_type, policy);
+  auto wrong_amd_type_beta = evaluate_beta_candidate(wrong_amd_type, policy);
   passed &= expect(
       wrong_amd_type_result.first.accepted() &&
           has_issue_for_item(wrong_amd_type_result.second.issues,
@@ -900,6 +961,13 @@ struct DebugModeCatalogEditorFixture final {
                              "amd-auto-detect-and-install",
                              catalog::CatalogIssueScope::release),
       "changing a required driver entry type must block release");
+  passed &= expect(
+      wrong_amd_type_beta.first.accepted() &&
+          has_issue_for_item(wrong_amd_type_beta.second.issues,
+                             catalog::CatalogIssueCode::invalid_field,
+                             "amd-auto-detect-and-install",
+                             catalog::CatalogIssueScope::release),
+      "the Beta candidate gate must still validate driver entry types");
 
   auto wrong_nvidia_address = *released.document;
   auto wrong_nvidia_driver = std::ranges::find(
@@ -919,6 +987,8 @@ struct DebugModeCatalogEditorFixture final {
   mutable_nvidia_source->address = "https://www.nvidia.com/Download/other.aspx";
   auto wrong_nvidia_address_result =
       evaluate_release_candidate(wrong_nvidia_address, policy);
+  auto wrong_nvidia_address_beta =
+      evaluate_beta_candidate(wrong_nvidia_address, policy);
   passed &= expect(
       wrong_nvidia_address_result.first.accepted() &&
           has_issue_for_item(wrong_nvidia_address_result.second.issues,
@@ -926,9 +996,16 @@ struct DebugModeCatalogEditorFixture final {
                              "nvidia-gpu-driver-page",
                              catalog::CatalogIssueScope::release),
       "changing a required driver primary address must block release");
+  passed &= expect(
+      wrong_nvidia_address_beta.first.accepted() &&
+          has_issue_for_item(wrong_nvidia_address_beta.second.issues,
+                             catalog::CatalogIssueCode::invalid_field,
+                             "nvidia-gpu-driver-page",
+                             catalog::CatalogIssueScope::release),
+      "the Beta candidate gate must still validate driver source identity");
 
-  passed &= expect(decoded.document->release_state == catalog::ReleaseState::draft,
-                   "the initial maintenance catalog must remain draft");
+   passed &= expect(decoded.document->release_state == catalog::ReleaseState::release,
+                    "the v0.1.0 catalog must be marked release");
   for (auto const& driver : decoded.document->drivers) {
     passed &= expect(driver.enabled && driver.hardware_kinds ==
                          std::vector<std::string>{"gpu"} &&
@@ -1309,10 +1386,17 @@ display_locale = "English driver"
   auto gate = catalog::evaluate_release_gate(
       *decoded.document, runtime, default_policy(),
       catalog::content_identity(text));
+  auto beta_gate = catalog::evaluate_beta_candidate_release_gate(
+      *decoded.document, runtime, default_policy(),
+      catalog::content_identity(text));
   passed &= expect(!gate.passed() &&
                        has_issue(gate.issues,
                                  catalog::CatalogIssueCode::release_dependency_error),
                    "local dependency errors must still block formal release");
+  passed &= expect(!beta_gate.passed() &&
+                       has_issue(beta_gate.issues,
+                                 catalog::CatalogIssueCode::release_dependency_error),
+                   "local dependency errors must also block the Beta candidate gate");
   return passed;
 }
 
@@ -1335,19 +1419,49 @@ display_locale = "English driver"
   auto draft_gate = catalog::evaluate_release_gate(
       *draft.document, draft_runtime, policy,
       catalog::content_identity(draft_text));
+  auto draft_beta_gate = catalog::evaluate_beta_candidate_release_gate(
+      *draft.document, draft_runtime, policy,
+      catalog::content_identity(draft_text));
   passed &= expect(draft_runtime.accepted() && !draft_gate.passed() &&
                        has_issue(draft_gate.issues,
                                  catalog::CatalogIssueCode::draft_release_state),
                    "draft state is a release-only failure");
+  passed &= expect(!draft_beta_gate.passed() &&
+                       has_issue(draft_beta_gate.issues,
+                                 catalog::CatalogIssueCode::draft_release_state),
+                   "draft state must also block the Beta candidate gate");
 
   auto required_policy = policy;
   required_policy.required_release_software = {"required"};
   auto required_gate = catalog::evaluate_release_gate(
       *released.document, runtime, required_policy,
       catalog::content_identity(released_text));
+  auto required_beta_gate = catalog::evaluate_beta_candidate_release_gate(
+      *released.document, runtime, required_policy,
+      catalog::content_identity(released_text));
   passed &= expect(has_issue(required_gate.issues,
                              catalog::CatalogIssueCode::required_item_missing),
                    "missing required release entries must block release");
+  passed &= expect(has_issue(required_beta_gate.issues,
+                             catalog::CatalogIssueCode::required_item_missing),
+                   "missing required software must block the Beta candidate gate");
+
+  auto disabled_required_document = *released.document;
+  disabled_required_document.software.front().enabled = false;
+  auto disabled_required_policy = required_policy;
+  disabled_required_policy.required_release_software = {"core"};
+  auto disabled_required_runtime = catalog::validate_for_runtime(
+      disabled_required_document, disabled_required_policy);
+  auto disabled_required_beta_gate =
+      catalog::evaluate_beta_candidate_release_gate(
+          disabled_required_document, disabled_required_runtime,
+          disabled_required_policy, catalog::content_identity(released_text));
+  passed &= expect(
+      disabled_required_runtime.accepted() &&
+          has_issue_for_item(disabled_required_beta_gate.issues,
+                             catalog::CatalogIssueCode::required_item_disabled,
+                             "core", catalog::CatalogIssueScope::release),
+      "disabled required software must block the Beta candidate gate");
 
   auto profile_policy = policy;
   profile_policy.install_profiles = {{.id = "profile-v1",
@@ -1364,10 +1478,15 @@ display_locale = "English driver"
   auto profile_gate = catalog::evaluate_release_gate(
       *profile.document, profile_runtime, profile_policy,
       catalog::content_identity(profile_text));
+  auto profile_beta_gate = catalog::evaluate_beta_candidate_release_gate(
+      *profile.document, profile_runtime, profile_policy,
+      catalog::content_identity(profile_text));
   passed &= expect(profile_runtime.accepted() &&
                        has_issue(profile_gate.issues,
                                  catalog::CatalogIssueCode::install_profile_not_release_ready),
                    "known runtime profiles may remain release-incomplete");
+  passed &= expect(profile_beta_gate.passed(),
+                   "the Beta candidate gate may defer profile release readiness");
 
   auto missing_profile_text = one_item_catalog(
       6, "release", "Core", "[]",
@@ -1381,6 +1500,10 @@ display_locale = "English driver"
       *missing_profile.document, missing_profile_runtime,
       missing_profile_policy,
       catalog::content_identity(missing_profile_text));
+  auto missing_profile_beta_gate =
+      catalog::evaluate_beta_candidate_release_gate(
+          *missing_profile.document, missing_profile_runtime,
+          missing_profile_policy, catalog::content_identity(missing_profile_text));
   passed &= expect(missing_profile_runtime.accepted() &&
                        missing_profile_runtime.catalog.has_value() &&
                        availability(*missing_profile_runtime.catalog, "core") ==
@@ -1393,6 +1516,10 @@ display_locale = "English driver"
                            missing_profile_gate.issues,
                            catalog::CatalogIssueCode::install_profile_not_release_ready),
                    "missing controlled profiles must disable the item without package rejection");
+  passed &= expect(
+      has_issue(missing_profile_beta_gate.issues,
+                catalog::CatalogIssueCode::install_profile_not_release_ready),
+      "the Beta candidate gate must still reject missing profile references");
 
   auto inapplicable_text = one_item_catalog(
       6, "release", "Core", "[]",
@@ -1489,6 +1616,228 @@ display_locale = "English driver"
   return passed;
 }
 
+[[nodiscard]] bool lifecycle_beta_candidate_source_gates_and_preserves_strict_errors() {
+  auto beta_policy = default_policy();
+  beta_policy.required_release_software = {"core"};
+  beta_policy.required_release_install_facts = {{.software_id = "core"}};
+  auto const unknown_facts = one_item_catalog(
+      1, "release", "Unknown Facts", "[]",
+      "install_profile = \"profile-v1\"\n");
+
+  LifecycleFixture beta_fixture(
+      beta_policy,
+      catalog::SoftwareCatalogReleaseGateMode::v0_1_0_beta_candidate);
+  beta_fixture.files.files["beta-built-in"] = unknown_facts;
+  beta_fixture.files.files["beta-update"] =
+      one_item_catalog(2, "release", "Unknown Update", "[]",
+                       "install_profile = \"profile-v1\"\n");
+  beta_fixture.files.files["beta-manual"] =
+      one_item_catalog(2, "release", "Unknown Manual", "[]",
+                       "install_profile = \"profile-v1\"\n");
+
+  bool passed = true;
+  passed &= expect(beta_fixture.catalog_lifecycle.restore().succeeded(),
+                   "Beta lifecycle fixture must restore");
+
+  auto built = preview_built_in(beta_fixture.catalog_lifecycle,
+                                beta_fixture.files, "beta-built-in");
+  passed &= expect(
+      built.ready && built.runtime.accepted() && built.release_gate.passed() &&
+          !has_issue(built.release_gate.issues,
+                     catalog::CatalogIssueCode::unknown_execution_semantics,
+                     catalog::CatalogIssueScope::release),
+      "v0.1.0 Beta built-in catalogs may preview with unknown install facts");
+  passed &= expect(
+      beta_fixture.catalog_lifecycle.apply_preview(built.confirmation_token)
+          .succeeded() &&
+          beta_fixture.catalog_lifecycle.snapshot().current.has_value(),
+      "v0.1.0 Beta built-in catalogs with unknown facts may be applied");
+
+  auto update =
+      preview_update(beta_fixture.catalog_lifecycle, beta_fixture.files,
+                     "beta-update");
+  passed &= expect(
+      !update.ready &&
+          has_issue(update.release_gate.issues,
+                    catalog::CatalogIssueCode::unknown_execution_semantics,
+                    catalog::CatalogIssueScope::release),
+      "updates must retain the formal gate when install facts are unknown");
+
+  beta_fixture.maintenance_access.access =
+      lifecycle::CatalogEditorAccess::debug_mode;
+  auto manual =
+      preview_manual_import(beta_fixture.catalog_lifecycle, "beta-manual");
+  passed &= expect(
+      !manual.ready &&
+          has_issue(manual.release_gate.issues,
+                    catalog::CatalogIssueCode::unknown_execution_semantics,
+                    catalog::CatalogIssueScope::release),
+      "manual imports must retain the formal gate when install facts are unknown");
+
+  beta_fixture.files.files["beta-built-in-next"] = one_item_catalog(
+      2, "release", "Unknown Facts Next", "[]",
+      "install_profile = \"profile-v1\"\n");
+  auto built_next = preview_built_in(beta_fixture.catalog_lifecycle,
+                                     beta_fixture.files, "beta-built-in-next");
+  passed &= expect(
+      built_next.ready &&
+          beta_fixture.catalog_lifecycle
+              .apply_preview(built_next.confirmation_token)
+              .succeeded(),
+      "a second Beta built-in must establish a rollback generation");
+  auto rollback = beta_fixture.catalog_lifecycle.preview_rollback();
+  passed &= expect(
+      !rollback.ready &&
+          has_issue(rollback.release_gate.issues,
+                    catalog::CatalogIssueCode::unknown_execution_semantics,
+                    catalog::CatalogIssueScope::release),
+      "rollback must retain the formal gate when the previous catalog has unknown facts");
+
+  auto expect_built_in_error = [&](std::string label,
+                                   catalog::SoftwareCatalogPolicy policy,
+                                   std::string bytes,
+                                   catalog::CatalogIssueCode code) {
+    LifecycleFixture fixture(
+        std::move(policy),
+        catalog::SoftwareCatalogReleaseGateMode::v0_1_0_beta_candidate);
+    fixture.files.files[label] = std::move(bytes);
+    auto local_passed = expect(fixture.catalog_lifecycle.restore().succeeded(),
+                               "strict Beta-error fixture must restore");
+    auto preview = preview_built_in(fixture.catalog_lifecycle, fixture.files,
+                                    std::move(label));
+    local_passed &= expect(
+        !preview.ready && has_issue(preview.release_gate.issues, code),
+        "Beta candidate gate must preserve strict catalog error");
+    return local_passed;
+  };
+
+  auto missing_profile_policy = beta_policy;
+  auto missing_profile = one_item_catalog(
+      1, "release", "Missing Profile", "[]",
+      "install_profile = \"missing-profile\"\n");
+  auto missing_profile_fixture = LifecycleFixture(
+      missing_profile_policy,
+      catalog::SoftwareCatalogReleaseGateMode::v0_1_0_beta_candidate);
+  missing_profile_fixture.files.files["missing-profile"] = missing_profile;
+  passed &= expect(missing_profile_fixture.catalog_lifecycle.restore().succeeded(),
+                   "missing profile fixture must restore");
+  auto missing_profile_preview = preview_built_in(
+      missing_profile_fixture.catalog_lifecycle, missing_profile_fixture.files,
+      "missing-profile");
+  passed &= expect(
+      !missing_profile_preview.ready &&
+          has_issue(missing_profile_preview.runtime.issues,
+                    catalog::CatalogIssueCode::install_profile_unavailable,
+                    catalog::CatalogIssueScope::item) &&
+          has_issue(missing_profile_preview.release_gate.issues,
+                    catalog::CatalogIssueCode::install_profile_not_release_ready,
+                    catalog::CatalogIssueScope::release),
+      "a missing install profile must remain unavailable under the Beta gate");
+
+  auto unavailable_profile_policy = beta_policy;
+  unavailable_profile_policy.install_profiles.front().runtime_status =
+      catalog::InstallProfileRuntimeStatus::missing;
+  auto unavailable_profile = one_item_catalog(
+      1, "release", "Unavailable Profile", "[]",
+      "install_profile = \"profile-v1\"\n");
+  auto unavailable_profile_fixture = LifecycleFixture(
+      unavailable_profile_policy,
+      catalog::SoftwareCatalogReleaseGateMode::v0_1_0_beta_candidate);
+  unavailable_profile_fixture.files.files["unavailable-profile"] =
+      unavailable_profile;
+  passed &= expect(
+      unavailable_profile_fixture.catalog_lifecycle.restore().succeeded(),
+      "unavailable profile fixture must restore");
+  auto unavailable_profile_preview = preview_built_in(
+      unavailable_profile_fixture.catalog_lifecycle,
+      unavailable_profile_fixture.files, "unavailable-profile");
+  passed &= expect(
+      !unavailable_profile_preview.ready &&
+          has_issue(unavailable_profile_preview.runtime.issues,
+                    catalog::CatalogIssueCode::install_profile_unavailable,
+                    catalog::CatalogIssueScope::item),
+      "an unavailable install profile must remain blocked under the Beta gate");
+
+  auto dependency_policy = beta_policy;
+  auto dependency = one_item_catalog(1, "release", "Missing Dependency",
+                                     "[\"missing\"]");
+  auto dependency_fixture = LifecycleFixture(
+      dependency_policy,
+      catalog::SoftwareCatalogReleaseGateMode::v0_1_0_beta_candidate);
+  dependency_fixture.files.files["missing-dependency"] = dependency;
+  passed &= expect(dependency_fixture.catalog_lifecycle.restore().succeeded(),
+                   "dependency-error fixture must restore");
+  auto dependency_preview = preview_built_in(
+      dependency_fixture.catalog_lifecycle, dependency_fixture.files,
+      "missing-dependency");
+  passed &= expect(
+      !dependency_preview.ready &&
+          has_issue(dependency_preview.runtime.issues,
+                    catalog::CatalogIssueCode::missing_dependency,
+                    catalog::CatalogIssueScope::item) &&
+          has_issue(dependency_preview.release_gate.issues,
+                    catalog::CatalogIssueCode::release_dependency_error,
+                    catalog::CatalogIssueScope::release),
+      "dependency errors must remain strict under the Beta gate");
+
+  auto driver_policy = beta_policy;
+  driver_policy.required_release_drivers = {{
+      .id = "required-driver",
+      .entry_type = catalog::DriverEntryType::vendor_page,
+      .hardware_kind = "gpu",
+      .primary_source_address = "https://example.test/required-driver",
+  }};
+  passed &= expect_built_in_error(
+      "missing-driver", std::move(driver_policy),
+      one_item_catalog(1, "release", "Missing Driver"),
+      catalog::CatalogIssueCode::required_item_missing);
+
+  passed &= expect_built_in_error(
+      "draft-catalog", beta_policy,
+      one_item_catalog(1, "draft", "Draft Candidate"),
+      catalog::CatalogIssueCode::draft_release_state);
+
+  auto revision_policy = default_policy();
+  LifecycleFixture revision_fixture(
+      revision_policy,
+      catalog::SoftwareCatalogReleaseGateMode::v0_1_0_beta_candidate);
+  revision_fixture.files.files["revision-baseline"] =
+      one_item_catalog(5, "release", "Revision Baseline");
+  revision_fixture.files.files["revision-regression"] =
+      one_item_catalog(4, "release", "Revision Regression");
+  revision_fixture.files.files["revision-conflict"] =
+      one_item_catalog(5, "release", "Revision Conflict");
+  passed &= expect(revision_fixture.catalog_lifecycle.restore().succeeded(),
+                   "revision fixture must restore");
+  auto baseline = preview_built_in(revision_fixture.catalog_lifecycle,
+                                   revision_fixture.files, "revision-baseline");
+  passed &= expect(
+      baseline.ready &&
+          revision_fixture.catalog_lifecycle
+              .apply_preview(baseline.confirmation_token)
+              .succeeded(),
+      "revision fixture must establish a formal reference");
+  auto regression = preview_built_in(revision_fixture.catalog_lifecycle,
+                                     revision_fixture.files,
+                                     "revision-regression");
+  passed &= expect(
+      !regression.ready &&
+          has_issue(regression.release_gate.issues,
+                    catalog::CatalogIssueCode::release_revision_regression,
+                    catalog::CatalogIssueScope::release),
+      "Beta candidates must not bypass formal revision regression checks");
+  auto conflict = preview_built_in(revision_fixture.catalog_lifecycle,
+                                   revision_fixture.files, "revision-conflict");
+  passed &= expect(
+      !conflict.ready &&
+          has_issue(conflict.release_gate.issues,
+                    catalog::CatalogIssueCode::release_revision_conflict,
+                    catalog::CatalogIssueScope::release),
+      "Beta candidates must not bypass formal revision conflict checks");
+
+  return passed;
+}
+
 [[nodiscard]] bool lifecycle_updates_imports_downgrades_and_rolls_back() {
   LifecycleFixture fixture;
   fixture.files.files["built-in"] = one_item_catalog(1, "release", "Initial");
@@ -1503,7 +1852,7 @@ display_locale = "English driver"
   fixture.files.files["draft-3"] = one_item_catalog(3, "draft", "Draft 3");
   fixture.files.files["same-revision-conflict"] =
       one_item_catalog(1, "release", "Conflicting Revision");
-  fixture.files.files["manual-1"] = one_item_catalog(1, "draft", "Old Local");
+  fixture.files.files["manual-1"] = one_item_catalog(1, "release", "Old Local");
   fixture.files.files["invalid"] = replace_once(
       one_item_catalog(4, "release"), "notice = \"\"",
       "target_command = \"unsafe\"\nnotice = \"\"");
@@ -2971,6 +3320,7 @@ int main() {
   passed &= package_errors_and_disabled_minimum_are_separate();
   passed &= dependency_errors_disable_only_the_local_closure();
   passed &= release_gate_is_distinct_and_versioned();
+  passed &= lifecycle_beta_candidate_source_gates_and_preserves_strict_errors();
   passed &= lifecycle_updates_imports_downgrades_and_rolls_back();
   passed &= drafts_checkpoints_and_close_choices_do_not_apply();
   passed &= atomic_apply_conflicts_local_errors_and_cleanup_recovery();

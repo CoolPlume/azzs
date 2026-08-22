@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <optional>
 #include <span>
@@ -47,6 +48,8 @@ constexpr std::string_view kMarkerTemporarySuffix{".complete.tmp"};
 constexpr std::string_view kLockSuffix{".lock"};
 constexpr std::string_view kMarkerMagic{"AZZSPKG1"};
 constexpr std::size_t kStableKeyLength = 16;
+constexpr std::uint64_t kMaximumPayloadReadBytes =
+    2ULL * 1024ULL * 1024ULL * 1024ULL;
 
 [[nodiscard]] bool stable_key(std::string_view key) noexcept {
   return key.size() == kStableKeyLength &&
@@ -577,11 +580,86 @@ cache::CompletedCacheRead LocalPackageCacheStorage::read_completed(
   std::error_code error;
   auto const payload = path_for(configuration->directory, identity.stable_key(),
                                 kPayloadSuffix);
-  if (!std::filesystem::is_regular_file(payload, error) || error ||
+  auto const payload_status = std::filesystem::symlink_status(payload, error);
+  if (std::filesystem::is_symlink(payload_status) ||
+      !std::filesystem::is_regular_file(payload_status) || error ||
       std::filesystem::file_size(payload, error) != entry->byte_count || error) {
     return {.code = cache::CompletedCacheReadCode::absent};
   }
   return {.code = cache::CompletedCacheReadCode::found, .entry = std::move(entry)};
+}
+
+cache::CompletedCachePayloadRead LocalPackageCacheStorage::read_completed_payload(
+    cache::ControlledCacheRoot const& root,
+    cache::CacheAssetIdentity const& identity) {
+  auto observation = impl_->observe(root);
+  if (!observation.available) {
+    return {.code = cache::CompletedCachePayloadReadCode::root_unavailable,
+            .detail = std::move(observation.detail)};
+  }
+  if (!identity.valid()) {
+    return {.code = cache::CompletedCachePayloadReadCode::absent};
+  }
+  auto const completed = read_completed(root, identity);
+  if (completed.code == cache::CompletedCacheReadCode::root_unavailable) {
+    return {.code = cache::CompletedCachePayloadReadCode::root_unavailable,
+            .detail = std::move(completed.detail)};
+  }
+  if (completed.code != cache::CompletedCacheReadCode::found ||
+      !completed.entry.has_value()) {
+    return {.code = completed.code == cache::CompletedCacheReadCode::failed
+                         ? cache::CompletedCachePayloadReadCode::failed
+                         : cache::CompletedCachePayloadReadCode::absent,
+            .detail = std::move(completed.detail)};
+  }
+  if (completed.entry->byte_count > kMaximumPayloadReadBytes ||
+      completed.entry->byte_count >
+          static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+    return {.code = cache::CompletedCachePayloadReadCode::failed,
+            .detail = "controlled cache payload exceeds the read limit"};
+  }
+  auto const* configuration = impl_->configuration(root);
+  if (configuration == nullptr) {
+    return {.code = cache::CompletedCachePayloadReadCode::root_unavailable,
+            .detail = "cache root is not registered by the host"};
+  }
+  auto const payload = path_for(configuration->directory, identity.stable_key(),
+                                kPayloadSuffix);
+  std::error_code status_error;
+  auto const status = std::filesystem::symlink_status(payload, status_error);
+  if (status_error || std::filesystem::is_symlink(status) ||
+      !std::filesystem::is_regular_file(status)) {
+    return {.code = cache::CompletedCachePayloadReadCode::absent,
+            .detail = "controlled cache payload is absent or unsafe"};
+  }
+  std::ifstream input(payload, std::ios::binary);
+  if (!input) {
+    return {.code = cache::CompletedCachePayloadReadCode::failed,
+            .detail = "controlled cache payload cannot be opened"};
+  }
+  auto const byte_count = static_cast<std::size_t>(completed.entry->byte_count);
+  std::vector<std::byte> bytes(byte_count);
+  if (byte_count != 0) {
+    input.read(reinterpret_cast<char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
+    if (input.gcount() != static_cast<std::streamsize>(bytes.size()) ||
+        input.bad()) {
+      return {.code = cache::CompletedCachePayloadReadCode::failed,
+              .detail = "controlled cache payload read was incomplete"};
+    }
+  }
+  char trailing_byte{};
+  input.read(&trailing_byte, 1);
+  if (input.gcount() != 0) {
+    return {.code = cache::CompletedCachePayloadReadCode::failed,
+            .detail = "controlled cache payload has trailing bytes"};
+  }
+  if (input.bad() || !input.eof()) {
+    return {.code = cache::CompletedCachePayloadReadCode::failed,
+            .detail = "controlled cache payload read failed"};
+  }
+  return {.code = cache::CompletedCachePayloadReadCode::found,
+          .bytes = std::move(bytes)};
 }
 
 cache::CompletedCacheList LocalPackageCacheStorage::list_completed(

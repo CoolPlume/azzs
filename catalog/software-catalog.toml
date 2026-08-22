@@ -56,11 +56,11 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = ["large_offline"]
 notice = ""
-install_profile = "qq-controlled-v1"
+install_profile = "qq-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
-address = "https://im.qq.com/index/#/windows"
+address = "https://im.qq.com/pcqq"
 
 [[software]]
 id = "sogou-input"
@@ -90,7 +90,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "可能触发安全软件或反作弊机制；请勿用于联网游戏或账号环境。"
-install_profile = "game-cheats-manager-controlled-v1"
+install_profile = "game-cheats-manager-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -107,7 +107,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "可能触发安全软件或反作弊机制；请勿用于联网游戏或账号环境。"
-install_profile = "cheat-engine-controlled-v1"
+install_profile = "cheat-engine-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -124,7 +124,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "请自行确认 Office 版本、账户和商业许可责任；当前候选资源未经项目验证。"
-install_profile = "office-tool-plus-controlled-v1"
+install_profile = "office-tool-plus-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -141,7 +141,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "请自行确认商业许可责任；当前候选资源未经项目验证。"
-install_profile = "internet-download-manager-controlled-v1"
+install_profile = "internet-download-manager-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -158,7 +158,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "请自行确认商业许可责任；当前候选资源未经项目验证。"
-install_profile = "the-geometers-sketchpad-controlled-v1"
+install_profile = "the-geometers-sketchpad-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -175,7 +175,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "当前目录只声明 Oracle JDK 25 LTS 分支；安装资源与受控执行能力仍待发布级验证。"
-install_profile = "java-runtime-controlled-v1"
+install_profile = "java-runtime-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -192,7 +192,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "当前目录声明 .NET 10 LTS；安装资源与受控执行能力仍待发布级验证。"
-install_profile = "dotnet-runtime-controlled-v1"
+install_profile = "dotnet-runtime-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -210,7 +210,7 @@ fixed_version = "9.29.1974.1"
 dependencies = []
 bundled_editions = []
 notice = "当前目录仅声明官方 Web Installer；安装资源与受控执行能力仍待发布级验证。"
-install_profile = "directx-runtime-controlled-v1"
+install_profile = "directx-runtime-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
@@ -227,7 +227,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
 notice = "当前目录声明 PowerShell 7 Windows 稳定发行分支；受控执行能力仍待发布级验证。"
-install_profile = "powershell-7-controlled-v1"
+install_profile = "powershell-7-windows-v1"
 
 [[software.sources]]
 purpose = "primary"

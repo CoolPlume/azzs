@@ -63,6 +63,7 @@ if(WIN32)
   add_library(azzs_windows_adapter STATIC
     src/bundled_catalog_resource_reader.cpp
     src/windows_application_update_platform.cpp
+    src/windows_controlled_acquisition.cpp
     src/windows_device_data_environment.cpp
     src/windows_driver_acquisition.cpp
     src/windows_emergency_withdrawal_notice_source.cpp
@@ -110,6 +111,7 @@ azzs_project_target(
   PRIVATE_LINKS
     azzs_cppwinrt_headers
     advapi32
+    bcrypt
     ole32
     oleaut32
     rpcrt4

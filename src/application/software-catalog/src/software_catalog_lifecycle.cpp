@@ -13,6 +13,13 @@
 #include <utility>
 #include <vector>
 
+#ifndef AZZS_APPLICATION_VERSION
+#error "AZZS_APPLICATION_VERSION must be supplied by the authoritative product version source"
+#endif
+#ifndef AZZS_APPLICATION_RELEASE_CHANNEL
+#error "AZZS_APPLICATION_RELEASE_CHANNEL must be supplied by the authoritative product version source"
+#endif
+
 namespace azzs::application::software_catalog {
 namespace {
 
@@ -22,6 +29,9 @@ constexpr std::uint32_t k_machine_payload_version = 3;
 constexpr std::uint32_t k_draft_payload_version = 1;
 constexpr std::uint32_t k_unsaved_payload_version = 2;
 constexpr std::size_t k_max_catalog_bytes = 16U * 1024U * 1024U;
+constexpr std::string_view kApplicationVersion = AZZS_APPLICATION_VERSION;
+constexpr std::string_view kApplicationReleaseChannel =
+    AZZS_APPLICATION_RELEASE_CHANNEL;
 constexpr std::array<std::byte, 8> k_machine_magic{
     std::byte{'A'}, std::byte{'Z'}, std::byte{'C'}, std::byte{'A'},
     std::byte{'T'}, std::byte{'M'}, std::byte{'0'}, std::byte{'1'},
@@ -43,6 +53,16 @@ struct PersistedCatalog final {
 
   auto operator<=>(PersistedCatalog const&) const = default;
 };
+
+// The Beta exception is tied to the product identity and the trusted built-in
+// source. Every other lifecycle origin, including future stable builds, uses
+// the formal gate.
+[[nodiscard]] constexpr bool uses_beta_candidate_gate(
+    PersistedCatalog const& persisted) noexcept {
+  return persisted.origin == CatalogCandidateOrigin::built_in &&
+         kApplicationVersion == "0.1.0" &&
+         kApplicationReleaseChannel == "prerelease";
+}
 
 enum class StableItemKind : std::uint8_t {
   software = 1,
@@ -612,7 +632,8 @@ class SoftwareCatalogLifecycle::Impl final {
        SharedOperationOccupancy& occupancy, SoftwareCatalogFileReader& files,
        SoftwareCatalogCodec& codec, catalog_domain::SoftwareCatalogPolicy policy,
        CatalogMaintenanceAccess& maintenance_access,
-       domain::StateSubject subject)
+       domain::StateSubject subject,
+       catalog_domain::SoftwareCatalogReleaseGateMode release_gate_mode)
       : states_(states),
         log_(log),
         occupancy_(occupancy),
@@ -620,6 +641,7 @@ class SoftwareCatalogLifecycle::Impl final {
         codec_(codec),
         policy_(std::move(policy)),
         maintenance_access_(maintenance_access),
+        release_gate_mode_(release_gate_mode),
         machine_key_(domain::StateKey::machine(
             domain::AggregateId{"software-catalog-active"})),
         draft_key_(domain::StateKey::for_subject(
@@ -860,11 +882,10 @@ class SoftwareCatalogLifecycle::Impl final {
       static_cast<void>(log_preview(preview, ExecutionResult::failed));
       return preview;
     }
-    if ((origin == CatalogCandidateOrigin::built_in ||
-         origin == CatalogCandidateOrigin::update) &&
-        !evaluated.release_gate.passed()) {
+    if (release_gate_required(origin) && !evaluated.release_gate.passed()) {
       preview.error =
-          "built-in and update catalogs must pass the formal release gate";
+          "catalog must pass the formal release gate for this lifecycle "
+          "origin";
       static_cast<void>(log_preview(preview, ExecutionResult::failed));
       return preview;
     }
@@ -920,6 +941,12 @@ class SoftwareCatalogLifecycle::Impl final {
     preview.selection_impact = selection_impact(evaluated.runtime);
     if (!evaluated.runtime.accepted()) {
       preview.error = "previous catalog no longer passes runtime loading";
+      static_cast<void>(log_preview(preview, ExecutionResult::failed));
+      return preview;
+    }
+    if (release_gate_required(CatalogCandidateOrigin::rollback) &&
+        !evaluated.release_gate.passed()) {
+      preview.error = "rollback catalog must pass the formal release gate";
       static_cast<void>(log_preview(preview, ExecutionResult::failed));
       return preview;
     }
@@ -1055,13 +1082,12 @@ class SoftwareCatalogLifecycle::Impl final {
                                  reevaluated),
           "runtime-revalidation-failed");
     }
-    if ((prepared_->persisted.origin == CatalogCandidateOrigin::built_in ||
-         prepared_->persisted.origin == CatalogCandidateOrigin::update) &&
+    if (release_gate_required(prepared_->persisted.origin) &&
         !reevaluated.release_gate.passed()) {
       return reject_apply(
           action_with_validation(
               CatalogActionCode::rejected,
-              "built-in or update catalog failed formal release revalidation",
+              "catalog failed formal release revalidation",
               reevaluated),
           "release-revalidation-failed");
     }
@@ -1599,6 +1625,29 @@ class SoftwareCatalogLifecycle::Impl final {
            CatalogEditorAccess::debug_mode;
   }
 
+  [[nodiscard]] bool beta_candidate_mode_enabled() const noexcept {
+    return release_gate_mode_ ==
+               catalog_domain::SoftwareCatalogReleaseGateMode::
+                   v0_1_0_beta_candidate &&
+           kApplicationVersion == "0.1.0" &&
+           kApplicationReleaseChannel == "prerelease";
+  }
+
+  // Ordinary debug imports and rollback retain the local-trial path when
+  // runtime validation succeeds. The v0.1.0 Beta explicitly closes that path
+  // for non-built-in origins so only the bundled candidate may defer unknown
+  // third-party installation facts.
+  [[nodiscard]] bool release_gate_required(
+      CatalogCandidateOrigin origin) const noexcept {
+    if (origin == CatalogCandidateOrigin::built_in ||
+        origin == CatalogCandidateOrigin::update) {
+      return true;
+    }
+    return beta_candidate_mode_enabled() &&
+           (origin == CatalogCandidateOrigin::manual_import ||
+            origin == CatalogCandidateOrigin::rollback);
+  }
+
   [[nodiscard]] bool editor_access_enabled() const noexcept {
     return maintenance_access_.editor_access() !=
            CatalogEditorAccess::unavailable;
@@ -2014,8 +2063,18 @@ class SoftwareCatalogLifecycle::Impl final {
     validate_stable_item_ledger(*value.document, value.runtime);
     auto release_policy = policy_;
     release_policy.last_published.reset();
-    value.release_gate = catalog_domain::evaluate_release_gate(
-        *value.document, value.runtime, release_policy, identity);
+    auto gate_mode = release_gate_mode_;
+    if (!uses_beta_candidate_gate(value.persisted)) {
+      gate_mode = catalog_domain::SoftwareCatalogReleaseGateMode::formal;
+    }
+    value.release_gate =
+        gate_mode ==
+                catalog_domain::SoftwareCatalogReleaseGateMode::
+                    v0_1_0_beta_candidate
+            ? catalog_domain::evaluate_beta_candidate_release_gate(
+                  *value.document, value.runtime, release_policy, identity)
+            : catalog_domain::evaluate_release_gate(
+                  *value.document, value.runtime, release_policy, identity);
     if (value.runtime.accepted()) {
       apply_formal_release_references(*value.document, identity,
                                       value.release_gate);
@@ -2519,6 +2578,8 @@ class SoftwareCatalogLifecycle::Impl final {
   SoftwareCatalogCodec& codec_;
   catalog_domain::SoftwareCatalogPolicy policy_;
   CatalogMaintenanceAccess& maintenance_access_;
+  catalog_domain::SoftwareCatalogReleaseGateMode release_gate_mode_{
+      catalog_domain::SoftwareCatalogReleaseGateMode::formal};
   domain::StateKey machine_key_;
   domain::StateKey draft_key_;
   CatalogLifecycleMode mode_{CatalogLifecycleMode::not_restored};
@@ -2551,11 +2612,13 @@ SoftwareCatalogLifecycle::SoftwareCatalogLifecycle(
     SoftwareCatalogCodec& codec,
     catalog_domain::SoftwareCatalogPolicy policy,
     CatalogMaintenanceAccess& maintenance_access,
-    domain::StateSubject state_subject)
+    domain::StateSubject state_subject,
+    catalog_domain::SoftwareCatalogReleaseGateMode release_gate_mode)
     : impl_(std::make_unique<Impl>(states, log, occupancy, files, codec,
                                    std::move(policy),
                                    maintenance_access,
-                                   std::move(state_subject))) {}
+                                   std::move(state_subject),
+                                   release_gate_mode)) {}
 
 SoftwareCatalogLifecycle::~SoftwareCatalogLifecycle() = default;
 

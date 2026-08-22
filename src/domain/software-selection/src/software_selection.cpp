@@ -92,6 +92,14 @@ void append_with_dependencies(catalog::RuntimeSoftwareCatalog const& runtime,
   return result;
 }
 
+[[nodiscard]] bool valid_sha256(std::string_view value) noexcept {
+  return value.size() == 64U &&
+         std::ranges::all_of(value, [](unsigned char character) {
+           return (character >= '0' && character <= '9') ||
+                  (character >= 'a' && character <= 'f');
+         });
+}
+
 }  // namespace
 
 bool ResolvedSourceSnapshot::stable_version() const noexcept {
@@ -119,7 +127,11 @@ bool ResolvedSourceSnapshot::valid() const noexcept {
            (package.package_type != PackageType::online_installer ||
             package.network_required || network_required) &&
            (package.package_type != PackageType::full_package ||
-            package.complete_package);
+            package.complete_package) &&
+           (!package.expected_bytes.has_value() ||
+            *package.expected_bytes > 0) &&
+           (!package.expected_sha256.has_value() ||
+            valid_sha256(*package.expected_sha256));
   });
 }
 
