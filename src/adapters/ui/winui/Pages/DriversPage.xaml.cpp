@@ -66,6 +66,27 @@ void set_visibility(winrt::Microsoft::UI::Xaml::FrameworkElement const& element,
                              : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
 }
 
+[[nodiscard]] bool has_confirmed_physical_hardware(
+    azzs::application::HardwareOverviewSnapshot const& snapshot) noexcept {
+  return snapshot.state == azzs::application::HardwareOverviewState::ready &&
+         snapshot.observation.has_value() &&
+         snapshot.observation->has_confirmed_physical_hardware();
+}
+
+[[nodiscard]] bool has_degraded_physical_hardware(
+    azzs::application::HardwareOverviewSnapshot const& snapshot) noexcept {
+  if (!snapshot.observation.has_value()) {
+    return false;
+  }
+  for (auto const& device : snapshot.observation->devices) {
+    if (device.confirmed_physical() &&
+        device.status != azzs::application::HardwareDeviceStatus::enabled) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 DriversPage::DriversPage() {
@@ -126,7 +147,9 @@ void DriversPage::project(
   NetworkValue().Text(display_value(facts.network_adapter, unrecognized_value));
   OemValue().Text(display_value(facts.oem_model, unrecognized_value));
 
-  auto const can_start = driver_snapshot.state == DriverAcquisitionState::ready;
+  auto const can_start =
+      driver_snapshot.writable &&
+      driver_snapshot.state == DriverAcquisitionState::ready;
   DriverAssistantActionButton().IsEnabled(can_start);
   IntelDriverButton().IsEnabled(can_start);
   NvidiaDriverButton().IsEnabled(can_start);
@@ -143,12 +166,33 @@ void DriversPage::project(
       driver_snapshot.assistant_installed ? L"DriverAssistantInstalled"
                                           : L"DriverAssistantNotInstalled"));
 
-  auto const has_recommendation = !driver_snapshot.recommended_entrypoints.empty();
-  DriverRecommendation().IsOpen(has_recommendation);
+  auto const has_recommendation =
+      !driver_snapshot.recommended_entrypoints.empty();
+  auto const has_physical_hardware = has_confirmed_physical_hardware(snapshot);
+  DriverRecommendation().IsOpen(true);
+  DriverRecommendation().Severity(
+      has_recommendation
+          ? winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity::Informational
+          : winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity::Warning);
   if (has_recommendation) {
     DriverRecommendation().Title(resources.GetString(L"DriverRecommendationTitle"));
-    DriverRecommendation().Message(recommendation_text(
-        resources, driver_snapshot.recommended_entrypoints));
+    auto message = std::wstring{recommendation_text(
+                                  resources,
+                                  driver_snapshot.recommended_entrypoints)
+                                  .c_str()};
+    message += resources.GetString(L"DriverRecommendationHandoffSuffix").c_str();
+    if (has_degraded_physical_hardware(snapshot)) {
+      message += L" ";
+      message += resources.GetString(L"DriverRecommendationDegradedHardwareSuffix")
+                     .c_str();
+    }
+    DriverRecommendation().Message(winrt::hstring{message});
+  } else {
+    DriverRecommendation().Title(
+        resources.GetString(L"DriverRecommendationUnavailableTitle"));
+    DriverRecommendation().Message(resources.GetString(
+        has_physical_hardware ? L"DriverRecommendationNoMatchMessage"
+                              : L"DriverRecommendationNoPhysicalMessage"));
   }
 
   auto show_surface = false;
