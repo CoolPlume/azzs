@@ -46,7 +46,6 @@ using winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragDeltaEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragStartedEventArgs;
-using winrt::Microsoft::UI::Xaml::Controls::Primitives::Thumb;
 
 struct SettingsNavigationPreparationError final {
   azzs::ui::presentation::SettingsNavigationFailureStage stage{
@@ -845,9 +844,9 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
     AutomationProperties::SetName(SettingsNavigationFailureInfoBar(), title);
   } catch (...) {
     try {
-      auto const title = native_resources::load_string(
+      auto const title = azzs::ui::winui::native_resources::load_string(
           AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_TITLE);
-      auto const message = native_resources::load_string(
+      auto const message = azzs::ui::winui::native_resources::load_string(
           AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_MESSAGE);
       SettingsNavigationFailureInfoBar().Title(winrt::hstring{title});
       SettingsNavigationFailureInfoBar().Message(winrt::hstring{message});
@@ -921,13 +920,15 @@ void MainWindow::OnShellSizeChanged(
   update_sidebar_resize_thumb();
 }
 
-void MainWindow::OnSidebarResizeDragStarted(Thumb const&,
+void MainWindow::OnSidebarResizeDragStarted(
+    Windows::Foundation::IInspectable const&,
                                             DragStartedEventArgs const&) {
   sidebar_drag_active_ = true;
   sidebar_drag_width_dip_ = sidebar_width_dip_;
 }
 
-void MainWindow::OnSidebarResizeDragDelta(Thumb const&,
+void MainWindow::OnSidebarResizeDragDelta(
+    Windows::Foundation::IInspectable const&,
                                           DragDeltaEventArgs const& args) {
   if (!sidebar_drag_active_) {
     return;
@@ -941,7 +942,7 @@ void MainWindow::OnSidebarResizeDragDelta(Thumb const&,
 }
 
 void MainWindow::OnSidebarResizeDragCompleted(
-    Thumb const&, DragCompletedEventArgs const&) {
+    Windows::Foundation::IInspectable const&, DragCompletedEventArgs const&) {
   if (!sidebar_drag_active_) {
     return;
   }
