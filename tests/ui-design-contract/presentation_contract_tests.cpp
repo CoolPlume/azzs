@@ -428,6 +428,29 @@ class InMemoryAdvancedViewPreferenceStore final
                        component->body.find("program-data") != std::string::npos,
                    "offline cache projection must preserve typed location and accessibility");
 
+  auto empty_text =
+      azzs::ui::presentation::OfflinePackageCachePresentationText{};
+  empty_text.accessible_name.clear();
+  empty_text.available_title.clear();
+  empty_text.unavailable_title.clear();
+  empty_text.available_body_prefix.clear();
+  empty_text.unavailable_body_prefix.clear();
+  empty_text.item_suffix.clear();
+  empty_text.network_suffix.clear();
+  auto const fallback =
+      azzs::ui::presentation::make_offline_package_cache_presentation(
+          source, std::move(empty_text));
+  auto const* fallback_component =
+      fallback->find_component("offline-package-cache.status");
+  passed &= expect(
+      fallback_component != nullptr &&
+          fallback_component->accessible_name == "离线资源缓存状态" &&
+          fallback_component->title == "离线资源缓存" &&
+          fallback_component->body.find("受控缓存位置： program-data") == 0 &&
+          fallback_component->body.find("0 个已缓存资源") != std::string::npos &&
+          fallback_component->body.find("当前无法联网") != std::string::npos,
+      "empty offline cache resources must use Chinese presentation defaults");
+
   source.location_state = CacheLocationState::unavailable;
   source.location_detail = "removable media is unavailable";
   auto const unavailable =
@@ -458,16 +481,56 @@ class InMemoryAdvancedViewPreferenceStore final
   bool passed = true;
   passed &= expect(status != nullptr &&
                        status->state == PresentationState::waiting_for_network &&
-                       status->body.find("No current effective catalog") !=
+                       status->accessible_name == "软件选择状态" &&
+                       status->title == "当前有效目录尚未加载" &&
+                       status->body.find("尚未加载当前有效目录") !=
                            std::string::npos,
-                   "software installation must honestly expose an absent current catalog");
+                   "software installation fallback must remain Simplified Chinese");
   passed &= expect(std::addressof(standard.source()) ==
                        std::addressof(advanced.source()),
                    "software standard and advanced views must share one snapshot");
   passed &= expect(status != nullptr && standard.visible(*status) &&
                        advanced.visible(*status) &&
-                       !status->advanced_detail.empty(),
-                   "the absent-catalog warning must remain visible while advanced adds detail");
+                       status->advanced_detail.find("当前页面不会") == 0,
+                   "the absent-catalog warning must remain visible while advanced adds localized detail");
+
+  auto available = source;
+  available.has_current_catalog = true;
+  available.mode = azzs::application::software_selection::SelectionLifecycleMode::ready;
+  auto empty_text = azzs::ui::presentation::SoftwareSelectionPresentationText{};
+  empty_text.accessible_name.clear();
+  empty_text.available_title.clear();
+  empty_text.available_body_prefix.clear();
+  empty_text.available_body_suffix.clear();
+  empty_text.absent_catalog_title.clear();
+  empty_text.absent_catalog_body.clear();
+  empty_text.not_restored_body.clear();
+  empty_text.restore_failed_body.clear();
+  empty_text.advanced_available.clear();
+  empty_text.advanced_absent_catalog.clear();
+  auto const fallback_snapshot =
+      azzs::ui::presentation::make_software_selection_presentation(
+          available, std::move(empty_text));
+  auto const* fallback_status =
+      fallback_snapshot->find_component("software-selection.status");
+  passed &= expect(fallback_status != nullptr &&
+                       fallback_status->accessible_name == "软件选择状态" &&
+                       fallback_status->title == "软件选择" &&
+                       fallback_status->body.find("已保留 0 个软件选择") == 0 &&
+                       fallback_status->advanced_detail.find("标准与高级视图") == 0,
+                   "empty resource strings must use Chinese presentation defaults");
+
+  available.mode =
+      azzs::application::software_selection::SelectionLifecycleMode::failed;
+  available.has_current_catalog = false;
+  available.error = "HRESULT 0x80070005";
+  auto const failed_snapshot =
+      azzs::ui::presentation::make_software_selection_presentation(available);
+  auto const* failed_status =
+      failed_snapshot->find_component("software-selection.status");
+  passed &= expect(failed_status != nullptr &&
+                       failed_status->body == "HRESULT 0x80070005",
+                   "unknown software selection errors must retain their original text");
   return passed;
 }
 
