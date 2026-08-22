@@ -140,10 +140,25 @@ enum class InstallationBatchCreationCode {
   batch_rejected,
 };
 
+// Per-request item outcome.  A ready item is executable and is included in
+// the frozen plan; every other code records why that independent item was
+// omitted.  Dependency closure failures are reported on affected dependents
+// while preserving the original reason on the unavailable dependency.
+struct InstallationBatchItemAssessment final {
+  std::string item_id;
+  InstallationBatchCreationCode code{InstallationBatchCreationCode::not_ready};
+  std::string detail;
+
+  [[nodiscard]] bool ready() const noexcept {
+    return code == InstallationBatchCreationCode::ready;
+  }
+};
+
 struct InstallationBatchCreationAssessment final {
   InstallationBatchCreationCode code{InstallationBatchCreationCode::not_ready};
   std::size_t item_count{};
   std::string detail;
+  std::vector<InstallationBatchItemAssessment> items;
 
   [[nodiscard]] bool ready() const noexcept {
     return code == InstallationBatchCreationCode::ready;
