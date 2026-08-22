@@ -128,6 +128,7 @@ set(AZZS_ARCHITECTURE_EXTERNAL_CMAKE_TARGETS
   "Threads::Threads|external:threads|runtime"
   "azzs_cppwinrt_headers|external:cppwinrt-projection|platform_runtime"
   "advapi32|external:windows-platform|platform_runtime"
+  "bcrypt|external:windows-platform|platform_runtime"
   "ole32|external:windows-platform|platform_runtime"
   "oleaut32|external:windows-platform|platform_runtime"
   "rpcrt4|external:windows-platform|platform_runtime"
@@ -150,6 +151,7 @@ set(AZZS_ARCHITECTURE_CMAKE_DEPENDENCY_OPTION_PATTERNS
 )
 set(AZZS_ARCHITECTURE_EXTERNAL_MSBUILD_LIBRARIES
   "advapi32.lib|external:windows-platform|platform_runtime"
+  "bcrypt.lib|external:windows-platform|platform_runtime"
   "ole32.lib|external:windows-platform|platform_runtime"
   "oleaut32.lib|external:windows-platform|platform_runtime"
   "rpcrt4.lib|external:windows-platform|platform_runtime"
@@ -222,6 +224,7 @@ set(AZZS_ARCHITECTURE_WINUI_GENERATED_HEADER_PATTERNS
 )
 
 set(AZZS_ARCHITECTURE_PLATFORM_HEADER_PATTERNS
+  "^bcrypt\\.h$"
   "^win[^/]*\\.h$"
   "^winternl\\.h$"
   "^aclapi\\.h$"

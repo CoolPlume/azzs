@@ -15,31 +15,29 @@ constexpr std::array k_required_disposition_order{
     InteractionDisposition::official_installer,
 };
 
+// These facts intentionally remain unknown until a real third-party
+// installation has produced evidence on a Windows candidate. Registering a
+// project-owned executor only establishes that the workbench can attempt the
+// controlled operation; it does not establish installer or post-install facts.
+SoftwareInstallFacts make_initial_facts(std::string software_id) {
+  return {.software_id = std::move(software_id)};
+}
+
 std::array<SoftwareInstallFacts, 11> const k_initial_facts{{
-    {.software_id = "qq"},
-    {.software_id = "sogou-input"},
-    {.software_id = "game-cheats-manager"},
-    {.software_id = "cheat-engine"},
-    {.software_id = "office-tool-plus",
-     .capabilities = {.architectures = {
-         .knowledge = FactKnowledge::confirmed,
-         .values = {InstallerArchitecture::x64, InstallerArchitecture::arm64},
-     }}},
-    {.software_id = "internet-download-manager"},
-    {.software_id = "the-geometers-sketchpad"},
-    {.software_id = "java-runtime"},
-    {.software_id = "dotnet-runtime"},
-    {.software_id = "directx-runtime"},
-    {.software_id = "powershell-7",
-     .capabilities = {
-         .architectures = {
-             .knowledge = FactKnowledge::confirmed,
-             .values = {InstallerArchitecture::x64, InstallerArchitecture::arm64},
-         },
-     }},
+    make_initial_facts("qq"),
+    make_initial_facts("sogou-input"),
+    make_initial_facts("game-cheats-manager"),
+    make_initial_facts("cheat-engine"),
+    make_initial_facts("office-tool-plus"),
+    make_initial_facts("internet-download-manager"),
+    make_initial_facts("the-geometers-sketchpad"),
+    make_initial_facts("java-runtime"),
+    make_initial_facts("dotnet-runtime"),
+    make_initial_facts("directx-runtime"),
+    make_initial_facts("powershell-7"),
 }};
 
-std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
+std::array<ControlledInstallProfile, 11> const k_initial_profiles{{
     {
         .id = "sogou-input-defaults-v1",
         .software_id = "sogou-input",
@@ -66,7 +64,7 @@ std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
                         }},
         .execution_kind =
             ControlledWindowsExecutionKind::project_owned_windows_executor,
-        .execution = WindowsExecutionReadiness::declaration_only,
+         .execution = WindowsExecutionReadiness::project_executor_registered,
         .completion_boundary =
             InstallationCompletionBoundary::post_install_then_result_detection,
         .post_install_behavior = PostInstallBehavior::controlled_preferences,
@@ -74,6 +72,116 @@ std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
         .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
         .interaction_scope =
             InstallerInteractionScope::non_identity_preferences_only,
+    },
+    {
+        .id = "qq-windows-v1",
+        .software_id = "qq",
+        .baselines = {{.id = "qq-windows-9.9.33", .version = "9.9.33"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "game-cheats-manager-windows-v1",
+        .software_id = "game-cheats-manager",
+        .baselines = {{.id = "game-cheats-manager-windows-2.4.6", .version = "2.4.6"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "cheat-engine-windows-v1",
+        .software_id = "cheat-engine",
+        .baselines = {{.id = "cheat-engine-windows-7.7", .version = "7.7"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "office-tool-plus-windows-v1",
+        .software_id = "office-tool-plus",
+        .baselines = {{.id = "office-tool-plus-windows-11.5.7.0", .version = "11.5.7.0"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "internet-download-manager-windows-v1",
+        .software_id = "internet-download-manager",
+        .baselines = {{.id = "internet-download-manager-windows-trial-2026-08", .version = "trial-2026-08"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "the-geometers-sketchpad-windows-v1",
+        .software_id = "the-geometers-sketchpad",
+        .baselines = {{.id = "the-geometers-sketchpad-windows-version-5", .version = "5"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "java-runtime-windows-v1",
+        .software_id = "java-runtime",
+        .baselines = {{.id = "java-runtime-windows-jdk-25", .version = "25"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "dotnet-runtime-windows-v1",
+        .software_id = "dotnet-runtime",
+        .baselines = {{.id = "dotnet-runtime-windows-10.0.11", .version = "10.0.11"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "directx-runtime-windows-v1",
+        .software_id = "directx-runtime",
+        .baselines = {{.id = "directx-runtime-windows-9.29.1974.1", .version = "9.29.1974.1"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "powershell-7-windows-v1",
+        .software_id = "powershell-7",
+        .baselines = {{.id = "powershell-7-windows-7.6.4", .version = "7.6.4"}},
+         .execution = WindowsExecutionReadiness::project_executor_registered,
+        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
     },
 }};
 
@@ -428,15 +536,18 @@ SoftwareCatalogPolicy initial_software_catalog_policy() {
     policy.install_profiles.push_back({
         .id = profile.id,
         .software_ids = {profile.software_id},
-        .runtime_status = InstallProfileRuntimeStatus::missing,
+        .runtime_status = profile.execution ==
+                                  WindowsExecutionReadiness::project_executor_registered
+                              ? InstallProfileRuntimeStatus::available
+                              : InstallProfileRuntimeStatus::missing,
+        // Runtime registration is not evidence that a vendor installer has
+        // been validated; the formal release gate remains closed.
         .release_ready = false,
     });
-    if (profile.software_id == "sogou-input") {
-      policy.required_install_profiles.push_back({
-          .software_id = profile.software_id,
-          .profile_id = profile.id,
-      });
-    }
+    policy.required_install_profiles.push_back({
+        .software_id = profile.software_id,
+        .profile_id = profile.id,
+    });
   }
   for (auto const& fact : initial_software_install_facts()) {
     policy.required_release_software.push_back(fact.software_id);

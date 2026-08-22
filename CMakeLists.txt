@@ -43,10 +43,6 @@ if("${AZZS_APPLICATION_VERSION}" MATCHES "-" AND
    NOT "${AZZS_APPLICATION_RELEASE_CHANNEL}" STREQUAL "prerelease")
   message(FATAL_ERROR "Prerelease applicationVersion requires releaseChannel prerelease")
 endif()
-if(NOT "${AZZS_APPLICATION_VERSION}" MATCHES "-" AND
-   NOT "${AZZS_APPLICATION_RELEASE_CHANNEL}" STREQUAL "stable")
-  message(FATAL_ERROR "Stable applicationVersion requires releaseChannel stable")
-endif()
 foreach(version_name IN ITEMS AZZS_CMAKE_PROJECT_VERSION AZZS_WIX_VERSION)
   if(NOT "${${version_name}}" MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "${version_name} must be a three-part numeric version")
@@ -56,9 +52,9 @@ if(NOT "${AZZS_WINDOWS_VERSION}" MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$")
   message(FATAL_ERROR "windowsVersion must be a four-part numeric version")
 endif()
 
-# Stable builds use the direct numeric mapping. Prerelease mappings remain
+# Stable builds use the direct numeric mapping. Numeric prerelease mappings are
 # explicit fields in the same source because Windows and WiX accept numbers only.
-if("${AZZS_APPLICATION_VERSION}" MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+if("${AZZS_APPLICATION_RELEASE_CHANNEL}" STREQUAL "stable")
   if(NOT "${AZZS_CMAKE_PROJECT_VERSION}" STREQUAL "${AZZS_APPLICATION_VERSION}" OR
      NOT "${AZZS_WIX_VERSION}" STREQUAL "${AZZS_APPLICATION_VERSION}" OR
      NOT "${AZZS_WINDOWS_VERSION}" STREQUAL "${AZZS_APPLICATION_VERSION}.0")

@@ -33,6 +33,7 @@
 #include "azzs/adapters/windows/windows_device_data_environment.hpp"
 #include "azzs/adapters/windows/windows_driver_acquisition.hpp"
 #include "azzs/adapters/windows/windows_application_update_platform.hpp"
+#include "azzs/adapters/windows/windows_controlled_acquisition.hpp"
 #include "azzs/adapters/windows/windows_emergency_withdrawal_notice_source.hpp"
 #include "azzs/adapters/windows/windows_external_address_launcher.hpp"
 #include "azzs/adapters/windows/windows_hardware_observer.hpp"
@@ -160,22 +161,6 @@ class EmbeddedSoftwareOptimizationCatalogUpdateSource final
   std::string const source_;
 };
 
-class UnavailableControlledSourceResolver final
-    : public application::software_selection::ControlledSourceResolver {
- public:
-  [[nodiscard]] application::software_selection::SourceResolutionResult resolve(
-      std::string_view,
-      domain::software_catalog::CatalogSource const&) override {
-    return {.error = "controlled source resolution is not configured"};
-  }
-};
-
-class OfflinePackageCacheNetworkObserver final
-    : public application::offline_package_cache::PackageCacheNetworkObserver {
- public:
-  [[nodiscard]] bool available() const noexcept override { return false; }
-};
-
 [[nodiscard]] std::filesystem::path path_from_utf8(std::string const& value) {
   auto const* begin = reinterpret_cast<char8_t const*>(value.data());
   return std::filesystem::path{std::u8string{begin, begin + value.size()}};
@@ -187,12 +172,12 @@ struct BundledCatalogResources final {
       software_optimization_catalog;
 };
 
-constexpr std::uintmax_t kSoftwareCatalogBytes = 8894;
+constexpr std::uintmax_t kSoftwareCatalogBytes = 9332;
 constexpr std::array<std::uint8_t, 32> kSoftwareCatalogSha256{
-    0xe2, 0x45, 0xe0, 0x95, 0xa2, 0xc5, 0x44, 0xbd,
-    0x37, 0x6a, 0x56, 0x4c, 0xe3, 0x26, 0x63, 0x22,
-    0x50, 0x38, 0x10, 0x51, 0xa8, 0x29, 0xac, 0x05,
-    0x0d, 0xf3, 0x36, 0xef, 0xc6, 0xd7, 0x67, 0x8a};
+    0x9b, 0xcc, 0xbb, 0x8d, 0x24, 0x07, 0xb9, 0x03,
+    0xde, 0x4d, 0x19, 0x5d, 0xbb, 0xdd, 0x59, 0xc0,
+    0x9b, 0x20, 0xfb, 0x94, 0x9e, 0x54, 0xbb, 0xde,
+    0x22, 0x0c, 0xcd, 0x2c, 0x2b, 0xff, 0xb4, 0x55};
 constexpr std::uintmax_t kSoftwareOptimizationCatalogBytes = 18010;
 constexpr std::array<std::uint8_t, 32> kSoftwareOptimizationCatalogSha256{
     0x59, 0x1b, 0xc9, 0x26, 0x97, 0x1a, 0x39, 0x05,
@@ -302,15 +287,6 @@ class StartupOptimizationCatalogGate final {
           .installed_versions = {"16.7", "16.7"},
       }};
   application::SoftwareOptimizationCatalogLifecycle optimization_catalog_;
-};
-
-class UnavailableSoftwarePresenceDetector final
-    : public application::software_selection::SoftwarePresenceDetector {
- public:
-  [[nodiscard]] application::software_selection::PresenceDetection detect(
-      std::string_view) override {
-    return {.detail = "software presence detection is not configured"};
-  }
 };
 
 class WindowsGuidedInitializationEvidenceSource final
@@ -743,16 +719,16 @@ class WindowsWorkbenchServices final
                 .directory = path_from_utf8(environment.root_utf8) /
                              "package-cache-v1",
                 .create_if_missing = true}}),
-        cache_downloader_{},
+        cache_downloader_(cache_root_),
         live_offline_package_cache_(
-            cache_storage_, cache_downloader_, offline_package_cache_network_,
+            cache_storage_, cache_downloader_, internet_availability_,
             clock_, cache_root_,
             cache_retention_preferences_
                 ? cache_retention_preferences_->retention()
                 : domain::offline_package_cache::CacheRetentionPolicy::
                       retain_seven_days),
         batch_offline_package_cache_(
-            cache_storage_, cache_downloader_, offline_package_cache_network_,
+            cache_storage_, cache_downloader_, internet_availability_,
             clock_, cache_root_,
             cache_retention_preferences_
                 ? cache_retention_preferences_->retention()
@@ -1042,15 +1018,26 @@ class WindowsWorkbenchServices final
   void synchronize_live_offline_package_cache() {
     auto const selection = software_selection_.snapshot();
     std::vector<application::offline_package_cache::CacheAsset> assets;
+    cache_downloader_.clear_registered_sources();
     for (auto const& source : selection.sources) {
       for (auto const& package : source.packages) {
         if (auto asset = application::offline_package_cache::make_cache_asset(
                 source, package)) {
+          static_cast<void>(cache_downloader_.register_source(
+              asset->identity, source.actual_address, asset->expected_bytes,
+              asset->expected_sha256.has_value()
+                  ? std::optional<std::string_view>{*asset->expected_sha256}
+                  : std::nullopt));
           assets.push_back(std::move(*asset));
         }
       }
     }
-    live_offline_package_cache_.synchronize_assets(std::move(assets));
+    // The live cache serves the package-cache UI, while the batch cache owns
+    // the frozen installation effect. Both must receive the same validated
+    // projection; otherwise a batch created from the current selection would
+    // be rejected as an asset that is no longer current.
+    live_offline_package_cache_.synchronize_assets(assets);
+    batch_offline_package_cache_.synchronize_assets(std::move(assets));
   }
 
   domain::StateSubject state_subject_;
@@ -1136,18 +1123,22 @@ class WindowsWorkbenchServices final
   application::software_catalog::SoftwareCatalogLifecycle software_catalog_{
       states_, log_, occupancy_, software_catalog_file_, software_catalog_codec_,
       domain::software_catalog::initial_software_catalog_policy(),
-      *debug_mode_catalog_editor_, state_subject_};
-  UnavailableControlledSourceResolver source_resolver_;
-  OfflinePackageCacheNetworkObserver offline_package_cache_network_;
+      *debug_mode_catalog_editor_, state_subject_,
+      // This is deliberately version-specific: only the v0.1.0 prerelease
+      // built-in catalog may defer unknown third-party installation facts.
+      domain::software_catalog::SoftwareCatalogReleaseGateMode::
+          v0_1_0_beta_candidate};
+  adapters::windows::WindowsRegisteredSourceResolver source_resolver_{
+      adapters::windows::initial_windows_source_registrations()};
   application::offline_package_cache::ControlledCacheRoot cache_root_;
   adapters::infrastructure::LocalPackageCacheStorage cache_storage_;
-  adapters::infrastructure::UnavailableControlledPackageDownloader
-      cache_downloader_;
+  adapters::windows::WindowsControlledPackageDownloader cache_downloader_;
   application::offline_package_cache::OfflinePackageCacheService
       live_offline_package_cache_;
   application::offline_package_cache::OfflinePackageCacheService
       batch_offline_package_cache_;
-  UnavailableSoftwarePresenceDetector presence_detector_;
+  adapters::windows::WindowsRegistrySoftwarePresenceDetector presence_detector_{
+      adapters::windows::initial_windows_presence_registrations()};
   adapters::windows::WindowsExternalAddressLauncher external_launcher_;
   application::software_selection::SoftwareSelectionLifecycle
       software_selection_;
@@ -1181,7 +1172,7 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsControlledProfileReadinessAdapter batch_readiness_;
   adapters::windows::WindowsOpaqueCacheInstallerLauncher batch_executor_{
       batch_offline_package_cache_};
-  adapters::windows::WindowsInstallationResultVerifier batch_verifier_;
+  adapters::windows::WindowsInstallationResultVerifier batch_verifier_{presence_detector_};
   adapters::windows::WindowsInstallationFactSink batch_facts_{log_};
   application::installation_batch::InstallationBatchService installation_batches_{
       states_, occupancy_, log_, batch_download_, batch_executor_, batch_readiness_,

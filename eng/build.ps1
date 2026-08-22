@@ -31,7 +31,7 @@ if ($productVersion.schemaVersion -ne 1 -or
     throw "The authoritative product version source has an unsupported version mapping."
 }
 $applicationIsPrerelease = $productVersion.applicationVersion -match "-"
-if (($productVersion.releaseChannel -eq "stable") -eq $applicationIsPrerelease) {
+if ($applicationIsPrerelease -and $productVersion.releaseChannel -ne "prerelease") {
     throw "The authoritative product version source has an inconsistent application version and release channel."
 }
 $windowsVersionCommasArgument = ConvertTo-AzzsWindowsVersionCommasArgument `

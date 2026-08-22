@@ -23,7 +23,8 @@ constexpr std::array<std::byte, 8> k_machine_magic{
     std::byte{'A'}, std::byte{'Z'}, std::byte{'S'}, std::byte{'E'},
     std::byte{'L'}, std::byte{'H'}, std::byte{'0'}, std::byte{'1'},
 };
-constexpr std::uint32_t k_subject_payload_version = 1;
+constexpr std::uint32_t k_subject_payload_version = 2;
+constexpr std::uint32_t k_legacy_subject_payload_version = 1;
 constexpr std::uint32_t k_machine_payload_version = 2;
 constexpr std::uint32_t k_legacy_machine_payload_version = 1;
 constexpr std::size_t k_max_payload_text = 4U * 1024U * 1024U;
@@ -400,11 +401,20 @@ void write_snapshot(ByteWriter& writer,
     writer.u8(*encode_package_type(package.package_type));
     writer.u8(package.complete_package ? 1 : 0);
     writer.u8(package.network_required ? 1 : 0);
+    writer.u8(package.expected_bytes.has_value() ? 1 : 0);
+    if (package.expected_bytes.has_value()) {
+      writer.u64(*package.expected_bytes);
+    }
+    writer.u8(package.expected_sha256.has_value() ? 1 : 0);
+    if (package.expected_sha256.has_value()) {
+      writer.text(*package.expected_sha256);
+    }
   }
 }
 
 [[nodiscard]] bool read_snapshot(
-    ByteReader& reader, selection_domain::ResolvedSourceSnapshot& snapshot) {
+    ByteReader& reader, selection_domain::ResolvedSourceSnapshot& snapshot,
+    bool with_integrity) {
   std::uint8_t encoded_purpose{};
   std::uint8_t network_required{};
   std::uint64_t resolved_at{};
@@ -435,6 +445,8 @@ void write_snapshot(ByteWriter& writer,
     std::uint8_t encoded_type{};
     std::uint8_t complete_package{};
     std::uint8_t package_network_required{};
+    std::uint8_t expected_bytes_present{};
+    std::uint8_t expected_sha256_present{};
     if (!reader.text(package.candidate.software_id) ||
         !reader.u8(encoded_architecture) ||
         !reader.text(package.candidate.version) ||
@@ -453,6 +465,28 @@ void write_snapshot(ByteWriter& writer,
     package.package_type = *type;
     package.complete_package = complete_package != 0;
     package.network_required = package_network_required != 0;
+    if (with_integrity) {
+      if (!reader.u8(expected_bytes_present) || expected_bytes_present > 1) {
+        return false;
+      }
+      if (expected_bytes_present != 0) {
+        std::uint64_t expected_bytes{};
+        if (!reader.u64(expected_bytes)) {
+          return false;
+        }
+        package.expected_bytes = expected_bytes;
+      }
+      if (!reader.u8(expected_sha256_present) || expected_sha256_present > 1) {
+        return false;
+      }
+      if (expected_sha256_present != 0) {
+        std::string expected_sha256;
+        if (!reader.text(expected_sha256) || expected_sha256.size() != 64U) {
+          return false;
+        }
+        package.expected_sha256 = std::move(expected_sha256);
+      }
+    }
     snapshot.packages.push_back(std::move(package));
   }
   return snapshot.valid();
@@ -486,7 +520,8 @@ void write_snapshot(ByteWriter& writer,
   std::uint32_t selected_count{};
   std::uint32_t source_count{};
   if (!reader.raw(magic) || magic != k_subject_magic || !reader.u32(version) ||
-      version != k_subject_payload_version || !reader.u8(initialized) ||
+      (version != k_subject_payload_version &&
+       version != k_legacy_subject_payload_version) || !reader.u8(initialized) ||
       initialized > 1 ||
       !reader.u32(selected_count) || selected_count > 4096) {
     return false;
@@ -512,7 +547,7 @@ void write_snapshot(ByteWriter& writer,
   sources.reserve(source_count);
   for (std::uint32_t index = 0; index < source_count; ++index) {
     selection_domain::ResolvedSourceSnapshot source;
-    if (!read_snapshot(reader, source)) {
+    if (!read_snapshot(reader, source, version == k_subject_payload_version)) {
       return false;
     }
     sources.push_back(std::move(source));

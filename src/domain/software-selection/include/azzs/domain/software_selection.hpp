@@ -62,6 +62,8 @@ struct ResolvedPackage final {
   PackageType package_type{PackageType::full_package};
   bool complete_package{true};
   bool network_required{false};
+  std::optional<std::uint64_t> expected_bytes;
+  std::optional<std::string> expected_sha256;
 
   auto operator<=>(ResolvedPackage const&) const = default;
 };

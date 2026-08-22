@@ -73,12 +73,21 @@ using cache_domain::CacheAssetKind;
 }
 
 [[nodiscard]] std::string source_identity(
-    selection_domain::ResolvedSourceSnapshot const& source) {
+    selection_domain::ResolvedSourceSnapshot const& source,
+    selection_domain::ResolvedPackage const& package) {
   auto hash = fnv1a(source.actual_address);
   hash = fnv1a(std::string_view{"\0", 1}, hash);
   hash = fnv1a(source.hosting_mechanism, hash);
   hash = fnv1a(std::string_view{"\0", 1}, hash);
   hash = fnv1a(source.capability_version, hash);
+  hash = fnv1a(std::string_view{"\0", 1}, hash);
+  if (package.expected_bytes.has_value()) {
+    hash = fnv1a(std::to_string(*package.expected_bytes), hash);
+  }
+  hash = fnv1a(std::string_view{"\0", 1}, hash);
+  if (package.expected_sha256.has_value()) {
+    hash = fnv1a(*package.expected_sha256, hash);
+  }
   return "source-" + hex(hash);
 }
 
@@ -202,6 +211,25 @@ OfflinePackageCacheSnapshot OfflinePackageCacheService::snapshot() {
     result.items.push_back(item_snapshot(asset));
   }
   return result;
+}
+
+CompletedCachePayloadRead OfflinePackageCacheService::read_completed_payload(
+    CacheAssetIdentity const& identity) {
+  if (shutdown_ || !selected_root_.valid()) {
+    return {.code = CompletedCachePayloadReadCode::root_unavailable,
+            .detail = "controlled cache service is shut down or root is invalid"};
+  }
+  auto const index = asset_index(identity);
+  if (!index.has_value() || !assets_[*index].cacheable()) {
+    return {.code = CompletedCachePayloadReadCode::absent,
+            .detail = "asset is not admitted as a cacheable current asset"};
+  }
+  auto const observation = storage_.observe_root(selected_root_);
+  if (!observation.available) {
+    return {.code = CompletedCachePayloadReadCode::root_unavailable,
+            .detail = observation.detail};
+  }
+  return storage_.read_completed_payload(selected_root_, identity);
 }
 
 CacheActionResult OfflinePackageCacheService::download(
@@ -478,6 +506,15 @@ CacheActionResult OfflinePackageCacheService::run_download(
   }
 
   auto const existing = session_index(asset.identity);
+  if (resume && asset.expected_sha256.has_value()) {
+    if (existing.has_value()) {
+      abandon_session(*existing);
+      sessions_.erase(sessions_.begin() +
+                      static_cast<std::ptrdiff_t>(*existing));
+      return begin_transfer(asset, false, false, true);
+    }
+    return begin_transfer(asset, false, false, false);
+  }
   if (resume && existing.has_value()) {
     auto& session = sessions_[*existing];
     if (!session.continuation_eligible || !session.writer) {
@@ -701,11 +738,14 @@ std::optional<CacheAsset> make_cache_asset(
           .software_id = package.candidate.software_id,
           .version = package.candidate.version,
           .architecture = cache_architecture(package.candidate.architecture),
-          .source_identity = source_identity(source),
+          .source_identity = source_identity(source, package),
       },
       .kind = kind,
-      .resume_supported = kind == CacheAssetKind::full_package ||
-                          kind == CacheAssetKind::online_installer,
+      .resume_supported = !package.expected_sha256.has_value() &&
+                          (kind == CacheAssetKind::full_package ||
+                           kind == CacheAssetKind::online_installer),
+      .expected_bytes = package.expected_bytes,
+      .expected_sha256 = package.expected_sha256,
   };
   if (!asset.valid()) {
     return std::nullopt;
