@@ -25,6 +25,90 @@ using SurfaceImplementation =
     winrt::Azzs::Ui::DesignSystem::Controls::implementation::
         ReadOnlyPresentationSurface;
 
+[[nodiscard]] std::string localized_string(
+    winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader const& resources,
+    wchar_t const* key, std::string fallback) {
+  auto const value = resources.GetString(key);
+  return value.empty() ? std::move(fallback) : winrt::to_string(value);
+}
+
+[[nodiscard]] azzs::ui::presentation::GuidedInitializationPresentationText
+load_presentation_text() {
+  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
+  auto const resources = ResourceLoader{};
+  azzs::ui::presentation::GuidedInitializationPresentationText text;
+  text.summary_accessible_name = localized_string(resources,
+      L"OverviewGuidedSummaryAccessibleName", std::move(text.summary_accessible_name));
+  text.summary_title = localized_string(resources,
+      L"OverviewGuidedSummaryTitle", std::move(text.summary_title));
+  text.summary_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryCompletedPrefix", std::move(text.summary_prefix));
+  text.summary_external_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryExternalPrefix", std::move(text.summary_external_prefix));
+  text.summary_partial_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryPartialPrefix", std::move(text.summary_partial_prefix));
+  text.summary_failed_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryFailedPrefix", std::move(text.summary_failed_prefix));
+  text.summary_skipped_prefix = localized_string(resources,
+      L"OverviewGuidedSummarySkippedPrefix", std::move(text.summary_skipped_prefix));
+  text.summary_no_applicable_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryNoApplicablePrefix", std::move(text.summary_no_applicable_prefix));
+  text.summary_not_executed_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryNotExecutedPrefix", std::move(text.summary_not_executed_prefix));
+  text.summary_confirmation_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryConfirmationPrefix", std::move(text.summary_confirmation_prefix));
+  text.summary_explorer_restart_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryExplorerRestartPrefix", std::move(text.summary_explorer_restart_prefix));
+  text.summary_restart_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryRestartPrefix", std::move(text.summary_restart_prefix));
+  text.summary_withdrawn_prefix = localized_string(resources,
+      L"OverviewGuidedSummaryWithdrawnPrefix", std::move(text.summary_withdrawn_prefix));
+  text.summary_error_suffix = localized_string(resources,
+      L"OverviewGuidedSummaryErrorSuffix", std::move(text.summary_error_suffix));
+  text.start_command = localized_string(resources, L"OverviewGuidedStartCommand", std::move(text.start_command));
+  text.refresh_command = localized_string(resources, L"OverviewGuidedRefreshCommand", std::move(text.refresh_command));
+  text.cancel_command = localized_string(resources, L"OverviewGuidedCancelCommand", std::move(text.cancel_command));
+  text.history_command = localized_string(resources, L"OverviewGuidedHistoryCommand", std::move(text.history_command));
+  text.skip_command = localized_string(resources, L"OverviewGuidedSkipCommand", std::move(text.skip_command));
+  text.continue_command = localized_string(resources, L"OverviewGuidedContinueCommand", std::move(text.continue_command));
+  text.retry_command = localized_string(resources, L"OverviewGuidedRetryCommand", std::move(text.retry_command));
+  text.open_command = localized_string(resources, L"OverviewGuidedOpenCommand", std::move(text.open_command));
+  text.local_trial_accessible_name = localized_string(resources, L"OverviewGuidedLocalTrialAccessibleName", std::move(text.local_trial_accessible_name));
+  text.local_trial_title = localized_string(resources, L"OverviewGuidedLocalTrialTitle", std::move(text.local_trial_title));
+  text.local_trial_body = localized_string(resources, L"OverviewGuidedLocalTrialBody", std::move(text.local_trial_body));
+  text.handoff_accessible_name = localized_string(resources, L"OverviewGuidedHandoffAccessibleName", std::move(text.handoff_accessible_name));
+  text.handoff_title = localized_string(resources, L"OverviewGuidedHandoffTitle", std::move(text.handoff_title));
+  text.handoff_waiting_body = localized_string(resources, L"OverviewGuidedHandoffWaitingBody", std::move(text.handoff_waiting_body));
+  text.handoff_recognized_body = localized_string(resources, L"OverviewGuidedHandoffRecognizedBody", std::move(text.handoff_recognized_body));
+  text.handoff_continue_command = localized_string(resources, L"OverviewGuidedHandoffContinueCommand", std::move(text.handoff_continue_command));
+  text.read_only_accessible_name = localized_string(resources, L"OverviewGuidedReadOnlyAccessibleName", std::move(text.read_only_accessible_name));
+  text.read_only_title = localized_string(resources, L"OverviewGuidedReadOnlyTitle", std::move(text.read_only_title));
+  text.read_only_body = localized_string(resources, L"OverviewGuidedReadOnlyBody", std::move(text.read_only_body));
+  text.read_only_disabled_reason = localized_string(resources, L"OverviewGuidedReadOnlyDisabledReason", std::move(text.read_only_disabled_reason));
+  text.stage_empty_body = localized_string(resources, L"OverviewGuidedStageEmptyBody", std::move(text.stage_empty_body));
+  text.raw_detail_prefix = localized_string(resources, L"OverviewGuidedRawDetailPrefix", std::move(text.raw_detail_prefix));
+  text.raw_error_prefix = localized_string(resources, L"OverviewGuidedRawErrorPrefix", std::move(text.raw_error_prefix));
+  text.drivers_stage_title = localized_string(resources, L"OverviewGuidedDriversStageTitle", std::move(text.drivers_stage_title));
+  text.system_optimization_stage_title = localized_string(resources, L"OverviewGuidedSystemOptimizationStageTitle", std::move(text.system_optimization_stage_title));
+  text.software_installation_stage_title = localized_string(resources, L"OverviewGuidedSoftwareInstallationStageTitle", std::move(text.software_installation_stage_title));
+  text.software_optimization_stage_title = localized_string(resources, L"OverviewGuidedSoftwareOptimizationStageTitle", std::move(text.software_optimization_stage_title));
+  text.unknown_stage_title = localized_string(resources, L"OverviewGuidedUnknownStageTitle", std::move(text.unknown_stage_title));
+  text.stage_pending_body = localized_string(resources, L"OverviewGuidedStagePendingBody", std::move(text.stage_pending_body));
+  text.stage_active_body = localized_string(resources, L"OverviewGuidedStageActiveBody", std::move(text.stage_active_body));
+  text.stage_completed_body = localized_string(resources, L"OverviewGuidedStageCompletedBody", std::move(text.stage_completed_body));
+  text.stage_skipped_body = localized_string(resources, L"OverviewGuidedStageSkippedBody", std::move(text.stage_skipped_body));
+  text.stage_no_applicable_body = localized_string(resources, L"OverviewGuidedStageNoApplicableBody", std::move(text.stage_no_applicable_body));
+  text.stage_partial_body = localized_string(resources, L"OverviewGuidedStagePartialBody", std::move(text.stage_partial_body));
+  text.stage_failed_body = localized_string(resources, L"OverviewGuidedStageFailedBody", std::move(text.stage_failed_body));
+  text.stage_confirmation_body = localized_string(resources, L"OverviewGuidedStageConfirmationBody", std::move(text.stage_confirmation_body));
+  text.stage_waiting_explorer_body = localized_string(resources, L"OverviewGuidedStageWaitingExplorerBody", std::move(text.stage_waiting_explorer_body));
+  text.stage_waiting_restart_body = localized_string(resources, L"OverviewGuidedStageWaitingRestartBody", std::move(text.stage_waiting_restart_body));
+  text.stage_withdrawn_body = localized_string(resources, L"OverviewGuidedStageWithdrawnBody", std::move(text.stage_withdrawn_body));
+  text.stage_external_handoff_body = localized_string(resources, L"OverviewGuidedStageExternalHandoffBody", std::move(text.stage_external_handoff_body));
+  text.stage_not_executed_body = localized_string(resources, L"OverviewGuidedStageNotExecutedBody", std::move(text.stage_not_executed_body));
+  return text;
+}
+
 [[nodiscard]] std::optional<PageId> page_for_stage(
     azzs::application::guided_initialization::Stage stage) noexcept {
   using Stage = azzs::application::guided_initialization::Stage;
@@ -64,7 +148,7 @@ void OverviewPage::project() {
   static_cast<void>(services_->guided_initialization().refresh());
   auto const snapshot = services_->guided_initialization().snapshot();
   presentation_ = azzs::ui::presentation::make_guided_initialization_presentation(
-      snapshot);
+      snapshot, load_presentation_text());
   auto const mode = advanced_view_ ? azzs::ui::presentation::ViewMode::advanced
                                    : azzs::ui::presentation::ViewMode::standard;
   auto weak_this = get_weak();
