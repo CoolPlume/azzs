@@ -92,6 +92,8 @@ try {
     $rootCmake = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "CMakeLists.txt") -Raw
     $presets = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "CMakePresets.json") -Raw | ConvertFrom-Json
     $buildScript = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "eng/build.ps1") -Raw
+    $portablePackageScript = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "eng/package-portable.ps1") -Raw
+    $installerPackageScript = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "eng/package-installer.ps1") -Raw
     $manifestScript = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "eng/write-build-manifest.ps1") -Raw
     $diagnosticHeader = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "cmake/startup_diagnostic_config.hpp.in") -Raw
     $winuiProject = Get-Content -LiteralPath (Join-Path $resolvedRepositoryRoot "src/adapters/ui/winui/Azzs.WinUI.vcxproj") -Raw
@@ -107,6 +109,14 @@ try {
     Require ($diagnosticHeader.Contains("#define $diagnosticOption @AZZS_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT_ENABLED@")) "the CMake option must generate the compile-time diagnostic guard"
     Require ($buildScript.Contains('"-DAZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT=$startupDiagnosticDeviceDataRoot"')) "the build entry point must explicitly set the diagnostic CMake option"
     Require ($buildScript.Contains('-StartupDiagnosticDeviceDataRootEnabled $startupDiagnosticDeviceDataRootEnabled')) "the build entry point must record the diagnostic mode in every build manifest"
+    Require ($buildScript.Contains('[string]$CMakeBinaryDirectory') -and
+        $buildScript.Contains('"-B", $cmakeBinaryDirectory') -and
+        $buildScript.Contains('"--build", $cmakeBinaryDirectory') -and
+        $buildScript.Contains('"--test-dir", $cmakeBinaryDirectory')) "the build entry point must support an explicit CMake binary directory for configure, build, and test"
+    Require ($portablePackageScript.Contains('[string]$CMakeBinaryDirectory') -and
+        $portablePackageScript.Contains('"-CMakeBinaryDirectory", $CMakeBinaryDirectory')) "portable packaging must forward an explicit CMake binary directory"
+    Require ($installerPackageScript.Contains('[string]$CMakeBinaryDirectory') -and
+        $installerPackageScript.Contains('"-CMakeBinaryDirectory", $CMakeBinaryDirectory')) "installer packaging must forward an explicit CMake binary directory"
     Require ($manifestScript.Contains('StartupDiagnosticDeviceDataRootEnabled = $false') -and
         $manifestScript.Contains('startupDiagnosticDeviceDataRoot = $StartupDiagnosticDeviceDataRootEnabled')) "the build manifest must record the diagnostic mode"
     $generatedDiagnosticInclude = '$(MSBuildThisFileDirectory)..\..\..\..\out\obj\winui\generated;'

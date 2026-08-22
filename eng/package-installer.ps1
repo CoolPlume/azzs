@@ -3,6 +3,8 @@ param(
     [ValidateSet("x64", "ARM64")]
     [string]$Architecture = "x64",
 
+    [string]$CMakeBinaryDirectory,
+
     [switch]$SkipBuild,
 
     [switch]$AcceptWixEula
@@ -82,7 +84,11 @@ if (-not $SkipBuild -and -not $AcceptWixEula) {
     throw $wixTermsError
 }
 if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot "build.ps1") -Architecture $Architecture
+    $buildArguments = @("-Architecture", $Architecture)
+    if ($PSBoundParameters.ContainsKey("CMakeBinaryDirectory")) {
+        $buildArguments += @("-CMakeBinaryDirectory", $CMakeBinaryDirectory)
+    }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }
 
 if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {

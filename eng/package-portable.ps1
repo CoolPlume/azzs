@@ -5,6 +5,8 @@ param(
     [ValidateSet("x64", "ARM64")]
     [string]$Architecture,
 
+    [string]$CMakeBinaryDirectory,
+
     [switch]$SkipBuild
 )
 
@@ -95,7 +97,11 @@ try {
         Test-LargeOfflineArtifactContent -LargeDefinition $definition -LargeInputs $contentInputs -RescueInputs $rescueInputs -RepositoryRoot $repositoryRoot
     }
     if (-not $SkipBuild) {
-        & (Join-Path $PSScriptRoot "build.ps1") -Architecture $architecture
+        $buildArguments = @("-Architecture", $architecture)
+        if ($PSBoundParameters.ContainsKey("CMakeBinaryDirectory")) {
+            $buildArguments += @("-CMakeBinaryDirectory", $CMakeBinaryDirectory)
+        }
+        & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
     }
     Test-PortableBuildManifest -RepositoryRoot $repositoryRoot -Architecture $architecture | Out-Null
 
