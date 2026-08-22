@@ -272,13 +272,62 @@ InstallationBatchCreationService::assess_plan(
                                      "the controlled cache root is unavailable")};
   }
 
-  std::unordered_map<std::string, batch::FrozenInstallationItem> frozen_by_id;
+  std::vector<InstallationBatchItemAssessment> item_assessments;
+  item_assessments.reserve(request.packages.size());
+  std::unordered_map<std::string, std::size_t> item_assessment_index;
   for (auto const& choice : request.packages) {
+    item_assessment_index.emplace(choice.software_id, item_assessments.size());
+    item_assessments.push_back({.item_id = choice.software_id});
+  }
+  auto mark_unavailable = [&](std::size_t index,
+                              InstallationBatchCreationCode code,
+                              std::string detail) {
+    item_assessments[index].code = code;
+    item_assessments[index].detail = std::move(detail);
+  };
+  auto mark_dependency_incomplete = [&](std::string const& software_id) {
+    auto const found = item_assessment_index.find(software_id);
+    if (found != item_assessment_index.end() &&
+        item_assessments[found->second].ready()) {
+      mark_unavailable(found->second,
+                       InstallationBatchCreationCode::dependency_incomplete,
+                       "the selected dependency closure is incomplete or cyclic");
+    }
+  };
+
+  std::unordered_map<std::string, batch::FrozenInstallationItem> frozen_by_id;
+  auto const profiles = profiles_.profiles();
+  for (std::size_t choice_index = 0; choice_index < request.packages.size();
+       ++choice_index) {
+    auto const& choice = request.packages[choice_index];
     auto const runtime = find_runtime(*catalog_snapshot.current_catalog, choice.software_id);
-    if (!runtime.has_value() || (*runtime)->availability != catalog::ItemAvailability::available ||
-        !(*runtime)->definition.install_profile.has_value()) {
-      return {.assessment = assessment(InstallationBatchCreationCode::package_unavailable,
-                                       "a selected software item is unavailable")};
+    if (!runtime.has_value()) {
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::package_unavailable,
+                       "a selected software item is unavailable");
+      continue;
+    }
+    switch ((*runtime)->availability) {
+      case catalog::ItemAvailability::available:
+        break;
+      case catalog::ItemAvailability::install_profile_unavailable:
+        mark_unavailable(choice_index,
+                         InstallationBatchCreationCode::profile_unavailable,
+                         "the selected software has no controlled installation profile");
+        continue;
+      case catalog::ItemAvailability::missing_dependency:
+      case catalog::ItemAvailability::dependency_cycle:
+      case catalog::ItemAvailability::unavailable_dependency:
+        mark_unavailable(choice_index,
+                         InstallationBatchCreationCode::dependency_incomplete,
+                         "the selected software has an incomplete dependency closure");
+        continue;
+    }
+    if (!(*runtime)->definition.install_profile.has_value()) {
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::profile_unavailable,
+                       "the selected software has no controlled installation profile");
+      continue;
     }
     auto const selection_item = std::ranges::find(
         selection_snapshot.items, choice.software_id,
@@ -286,8 +335,10 @@ InstallationBatchCreationService::assess_plan(
     if (selection_item == selection_snapshot.items.end() || !selection_item->selected ||
         !selection_item->available || selection_item->requires_reselection ||
         !contains_selected(selection_snapshot.selection, choice.software_id)) {
-      return {.assessment = assessment(InstallationBatchCreationCode::selection_incomplete,
-                                       "a selected software item is incomplete")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::selection_incomplete,
+                       "a selected software item is incomplete");
+      continue;
     }
 
     auto const declared = std::ranges::find_if((*runtime)->definition.sources,
@@ -296,8 +347,10 @@ InstallationBatchCreationService::assess_plan(
              source.address == choice.declared_address;
     });
     if (declared == (*runtime)->definition.sources.end()) {
-      return {.assessment = assessment(InstallationBatchCreationCode::source_unresolved,
-                                       "the requested source is not declared by the active catalog")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::source_unresolved,
+                       "the requested source is not declared by the active catalog");
+      continue;
     }
     auto const source = std::ranges::find_if(
         selection_snapshot.sources, [&](selection::ResolvedSourceSnapshot const& candidate) {
@@ -312,9 +365,11 @@ InstallationBatchCreationService::assess_plan(
           return candidate.software_id == choice.software_id &&
                  candidate.declared_purpose == choice.declared_purpose &&
                  candidate.declared_address == choice.declared_address;
-        }) != 1) {
-      return {.assessment = assessment(InstallationBatchCreationCode::source_unresolved,
-                                       "the controlled source snapshot is missing or ambiguous")};
+                               }) != 1) {
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::source_unresolved,
+                       "the controlled source snapshot is missing or ambiguous");
+      continue;
     }
     auto const package = std::ranges::find(source->packages, choice.package_identity,
                                            [](selection::ResolvedPackage const& candidate) {
@@ -324,19 +379,22 @@ InstallationBatchCreationService::assess_plan(
         package->package_type == selection::PackageType::external_handoff ||
         !package->complete_package &&
             package->package_type == selection::PackageType::full_package) {
-      return {.assessment = assessment(InstallationBatchCreationCode::package_unavailable,
-                                       "the selected package cannot be controlled")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::package_unavailable,
+                       "the selected package cannot be controlled");
+      continue;
     }
 
-    auto const profiles = profiles_.profiles();
     auto const profile = std::ranges::find_if(
         profiles, [&](catalog::ControlledInstallProfile const& candidate) {
           return candidate.id == *(*runtime)->definition.install_profile &&
                  candidate.software_id == choice.software_id;
         });
     if (profile == profiles.end()) {
-      return {.assessment = assessment(InstallationBatchCreationCode::profile_unavailable,
-                                       "the selected software has no controlled installation profile")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::profile_unavailable,
+                       "the selected software has no controlled installation profile");
+      continue;
     }
     auto const baseline = std::ranges::find(profile->baselines, source->version,
                                             [](catalog::InstallerBaseline const& candidate) {
@@ -344,11 +402,14 @@ InstallationBatchCreationService::assess_plan(
                                             });
     if (baseline == profile->baselines.end() ||
         profile->execution != catalog::WindowsExecutionReadiness::project_executor_registered) {
-      return {.assessment = assessment(InstallationBatchCreationCode::profile_unavailable,
-                                       "the controlled installation profile is not executable")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::profile_unavailable,
+                       "the controlled installation profile is not executable");
+      continue;
     }
 
     std::unordered_map<std::string, batch::FrozenPreferenceValue> requested_choices;
+    bool invalid_preference = false;
     for (auto const& preference : choice.preferences) {
       auto const known = std::ranges::find(profile->preferences, preference.preference_id,
                                            [](catalog::ControlledInstallPreference const& value) {
@@ -356,28 +417,43 @@ InstallationBatchCreationService::assess_plan(
                                            });
       if (!preference.valid() || known == profile->preferences.end() ||
           !requested_choices.emplace(preference.preference_id, preference.value).second) {
-        return {.assessment = assessment(InstallationBatchCreationCode::profile_unavailable,
-                                         "the request contains an unknown or duplicate preference")};
+        mark_unavailable(choice_index,
+                         InstallationBatchCreationCode::profile_unavailable,
+                         "the request contains an unknown or duplicate preference");
+        invalid_preference = true;
+        break;
       }
+    }
+    if (invalid_preference) {
+      continue;
     }
     if (profile->preferences.empty() &&
         (choice.interaction_disposition != catalog::InteractionDisposition::controlled_automatic ||
          !choice.preferences.empty())) {
-      return {.assessment = assessment(InstallationBatchCreationCode::profile_unavailable,
-                                       "a preference-free profile allows only controlled automation")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::profile_unavailable,
+                       "a preference-free profile allows only controlled automation");
+      continue;
     }
     std::vector<batch::FrozenPreferenceChoice> frozen_choices;
     frozen_choices.reserve(profile->preferences.size());
+    bool invalid_disposition = false;
     for (auto const& preference : profile->preferences) {
       if (!contains_disposition(preference, choice.interaction_disposition)) {
-        return {.assessment = assessment(InstallationBatchCreationCode::profile_unavailable,
-                                         "the requested interaction disposition is not permitted")};
+        mark_unavailable(choice_index,
+                         InstallationBatchCreationCode::profile_unavailable,
+                         "the requested interaction disposition is not permitted");
+        invalid_disposition = true;
+        break;
       }
       auto const requested = requested_choices.find(preference.id);
-      frozen_choices.push_back({.preference_id = preference.id,
+        frozen_choices.push_back({.preference_id = preference.id,
                                 .value = requested == requested_choices.end()
                                              ? frozen_value(preference.default_choice)
-                                             : requested->second});
+                                              : requested->second});
+    }
+    if (invalid_disposition) {
+      continue;
     }
     batch::FrozenExecutionProfile frozen_profile{
         .profile_id = profile->id,
@@ -394,30 +470,37 @@ InstallationBatchCreationService::assess_plan(
     };
     if (!frozen_profile.valid() ||
         readiness_.observe(frozen_profile).code != ControlledProfileReadinessCode::registered) {
-      return {.assessment = assessment(InstallationBatchCreationCode::profile_unavailable,
-                                       "the project-owned controlled executor is not registered")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::profile_unavailable,
+                       "the project-owned controlled executor is not registered");
+      continue;
     }
 
     auto const asset = cache_app::make_cache_asset(*source, *package);
     if (!asset.has_value() || asset->kind == cache::CacheAssetKind::managed_source ||
         asset->kind == cache::CacheAssetKind::online_only ||
         asset->kind == cache::CacheAssetKind::unsupported) {
-      return {.assessment = assessment(InstallationBatchCreationCode::cache_unavailable,
-                                       "the selected source does not have a controlled cache asset")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::cache_unavailable,
+                       "the selected source does not have a controlled cache asset");
+      continue;
     }
     auto const cached = std::ranges::find_if(cache_snapshot.items,
                                              [&](cache_app::OfflinePackageItemSnapshot const& item) {
       return cache_item_matches(item, *asset);
     });
     if (cached == cache_snapshot.items.end() || !usable_cache_availability(cached->availability)) {
-      return {.assessment = assessment(InstallationBatchCreationCode::cache_unavailable,
-                                       "the frozen cache asset is unavailable")};
+      mark_unavailable(choice_index,
+                       InstallationBatchCreationCode::cache_unavailable,
+                       "the frozen cache asset is unavailable");
+      continue;
     }
     auto const resource_kind =
         cached->cache_present ||
                 cached->availability == cache_app::OfflinePackageAvailability::built_in_available
             ? batch::FrozenResourceKind::cached_package
             : batch::FrozenResourceKind::controlled_download;
+    item_assessments[choice_index].code = InstallationBatchCreationCode::ready;
     frozen_by_id.emplace(choice.software_id,
                          batch::FrozenInstallationItem{
                              .item_id = choice.software_id,
@@ -427,20 +510,25 @@ InstallationBatchCreationService::assess_plan(
                              .execution_profile = std::move(frozen_profile),
                              .resource_kind = resource_kind,
                              .cache_asset = *asset,
-                             .cache_root = cache_snapshot.selected_root,
-                         });
+                              .cache_root = cache_snapshot.selected_root,
+                          });
   }
 
   std::unordered_map<std::string, int> visit_state;
   std::vector<batch::FrozenInstallationItem> ordered;
   ordered.reserve(frozen_by_id.size());
-  std::function<bool(std::string const&)> visit = [&](std::string const& id) {
+  std::function<bool(std::string const&, std::vector<batch::FrozenInstallationItem>&)> visit =
+      [&](std::string const& id, std::vector<batch::FrozenInstallationItem>& local) {
     auto const item = frozen_by_id.find(id);
     if (item == frozen_by_id.end()) {
       return false;
     }
     auto& state = visit_state[id];
     if (state == 1) {
+      mark_dependency_incomplete(id);
+      return false;
+    }
+    if (state == 3) {
       return false;
     }
     if (state == 2) {
@@ -448,19 +536,48 @@ InstallationBatchCreationService::assess_plan(
     }
     state = 1;
     for (auto const& dependency : item->second.dependencies) {
-      if (!request_ids.contains(dependency) || !visit(dependency)) {
+      if (!request_ids.contains(dependency) || !visit(dependency, local)) {
+        mark_dependency_incomplete(id);
+        state = 3;
         return false;
       }
     }
     state = 2;
-    ordered.push_back(item->second);
+    local.push_back(item->second);
     return true;
   };
   for (auto const& choice : request.packages) {
-    if (!visit(choice.software_id)) {
-      return {.assessment = assessment(InstallationBatchCreationCode::dependency_incomplete,
-                                       "the selected dependency closure is incomplete or cyclic")};
+    if (!frozen_by_id.contains(choice.software_id)) {
+      continue;
     }
+    std::vector<batch::FrozenInstallationItem> local;
+    if (visit(choice.software_id, local)) {
+      for (auto& item : local) {
+        if (std::ranges::none_of(ordered, [&](batch::FrozenInstallationItem const& existing) {
+              return existing.item_id == item.item_id;
+            })) {
+          ordered.push_back(std::move(item));
+        }
+      }
+    }
+  }
+
+  auto with_items = [&](InstallationBatchCreationAssessment result) {
+    result.items = item_assessments;
+    return result;
+  };
+  if (ordered.empty()) {
+    auto const failed = std::ranges::find_if(
+        item_assessments, [](InstallationBatchItemAssessment const& item) {
+          return !item.ready();
+        });
+    if (failed != item_assessments.end()) {
+      return {.assessment = with_items(
+                  assessment(failed->code, failed->detail))};
+    }
+    return {.assessment = with_items(
+                assessment(InstallationBatchCreationCode::dependency_incomplete,
+                           "the selected dependency closure is incomplete or cyclic"))};
   }
 
   batch::FrozenBatchPlan plan{
@@ -478,10 +595,18 @@ InstallationBatchCreationService::assess_plan(
       .frozen_at_milliseconds = request.frozen_at_milliseconds,
   };
   if (!plan.valid()) {
-    return {.assessment = assessment(InstallationBatchCreationCode::invalid_request,
-                                     "the requested frozen batch plan is invalid")};
+    return {.assessment = with_items(
+                assessment(InstallationBatchCreationCode::invalid_request,
+                           "the requested frozen batch plan is invalid"))};
   }
-  return {.assessment = assessment(InstallationBatchCreationCode::ready, {}, plan.items.size()),
+  auto planned_assessment = assessment(
+      InstallationBatchCreationCode::ready,
+      ordered.size() == request.packages.size()
+          ? std::string{}
+          : "some selected software items are unavailable",
+      plan.items.size());
+  planned_assessment.items = std::move(item_assessments);
+  return {.assessment = std::move(planned_assessment),
           .plan = std::move(plan)};
 }
 
@@ -498,8 +623,9 @@ InstallationBatchCreationResult InstallationBatchCreationService::create(
   }
   auto const batch_id = planned.plan->batch_id;
   if (!assets_.stage_initial(*planned.plan)) {
-    return {.assessment = assessment(InstallationBatchCreationCode::admission_rejected,
-                                     "the frozen batch plan could not be staged")};
+    planned.assessment.code = InstallationBatchCreationCode::admission_rejected;
+    planned.assessment.detail = "the frozen batch plan could not be staged";
+    return {.assessment = std::move(planned.assessment)};
   }
   auto result = batches_.create(*planned.plan);
   if (result.succeeded()) {
@@ -511,9 +637,10 @@ InstallationBatchCreationResult InstallationBatchCreationService::create(
   } else {
     assets_.discard(batch_id);
   }
-  return {.assessment = assessment(InstallationBatchCreationCode::batch_rejected,
-                                    result.message),
-          .batch = std::move(result)};
+  planned.assessment.code = InstallationBatchCreationCode::batch_rejected;
+  planned.assessment.detail = result.message;
+  return {.assessment = std::move(planned.assessment),
+           .batch = std::move(result)};
 }
 
 InstallationBatchCreationResult InstallationBatchCreationService::retry_current(
