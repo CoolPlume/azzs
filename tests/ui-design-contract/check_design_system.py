@@ -789,7 +789,9 @@ def verify_motion_and_ownership(root: Path) -> None:
     xaml_text = "\n".join(read(path) for path in xaml_paths)
     require('EnableDependentAnimation="True"' not in xaml_text,
             "dependent layout animations are forbidden")
-    require("Completed=" not in xaml_text,
+    # Do not confuse control events such as DragCompleted with the animation
+    # Completed property. Only a standalone XAML attribute is a boundary.
+    require(not re.search(r"(?:^|\s)Completed\s*=", xaml_text),
             "XAML animation completion must not become a business boundary")
     layout_animation_properties = (
         "Width", "Height", "Margin", "Padding", "GridLength",

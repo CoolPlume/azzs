@@ -1,12 +1,18 @@
 <Window
     x:Class="Azzs.Ui.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <NavigationView
-        x:Name="PrimaryNavigation"
-        AutomationProperties.AutomationId="AzzsPrimaryNavigation"
-        SelectionChanged="OnNavigationSelectionChanged"
-        Style="{StaticResource AzzsPrimaryNavigationStyle}">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:primitives="using:Microsoft.UI.Xaml.Controls.Primitives">
+    <Grid
+        x:Name="ShellRoot"
+        SizeChanged="OnShellSizeChanged">
+        <NavigationView
+            x:Name="PrimaryNavigation"
+            AutomationProperties.AutomationId="AzzsPrimaryNavigation"
+            DisplayModeChanged="OnNavigationDisplayModeChanged"
+            OpenPaneLength="248"
+            SelectionChanged="OnNavigationSelectionChanged"
+            Style="{StaticResource AzzsPrimaryNavigationStyle}">
         <NavigationView.MenuItems>
             <NavigationViewItem
                 x:Name="OverviewItem"
@@ -137,5 +143,23 @@
                 AutomationProperties.AutomationId="AzzsContentFrame"
                 IsNavigationStackEnabled="False" />
         </Grid>
-    </NavigationView>
+        </NavigationView>
+        <primitives:Thumb
+            x:Name="SidebarResizeThumb"
+            x:Uid="SidebarResizeThumb"
+            AutomationProperties.AutomationId="AzzsSidebarResizeThumb"
+            Background="Transparent"
+            Canvas.ZIndex="10"
+            DragCompleted="OnSidebarResizeDragCompleted"
+            DragDelta="OnSidebarResizeDragDelta"
+            DragStarted="OnSidebarResizeDragStarted"
+            IsTabStop="True"
+            KeyDown="OnSidebarResizeKeyDown"
+            Margin="{StaticResource AzzsSidebarResizeThumbInitialMargin}"
+            TabIndex="1"
+            Style="{StaticResource AzzsSidebarResizeThumbStyle}"
+            VerticalAlignment="Stretch"
+            Visibility="Collapsed"
+            />
+    </Grid>
 </Window>
