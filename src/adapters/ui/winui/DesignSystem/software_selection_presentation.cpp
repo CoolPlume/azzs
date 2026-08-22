@@ -8,6 +8,40 @@
 namespace azzs::ui::presentation {
 namespace {
 
+void restore_empty_text_fields(SoftwareSelectionPresentationText& text) {
+  auto const defaults = SoftwareSelectionPresentationText{};
+  if (text.accessible_name.empty()) {
+    text.accessible_name = defaults.accessible_name;
+  }
+  if (text.available_title.empty()) {
+    text.available_title = defaults.available_title;
+  }
+  if (text.available_body_prefix.empty()) {
+    text.available_body_prefix = defaults.available_body_prefix;
+  }
+  if (text.available_body_suffix.empty()) {
+    text.available_body_suffix = defaults.available_body_suffix;
+  }
+  if (text.absent_catalog_title.empty()) {
+    text.absent_catalog_title = defaults.absent_catalog_title;
+  }
+  if (text.absent_catalog_body.empty()) {
+    text.absent_catalog_body = defaults.absent_catalog_body;
+  }
+  if (text.not_restored_body.empty()) {
+    text.not_restored_body = defaults.not_restored_body;
+  }
+  if (text.restore_failed_body.empty()) {
+    text.restore_failed_body = defaults.restore_failed_body;
+  }
+  if (text.advanced_available.empty()) {
+    text.advanced_available = defaults.advanced_available;
+  }
+  if (text.advanced_absent_catalog.empty()) {
+    text.advanced_absent_catalog = defaults.advanced_absent_catalog;
+  }
+}
+
 [[nodiscard]] std::string selection_summary(
     application::software_selection::SoftwareSelectionSnapshot const& source,
     SoftwareSelectionPresentationText const& text) {
@@ -25,6 +59,7 @@ std::shared_ptr<PresentationSnapshot const>
 make_software_selection_presentation(
     application::software_selection::SoftwareSelectionSnapshot const& source,
     SoftwareSelectionPresentationText text) {
+  restore_empty_text_fields(text);
   auto state = PresentationState::ready;
   auto title = text.available_title;
   auto body = selection_summary(source, text);
