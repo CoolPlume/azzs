@@ -1,7 +1,5 @@
 # Windows 初装工作台 0.1.0 Beta
 
-<!-- 发布前替换双花括号证据占位符，并删除本注释。本文档仅适用于 ADR-0048 规定的单制品 Beta。 -->
-
 Windows 初装工作台 v0.1.0 是早期应用测试发行，仅提供一个 x64 便携制品。
 
 ## 本次发行
@@ -10,7 +8,7 @@ Windows 初装工作台 v0.1.0 是早期应用测试发行，仅提供一个 x64
 - 发行通道：`prerelease`
 - 制品：`standard-x64-portable`
 - Git tag：`v0.1.0`
-- 发布提交：`{{RELEASE_COMMIT}}`
+- 制品构建源提交：以 `out/manifests/package-standard-x64-portable.json` 的 `sourceCommit` 为准；最终 GitHub Release 由 `v0.1.0` tag 指向普通合入 `main` 的提交。
 
 ## 下载
 
@@ -20,12 +18,14 @@ Windows 初装工作台 v0.1.0 是早期应用测试发行，仅提供一个 x64
 
 这是唯一的本次发行资产。ARM64、MSI/WiX、断网救援版和超大离线版不属于本次 Beta。
 
-资产 SHA-256：`{{ASSET_STANDARD_X64_PORTABLE_SHA256}}`
+资产 SHA-256：`10a18a3af3b1b111c1cf22804c141b78c1f580b44cbf6037d8bf55a521053855`（文档提交后重新生成制品并复核）
 
 ## 验证边界
 
 - 发布前必须执行：x64 Release 构建、生产目录与受控安装链无界面合同、便携包内容和运行时依赖门禁。
-- 证据：build manifest `{{BUILD_MANIFEST_PATH}}`；package manifest `{{PACKAGE_MANIFEST_PATH}}`。
+- 证据：build manifest `out/manifests/windows-x64-release.json`；package manifest `out/manifests/package-standard-x64-portable.json`。
+- 正式目录保留 11 项；Cheat Engine 与几何画板在各自条目下明确不可用，不阻断其他项目。
+- 当前宿主未能创建部分 ACL/reparse 测试夹具，相关合同失败按环境前置记录，未宣称为全量合同通过。
 - 未执行：本机、虚拟机或其他候选设备上的真实第三方软件安装；mock 合同不等于实机安装通过。
 - 延期：真实 Windows 11 x64 第三方软件安装验证、ARM64、MSI/WiX、安装/Repair/卸载/迁移生命周期，以及断网救援和超大离线制品。
 
