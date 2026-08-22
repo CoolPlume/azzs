@@ -62,13 +62,13 @@ struct MainWindow : MainWindowT<MainWindow> {
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::SizeChangedEventArgs const&);
   void OnSidebarResizeDragStarted(
-      Microsoft::UI::Xaml::Controls::Primitives::Thumb const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::Controls::Primitives::DragStartedEventArgs const&);
   void OnSidebarResizeDragDelta(
-      Microsoft::UI::Xaml::Controls::Primitives::Thumb const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::Controls::Primitives::DragDeltaEventArgs const&);
   void OnSidebarResizeDragCompleted(
-      Microsoft::UI::Xaml::Controls::Primitives::Thumb const&,
+      Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs const&);
   void OnSidebarResizeKeyDown(
       Windows::Foundation::IInspectable const&,
