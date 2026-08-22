@@ -1103,6 +1103,27 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     }
     require(rescue_resources <= resource_names,
             "driver rescue handoff commands and decisions must remain localized")
+
+    driver_recommendation_resources = {
+        "DriverRecommendationTitle",
+        "DriverRecommendationUnavailableTitle",
+        "DriverRecommendationHandoffSuffix",
+        "DriverRecommendationDegradedHardwareSuffix",
+        "DriverRecommendationNoPhysicalMessage",
+        "DriverRecommendationNoMatchMessage",
+    }
+    require(driver_recommendation_resources <= resource_names,
+            "driver recommendation states must remain localized")
+    require(
+        "has_confirmed_physical_hardware" in drivers_cpp and
+        "has_degraded_physical_hardware" in drivers_cpp and
+        "driver_snapshot.writable" in drivers_cpp and
+        "DriverRecommendation().IsOpen(true)" in drivers_cpp and
+        "DriverRecommendationNoPhysicalMessage" in drivers_cpp and
+        "DriverRecommendationNoMatchMessage" in drivers_cpp and
+        "AzzsFixedDriverEntrypoints" in drivers_xaml,
+        "driver recommendations must fail closed while fixed official entrypoints remain visible",
+    )
     require(
         resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
         "通用网卡驱动救援工具" and
