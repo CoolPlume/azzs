@@ -7,6 +7,7 @@
 #include <winrt/Microsoft.UI.Windowing.h>
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/workbench.hpp"
+#include "DesignSystem/settings_navigation_recovery.hpp"
 
 namespace azzs::ui::winui {
 class MotionPreferences;
@@ -44,6 +45,12 @@ struct MainWindow : MainWindowT<MainWindow> {
   void OnContinueRecoveredCatalogEditorClick(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnRetrySettingsNavigationClick(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnReturnToCurrentPageClick(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
 
  private:
   [[nodiscard]] std::optional<azzs::application::PageId> page_for_item(
@@ -52,6 +59,19 @@ struct MainWindow : MainWindowT<MainWindow> {
   navigation_item_for_page(azzs::application::PageId page);
   [[nodiscard]] bool navigate_and_commit(azzs::application::PageId page);
   bool navigate_to(azzs::application::PageId page);
+  [[nodiscard]] Windows::Foundation::IInspectable
+  prepare_application_settings_page();
+  void commit_application_settings_page(
+      Windows::Foundation::IInspectable const& page,
+      std::optional<azzs::application::PageId> previous_page);
+  void restore_settings_navigation_state(
+      std::optional<azzs::application::PageId> previous_page,
+      azzs::application::PageId previous_core_page,
+      Windows::Foundation::IInspectable const& previous_content) noexcept;
+  void record_settings_navigation_failure(
+      azzs::ui::presentation::SettingsNavigationFailure const& failure) noexcept;
+  void handle_settings_navigation_failure() noexcept;
+  void clear_settings_navigation_failure() noexcept;
   void refresh_drivers_page();
   void begin_driver_handoff(
       azzs::application::driver_acquisition::DriverEntrypoint entrypoint);
@@ -80,6 +100,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   bool allow_window_close_{false};
   bool restoring_navigation_selection_{false};
   std::optional<azzs::application::PageId> displayed_page_;
+  azzs::ui::presentation::SettingsNavigationBridge
+      settings_navigation_bridge_;
 };
 
 }  // namespace winrt::Azzs::Ui::implementation
