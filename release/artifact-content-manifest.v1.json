@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "artifactId": "standard-x64-portable",
+      "edition": "standard",
+      "packageKind": "portable",
+      "architecture": "x64",
+      "bundledCatalogResources": [
+        {
+          "id": "software-catalog",
+          "relativePath": "catalog/software-catalog.toml",
+          "packagePath": "catalog/software-catalog.toml",
+          "bytes": 9351,
+          "sha256": "e1a58723287d44cb34908525407b006564705b42c9c0243bfdb7c6d46d5c3f11"
+        },
+        {
+          "id": "software-optimization-catalog",
+          "relativePath": "catalog/software-optimization-catalog.toml",
+          "packagePath": "catalog/software-optimization-catalog.toml",
+          "bytes": 18010,
+          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+        }
+      ],
+      "inputs": []
+    },
+    {
+      "artifactId": "rescue-x64-portable",
+      "edition": "rescue",
+      "packageKind": "portable",
+      "architecture": "x64",
+      "bundledCatalogResources": [
+        {
+          "id": "software-catalog",
+          "relativePath": "catalog/software-catalog.toml",
+          "packagePath": "catalog/software-catalog.toml",
+          "bytes": 9351,
+          "sha256": "e1a58723287d44cb34908525407b006564705b42c9c0243bfdb7c6d46d5c3f11"
+        },
+        {
+          "id": "software-optimization-catalog",
+          "relativePath": "catalog/software-optimization-catalog.toml",
+          "packagePath": "catalog/software-optimization-catalog.toml",
+          "bytes": 18010,
+          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+        }
+      ],
+      "inputs": [],
+      "rescueGate": {
+        "adrId": "ADR-0030",
+        "relativePath": "docs/adr/0030-controlled-rescue-tool-release-boundary.md",
+        "requiredStatus": "accepted"
+      }
+    },
+    {
+      "artifactId": "large-offline-x64-portable",
+      "edition": "large-offline",
+      "packageKind": "portable",
+      "architecture": "x64",
+      "bundledCatalogResources": [
+        {
+          "id": "software-catalog",
+          "relativePath": "catalog/software-catalog.toml",
+          "packagePath": "catalog/software-catalog.toml",
+          "bytes": 9351,
+          "sha256": "e1a58723287d44cb34908525407b006564705b42c9c0243bfdb7c6d46d5c3f11"
+        },
+        {
+          "id": "software-optimization-catalog",
+          "relativePath": "catalog/software-optimization-catalog.toml",
+          "packagePath": "catalog/software-optimization-catalog.toml",
+          "bytes": 18010,
+          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+        }
+      ],
+      "inputs": [],
+      "rescueGate": {
+        "adrId": "ADR-0030",
+        "relativePath": "docs/adr/0030-controlled-rescue-tool-release-boundary.md",
+        "requiredStatus": "accepted"
+      },
+      "releaseDirectoryGate": {
+        "relativePath": "catalog/software-catalog.toml",
+        "requiredReleaseState": "release"
+      }
+    }
+  ]
+}

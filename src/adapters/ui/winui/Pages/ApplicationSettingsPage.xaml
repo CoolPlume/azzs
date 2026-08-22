@@ -1,0 +1,262 @@
+<Page
+    x:Class="Azzs.Ui.Pages.ApplicationSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    AutomationProperties.AutomationId="AzzsApplicationSettingsPage">
+    <ScrollViewer Style="{StaticResource AzzsPageScrollViewerStyle}">
+        <Grid x:Name="PageRoot" Style="{StaticResource AzzsPageRootGridStyle}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="AdaptiveLayoutStates">
+                    <VisualState x:Name="NarrowLayout">
+                        <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="0" /></VisualState.StateTriggers>
+                        <VisualState.Setters><Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePaddingNarrow}" /></VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="WideLayout">
+                        <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="{StaticResource AzzsWideLayoutMinWidth}" /></VisualState.StateTriggers>
+                        <VisualState.Setters><Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePadding}" /></VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <StackPanel Grid.Row="0" Spacing="{StaticResource AzzsSpaceLarge}">
+                <TextBlock
+                    x:Uid="ApplicationSettingsPageTitle"
+                    HorizontalAlignment="Left"
+                    AutomationProperties.HeadingLevel="Level1"
+                    Style="{StaticResource AzzsPageTitleTextStyle}"
+                    TextWrapping="Wrap" />
+
+                <InfoBar
+                    x:Name="SettingsOperationStatus"
+                    AutomationProperties.AutomationId="AzzsApplicationSettingsOperationStatus"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Style="{StaticResource AzzsStatusBandStyle}" />
+
+                <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                    <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                        <TextBlock x:Uid="ApplicationViewTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                        <ToggleSwitch
+                            x:Name="AdvancedViewToggle"
+                            x:Uid="ApplicationAdvancedViewToggle"
+                            AutomationProperties.AutomationId="AzzsApplicationAdvancedView"
+                            Toggled="OnAdvancedViewToggled" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                    <StackPanel Spacing="{StaticResource AzzsSpaceStandard}">
+                        <TextBlock x:Uid="ApplicationUpdateTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                        <InfoBar
+                            x:Name="ApplicationUpdateStatus"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateStatus"
+                            AutomationProperties.LiveSetting="Polite"
+                            IsClosable="False"
+                            IsOpen="True"
+                            Style="{StaticResource AzzsStatusBandStyle}" />
+                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
+                            <Button
+                                x:Name="ApplicationUpdateCommandButton"
+                                AutomationProperties.AutomationId="AzzsApplicationUpdateCommand"
+                                Click="OnApplicationUpdateCommandClick"
+                                Style="{StaticResource AzzsPrimaryCommandButtonStyle}" />
+                            <Button
+                                x:Name="ApplicationUpdateRetryButton"
+                                AutomationProperties.AutomationId="AzzsApplicationUpdateRetry"
+                                Click="OnApplicationUpdateRetryClick"
+                                Style="{StaticResource AzzsSecondaryCommandButtonStyle}"
+                                Visibility="Collapsed" />
+                            <Button
+                                x:Name="ApplicationUpdateRestoreButton"
+                                AutomationProperties.AutomationId="AzzsApplicationUpdateRestore"
+                                Click="OnApplicationUpdateRestoreClick"
+                                Style="{StaticResource AzzsSecondaryCommandButtonStyle}"
+                                Visibility="Collapsed" />
+                            <Button
+                                x:Name="ApplicationUpdateManualButton"
+                                AutomationProperties.AutomationId="AzzsApplicationUpdateManual"
+                                Click="OnApplicationUpdateManualClick"
+                                Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                            <Button
+                                x:Name="ApplicationUpdateDiagnosticButton"
+                                AutomationProperties.AutomationId="AzzsApplicationUpdateDiagnostic"
+                                Click="OnApplicationUpdateDiagnosticClick"
+                                Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                    <StackPanel Spacing="{StaticResource AzzsSpaceStandard}">
+                        <TextBlock x:Uid="ApplicationSettingsCacheTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                        <ComboBox
+                            x:Name="CacheRetentionComboBox"
+                            x:Uid="ApplicationSettingsCacheRetention"
+                            AutomationProperties.AutomationId="AzzsApplicationCacheRetention"
+                            SelectionChanged="OnCacheRetentionSelectionChanged">
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionImmediate" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionSevenDays" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionThirtyDays" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionIndefinitely" />
+                        </ComboBox>
+                        <TextBlock
+                            x:Name="CacheLocationText"
+                            AutomationProperties.AutomationId="AzzsApplicationCacheLocation"
+                            Style="{StaticResource AzzsMetadataTextStyle}" />
+                        <Button
+                            x:Uid="ApplicationSettingsClearCacheButton"
+                            AutomationProperties.AutomationId="AzzsApplicationClearCache"
+                            Click="OnClearCacheClick"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource AzzsDangerCommandButtonStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                    <StackPanel Spacing="{StaticResource AzzsSpaceStandard}">
+                        <TextBlock x:Uid="ApplicationSettingsArchitectureTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                        <ComboBox
+                            x:Name="ArchitecturePreferenceComboBox"
+                            x:Uid="ApplicationSettingsArchitecturePreference"
+                            AutomationProperties.AutomationId="AzzsApplicationArchitecturePreference"
+                            SelectionChanged="OnArchitecturePreferenceSelectionChanged">
+                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePrompt" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsArchitectureAutoFallback" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePreferX64" />
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel x:Name="AdvancedSettingsPanel" Spacing="{StaticResource AzzsSpaceLarge}">
+                    <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                        <StackPanel Spacing="{StaticResource AzzsSpaceStandard}">
+                            <TextBlock x:Uid="ApplicationSettingsCatalogHeading" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                            <InfoBar
+                                x:Name="CatalogStatus"
+                                AutomationProperties.AutomationId="AzzsApplicationCatalogStatus"
+                                IsClosable="False"
+                                IsOpen="True"
+                                Style="{StaticResource AzzsInformationStatusBandStyle}" />
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="ApplicationSettingsSoftwareCatalogTitle" Style="{StaticResource AzzsBodyTextStyle}" />
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
+                                    <Button
+                                        x:Uid="ApplicationSettingsCatalogUpdateButton"
+                                        AutomationProperties.AutomationId="AzzsApplicationSoftwareCatalogUpdate"
+                                        Click="OnCatalogActionClick"
+                                        Tag="software-update"
+                                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                                    <Button
+                                        x:Name="SoftwareCatalogRollbackButton"
+                                        x:Uid="ApplicationSettingsCatalogRollbackButton"
+                                        AutomationProperties.AutomationId="AzzsApplicationSoftwareCatalogRollback"
+                                        Click="OnCatalogActionClick"
+                                        Tag="software-rollback"
+                                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="ApplicationSettingsSystemCatalogTitle" Style="{StaticResource AzzsBodyTextStyle}" />
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
+                                    <Button
+                                        x:Uid="ApplicationSettingsCatalogUpdateButton"
+                                        AutomationProperties.AutomationId="AzzsApplicationSystemCatalogUpdate"
+                                        Click="OnCatalogActionClick"
+                                        Tag="system-update"
+                                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                                    <Button
+                                        x:Name="SystemCatalogRollbackButton"
+                                        x:Uid="ApplicationSettingsCatalogRollbackButton"
+                                        AutomationProperties.AutomationId="AzzsApplicationSystemCatalogRollback"
+                                        Click="OnCatalogActionClick"
+                                        Tag="system-rollback"
+                                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="ApplicationSettingsOptimizationCatalogTitle" Style="{StaticResource AzzsBodyTextStyle}" />
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
+                                    <Button
+                                        x:Uid="ApplicationSettingsCatalogUpdateButton"
+                                        AutomationProperties.AutomationId="AzzsApplicationOptimizationCatalogUpdate"
+                                        Click="OnCatalogActionClick"
+                                        Tag="optimization-update"
+                                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                                    <Button
+                                        x:Name="OptimizationCatalogRollbackButton"
+                                        x:Uid="ApplicationSettingsCatalogRollbackButton"
+                                        AutomationProperties.AutomationId="AzzsApplicationOptimizationCatalogRollback"
+                                        Click="OnCatalogActionClick"
+                                        Tag="optimization-rollback"
+                                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                        <StackPanel Spacing="{StaticResource AzzsSpaceStandard}">
+                            <TextBlock x:Uid="ApplicationSettingsLogsTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                            <TextBlock x:Name="LogStatusText" Style="{StaticResource AzzsMetadataTextStyle}" />
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
+                                <Button
+                                    x:Uid="ApplicationSettingsExportDiagnosticButton"
+                                    AutomationProperties.AutomationId="AzzsApplicationExportDiagnostic"
+                                    Click="OnExportDiagnosticClick"
+                                    Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
+                                <Button
+                                    x:Uid="ApplicationSettingsClearLogsButton"
+                                    AutomationProperties.AutomationId="AzzsApplicationClearLogs"
+                                    Click="OnClearLogsClick"
+                                    Style="{StaticResource AzzsDangerCommandButtonStyle}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                        <StackPanel Spacing="{StaticResource AzzsSpaceStandard}">
+                            <TextBlock x:Uid="ApplicationSettingsRecoveryTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                            <TextBlock x:Name="RecoveryRecordSummaryText" Style="{StaticResource AzzsMetadataTextStyle}" />
+                            <ComboBox
+                                x:Name="RecoveryRecordComboBox"
+                                AutomationProperties.AutomationId="AzzsApplicationRecoveryRecord"
+                                SelectionChanged="OnRecoveryRecordSelectionChanged" />
+                            <TextBlock x:Name="RecoveryRecordDetailsText" Style="{StaticResource AzzsMetadataTextStyle}" />
+                            <Button
+                                x:Name="DeleteRecoveryRecordButton"
+                                x:Uid="ApplicationSettingsDeleteRecoveryButton"
+                                AutomationProperties.AutomationId="AzzsApplicationDeleteRecoveryRecord"
+                                Click="OnDeleteRecoveryRecordClick"
+                                HorizontalAlignment="Left"
+                                Style="{StaticResource AzzsDangerCommandButtonStyle}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                    <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                        <TextBlock x:Uid="ApplicationSettingsDebugTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                        <ToggleSwitch
+                            x:Name="DebugModeToggle"
+                            x:Uid="ApplicationSettingsDebugToggle"
+                            AutomationProperties.AutomationId="AzzsApplicationDebugMode"
+                            Toggled="OnDebugModeToggled" />
+                        <TextBlock x:Name="DebugModeStatusText" Style="{StaticResource AzzsDisabledReasonTextStyle}" />
+                        <Button
+                            x:Name="OpenCatalogEditorButton"
+                            x:Uid="ApplicationSettingsOpenCatalogEditor"
+                            AutomationProperties.AutomationId="AzzsApplicationOpenCatalogEditor"
+                            Click="OnOpenCatalogEditorClick"
+                            HorizontalAlignment="Left"
+                            Visibility="Collapsed">
+                            <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Edit" /><TextBlock x:Uid="ApplicationSettingsOpenCatalogEditorLabel" /></StackPanel></Button.Content>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Page>

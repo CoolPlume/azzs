@@ -1,0 +1,212 @@
+<Page
+    x:Class="Azzs.Ui.Pages.DriversPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    AutomationProperties.AutomationId="AzzsDriversPage">
+    <ScrollViewer Style="{StaticResource AzzsPageScrollViewerStyle}">
+        <Grid x:Name="PageRoot" Style="{StaticResource AzzsPageRootGridStyle}">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="AdaptiveLayoutStates">
+                    <VisualState x:Name="NarrowLayout">
+                        <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="0" /></VisualState.StateTriggers>
+                        <VisualState.Setters><Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePaddingNarrow}" /></VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="WideLayout">
+                        <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="{StaticResource AzzsWideLayoutMinWidth}" /></VisualState.StateTriggers>
+                        <VisualState.Setters><Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePadding}" /></VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid ColumnSpacing="{StaticResource AzzsSpaceStandard}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Uid="DriversPageTitle"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    AutomationProperties.HeadingLevel="Level1"
+                    Style="{StaticResource AzzsPageTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <Button
+                    x:Name="RefreshHardwareButton"
+                    Grid.Column="1"
+                    AutomationProperties.AutomationId="AzzsHardwareRefresh"
+                    Click="OnRefreshClicked"
+                    Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
+                        <SymbolIcon Symbol="Refresh" />
+                        <TextBlock x:Uid="DriversRefresh" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <InfoBar
+                x:Name="HardwareStatus"
+                Grid.Row="1"
+                AutomationProperties.AutomationId="AzzsHardwareStatus"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False"
+                Style="{StaticResource AzzsStatusBandStyle}" />
+            <Border
+                Grid.Row="2"
+                AutomationProperties.AutomationId="AzzsHardwareOverview"
+                Style="{StaticResource AzzsSummarySurfaceStyle}">
+                <Grid RowSpacing="{StaticResource AzzsSpaceMedium}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="HardwareCpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="CpuValue" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareCpu" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareGpuLabel" Grid.Row="1" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="GpuValue" Grid.Row="1" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareMotherboardLabel" Grid.Row="2" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="MotherboardValue" Grid.Row="2" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareNetworkLabel" Grid.Row="3" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="NetworkValue" Grid.Row="3" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareNetwork" Style="{StaticResource AzzsBodyTextStyle}" />
+                    <TextBlock x:Uid="HardwareOemLabel" Grid.Row="4" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="OemValue" Grid.Row="4" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareOem" Style="{StaticResource AzzsBodyTextStyle}" />
+                </Grid>
+            </Border>
+            <Border
+                Grid.Row="3"
+                x:Name="DriverHandoffSurface"
+                AutomationProperties.AutomationId="AzzsDriverHandoffState"
+                Style="{StaticResource AzzsSectionSurfaceStyle}"
+                Visibility="Collapsed">
+                <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                    <TextBlock x:Name="DriverHandoffHeadline" Style="{StaticResource AzzsSectionTitleTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="DriverHandoffDescription" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
+                    <Button
+                        x:Name="ExternalFlowReturnedButton"
+                        AutomationProperties.AutomationId="AzzsDriverExternalFlowReturned"
+                        Click="OnExternalFlowReturnedClicked"
+                        Style="{StaticResource AzzsPrimaryCommandButtonStyle}"
+                        Visibility="Collapsed">
+                        <TextBlock x:Uid="DriverExternalFlowReturnedButton" />
+                    </Button>
+                    <StackPanel
+                        x:Name="DriverResultActions"
+                        AutomationProperties.AutomationId="AzzsDriverResultActions"
+                        Spacing="{StaticResource AzzsSpaceSmall}"
+                        Visibility="Collapsed">
+                        <Button
+                            AutomationProperties.AutomationId="AzzsDriverResultCompleted"
+                            Click="OnDriverCompletedClicked"
+                            Style="{StaticResource AzzsPrimaryCommandButtonStyle}">
+                            <TextBlock x:Uid="DriverCompletedButton" />
+                        </Button>
+                        <Button
+                            AutomationProperties.AutomationId="AzzsDriverResultRestart"
+                            Click="OnDriverRestartRequiredClicked"
+                            Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                            <TextBlock x:Uid="DriverRestartRequiredButton" />
+                        </Button>
+                        <Button
+                            AutomationProperties.AutomationId="AzzsDriverResultSkip"
+                            Click="OnDriverSkipClicked"
+                            Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                            <TextBlock x:Uid="DriverSkipButton" />
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <InfoBar
+                x:Name="DriverRecommendation"
+                Grid.Row="4"
+                AutomationProperties.AutomationId="AzzsDriverRecommendation"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False"
+                Style="{StaticResource AzzsStatusBandStyle}" />
+            <Border
+                Grid.Row="5"
+                AutomationProperties.AutomationId="AzzsDriverAssistant"
+                Style="{StaticResource AzzsSectionSurfaceStyle}">
+                <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                    <TextBlock x:Uid="DriverAssistantTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                    <TextBlock x:Uid="DriverAssistantDescription" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="DriverAssistantStatus" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
+                    <Button
+                        x:Name="DriverAssistantActionButton"
+                        AutomationProperties.AutomationId="AzzsDriverAssistantAction"
+                        Click="OnDriverAssistantClicked"
+                        Style="{StaticResource AzzsPrimaryCommandButtonStyle}">
+                        <TextBlock x:Name="DriverAssistantActionText" />
+                    </Button>
+                </StackPanel>
+            </Border>
+            <Border
+                Grid.Row="6"
+                AutomationProperties.AutomationId="AzzsFixedDriverEntrypoints"
+                Style="{StaticResource AzzsSectionSurfaceStyle}">
+                <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                    <TextBlock x:Uid="FixedDriverEntrypointsTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                    <TextBlock x:Uid="FixedDriverEntrypointsDescription" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <Button x:Name="IntelDriverButton" AutomationProperties.AutomationId="AzzsIntelDriverEntrypoint" Click="OnIntelDriverClicked" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="DriverIntelButton" />
+                    </Button>
+                    <Button x:Name="NvidiaDriverButton" AutomationProperties.AutomationId="AzzsNvidiaDriverEntrypoint" Click="OnNvidiaDriverClicked" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="DriverNvidiaButton" />
+                    </Button>
+                    <Button x:Name="DellSupportButton" AutomationProperties.AutomationId="AzzsDellSupportEntrypoint" Click="OnDellSupportClicked" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="DriverDellButton" />
+                    </Button>
+                    <Button x:Name="HpSupportButton" AutomationProperties.AutomationId="AzzsHpSupportEntrypoint" Click="OnHpSupportClicked" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="DriverHpButton" />
+                    </Button>
+                    <Button x:Name="LenovoSupportButton" AutomationProperties.AutomationId="AzzsLenovoSupportEntrypoint" Click="OnLenovoSupportClicked" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="DriverLenovoButton" />
+                    </Button>
+                    <Button x:Name="AsusSupportButton" AutomationProperties.AutomationId="AzzsAsusSupportEntrypoint" Click="OnAsusSupportClicked" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="DriverAsusButton" />
+                    </Button>
+                </StackPanel>
+            </Border>
+            <Border
+                Grid.Row="7"
+                AutomationProperties.AutomationId="AzzsFixedRescueToolFolders"
+                Style="{StaticResource AzzsSectionSurfaceStyle}">
+                <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                    <TextBlock x:Uid="RescueToolFoldersTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                    <TextBlock x:Uid="RescueToolFoldersDescription" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="GenericNetworkDriverRescueDisplayName" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <Button
+                        x:Name="GenericNetworkDriverRescueButton"
+                        AutomationProperties.AutomationId="AzzsGenericNetworkDriverRescueFolder"
+                        Click="OnGenericNetworkDriverRescueClicked"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="GenericNetworkDriverRescueButton" />
+                    </Button>
+                    <TextBlock x:Uid="OfflineNetworkDiagnosticsRescueDisplayName" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <Button
+                        x:Name="OfflineNetworkDiagnosticsRescueButton"
+                        AutomationProperties.AutomationId="AzzsOfflineNetworkDiagnosticsRescueFolder"
+                        Click="OnOfflineNetworkDiagnosticsRescueClicked"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                        <TextBlock x:Uid="OfflineNetworkDiagnosticsRescueButton" />
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</Page>

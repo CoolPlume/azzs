@@ -1,7 +1,7 @@
 schema_version = 1
 catalog_id = "software"
 revision = 1
-release_state = "draft"
+release_state = "release"
 default_locale = "zh-CN"
 
 # 这是软件目录的权威维护文件，工作台直接读取并校验它。
@@ -56,10 +56,11 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = ["large_offline"]
 notice = ""
+install_profile = "qq-windows-v1"
 
 [[software.sources]]
 purpose = "primary"
-address = "https://im.qq.com/index/#/windows"
+address = "https://im.qq.com/pcqq"
 
 [[software]]
 id = "sogou-input"
@@ -80,102 +81,199 @@ address = "https://shurufa.sogou.com/windows"
 
 [[software]]
 id = "game-cheats-manager"
-enabled = false
+enabled = true
 name = "Game Cheats Manager"
 tier = "normal"
 category_id = "game-tools"
+branch = "GitHub stable release"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "使用前请了解安全软件、反作弊、联网游戏和账号方面的影响。"
+notice = "可能触发安全软件或反作弊机制；请勿用于联网游戏或账号环境。"
+install_profile = "game-cheats-manager-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://github.com/dyang886/Game-Cheats-Manager/releases"
 
 [[software]]
 id = "cheat-engine"
-enabled = false
+enabled = true
 name = "Cheat Engine"
 tier = "normal"
 category_id = "game-tools"
+branch = "Windows stable release"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "使用前请了解安全软件、反作弊、联网游戏和账号方面的影响。"
+notice = "可能触发安全软件或反作弊机制；请勿用于联网游戏或账号环境。"
+install_profile = "cheat-engine-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://www.cheatengine.org/downloads.php"
 
 [[software]]
 id = "office-tool-plus"
-enabled = false
+enabled = true
 name = "Office Tool Plus"
 tier = "normal"
 category_id = "office-tools"
+branch = "Windows stable release"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "请自行确认 Office 版本、账户和许可条件。"
+notice = "请自行确认 Office 版本、账户和商业许可责任；当前候选资源未经项目验证。"
+install_profile = "office-tool-plus-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://otp.landian.vip/en-us/download.html"
 
 [[software]]
 id = "internet-download-manager"
-enabled = false
+enabled = true
 name = "Internet Download Manager"
 tier = "normal"
 category_id = "download-tools"
+branch = "Windows stable trial"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "请自行确认商业许可条件；现有候选安装包未经项目验证。"
+notice = "请自行确认商业许可责任；当前候选资源未经项目验证。"
+install_profile = "internet-download-manager-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://www.internetdownloadmanager.com/download.html"
 
 [[software]]
 id = "the-geometers-sketchpad"
-enabled = false
+enabled = true
 name = "几何画板"
 tier = "normal"
 category_id = "education-tools"
+branch = "Version 5"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "请自行确认商业许可条件；现有候选安装包未经项目验证。"
+notice = "请自行确认商业许可责任；当前候选资源未经项目验证。"
+install_profile = "the-geometers-sketchpad-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://www.dynamicgeometry.com/General_Resources/Sketchpad_About.html"
 
 [[software]]
 id = "java-runtime"
-enabled = false
+enabled = true
 name = "Java"
 tier = "normal"
 category_id = "runtime"
+branch = "Oracle JDK 25 LTS"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "精确发行版、来源和安装档案待补充。"
+notice = "当前目录只声明 Oracle JDK 25 LTS 分支；安装资源与受控执行能力仍待发布级验证。"
+install_profile = "java-runtime-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://www.oracle.com/java/technologies/downloads/"
 
 [[software]]
 id = "dotnet-runtime"
-enabled = false
+enabled = true
 name = ".NET"
 tier = "normal"
 category_id = "runtime"
+branch = ".NET 10 LTS"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "精确发行版、来源和安装档案待补充。"
+notice = "当前目录声明 .NET 10 LTS；安装资源与受控执行能力仍待发布级验证。"
+install_profile = "dotnet-runtime-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://dotnet.microsoft.com/download/dotnet"
 
 [[software]]
 id = "directx-runtime"
-enabled = false
+enabled = true
 name = "DirectX"
 tier = "normal"
 category_id = "runtime"
-version_policy = "latest_stable"
+branch = "End-User Runtime Web Installer"
+version_policy = "fixed"
+fixed_version = "9.29.1974.1"
 dependencies = []
 bundled_editions = []
-notice = "精确发行版、来源和安装档案待补充。"
+notice = "当前目录仅声明官方 Web Installer；安装资源与受控执行能力仍待发布级验证。"
+install_profile = "directx-runtime-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://www.microsoft.com/en-us/download/details.aspx?id=35"
 
 [[software]]
 id = "powershell-7"
-enabled = false
+enabled = true
 name = "PowerShell 7"
 tier = "normal"
 category_id = "runtime"
+branch = "Windows stable release"
 version_policy = "latest_stable"
 dependencies = []
 bundled_editions = []
-notice = "精确发行版、来源和安装档案待补充。"
+notice = "当前目录声明 PowerShell 7 Windows 稳定发行分支；受控执行能力仍待发布级验证。"
+install_profile = "powershell-7-windows-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://github.com/PowerShell/PowerShell/releases"
+
+[[drivers]]
+id = "amd-auto-detect-and-install"
+enabled = true
+name = "AMD 自动检测与安装工具"
+entry_type = "assistant"
+hardware_kinds = ["gpu"]
+branch = "Radeon / Ryzen Auto-Detect"
+version_policy = "latest_stable"
+notice = "仅交接 AMD 官方工具；工作台不匹配、下载或安装具体驱动包。"
+
+[[drivers.sources]]
+purpose = "primary"
+address = "https://www.amd.com/en/support/download/drivers.html"
+
+[[drivers]]
+id = "intel-gpu-driver-page"
+enabled = true
+name = "Intel 显卡驱动页面"
+entry_type = "vendor_page"
+hardware_kinds = ["gpu"]
+branch = "Intel Graphics Windows drivers"
+version_policy = "latest_stable"
+notice = "仅交接 Intel 官方驱动页面；工作台不匹配、下载或安装具体驱动包。"
+
+[[drivers.sources]]
+purpose = "primary"
+address = "https://www.intel.com/content/www/us/en/download-center/home.html"
+
+[[drivers]]
+id = "nvidia-gpu-driver-page"
+enabled = true
+name = "NVIDIA 显卡驱动页面"
+entry_type = "vendor_page"
+hardware_kinds = ["gpu"]
+branch = "NVIDIA Windows GPU drivers"
+version_policy = "latest_stable"
+notice = "仅交接 NVIDIA 官方驱动页面；工作台不匹配、下载或安装具体驱动包。"
+
+[[drivers.sources]]
+purpose = "primary"
+address = "https://www.nvidia.com/Download/index.aspx"
 
 # 新增软件时复制下面的注释模板。一个启用的软件必须恰好有一个 primary 来源。
 # [[software]]

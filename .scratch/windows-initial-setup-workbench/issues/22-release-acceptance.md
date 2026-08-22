@@ -2,7 +2,12 @@
 
 Type: task  
 Status: ready-for-human  
+Resolution: open
 Blocked by: 21
+Owner: issue-22
+Consumers: 34, 35
+Verification: 人工 Windows 验证记录包含候选构建、发行形态、系统 build、架构、设备环境、原始日志、结果和限制。
+Evidence freshness: 仅证明记录中的精确候选和环境；候选、目录、Windows build、架构或相关能力变化后旧证据不得外推。
 
 ## Goal
 

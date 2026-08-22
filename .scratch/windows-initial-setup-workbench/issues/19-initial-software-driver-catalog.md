@@ -1,19 +1,25 @@
 # 补充首版软件与驱动目录内容
 
 Type: task  
-Status: needs-info  
+Status: ready-for-agent  
+Resolution: completed
 Blocked by: 03
+Owner: issue-19
+Claimed by: Codex issue-19 task
+Consumers: 21, 22, 29
+Verification: 正式软件与驱动目录的模式、身份、依赖、来源解析、安装档案和发布级能力校验。
+Evidence freshness: 绑定目录修订、解析能力、上游发行分支与安装器版本和观察时间；每个候选目录构建与发行候选重验。
 
 ## Goal
 
 补齐已经确认范围的首版正式软件与驱动目录内容。
 
-## Information Needed
+## Implementation Inputs
 
-- 维护者在[软件目录维护文件](../../../catalog/software-catalog.toml)中补充基础软件和普通软件清单，并按[维护指南](../../../docs/maintainers/software-catalog-input.md)填写。
-- 各软件的依赖、发行分支、来源用途、稳定版本、架构包和静默安装支持情况；地址技术类型由工作台自动识别，不向维护者索取。
-- 各软件的联网取得、项目离线包和超大离线版内置状态。
-- 驱动助手、固定厂商页面及其硬件关联清单。
+- 实施者在[软件目录维护文件](../../../catalog/software-catalog.toml)中补齐已经确认范围的基础软件和普通软件，并遵循[维护指南](../../../docs/maintainers/software-catalog-input.md)；不得把未观察到的技术事实留给维护者猜测。
+- 逐项采集并记录依赖、发行分支、来源用途、当前稳定版本、架构包和静默安装支持情况；地址技术类型由工作台受控解析能力识别，不作为人工输入字段。
+- 逐项确定联网取得、项目离线包和超大离线版内置状态，并与具体制品构建清单保持可追踪关联。
+- 补齐驱动助手、固定厂商页面及其硬件关联清单；外部页面事实须带观察时间。
 
 ## Confirmed Content
 
@@ -54,3 +60,6 @@ Blocked by: 03
 ## Comments
 
 - 2026-08-10：维护者确认 Q2/Q3：救援伴随工具只有成为项目受控制品并满足发行检查后才能随包和启动，否则走外部交接；U 盘厂商驱动只做外部交接。Q4 不设项目级信任门槛，Q9 允许当前及以后候选资源随包和公开发布；来源、许可、身份和再分发研究保留为事实记录。当前目录仍是 `release_state = "draft"`，十一项首版范围的软件、安装档案和驱动入口尚未完整填充，不把现有 TOML 草稿视为首版正式清单。
+- 2026-08-10：范围与准入决定均已闭合；剩余目录填充、外部事实采集和受控安装档案是本事项的实施交付物，不再向维护者追问已确认内容。本事项改为 `ready-for-agent`，`release_state = "draft"` 继续作为未达发布门禁的准确事实。
+- 2026-08-12：Resolution completed。feature head `73734268aa26810f9c386430006a33019c67efff` 经 PR #9（https://github.com/CoolPlume/azzs/pull/9）合入；该 feature 的 Windows read-only validation run `31564358989` 在 x64 Release 与 ARM64 Release 均成功。PR 已 Squash 到 `codex/v1-integration`，integration squash 为 `590c35dd5e50daf6e32b46654db0b325f3be2647`；后续最终 integration run `31573791901` 在 `194b3a3948e3fdb77d52625013cd7258f04b80b0` 上的 x64/ARM64 均成功，host guardrails 为 15/15 通过。
+- 未验证边界：上述是 GitHub 自动 CI 和 host guardrails 证据，不是 Windows 实机通过；未执行真实 Windows UI、UAC 或设备验证。未获完整自动证据的验收项保持未勾选。

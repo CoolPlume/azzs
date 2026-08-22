@@ -1,0 +1,155 @@
+#include "azzs/application/workbench.hpp"
+
+#include <stop_token>
+#include <utility>
+
+#include "azzs/application/workbench_services.hpp"
+
+#ifndef AZZS_APPLICATION_VERSION
+#error "AZZS_APPLICATION_VERSION must be supplied by the authoritative product version source"
+#endif
+#ifndef AZZS_APPLICATION_RELEASE_CHANNEL
+#error "AZZS_APPLICATION_RELEASE_CHANNEL must be supplied by the authoritative product version source"
+#endif
+
+namespace azzs::application {
+namespace {
+
+constexpr auto kApplicationReleaseChannel =
+    parse_application_release_channel(AZZS_APPLICATION_RELEASE_CHANNEL);
+static_assert(kApplicationReleaseChannel.has_value(),
+              "AZZS_APPLICATION_RELEASE_CHANNEL must be stable or prerelease");
+
+}  // namespace
+
+Workbench::Workbench(PlatformInfo const& platform_info)
+    : Workbench(platform_info, {}) {}
+
+Workbench::Workbench(PlatformInfo const& platform_info,
+                     std::shared_ptr<WorkbenchServices> services)
+    : services_(std::move(services)) {
+  domain::MinimumVersionPolicy const policy{kWindows10Version22H2};
+  auto const observed_version = platform_info.windows_version();
+
+  snapshot_ = WorkbenchSnapshot{
+      .current_page = PageId::overview,
+      .minimum_version_risk = policy.assess(observed_version),
+      .observed_windows_version = observed_version,
+      .target_windows_version = policy.target(),
+      .system_settings =
+          services_ ? services_->system_settings_apply().snapshot()
+                    : SystemSettingsApplySnapshot{},
+  };
+  if (services_) {
+    snapshot_.update = services_->application_updates().snapshot();
+    snapshot_.driver_acquisition = services_->driver_acquisition().snapshot();
+  } else {
+    snapshot_.update.current = ApplicationBuildIdentity{
+        .version = AZZS_APPLICATION_VERSION,
+        .channel = *kApplicationReleaseChannel,
+        .architecture = platform_info.windows_architecture(),
+        .edition = ApplicationReleaseEdition::standard,
+        .form = ApplicationReleaseForm::portable,
+    };
+    snapshot_.update.detail =
+        "application update service is not available in this host";
+  }
+}
+
+void Workbench::navigate(PageId page) noexcept {
+  snapshot_.current_page = page;
+}
+
+UpdateCommandResult Workbench::handle_update(UpdateUserIntent intent) {
+  if (!services_) {
+    snapshot_.update.detail =
+        "application update service is not available in this host";
+    return {.code = UpdateCommandCode::rejected,
+            .snapshot = snapshot_.update,
+            .detail = snapshot_.update.detail};
+  }
+  auto result = services_->application_updates().handle(intent);
+  snapshot_.update = result.snapshot;
+  return result;
+}
+
+HardwareOverviewSnapshot Workbench::observe_hardware(
+    HardwareOverviewTrigger trigger, std::stop_token cancellation) {
+  if (!services_) {
+    snapshot_.hardware_overview = HardwareOverviewSnapshot{
+        .state = HardwareOverviewState::unrecognized,
+        .error = "hardware overview service is unavailable",
+        .stale = false,
+    };
+    return snapshot_.hardware_overview;
+  }
+  snapshot_.hardware_overview =
+      services_->hardware_overview().observe(trigger, cancellation);
+  return snapshot_.hardware_overview;
+}
+
+HardwareOverviewSnapshot Workbench::refresh_hardware(
+    std::stop_token cancellation) {
+  return observe_hardware(HardwareOverviewTrigger::user_refresh,
+                          cancellation);
+}
+
+driver_acquisition::DriverActionResult Workbench::begin_driver_handoff(
+    driver_acquisition::DriverEntrypoint entrypoint) {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().begin_external_handoff(entrypoint);
+  snapshot_.driver_acquisition = result.snapshot;
+  return result;
+}
+
+driver_acquisition::DriverActionResult Workbench::begin_rescue_folder_handoff(
+    driver_acquisition::RescueToolTarget target) {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().begin_external_rescue_handoff(target);
+  snapshot_.driver_acquisition = result.snapshot;
+  return result;
+}
+
+driver_acquisition::DriverActionResult Workbench::driver_flow_returned() {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().external_flow_returned();
+  snapshot_.driver_acquisition = result.snapshot;
+  return result;
+}
+
+driver_acquisition::DriverActionResult Workbench::decide_driver_handoff(
+    driver_acquisition::DriverHandoffDecision decision) {
+  if (!services_) {
+    return {.code = driver_acquisition::DriverActionCode::not_restored,
+            .snapshot = snapshot_.driver_acquisition,
+            .message = "driver acquisition service is not available in this host"};
+  }
+  auto result = services_->driver_acquisition().decide(decision);
+  snapshot_.driver_acquisition = result.snapshot;
+  if (result.refreshed_hardware.has_value()) {
+    snapshot_.hardware_overview = *result.refreshed_hardware;
+  }
+  return result;
+}
+
+WorkbenchSnapshot Workbench::snapshot() const {
+  return snapshot_;
+}
+
+std::shared_ptr<WorkbenchServices> Workbench::services() const noexcept {
+  return services_;
+}
+
+}  // namespace azzs::application

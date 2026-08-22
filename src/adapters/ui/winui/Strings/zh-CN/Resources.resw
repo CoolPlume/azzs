@@ -1,0 +1,543 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="MainWindowTitle" xml:space="preserve"><value>Windows 初装工作台</value></data>
+  <data name="AppStartupFailureTitle" xml:space="preserve"><value>无法进入工作台</value></data>
+  <data name="AppStartupFailureResources" xml:space="preserve"><value>界面资源初始化失败。请重新启动工作台；如果问题持续，请收集诊断资料。</value></data>
+  <data name="AppStartupFailureWindow" xml:space="preserve"><value>工作台未能创建启动窗口。请重新启动工作台；如果问题持续，请收集诊断资料。</value></data>
+  <data name="AppStartupFailureUnexpected" xml:space="preserve"><value>工作台启动失败。请重新启动工作台；如果问题持续，请收集诊断资料。</value></data>
+  <data name="NavigationOverview.Content" xml:space="preserve"><value>概览</value></data>
+  <data name="NavigationDrivers.Content" xml:space="preserve"><value>驱动</value></data>
+  <data name="NavigationSystemOptimization.Content" xml:space="preserve"><value>系统优化</value></data>
+  <data name="NavigationSoftwareInstallation.Content" xml:space="preserve"><value>软件安装</value></data>
+  <data name="NavigationSoftwareOptimization.Content" xml:space="preserve"><value>软件优化</value></data>
+  <data name="NavigationHistoryAndLogs.Content" xml:space="preserve"><value>历史与日志</value></data>
+  <data name="NavigationApplicationSettings.Content" xml:space="preserve"><value>应用设置</value></data>
+  <data name="OverviewPageTitle.Text" xml:space="preserve"><value>概览</value></data>
+  <data name="DriversPageTitle.Text" xml:space="preserve"><value>驱动</value></data>
+  <data name="DriversRefresh.Text" xml:space="preserve"><value>刷新硬件</value></data>
+  <data name="HardwareUnrecognizedValue" xml:space="preserve"><value>未识别</value></data>
+  <data name="HardwareStatusTitle" xml:space="preserve"><value>硬件未识别</value></data>
+  <data name="HardwareStatusMessage" xml:space="preserve"><value>本次硬件检测没有生成可用概览。</value></data>
+  <data name="HardwareCpuLabel.Text" xml:space="preserve"><value>CPU</value></data>
+  <data name="HardwareGpuLabel.Text" xml:space="preserve"><value>显卡</value></data>
+  <data name="HardwareMotherboardLabel.Text" xml:space="preserve"><value>主板</value></data>
+  <data name="HardwareNetworkLabel.Text" xml:space="preserve"><value>网卡</value></data>
+  <data name="HardwareOemLabel.Text" xml:space="preserve"><value>整机 OEM 型号</value></data>
+  <data name="FixedDriverEntrypointsTitle.Text" xml:space="preserve"><value>固定驱动入口</value></data>
+  <data name="FixedDriverEntrypointsDescription.Text" xml:space="preserve"><value>这些入口只会交接到官方页面；硬件未识别时仍可使用。</value></data>
+  <data name="RescueToolFoldersTitle.Text" xml:space="preserve"><value>离线救援工具目录</value></data>
+  <data name="RescueToolFoldersDescription.Text" xml:space="preserve"><value>只打开工作台旁的固定目录；完成外部操作后，请返回记录实际结果。</value></data>
+  <data name="GenericNetworkDriverRescueDisplayName.Text" xml:space="preserve"><value>通用网卡驱动救援工具</value></data>
+  <data name="GenericNetworkDriverRescueButton.Text" xml:space="preserve"><value>打开通用网卡驱动工具目录</value></data>
+  <data name="OfflineNetworkDiagnosticsRescueDisplayName.Text" xml:space="preserve"><value>断网诊断与修复工具</value></data>
+  <data name="OfflineNetworkDiagnosticsRescueButton.Text" xml:space="preserve"><value>打开断网诊断工具目录</value></data>
+  <data name="DriverAssistantTitle.Text" xml:space="preserve"><value>精选驱动助手</value></data>
+  <data name="DriverAssistantDescription.Text" xml:space="preserve"><value>AMD Software 由其官方页面或本机已安装程序接手。工作台不下载、匹配或安装驱动包。</value></data>
+  <data name="DriverAssistantInstallButton" xml:space="preserve"><value>打开 AMD Software 安装页面</value></data>
+  <data name="DriverAssistantLaunchButton" xml:space="preserve"><value>启动 AMD Software</value></data>
+  <data name="DriverAssistantNotInstalled" xml:space="preserve"><value>未检测到本机 AMD Software；可打开其官方安装页面。</value></data>
+  <data name="DriverAssistantInstalled" xml:space="preserve"><value>已检测到本机 AMD Software；可将流程交接给该程序。</value></data>
+  <data name="DriverRecommendationTitle" xml:space="preserve"><value>基于当前硬件的推荐入口</value></data>
+  <data name="DriverEntrypointAmd" xml:space="preserve"><value>AMD Software</value></data>
+  <data name="DriverEntrypointIntel" xml:space="preserve"><value>Intel 驱动助手</value></data>
+  <data name="DriverEntrypointNvidia" xml:space="preserve"><value>NVIDIA 驱动页</value></data>
+  <data name="DriverEntrypointDell" xml:space="preserve"><value>Dell 支持</value></data>
+  <data name="DriverEntrypointHp" xml:space="preserve"><value>HP 支持</value></data>
+  <data name="DriverEntrypointLenovo" xml:space="preserve"><value>Lenovo 支持</value></data>
+  <data name="DriverEntrypointAsus" xml:space="preserve"><value>ASUS 支持</value></data>
+  <data name="DriverIntelButton.Text" xml:space="preserve"><value>打开 Intel 驱动助手页面</value></data>
+  <data name="DriverNvidiaButton.Text" xml:space="preserve"><value>打开 NVIDIA 驱动页面</value></data>
+  <data name="DriverDellButton.Text" xml:space="preserve"><value>打开 Dell 支持页面</value></data>
+  <data name="DriverHpButton.Text" xml:space="preserve"><value>打开 HP 支持页面</value></data>
+  <data name="DriverLenovoButton.Text" xml:space="preserve"><value>打开 Lenovo 支持页面</value></data>
+  <data name="DriverAsusButton.Text" xml:space="preserve"><value>打开 ASUS 支持页面</value></data>
+  <data name="DriverHandoffInProgressTitle" xml:space="preserve"><value>驱动交接中</value></data>
+  <data name="DriverHandoffInProgressBody" xml:space="preserve"><value>外部程序或官方页面正在接手。返回后请由你选择结果，工作台不会自动判定驱动已完成。</value></data>
+  <data name="RescueHandoffInProgressTitle" xml:space="preserve"><value>外部救援工具交接中</value></data>
+  <data name="RescueHandoffInProgressBody" xml:space="preserve"><value>已打开固定目录。工作台不会扫描、启动或验证其中的工具；返回后请由你选择结果。</value></data>
+  <data name="DriverExternalFlowReturnedButton.Text" xml:space="preserve"><value>外部工具已返回</value></data>
+  <data name="DriverHandoffDecisionTitle" xml:space="preserve"><value>记录外部流程结果</value></data>
+  <data name="DriverHandoffDecisionBody" xml:space="preserve"><value>请选择实际结果。选择“已完成”只会重新观测硬件和网络，不会验证或宣称驱动安装成功。</value></data>
+  <data name="DriverCompletedButton.Text" xml:space="preserve"><value>已完成</value></data>
+  <data name="DriverRestartRequiredButton.Text" xml:space="preserve"><value>需要重启</value></data>
+  <data name="DriverSkipButton.Text" xml:space="preserve"><value>暂时跳过</value></data>
+  <data name="DriverHandoffRestartTitle" xml:space="preserve"><value>等待 Windows 重启</value></data>
+  <data name="DriverHandoffRestartBody" xml:space="preserve"><value>已建立重启屏障。重启并完成只读恢复后，仍需要你明确选择结果。</value></data>
+  <data name="DriverHandoffUnavailableTitle" xml:space="preserve"><value>驱动交接状态不可写</value></data>
+  <data name="DriverHandoffUnavailableBody" xml:space="preserve"><value>无法安全保存外部交接进度，因此不会启动新的外部流程。</value></data>
+  <data name="DriverHandoffLaunchFailedTitle" xml:space="preserve"><value>外部驱动入口未启动</value></data>
+  <data name="DriverObservationTitle" xml:space="preserve"><value>已记录外部返回后的观测</value></data>
+  <data name="DriverObservationNetworkAvailableBody" xml:space="preserve"><value>已重新读取硬件和网络状态；网络当前可用。该记录不表示驱动已验证成功。</value></data>
+  <data name="DriverObservationNetworkUnavailableBody" xml:space="preserve"><value>已重新读取硬件和网络状态；网络当前不可用。该记录不表示驱动已验证成功。</value></data>
+  <data name="SystemOptimizationPageTitle.Text" xml:space="preserve"><value>系统优化</value></data>
+  <data name="SystemSettingsRecommendedTitle.Text" xml:space="preserve"><value>推荐总体优化</value></data>
+  <data name="SystemSettingsSelectRecommendedButtonText.Text" xml:space="preserve"><value>选择推荐项</value></data>
+  <data name="SystemSettingsApplySelectedButtonText.Text" xml:space="preserve"><value>应用所选优化</value></data>
+  <data name="SystemSettingsRestoreWindows11DefaultButtonText" xml:space="preserve"><value>恢复 Windows 11 默认</value></data>
+  <data name="SystemSettingsRestartExplorerButtonText.Text" xml:space="preserve"><value>立即重启资源管理器</value></data>
+  <data name="SystemSettingsRestartExplorerNotice.Text" xml:space="preserve"><value>任务栏和已打开的资源管理器窗口会短暂关闭。</value></data>
+  <data name="SystemSettingsUnavailableSummary" xml:space="preserve"><value>当前没有可执行的系统设置目录。</value></data>
+  <data name="SystemSettingsNoPlanSummary" xml:space="preserve"><value>推荐总体优化与单项设置使用同一选择、执行记录和恢复记录。</value></data>
+  <data name="SystemSettingsSelectionName" xml:space="preserve"><value>选择系统优化：{name}</value></data>
+  <data name="SystemSettingsAlreadyEffective" xml:space="preserve"><value>已生效</value></data>
+  <data name="SystemSettingsWaitingExplorerRestart" xml:space="preserve"><value>等待资源管理器重启</value></data>
+  <data name="SystemSettingsItemsName" xml:space="preserve"><value>系统优化项，共 {count} 项</value></data>
+  <data name="SystemSettingsWindowsVersion" xml:space="preserve"><value>Windows {generation} {year}H{half}</value></data>
+  <data name="SystemSettingsKnownRange" xml:space="preserve"><value>已知适用范围：{range}</value></data>
+  <data name="SystemSettingsMinimumRange" xml:space="preserve"><value>已知适用范围：不早于 {version}</value></data>
+  <data name="SystemSettingsMaximumRange" xml:space="preserve"><value>已知适用范围：不晚于 {version}</value></data>
+  <data name="SystemSettingsUnknownRange" xml:space="preserve"><value>已知适用范围：未声明</value></data>
+  <data name="SystemSettingsExplorerRestartRequired" xml:space="preserve"><value>需要重启资源管理器后验证。</value></data>
+  <data name="SystemSettingsWindowsRestartRequired" xml:space="preserve"><value>需要重启 Windows 后验证。</value></data>
+  <data name="SystemSettingsNoRestartRequired" xml:space="preserve"><value>不需要重启。</value></data>
+  <data name="SystemSettingsRecoveryAvailable" xml:space="preserve"><value>支持依据已保存原值恢复。</value></data>
+  <data name="SystemSettingsRecoveryUnavailable" xml:space="preserve"><value>未声明可恢复方式。</value></data>
+  <data name="SystemSettingsForceAttemptStandardViewNotice" xml:space="preserve"><value>可能不适用。标准视图不会执行此项；具备恢复方式时可在高级视图中确认后仍然尝试。</value></data>
+  <data name="SystemSettingsForceAttemptButtonText" xml:space="preserve"><value>仍然尝试</value></data>
+  <data name="SystemSettingsForceAttemptDialogTitle" xml:space="preserve"><value>确认仍然尝试</value></data>
+  <data name="SystemSettingsForceAttemptDialogBody" xml:space="preserve"><value>“{name}”超出已知适用范围，可能无效或改变未知设置。工作台会保留恢复记录，以便按记录撤销。是否仍然尝试？</value></data>
+  <data name="SystemSettingsForceAttemptDialogPrimaryButtonText" xml:space="preserve"><value>仍然尝试</value></data>
+  <data name="SystemSettingsForceAttemptDialogCloseButtonText" xml:space="preserve"><value>取消</value></data>
+  <data name="SystemSettingsSource" xml:space="preserve"><value>说明来源：{source}</value></data>
+  <data name="SystemSettingsRecoveryTitle.Text" xml:space="preserve"><value>恢复记录</value></data>
+  <data name="SystemSettingsUndoButtonText" xml:space="preserve"><value>撤销</value></data>
+  <data name="SystemSettingsDeleteRecoveryButtonText" xml:space="preserve"><value>删除恢复记录</value></data>
+  <data name="SystemSettingsConfirmDeleteRecoveryButtonText" xml:space="preserve"><value>确认删除恢复记录</value></data>
+  <data name="SystemSettingsUndoWaitingExplorerRestart" xml:space="preserve"><value>撤销后等待资源管理器重启</value></data>
+  <data name="SystemSettingsRecoveryRestored" xml:space="preserve"><value>已恢复保存的原值</value></data>
+  <data name="SystemSettingsRecoveryRestoreFailed" xml:space="preserve"><value>恢复失败，可重试</value></data>
+  <data name="SystemSettingsRecoveryPending" xml:space="preserve"><value>正在保存或恢复，暂时不能删除</value></data>
+  <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
+  <data name="SoftwareInstallationCreateBatch.Content" xml:space="preserve"><value>创建安装批次</value></data>
+  <data name="SoftwareInstallationBasicTitle.Text" xml:space="preserve"><value>基础软件</value></data>
+  <data name="SoftwareInstallationNormalTitle.Text" xml:space="preserve"><value>普通软件</value></data>
+  <data name="SoftwareInstallationCatalogStatusTitle" xml:space="preserve"><value>软件安装模块</value></data>
+  <data name="SoftwareInstallationNoCurrentCatalog" xml:space="preserve"><value>当前没有可用的软件目录，软件安装暂不可用。</value></data>
+  <data name="SoftwareInstallationUnavailableReason" xml:space="preserve"><value>该软件当前不可用。</value></data>
+  <data name="SoftwareInstallationSelectionRejected" xml:space="preserve"><value>软件选择未能应用，请检查当前目录和项目状态。</value></data>
+  <data name="SoftwareInstallationBatchCreated" xml:space="preserve"><value>安装批次已创建，尚未开始执行。</value></data>
+  <data name="SoftwareInstallationBatchCreateFailed" xml:space="preserve"><value>安装批次创建失败。</value></data>
+  <data name="InstallationBatchStatusAccessibleName" xml:space="preserve"><value>安装批次进度</value></data>
+  <data name="InstallationBatchStatusTitle" xml:space="preserve"><value>安装批次进度</value></data>
+  <data name="InstallationBatchNoActiveBody" xml:space="preserve"><value>当前没有正在处理的安装批次。</value></data>
+  <data name="InstallationBatchReadOnlyBody" xml:space="preserve"><value>安装批次状态暂时不可写入，请先处理恢复或存储问题。</value></data>
+  <data name="InstallationBatchProgressPrefix" xml:space="preserve"><value>已处理</value></data>
+  <data name="InstallationBatchRunningBody" xml:space="preserve"><value>批次正在按顺序处理软件。</value></data>
+  <data name="InstallationBatchDownloadPausedBody" xml:space="preserve"><value>当前下载已暂停，等待继续下载或停止批次。</value></data>
+  <data name="InstallationBatchStoppingBody" xml:space="preserve"><value>已请求停止批次，当前安装程序可以正常结束。</value></data>
+  <data name="InstallationBatchAwaitingUserBody" xml:space="preserve"><value>当前项目需要用户处理，后续软件不会自动开始。</value></data>
+  <data name="InstallationBatchWaitingRestartBody" xml:space="preserve"><value>当前项目等待 Windows 重启后验证。</value></data>
+  <data name="InstallationBatchClosingBody" xml:space="preserve"><value>工作台正在保存批次状态，关闭后不会启动后续软件。</value></data>
+  <data name="InstallationBatchStoppedBody" xml:space="preserve"><value>批次已停止；已完成的软件保持不变，未完成项目可以单独重试。</value></data>
+  <data name="InstallationBatchCompletedBody" xml:space="preserve"><value>批次已完成。</value></data>
+  <data name="InstallationBatchRecoveryBody" xml:space="preserve"><value>重新打开后先验证已有安装结果，再由用户明确继续或重试。</value></data>
+  <data name="InstallationBatchFailedClosedBody" xml:space="preserve"><value>批次状态存在未确认结果，已停止自动继续。</value></data>
+  <data name="InstallationBatchPauseDownloadCommand" xml:space="preserve"><value>暂停下载</value></data>
+  <data name="InstallationBatchResumeDownloadCommand" xml:space="preserve"><value>继续下载</value></data>
+  <data name="InstallationBatchStopCommand" xml:space="preserve"><value>停止批次</value></data>
+  <data name="InstallationBatchRequestForceTerminationCommand" xml:space="preserve"><value>强制终止安装程序</value></data>
+  <data name="InstallationBatchForceTerminationRiskBody" xml:space="preserve"><value>强制终止可能留下半安装状态。仅在确认当前安装程序无法正常结束时继续。</value></data>
+  <data name="InstallationBatchConfirmForceTerminationCommand" xml:space="preserve"><value>确认强制终止</value></data>
+  <data name="InstallationBatchCancelForceTerminationCommand" xml:space="preserve"><value>取消</value></data>
+  <data name="InstallationBatchConfirmCurrentCompleteCommand" xml:space="preserve"><value>确认已完成</value></data>
+  <data name="InstallationBatchRecoverReadOnlyCommand" xml:space="preserve"><value>重新检测</value></data>
+  <data name="InstallationBatchContinueAfterRecoveryCommand" xml:space="preserve"><value>继续批次</value></data>
+  <data name="SoftwareSelectionStatusAccessibleName" xml:space="preserve"><value>软件选择状态</value></data>
+  <data name="SoftwareSelectionAvailableTitle" xml:space="preserve"><value>软件选择</value></data>
+  <data name="SoftwareSelectionAvailableBodyPrefix" xml:space="preserve"><value>已保留 </value></data>
+  <data name="SoftwareSelectionAvailableBodySuffix" xml:space="preserve"><value> 个软件选择。受目录变化影响的项目需要重新确认。</value></data>
+  <data name="SoftwareSelectionAbsentCatalogTitle" xml:space="preserve"><value>当前有效目录尚未加载</value></data>
+  <data name="SoftwareSelectionAbsentCatalogBody" xml:space="preserve"><value>尚未加载当前有效目录。软件选择、来源解析和外部交接均不会自动开始。</value></data>
+  <data name="SoftwareSelectionNotRestoredBody" xml:space="preserve"><value>软件选择状态尚未恢复；不会自动访问网络或检测软件。</value></data>
+  <data name="SoftwareSelectionRestoreFailedBody" xml:space="preserve"><value>无法恢复软件选择状态。</value></data>
+  <data name="SoftwareSelectionAdvancedAvailable" xml:space="preserve"><value>标准与高级视图共享相同的软件选择状态。</value></data>
+  <data name="SoftwareSelectionAdvancedAbsentCatalog" xml:space="preserve"><value>当前页面不会将内置 draft 目录当作当前有效目录，也不会启动来源解析、浏览器或软件检测。</value></data>
+  <data name="OfflinePackageCacheStatusAccessibleName" xml:space="preserve"><value>离线资源缓存状态</value></data>
+  <data name="OfflinePackageCacheAvailableTitle" xml:space="preserve"><value>离线资源缓存</value></data>
+  <data name="OfflinePackageCacheUnavailableTitle" xml:space="preserve"><value>离线资源缓存不可用</value></data>
+  <data name="OfflinePackageCacheAvailableBodyPrefix" xml:space="preserve"><value>受控缓存位置： </value></data>
+  <data name="OfflinePackageCacheUnavailableBodyPrefix" xml:space="preserve"><value>受控缓存位置不可用： </value></data>
+  <data name="OfflinePackageCacheItemSuffix" xml:space="preserve"><value> 个已缓存资源</value></data>
+  <data name="OfflinePackageCacheNetworkSuffix" xml:space="preserve"><value>；当前无法联网</value></data>
+  <data name="SoftwareOptimizationPageTitle.Text" xml:space="preserve"><value>软件优化</value></data>
+  <data name="SoftwareOptimizationRefreshButton.Content" xml:space="preserve"><value>重新检测</value></data>
+  <data name="SoftwareOptimizationPrepareSelectedButton.Content" xml:space="preserve"><value>准备所选优化</value></data>
+  <data name="SoftwareOptimizationCanOptimizeTitle.Text" xml:space="preserve"><value>可以优化</value></data>
+  <data name="SoftwareOptimizationNeedsAttentionTitle.Text" xml:space="preserve"><value>需要处理</value></data>
+  <data name="SoftwareOptimizationOptimizedTitle.Text" xml:space="preserve"><value>已优化</value></data>
+  <data name="SoftwareOptimizationNoAvailableExpander.Header" xml:space="preserve"><value>暂无可用优化</value></data>
+  <data name="SoftwareOptimizationSogouRecommendedTitle" xml:space="preserve"><value>搜狗输入法推荐优化</value></data>
+  <data name="SoftwareOptimizationNoExecutableSelection" xml:space="preserve"><value>没有可提交的已选优化项。</value></data>
+  <data name="SoftwareOptimizationPreparedMessage" xml:space="preserve"><value>已准备 {count} 个所选优化项；尚未创建优化批次。</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentTitle" xml:space="preserve"><value>确认选择调整</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentContent" xml:space="preserve"><value>此选择会补选必需项或取消冲突项。确认后才会更新选择。</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentConfirm" xml:space="preserve"><value>确认调整</value></data>
+  <data name="SoftwareOptimizationSelectionAdjustmentCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="SoftwareOptimizationCatalogUnavailable" xml:space="preserve"><value>当前没有可用的软件优化目录。</value></data>
+  <data name="SoftwareOptimizationUnrecognizedVersion" xml:space="preserve"><value>未识别</value></data>
+  <data name="SoftwareOptimizationVersionDetails" xml:space="preserve"><value>版本：{version}；适用范围：{minimum} - {maximum}</value></data>
+  <data name="SoftwareOptimizationRequiredSuffix" xml:space="preserve"><value>（必需）</value></data>
+  <data name="SoftwareOptimizationAdvancedForceNotice" xml:space="preserve"><value>高级视图会在执行前单独披露强制执行或强制关闭的不可撤销风险。当前页面不会创建批次。</value></data>
+  <data name="SoftwareOptimizationFirstReleaseSchemeMissingDetail" xml:space="preserve"><value>当前受支持版本缺少首版必达的受控优化方案，不能作为“暂无可用优化”处理。</value></data>
+  <data name="SoftwareOptimizationFirstReleaseSchemeMissingStatus" xml:space="preserve"><value>软件优化目录缺少首版必达方案，当前状态不能通过发布验收。</value></data>
+  <data name="SoftwareOptimizationOptionVersionNotApplicable" xml:space="preserve"><value>此选项不适用于当前软件版本，不能提交。</value></data>
+  <data name="HistoryAndLogsPageTitle.Text" xml:space="preserve"><value>历史与日志</value></data>
+  <data name="HistoryAndLogsRefreshButton.Label" xml:space="preserve"><value>刷新</value></data>
+  <data name="HistoryAndLogsRefreshButton.AutomationProperties.Name" xml:space="preserve"><value>刷新历史与日志</value></data>
+  <data name="HistoryAndLogsExportDiagnosticButton.Label" xml:space="preserve"><value>导出诊断资料</value></data>
+  <data name="HistoryAndLogsExportDiagnosticButton.AutomationProperties.Name" xml:space="preserve"><value>导出脱敏诊断资料</value></data>
+  <data name="HistoryAndLogsClearLogsButton.Label" xml:space="preserve"><value>清空日志</value></data>
+  <data name="HistoryAndLogsClearLogsButton.AutomationProperties.Name" xml:space="preserve"><value>清空详细日志</value></data>
+  <data name="HistoryAndLogsHistoryTitle.Text" xml:space="preserve"><value>执行历史</value></data>
+  <data name="HistoryAndLogsHistoryEmpty.Text" xml:space="preserve"><value>尚无可显示的执行历史。</value></data>
+  <data name="HistoryAndLogsFilter.PlaceholderText" xml:space="preserve"><value>筛选历史和日志</value></data>
+  <data name="HistoryAndLogsFilter.AutomationProperties.Name" xml:space="preserve"><value>筛选历史和日志</value></data>
+  <data name="HistoryAndLogsLogTitle.Text" xml:space="preserve"><value>详细日志</value></data>
+  <data name="HistoryAndLogsLogEmpty.Text" xml:space="preserve"><value>当前日志段尚无事件。</value></data>
+  <data name="HistoryAndLogsClearConfirmationTitle" xml:space="preserve"><value>清空详细日志</value></data>
+  <data name="HistoryAndLogsClearConfirmationContent" xml:space="preserve"><value>将切换到新的日志段。执行历史、恢复记录和已生效状态不会被删除。</value></data>
+  <data name="HistoryAndLogsClearConfirmationConfirm" xml:space="preserve"><value>清空日志</value></data>
+  <data name="HistoryAndLogsClearConfirmationCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="HistoryAndLogsClearSucceeded" xml:space="preserve"><value>已清空详细日志并开始新的日志段。</value></data>
+  <data name="HistoryAndLogsClearFailed" xml:space="preserve"><value>无法清空详细日志；现有记录保持不变。</value></data>
+  <data name="HistoryAndLogsExportSucceeded" xml:space="preserve"><value>已导出一个脱敏诊断文件：{file}</value></data>
+  <data name="HistoryAndLogsExportIncomplete" xml:space="preserve"><value>已导出脱敏诊断文件：{file}。其中有 {count} 项未取得事实，文件已明确标注，不能视为完整诊断。</value></data>
+  <data name="HistoryAndLogsExportFailed" xml:space="preserve"><value>无法导出诊断资料；现有日志没有被删除。</value></data>
+  <data name="HistoryAndLogsLogUnavailable" xml:space="preserve"><value>详细日志当前不可读取；执行历史仍可查看。</value></data>
+  <data name="HistoryAndLogsLogSummary" xml:space="preserve"><value>当前日志段 {segment}，最后事件序号 {sequence}。</value></data>
+  <data name="HistoryAndLogsClearPendingSummary" xml:space="preserve"><value>详细日志清空已提交（截止段 {segment}，事件 {sequence}），新日志段完成尚未确认。</value></data>
+  <data name="HistoryAndLogsClearCompletionPending" xml:space="preserve"><value>详细日志清空已提交，但新日志段完成尚未确认；此前记录不会显示为仍未清空。</value></data>
+  <data name="HistoryAndLogsNotObtained" xml:space="preserve"><value>未取得</value></data>
+  <data name="HistoryAndLogsDiagnosticPreview" xml:space="preserve"><value>导出范围：{start} 至 {end}（UTC 毫秒）；当前日志大小：{bytes} 字节；将执行集中脱敏；已记录采集缺口：{gaps}。未取得事实会在文件中明确标注。</value></data>
+  <data name="HistoryAndLogsDebugStatus" xml:space="preserve"><value>调试日志：{state}；粒度：{granularity}。</value></data>
+  <data name="HistoryAndLogsDebugEnabled" xml:space="preserve"><value>已开启</value></data>
+  <data name="HistoryAndLogsDebugDisabled" xml:space="preserve"><value>已关闭</value></data>
+  <data name="HistoryAndLogsHistoryKindInstallationBatch" xml:space="preserve"><value>软件安装批次</value></data>
+  <data name="HistoryAndLogsHistoryKindSoftwareOptimizationBatch" xml:space="preserve"><value>软件优化批次</value></data>
+  <data name="HistoryAndLogsHistoryKindSystemSettingApply" xml:space="preserve"><value>系统设置操作</value></data>
+  <data name="HistoryAndLogsHistoryKindSystemSettingRecovery" xml:space="preserve"><value>系统设置恢复记录</value></data>
+  <data name="HistoryAndLogsHistoryKindExternalInstallHandoff" xml:space="preserve"><value>来源手动交接</value></data>
+  <data name="HistoryAndLogsHistoryKindRestartResume" xml:space="preserve"><value>重启恢复交接</value></data>
+  <data name="HistoryAndLogsHistoryKindApplicationUpdate" xml:space="preserve"><value>应用更新状态</value></data>
+  <data name="HistoryAndLogsHistoryKindUnknown" xml:space="preserve"><value>历史记录</value></data>
+  <data name="HistoryAndLogsEventKindUserCommand" xml:space="preserve"><value>用户命令</value></data>
+  <data name="HistoryAndLogsEventKindStateTransition" xml:space="preserve"><value>状态变化</value></data>
+  <data name="HistoryAndLogsEventKindAdapterResult" xml:space="preserve"><value>适配器结果</value></data>
+  <data name="HistoryAndLogsEventKindCoverageGap" xml:space="preserve"><value>采集缺口</value></data>
+  <data name="HistoryAndLogsEventKindUnknown" xml:space="preserve"><value>日志事件</value></data>
+  <data name="HistoryAndLogsResultStarted" xml:space="preserve"><value>已开始</value></data>
+  <data name="HistoryAndLogsResultSucceeded" xml:space="preserve"><value>已成功</value></data>
+  <data name="HistoryAndLogsResultFailed" xml:space="preserve"><value>已失败</value></data>
+  <data name="HistoryAndLogsResultCancelled" xml:space="preserve"><value>已取消</value></data>
+  <data name="HistoryAndLogsResultUnknown" xml:space="preserve"><value>结果待确认</value></data>
+  <data name="HistoryAndLogsResultFallback" xml:space="preserve"><value>未知</value></data>
+  <data name="HistoryAndLogsStatePrefix" xml:space="preserve"><value>状态：</value></data>
+  <data name="HistoryAndLogsRetrySuffix" xml:space="preserve"><value>新尝试</value></data>
+  <data name="HistoryAndLogsSegmentLabel" xml:space="preserve"><value>段</value></data>
+  <data name="HistoryAndLogsEventLabel" xml:space="preserve"><value>事件</value></data>
+  <data name="ApplicationSettingsPageTitle.Text" xml:space="preserve"><value>应用设置</value></data>
+  <data name="ApplicationViewTitle.Text" xml:space="preserve"><value>视图</value></data>
+  <data name="ApplicationAdvancedViewToggle.Header" xml:space="preserve"><value>高级视图</value></data>
+  <data name="ApplicationAdvancedViewToggle.OffContent" xml:space="preserve"><value>标准</value></data>
+  <data name="ApplicationAdvancedViewToggle.OnContent" xml:space="preserve"><value>高级</value></data>
+  <data name="VersionRiskTitle" xml:space="preserve"><value>Windows 版本风险</value></data>
+  <data name="VersionRiskEarlierMessage" xml:space="preserve"><value>当前版本为 {observed}，早于目标版本 Windows 10 22H2（{target}）。部分功能可能无法正常工作，你仍可继续使用。</value></data>
+  <data name="VersionRiskUnavailableMessage" xml:space="preserve"><value>无法读取当前 Windows 版本。部分功能可能无法正常工作，你仍可继续使用。</value></data>
+  <data name="ApplicationUpdateTitle.Text" xml:space="preserve"><value>应用更新</value></data>
+  <data name="ApplicationUpdateReadyMessage" xml:space="preserve"><value>当前版本可以主动检查 GitHub 正式稳定发行。</value></data>
+  <data name="ApplicationUpdateCheckButton" xml:space="preserve"><value>检查更新</value></data>
+  <data name="ApplicationUpdateLatestMessage" xml:space="preserve"><value>当前已是可确认的最新正式稳定版。</value></data>
+  <data name="ApplicationUpdateAvailableMessage" xml:space="preserve"><value>发现匹配的正式稳定版。更新不会后台下载或自动替换。</value></data>
+  <data name="ApplicationUpdateStableSwitchMessage" xml:space="preserve"><value>当前是测试发行版。只有你主动确认后，才会切换到最新匹配的正式稳定版。</value></data>
+  <data name="ApplicationUpdateNoMatchMessage" xml:space="preserve"><value>没有与当前架构、内容版和发行形态匹配的正式稳定制品，不能自动更新。可以打开 GitHub 下载入口。</value></data>
+  <data name="ApplicationUpdateRequestButton" xml:space="preserve"><value>开始更新</value></data>
+  <data name="ApplicationUpdateUnsignedMessage" xml:space="preserve"><value>发行包未签名，项目未提供可用于验证完整性的校验信息。再次点击“确认更新”后才会继续。</value></data>
+  <data name="ApplicationUpdateConfirmButton" xml:space="preserve"><value>确认更新</value></data>
+  <data name="ApplicationUpdateConfirmHealthButton" xml:space="preserve"><value>确认工作台已正常进入</value></data>
+  <data name="ApplicationUpdateDeferredMessage" xml:space="preserve"><value>当前有初始化操作正在执行、等待确认、等待重启或待恢复，更新已延后。完成后请再次主动检查。</value></data>
+  <data name="ApplicationUpdateUnavailableMessage" xml:space="preserve"><value>暂时无法取得 GitHub 发行信息。可以打开 GitHub 下载入口或导出诊断资料。</value></data>
+  <data name="ApplicationUpdateRestoredMessage" xml:space="preserve"><value>更新或替换失败，上一版本已请求恢复。请确认工作台正常后再继续使用。</value></data>
+  <data name="ApplicationUpdateHealthPendingMessage" xml:space="preserve"><value>新版本已经启动，正在等待工作台健康确认。</value></data>
+  <data name="ApplicationUpdateRecoveryChoiceMessage" xml:space="preserve"><value>新版本未能进入工作台。请选择重试新版本或恢复旧版本。</value></data>
+  <data name="ApplicationUpdateRetryButton" xml:space="preserve"><value>重试新版本</value></data>
+  <data name="ApplicationUpdateRestoreButton" xml:space="preserve"><value>恢复旧版本</value></data>
+  <data name="ApplicationUpdatePreviousHealthMessage" xml:space="preserve"><value>旧版本已请求恢复，正在等待工作台健康确认。</value></data>
+  <data name="ApplicationUpdateReadOnlyMessage" xml:space="preserve"><value>更新故障恢复状态：本机数据保留为只读。可打开 GitHub 下载入口或导出诊断资料。</value></data>
+  <data name="ApplicationUpdateReadOnlyDetail" xml:space="preserve"><value>恢复记录（旧版本 / 失败版本 / UTC 毫秒时间）：</value></data>
+  <data name="ApplicationUpdateManualButton" xml:space="preserve"><value>打开 GitHub 下载</value></data>
+  <data name="ApplicationUpdateDiagnosticButton" xml:space="preserve"><value>导出诊断资料</value></data>
+  <data name="ApplicationSettingsOperationTitle" xml:space="preserve"><value>设置操作</value></data>
+  <data name="ApplicationSettingsCacheTitle.Text" xml:space="preserve"><value>缓存</value></data>
+  <data name="ApplicationSettingsCacheRetention.Header" xml:space="preserve"><value>保留期限</value></data>
+  <data name="ApplicationSettingsCacheRetentionImmediate.Content" xml:space="preserve"><value>立即删除已完成缓存</value></data>
+  <data name="ApplicationSettingsCacheRetentionSevenDays.Content" xml:space="preserve"><value>保留 7 天</value></data>
+  <data name="ApplicationSettingsCacheRetentionThirtyDays.Content" xml:space="preserve"><value>保留 30 天</value></data>
+  <data name="ApplicationSettingsCacheRetentionIndefinitely.Content" xml:space="preserve"><value>不自动删除</value></data>
+  <data name="ApplicationSettingsClearCacheButton.Content" xml:space="preserve"><value>清理已完成缓存</value></data>
+  <data name="ApplicationSettingsCacheLocationSummary" xml:space="preserve"><value>当前缓存位置：{location}</value></data>
+  <data name="ApplicationSettingsCacheLocationSystem" xml:space="preserve"><value>系统目录</value></data>
+  <data name="ApplicationSettingsCacheLocationLocal" xml:space="preserve"><value>本机受控位置</value></data>
+  <data name="ApplicationSettingsCacheLocationNetwork" xml:space="preserve"><value>网络共享受控位置</value></data>
+  <data name="ApplicationSettingsCacheLocationRemovable" xml:space="preserve"><value>可移动介质受控位置</value></data>
+  <data name="ApplicationSettingsCacheLocationUnavailable" xml:space="preserve"><value>不可用的受控位置</value></data>
+  <data name="ApplicationSettingsArchitectureTitle.Text" xml:space="preserve"><value>软件包架构</value></data>
+  <data name="ApplicationSettingsArchitecturePreference.Header" xml:space="preserve"><value>ARM64 软件包偏好</value></data>
+  <data name="ApplicationSettingsArchitecturePrompt.Content" xml:space="preserve"><value>优先 ARM64，x64 回退前询问</value></data>
+  <data name="ApplicationSettingsArchitectureAutoFallback.Content" xml:space="preserve"><value>优先 ARM64，自动回退 x64</value></data>
+  <data name="ApplicationSettingsArchitecturePreferX64.Content" xml:space="preserve"><value>优先 x64 兼容包</value></data>
+  <data name="ApplicationSettingsCatalogHeading.Text" xml:space="preserve"><value>目录</value></data>
+  <data name="ApplicationSettingsCatalogTitle" xml:space="preserve"><value>目录状态</value></data>
+  <data name="ApplicationSettingsCatalogReady" xml:space="preserve"><value>三类目录各自维护更新和回退；更改前会再次确认。</value></data>
+  <data name="ApplicationSettingsCatalogUnavailable" xml:space="preserve"><value>至少一类目录当前不可用，更新和回退会保留各自的失败原因。</value></data>
+  <data name="ApplicationSettingsCatalogLocalTrial" xml:space="preserve"><value>正在使用本机试用目录：它已通过本机加载检查，但尚未通过正式发布检查。之后的新任务会使用它；已有任务不受影响。</value></data>
+  <data name="ApplicationSettingsSoftwareCatalogTitle.Text" xml:space="preserve"><value>软件与驱动目录</value></data>
+  <data name="ApplicationSettingsSystemCatalogTitle.Text" xml:space="preserve"><value>系统设置目录</value></data>
+  <data name="ApplicationSettingsOptimizationCatalogTitle.Text" xml:space="preserve"><value>软件优化目录</value></data>
+  <data name="ApplicationSettingsCatalogUpdateButton.Content" xml:space="preserve"><value>检查更新</value></data>
+  <data name="ApplicationSettingsCatalogRollbackButton.Content" xml:space="preserve"><value>回退上一版</value></data>
+  <data name="ApplicationSettingsLogsTitle.Text" xml:space="preserve"><value>日志与诊断</value></data>
+  <data name="ApplicationSettingsLogsAvailable" xml:space="preserve"><value>详细日志当前可读取；导出会使用已执行的集中脱敏。</value></data>
+  <data name="ApplicationSettingsLogsUnavailable" xml:space="preserve"><value>详细日志当前不可读取；不会据此伪造诊断资料。</value></data>
+  <data name="ApplicationSettingsExportDiagnosticButton.Content" xml:space="preserve"><value>导出诊断资料</value></data>
+  <data name="ApplicationSettingsClearLogsButton.Content" xml:space="preserve"><value>立即清空日志</value></data>
+  <data name="ApplicationSettingsRecoveryTitle.Text" xml:space="preserve"><value>恢复记录</value></data>
+  <data name="ApplicationSettingsRecoveryRecordCount" xml:space="preserve"><value>可查看 {count} 条恢复记录。</value></data>
+  <data name="ApplicationSettingsRecoveryRecordEntry" xml:space="preserve"><value>恢复记录 #{id}</value></data>
+  <data name="ApplicationSettingsRecoveryNoSelection" xml:space="preserve"><value>尚未选择恢复记录。</value></data>
+  <data name="ApplicationSettingsRecoveryDeleteAvailable" xml:space="preserve"><value>删除前会说明影响并要求再次确认。</value></data>
+  <data name="ApplicationSettingsRecoveryDeleteBlocked" xml:space="preserve"><value>此恢复记录正在等待恢复或验证，暂时不能删除。</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryButton.Content" xml:space="preserve"><value>删除恢复记录</value></data>
+  <data name="ApplicationSettingsDebugTitle.Text" xml:space="preserve"><value>调试工具</value></data>
+  <data name="ApplicationSettingsDebugToggle.Header" xml:space="preserve"><value>调试模式</value></data>
+  <data name="ApplicationSettingsDebugToggle.OffContent" xml:space="preserve"><value>关闭</value></data>
+  <data name="ApplicationSettingsDebugToggle.OnContent" xml:space="preserve"><value>开启</value></data>
+  <data name="ApplicationSettingsDebugUnavailable" xml:space="preserve"><value>当前主机尚未提供调试模式状态；目录编辑和手动导入保持隐藏。</value></data>
+  <data name="ApplicationSettingsDebugEnabled" xml:space="preserve"><value>调试模式已开启；仅由已注入的受控工具提供编辑和导入入口。</value></data>
+  <data name="ApplicationSettingsDebugDisabled" xml:space="preserve"><value>调试模式已关闭；现有目录、日志和业务状态不会因此删除。</value></data>
+  <data name="ApplicationSettingsDebugGranularityMaximum" xml:space="preserve"><value>日志粒度：最高可用。</value></data>
+  <data name="ApplicationSettingsDebugGranularityNormal" xml:space="preserve"><value>日志粒度：普通。</value></data>
+  <data name="ApplicationSettingsDebugGranularityUnavailable" xml:space="preserve"><value>日志粒度：当前未取得。</value></data>
+  <data name="ApplicationSettingsOpenCatalogEditor.Content" xml:space="preserve"><value>打开软件目录编辑器</value></data>
+  <data name="ApplicationSettingsOpenCatalogEditorLabel.Text" xml:space="preserve"><value>打开软件目录编辑器</value></data>
+  <data name="MainWindowRecoveredCatalogEditor.Title" xml:space="preserve"><value>发现恢复的未保存修改</value></data>
+  <data name="MainWindowRecoveredCatalogEditor.Message" xml:space="preserve"><value>它尚未保存或应用。继续编辑可保存草稿或放弃未保存修改。</value></data>
+  <data name="MainWindowContinueRecoveredCatalogEditor.Content" xml:space="preserve"><value>继续编辑恢复的未保存修改</value></data>
+  <data name="MainWindowContinueRecoveredCatalogEditorLabel.Text" xml:space="preserve"><value>继续编辑恢复的未保存修改</value></data>
+  <data name="ApplicationSettingsActionCompleted" xml:space="preserve"><value>设置已更新。</value></data>
+  <data name="ApplicationSettingsActionConfirmationRequired" xml:space="preserve"><value>此操作需要明确确认。</value></data>
+  <data name="ApplicationSettingsActionNoChange" xml:space="preserve"><value>当前没有需要变更的内容。</value></data>
+  <data name="ApplicationSettingsActionUnavailable" xml:space="preserve"><value>当前主机无法提供此操作。</value></data>
+  <data name="ApplicationSettingsActionProtected" xml:space="preserve"><value>当前状态受保护，此操作不能执行。</value></data>
+  <data name="ApplicationSettingsActionRejected" xml:space="preserve"><value>该操作未被当前状态接受。</value></data>
+  <data name="ApplicationSettingsActionFailed" xml:space="preserve"><value>操作未完成；现有状态已保留。</value></data>
+  <data name="ApplicationSettingsClearCacheDialogTitle" xml:space="preserve"><value>清理已完成缓存</value></data>
+  <data name="ApplicationSettingsClearCacheDialogContent" xml:space="preserve"><value>这会删除当前受控缓存位置中的已完成工作台下载，不会删除内置离线资源或正在进行的传输。</value></data>
+  <data name="ApplicationSettingsClearCacheDialogConfirm" xml:space="preserve"><value>清理缓存</value></data>
+  <data name="ApplicationSettingsClearCacheDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="ApplicationSettingsClearLogsDialogTitle" xml:space="preserve"><value>立即清空日志</value></data>
+  <data name="ApplicationSettingsClearLogsDialogContent" xml:space="preserve"><value>这会切换到新的日志段；执行历史、恢复记录和已经生效的状态不会删除。</value></data>
+  <data name="ApplicationSettingsClearLogsDialogConfirm" xml:space="preserve"><value>清空日志</value></data>
+  <data name="ApplicationSettingsClearLogsDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogTitle" xml:space="preserve"><value>删除恢复记录</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogContent" xml:space="preserve"><value>删除后将无法再依据这条记录恢复此前的设置值。当前生效的设置不会被更改。</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogConfirm" xml:space="preserve"><value>删除记录</value></data>
+  <data name="ApplicationSettingsDeleteRecoveryDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="ApplicationSettingsCatalogDialogTitle" xml:space="preserve"><value>确认目录变更</value></data>
+  <data name="ApplicationSettingsCatalogDialogContent" xml:space="preserve"><value>目录变更会在提交前再次校验。失败时当前有效目录保持不变。</value></data>
+  <data name="ApplicationSettingsCatalogDialogConfirm" xml:space="preserve"><value>确认变更</value></data>
+  <data name="ApplicationSettingsCatalogDialogCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="OverviewGuidedInitializationStages.AutomationProperties.Name" xml:space="preserve"><value>推荐初始化阶段</value></data>
+  <data name="OverviewGuidedStagesTitle.Text" xml:space="preserve"><value>推荐初始化阶段</value></data>
+  <data name="OverviewGuidedIndependenceNotice.Text" xml:space="preserve"><value>每个一级页面均可独立使用，推荐流程不会锁定其他操作。</value></data>
+  <data name="NavigationSoftwareCatalogEditor.Content" xml:space="preserve"><value>目录编辑器</value></data>
+  <data name="SoftwareCatalogEditorPageTitle.Text" xml:space="preserve"><value>软件目录编辑器</value></data>
+  <data name="SoftwareCatalogEditorStatusTitle" xml:space="preserve"><value>目录编辑状态</value></data>
+  <data name="SoftwareCatalogEditorLocalTrial.Title" xml:space="preserve"><value>正在使用本机试用目录</value></data>
+  <data name="SoftwareCatalogEditorLocalTrial.Message" xml:space="preserve"><value>它已通过本机加载检查，但尚未通过正式发布检查。软件列表和之后创建的任务将使用它；已有任务不受影响。</value></data>
+  <data name="SoftwareCatalogEditorRuntimeIssuesTitle" xml:space="preserve"><value>运行时加载问题</value></data>
+  <data name="SoftwareCatalogEditorReleaseIssuesTitle" xml:space="preserve"><value>正式发布门禁问题</value></data>
+  <data name="SoftwareCatalogEditorAdd.Label" xml:space="preserve"><value>添加软件</value></data>
+  <data name="SoftwareCatalogEditorDuplicate.Label" xml:space="preserve"><value>复制软件</value></data>
+  <data name="SoftwareCatalogEditorDelete.Label" xml:space="preserve"><value>删除软件</value></data>
+  <data name="SoftwareCatalogEditorSaveDraft.Label" xml:space="preserve"><value>保存草稿</value></data>
+  <data name="SoftwareCatalogEditorDeleteSavedDraft.Label" xml:space="preserve"><value>删除已保存草稿</value></data>
+  <data name="SoftwareCatalogEditorApply.Label" xml:space="preserve"><value>应用</value></data>
+  <data name="SoftwareCatalogEditorApplyLocalTrial" xml:space="preserve"><value>应用为本机试用目录</value></data>
+  <data name="SoftwareCatalogEditorDiscard.Label" xml:space="preserve"><value>放弃未保存修改</value></data>
+  <data name="SoftwareCatalogEditorSearch.Header" xml:space="preserve"><value>搜索软件</value></data>
+  <data name="SoftwareCatalogEditorSearch.PlaceholderText" xml:space="preserve"><value>按标识或名称筛选</value></data>
+  <data name="SoftwareCatalogEditorImportPath.Header" xml:space="preserve"><value>目录导入文件路径</value></data>
+  <data name="SoftwareCatalogEditorImportPath.PlaceholderText" xml:space="preserve"><value>仅在调试模式中预览并确认导入</value></data>
+  <data name="SoftwareCatalogEditorPreviewImport.Content" xml:space="preserve"><value>预览导入</value></data>
+  <data name="SoftwareCatalogEditorPreviewImportLabel.Text" xml:space="preserve"><value>预览导入</value></data>
+  <data name="SoftwareCatalogEditorApplyImport.Content" xml:space="preserve"><value>应用导入</value></data>
+  <data name="SoftwareCatalogEditorApplyImportLabel.Text" xml:space="preserve"><value>应用导入</value></data>
+  <data name="SoftwareCatalogEditorListTitle.Text" xml:space="preserve"><value>软件列表</value></data>
+  <data name="SoftwareCatalogEditorCategoryListTitle.Text" xml:space="preserve"><value>分类</value></data>
+  <data name="SoftwareCatalogEditorAddCategory.Label" xml:space="preserve"><value>添加分类</value></data>
+  <data name="SoftwareCatalogEditorCategoryId.Header" xml:space="preserve"><value>分类稳定标识</value></data>
+  <data name="SoftwareCatalogEditorCategoryName.Header" xml:space="preserve"><value>分类名称</value></data>
+  <data name="SoftwareCatalogEditorCategoryLocalizationListTitle.Text" xml:space="preserve"><value>分类翻译</value></data>
+  <data name="SoftwareCatalogEditorAddCategoryLocalization.Label" xml:space="preserve"><value>添加分类翻译</value></data>
+  <data name="SoftwareCatalogEditorDeleteCategoryLocalization.Label" xml:space="preserve"><value>删除分类翻译</value></data>
+  <data name="SoftwareCatalogEditorCategoryLocalizationLocale.Header" xml:space="preserve"><value>分类语言区域</value></data>
+  <data name="SoftwareCatalogEditorCategoryLocalizationName.Header" xml:space="preserve"><value>分类本地化名称</value></data>
+  <data name="SoftwareCatalogEditorDetailTitle.Text" xml:space="preserve"><value>软件详情</value></data>
+  <data name="SoftwareCatalogEditorId.Header" xml:space="preserve"><value>稳定标识</value></data>
+  <data name="SoftwareCatalogEditorName.Header" xml:space="preserve"><value>名称</value></data>
+  <data name="SoftwareCatalogEditorBranch.Header" xml:space="preserve"><value>维护分支</value></data>
+  <data name="SoftwareCatalogEditorCategory.Header" xml:space="preserve"><value>分类</value></data>
+  <data name="SoftwareCatalogEditorTier.Header" xml:space="preserve"><value>默认选择层级</value></data>
+  <data name="SoftwareCatalogEditorTierBasic.Content" xml:space="preserve"><value>基础软件</value></data>
+  <data name="SoftwareCatalogEditorTierNormal.Content" xml:space="preserve"><value>普通软件</value></data>
+  <data name="SoftwareCatalogEditorVersionPolicy.Header" xml:space="preserve"><value>版本规则</value></data>
+  <data name="SoftwareCatalogEditorVersionLatestStable.Content" xml:space="preserve"><value>最新稳定版</value></data>
+  <data name="SoftwareCatalogEditorVersionLatestStableWithHistory.Content" xml:space="preserve"><value>最新稳定版并保留历史</value></data>
+  <data name="SoftwareCatalogEditorVersionFixed.Content" xml:space="preserve"><value>固定版本</value></data>
+  <data name="SoftwareCatalogEditorVersionMaintainerProvided.Content" xml:space="preserve"><value>维护者提供版本</value></data>
+  <data name="SoftwareCatalogEditorFixedVersion.Header" xml:space="preserve"><value>固定版本号</value></data>
+  <data name="SoftwareCatalogEditorInstallProfile.Header" xml:space="preserve"><value>受控安装档案标识</value></data>
+  <data name="SoftwareCatalogEditorDependencies.Header" xml:space="preserve"><value>依赖软件标识（逗号分隔）</value></data>
+  <data name="SoftwareCatalogEditorBundledEditions.Header" xml:space="preserve"><value>离线版安排（逗号分隔）</value></data>
+  <data name="SoftwareCatalogEditorNotice.Header" xml:space="preserve"><value>说明</value></data>
+  <data name="SoftwareCatalogEditorEnabled.Header" xml:space="preserve"><value>启用此软件</value></data>
+  <data name="SoftwareCatalogEditorSourceListTitle.Text" xml:space="preserve"><value>来源</value></data>
+  <data name="SoftwareCatalogEditorAddSource.Label" xml:space="preserve"><value>添加来源</value></data>
+  <data name="SoftwareCatalogEditorDeleteSource.Label" xml:space="preserve"><value>删除来源</value></data>
+  <data name="SoftwareCatalogEditorSourcePurpose.Header" xml:space="preserve"><value>来源用途</value></data>
+  <data name="SoftwareCatalogEditorSourcePrimary.Content" xml:space="preserve"><value>首选来源</value></data>
+  <data name="SoftwareCatalogEditorSourceAlternative.Content" xml:space="preserve"><value>备选来源</value></data>
+  <data name="SoftwareCatalogEditorSourceProjectBackup.Content" xml:space="preserve"><value>项目备用包</value></data>
+  <data name="SoftwareCatalogEditorSourcePurposeUnassigned" xml:space="preserve"><value>未指定用途</value></data>
+  <data name="SoftwareCatalogEditorSourceAddress.Header" xml:space="preserve"><value>原始地址</value></data>
+  <data name="SoftwareCatalogEditorSourceVersion.Header" xml:space="preserve"><value>来源版本</value></data>
+  <data name="SoftwareCatalogEditorLocalizationListTitle.Text" xml:space="preserve"><value>本地化</value></data>
+  <data name="SoftwareCatalogEditorAddLocalization.Label" xml:space="preserve"><value>添加语言</value></data>
+  <data name="SoftwareCatalogEditorDeleteLocalization.Label" xml:space="preserve"><value>删除语言</value></data>
+  <data name="SoftwareCatalogEditorLocalizationLocale.Header" xml:space="preserve"><value>语言区域</value></data>
+  <data name="SoftwareCatalogEditorLocalizationName.Header" xml:space="preserve"><value>本地化名称</value></data>
+  <data name="SoftwareCatalogEditorLocalizationNotice.Header" xml:space="preserve"><value>本地化说明</value></data>
+  <data name="SoftwareCatalogEditorLocalizationOptimizationNote.Header" xml:space="preserve"><value>本地化优化说明</value></data>
+  <data name="SoftwareCatalogEditorLocalizationEducationDescription.Header" xml:space="preserve"><value>本地化教育资源说明</value></data>
+  <data name="SoftwareCatalogEditorDraftNone" xml:space="preserve"><value>没有目录编辑草稿。</value></data>
+  <data name="SoftwareCatalogEditorDraftSaved" xml:space="preserve"><value>已保存未应用。</value></data>
+  <data name="SoftwareCatalogEditorDraftUnsaved" xml:space="preserve"><value>未保存更改。</value></data>
+  <data name="SoftwareCatalogEditorDraftRecovered" xml:space="preserve"><value>恢复的未保存修改。</value></data>
+  <data name="SoftwareCatalogEditorNewCategory" xml:space="preserve"><value>新分类</value></data>
+  <data name="SoftwareCatalogEditorNewSoftware" xml:space="preserve"><value>新软件</value></data>
+  <data name="SoftwareCatalogEditorNewSoftwareBranch" xml:space="preserve"><value>维护中</value></data>
+  <data name="SoftwareCatalogEditorUnavailable" xml:space="preserve"><value>请先明确开启调试模式；编辑器和手动导入入口当前不可用。</value></data>
+  <data name="SoftwareCatalogEditorImportReady" xml:space="preserve"><value>目录导入已通过预览；请明确应用。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewFailed" xml:space="preserve"><value>无法预览目录导入；当前目录和草稿未被更改。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewPath" xml:space="preserve"><value>导入路径</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewRevision" xml:space="preserve"><value>目录修订</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewItemCount" xml:space="preserve"><value>软件项目数</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewFutureOperations" xml:space="preserve"><value>应用后，后续软件列表、规划和新建批次将使用此目录；已有批次和历史不变。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewDowngrade" xml:space="preserve"><value>此目录修订低于当前目录，继续前请核对受影响选择。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewDowngradeNoItems" xml:space="preserve"><value>未检测到被移除或语义变化的软件项目。</value></data>
+  <data name="SoftwareCatalogEditorImportPreviewAffectedItems" xml:space="preserve"><value>受影响的软件项目</value></data>
+  <data name="SoftwareCatalogEditorDisabledSuffix" xml:space="preserve"><value>（未启用）</value></data>
+  <data name="SoftwareCatalogEditorActionSucceeded" xml:space="preserve"><value>操作已完成。</value></data>
+  <data name="SoftwareCatalogEditorActionNoChange" xml:space="preserve"><value>当前没有需要变更的内容。</value></data>
+  <data name="SoftwareCatalogEditorActionRejected" xml:space="preserve"><value>当前状态不接受此操作。</value></data>
+  <data name="SoftwareCatalogEditorActionDebugModeRequired" xml:space="preserve"><value>请先明确开启调试模式。</value></data>
+  <data name="SoftwareCatalogEditorActionNotRestored" xml:space="preserve"><value>目录状态尚未恢复完成。</value></data>
+  <data name="SoftwareCatalogEditorActionUnavailable" xml:space="preserve"><value>当前目录编辑功能不可用。</value></data>
+  <data name="SoftwareCatalogEditorActionOccupied" xml:space="preserve"><value>目录状态正在被其他操作使用。</value></data>
+  <data name="SoftwareCatalogEditorActionConflict" xml:space="preserve"><value>目录状态存在冲突；现有内容已保留。</value></data>
+  <data name="SoftwareCatalogEditorActionReadOnly" xml:space="preserve"><value>当前目录状态为只读，无法执行此操作。</value></data>
+  <data name="SoftwareCatalogEditorActionPersistenceFailed" xml:space="preserve"><value>操作未保存；现有状态已保留。</value></data>
+  <data name="SoftwareCatalogEditorActionOutcomeUnknown" xml:space="preserve"><value>操作结果尚未确认；请查看目录状态。</value></data>
+  <data name="SoftwareCatalogEditorActionSavedCleanupPending" xml:space="preserve"><value>草稿已保存，但旧恢复记录仍待清理。</value></data>
+  <data name="SoftwareCatalogEditorActionAppliedCleanupPending" xml:space="preserve"><value>目录已应用，但旧草稿记录仍待清理。</value></data>
+  <data name="SoftwareCatalogEditorActionAppliedLogIncomplete" xml:space="preserve"><value>目录已应用，但本机诊断记录未完整写入。</value></data>
+  <data name="SoftwareCatalogEditorActionReturnedToEditor" xml:space="preserve"><value>已保留未保存修改，可继续编辑。</value></data>
+  <data name="SoftwareCatalogEditorIssueMalformedToml" xml:space="preserve"><value>目录文件格式无效。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnsupportedSchema" xml:space="preserve"><value>目录版本不受支持。</value></data>
+  <data name="SoftwareCatalogEditorIssueMissingRequiredField" xml:space="preserve"><value>缺少必填字段。</value></data>
+  <data name="SoftwareCatalogEditorIssueInvalidField" xml:space="preserve"><value>字段值无效。</value></data>
+  <data name="SoftwareCatalogEditorIssueDuplicateField" xml:space="preserve"><value>存在重复字段。</value></data>
+  <data name="SoftwareCatalogEditorIssueDuplicateStableId" xml:space="preserve"><value>稳定标识重复。</value></data>
+  <data name="SoftwareCatalogEditorIssueStableIdReused" xml:space="preserve"><value>稳定标识不得重复使用。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnknownExecutionSemantics" xml:space="preserve"><value>存在无法识别的受控执行语义。</value></data>
+  <data name="SoftwareCatalogEditorIssueInvalidReference" xml:space="preserve"><value>引用的项目不存在。</value></data>
+  <data name="SoftwareCatalogEditorIssueMissingDependency" xml:space="preserve"><value>缺少依赖项。</value></data>
+  <data name="SoftwareCatalogEditorIssueDependencyCycle" xml:space="preserve"><value>依赖关系形成循环。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnavailableDependency" xml:space="preserve"><value>依赖项不可用。</value></data>
+  <data name="SoftwareCatalogEditorIssueDraftReleaseState" xml:space="preserve"><value>维护目录仍处于草稿发布状态。</value></data>
+  <data name="SoftwareCatalogEditorIssueRequiredItemMissing" xml:space="preserve"><value>缺少首版必达项。</value></data>
+  <data name="SoftwareCatalogEditorIssueRequiredItemDisabled" xml:space="preserve"><value>首版必达项处于未启用状态。</value></data>
+  <data name="SoftwareCatalogEditorIssueReleaseRevisionRegression" xml:space="preserve"><value>发布修订号倒退。</value></data>
+  <data name="SoftwareCatalogEditorIssueReleaseRevisionConflict" xml:space="preserve"><value>发布修订号冲突。</value></data>
+  <data name="SoftwareCatalogEditorIssueReleaseDependencyError" xml:space="preserve"><value>正式发布依赖无效。</value></data>
+  <data name="SoftwareCatalogEditorIssueInstallProfileUnavailable" xml:space="preserve"><value>受控安装档案不可用。</value></data>
+  <data name="SoftwareCatalogEditorIssueInstallProfileNotReleaseReady" xml:space="preserve"><value>受控安装档案未达到发布条件。</value></data>
+  <data name="SoftwareCatalogEditorIssueProhibitedContent" xml:space="preserve"><value>包含受限内容。</value></data>
+  <data name="SoftwareCatalogEditorIssueUnknown" xml:space="preserve"><value>未识别的目录问题。</value></data>
+  <data name="SoftwareCatalogEditorLocalizationLimit" xml:space="preserve"><value>请先修改或删除已有本地化条目，再添加新的语言。</value></data>
+  <data name="SoftwareCatalogEditorDeleteTitle" xml:space="preserve"><value>删除软件条目</value></data>
+  <data name="SoftwareCatalogEditorDeleteContent" xml:space="preserve"><value>删除只影响当前目录编辑草稿；当前有效目录、既有任务和历史不会被更改。</value></data>
+  <data name="SoftwareCatalogEditorDeleteConfirm" xml:space="preserve"><value>删除</value></data>
+  <data name="SoftwareCatalogEditorDeleteCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="SoftwareCatalogEditorDeleteSavedDraftTitle" xml:space="preserve"><value>删除已保存草稿</value></data>
+  <data name="SoftwareCatalogEditorDeleteSavedDraftContent" xml:space="preserve"><value>这只会删除已保存未应用的目录候选内容；当前有效目录、既有任务和历史不会被更改。</value></data>
+  <data name="SoftwareCatalogEditorDeleteSavedDraftConfirm" xml:space="preserve"><value>删除草稿</value></data>
+  <data name="SoftwareCatalogEditorDeleteSavedDraftCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="CatalogCloseDialogTitle" xml:space="preserve"><value>保存目录编辑草稿？</value></data>
+  <data name="CatalogCloseDialogContent" xml:space="preserve"><value>存在未保存的目录编辑。保存草稿不会应用目录；放弃会丢失本次编辑。</value></data>
+  <data name="CatalogCloseSaveAndClose" xml:space="preserve"><value>保存草稿并关闭</value></data>
+  <data name="CatalogCloseDiscardAndClose" xml:space="preserve"><value>放弃未保存修改</value></data>
+  <data name="CatalogCloseReturnToEditor" xml:space="preserve"><value>返回编辑</value></data>
+  <data name="SoftwareInstallationLocalTrial.Title" xml:space="preserve"><value>正在使用本机试用目录</value></data>
+  <data name="SoftwareInstallationLocalTrial.Message" xml:space="preserve"><value>它已通过本机加载检查，但尚未通过正式发布检查。软件列表和之后创建的任务将使用它；已有任务不受影响。</value></data>
+</root>

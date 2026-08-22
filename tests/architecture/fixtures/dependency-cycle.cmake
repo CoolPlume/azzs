@@ -1,0 +1,10 @@
+set(AZZS_GRAPH_NODES
+  "domain-feature|domain"
+  "application-core|application"
+  "cycle-tail|domain"
+)
+set(AZZS_GRAPH_EDGES
+  "domain-feature|application-core"
+  "application-core|domain-feature"
+  "application-core|cycle-tail"
+)

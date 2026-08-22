@@ -1,0 +1,8 @@
+namespace Azzs.Ui.Pages
+{
+    [default_interface]
+    runtimeclass SoftwareInstallationPage : Microsoft.UI.Xaml.Controls.Page
+    {
+        SoftwareInstallationPage();
+    }
+}
