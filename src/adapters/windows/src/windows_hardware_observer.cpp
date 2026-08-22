@@ -679,6 +679,12 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
           row.push_back(utf8_from_wide(value.bstrVal));
         } else {
           switch (value.vt) {
+            case VT_I1:
+              row.push_back(std::to_string(value.cVal));
+              break;
+            case VT_UI1:
+              row.push_back(std::to_string(value.bVal));
+              break;
             case VT_BOOL:
               row.push_back(value.boolVal == VARIANT_TRUE ? "true" : "false");
               break;
@@ -699,6 +705,12 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
               break;
             case VT_UI8:
               row.push_back(std::to_string(value.ullVal));
+              break;
+            case VT_INT:
+              row.push_back(std::to_string(value.intVal));
+              break;
+            case VT_UINT:
+              row.push_back(std::to_string(value.uintVal));
               break;
             default:
               row.emplace_back();
