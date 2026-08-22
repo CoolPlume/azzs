@@ -31,3 +31,5 @@ Evidence freshness: 绑定 GitHub 分支清单、保护设置、集成提交和�
 `V011-G06`、`V011-BRANCH-01` 至 `V011-BRANCH-06`、ADR-0051、`docs/agents/orchestration.md`、`docs/agents/windows-native-takeover.md`
 
 ## Comments
+
+- 2026-08-23（只读接管核对）：GitHub `CoolPlume/azzs` 分支清单显示唯一裸版本分支 `0.1.1` 指向 `180cb20ee60ee58915b917a6b91b4781aaba570b`；未发现 `v0.1.1` 或 `codex/v0.1.1`，既有 `v0.1.0` 与 `codex/v0.1.0-*` 历史分支保持存在。`origin/codex/v1-integration` 当前指向 `6b0e8e25b4fb4d0411f25d793ac0606ac3603163`，比权威 `origin/0.1.1` 少 19 个祖先提交；本次接管从 `origin/0.1.1` 精确起点创建 D: 工作树，未向滞后 integration 盲推。GitHub protection API 对 `0.1.1` 返回 HTTP 404（Branch not protected），因此保护配置仍是未满足/待维护者授权项；未创建 tag、Release 或合入 `main`。
