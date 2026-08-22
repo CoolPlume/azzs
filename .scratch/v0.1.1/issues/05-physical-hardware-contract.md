@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: .scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md, .scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md
+Blocked by: none
 Owner: issue-05
 Claimed by: none
 Consumers: 06, 07
@@ -32,3 +32,5 @@ Windows 硬件适配器负责取得原始观测并在单一过滤接缝确认物
 `V011-G05`、`V011-HW-01` 至 `V011-HW-08`、ADR-0008、ADR-0009、ADR-0049、事项 13、事项 24
 
 ## Comments
+
+- 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md` 与 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 均已核实；这些记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。

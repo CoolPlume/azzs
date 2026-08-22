@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: .scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md
+Blocked by: none
 Owner: issue-03
 Claimed by: none
 Consumers: 02, 04, 07
@@ -32,3 +32,5 @@ Evidence freshness: 绑定主题、控件模板、页头/按钮组件和 WinUI/S
 `V011-G03`、`V011-UI-01` 至 `V011-UI-08`、ADR-0021、事项 24、`docs/design/winui3-apple-inspired.md`、`apple-design`、`emil-design-eng`
 
 ## Comments
+
+- 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。

@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: 05, .scratch/windows-initial-setup-workbench/issues/14-driver-acquisition-page.md
+Blocked by: 05
 Owner: issue-06
 Claimed by: none
 Consumers: 07
@@ -32,3 +32,5 @@ Evidence freshness: 绑定物理硬件契约、驱动推荐规则、页面资源
 `V011-G05`、`V011-DRIVER-01` 至 `V011-DRIVER-06`、ADR-0009、ADR-0049、事项 05、事项 14
 
 ## Comments
+
+- 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/14-driver-acquisition-page.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前 `Blocked by` 仅保留同 effort 的事项 05。

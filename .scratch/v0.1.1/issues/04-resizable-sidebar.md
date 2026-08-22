@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: 03, .scratch/windows-initial-setup-workbench/issues/18-application-settings.md
+Blocked by: 03
 Owner: issue-04
 Claimed by: none
 Consumers: 07
@@ -32,3 +32,5 @@ Evidence freshness: 绑定 NavigationView 模板、偏好服务、设置键、�
 `V011-G04`、`V011-SIDEBAR-01` 至 `V011-SIDEBAR-07`、ADR-0050、事项 03、事项 18、`CONTEXT.md`
 
 ## Comments
+
+- 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/18-application-settings.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前 `Blocked by` 仅保留同 effort 的事项 03。
