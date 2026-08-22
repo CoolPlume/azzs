@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -71,18 +72,117 @@ namespace guided = application::guided_initialization;
   return "guided.stage.unknown";
 }
 
-[[nodiscard]] std::string stage_title(guided::Stage stage) {
+[[nodiscard]] std::string stage_title(
+    guided::Stage stage,
+    GuidedInitializationPresentationText const& text) {
   switch (stage) {
     case guided::Stage::drivers:
-      return "Drivers";
+      return text.drivers_stage_title;
     case guided::Stage::system_optimization:
-      return "System optimization";
+      return text.system_optimization_stage_title;
     case guided::Stage::software_installation:
-      return "Software installation";
+      return text.software_installation_stage_title;
     case guided::Stage::software_optimization:
-      return "Software optimization";
+      return text.software_optimization_stage_title;
   }
-  return "Unknown stage";
+  return text.unknown_stage_title;
+}
+
+[[nodiscard]] std::string raw_detail(
+    std::string const& detail,
+    GuidedInitializationPresentationText const& text) {
+  return detail.empty() ? text.stage_empty_body
+                        : text.raw_detail_prefix + detail;
+}
+
+[[nodiscard]] std::string localized_detail(
+    guided::StageRecord const& record,
+    GuidedInitializationPresentationText const& text) {
+  // These terminal states carry their own user-facing meaning even when the
+  // owning service includes a free-form diagnostic detail.
+  switch (record.state) {
+    case guided::StageState::partial:
+      return text.stage_partial_body;
+    case guided::StageState::emergency_withdrawn:
+      return text.stage_withdrawn_body;
+    case guided::StageState::skipped:
+      return text.stage_skipped_body;
+    case guided::StageState::no_applicable_items:
+      return text.stage_no_applicable_body;
+    case guided::StageState::not_executed:
+      return text.stage_not_executed_body;
+    default:
+      break;
+  }
+
+  auto const detail = std::string_view{record.detail};
+  if (detail == "driver stage marked complete by the user" ||
+      detail == "installation batch completed" ||
+      detail == "software optimization batch completed" ||
+      detail == "system settings completed" ||
+      detail == "system settings are effective" ||
+      detail == "system optimization was verified after restart" ||
+      detail == "settings already match the recommended baseline" ||
+      detail ==
+          "restart verification is complete; explicit continuation is required") {
+    return text.stage_completed_body;
+  }
+  if (detail == "stage temporarily skipped by the user") {
+    return text.stage_skipped_body;
+  }
+  if (detail == "no system settings apply here" ||
+      detail == "no software is available in the current catalog" ||
+      detail == "no installable software remains" ||
+      detail == "no software optimization is currently available" ||
+      detail == "no executable software optimization is available") {
+    return text.stage_no_applicable_body;
+  }
+  if (detail == "system settings are applying" ||
+      detail == "installation batch is active" ||
+      detail == "software optimization batch is active" ||
+      detail == "driver handoff is in progress") {
+    return text.stage_active_body;
+  }
+  if (detail == "waiting for the shared Windows restart barrier" ||
+      detail == "installation batch is waiting for restart" ||
+      detail == "software optimization is waiting for restart" ||
+      detail == "driver handoff is waiting for restart") {
+    return text.stage_waiting_restart_body;
+  }
+  if (detail == "system settings are waiting for Explorer restart") {
+    return text.stage_waiting_explorer_body;
+  }
+  if (detail == "restart barrier is available only for read-only recovery" ||
+      detail == "Windows restart is required before verification") {
+    return text.stage_waiting_restart_body;
+  }
+  if (detail == "waiting for an external installation handoff to continue" ||
+      detail == "software installation needs an external handoff" ||
+      detail == "external installation remains an explicitly recognized fact" ||
+      detail == "source resolution failed; external installation is available") {
+    return text.stage_external_handoff_body;
+  }
+  if (detail == "driver handoff needs an explicit result") {
+    return text.stage_confirmation_body;
+  }
+  if (detail == "driver handoff is read-only") {
+    return text.stage_not_executed_body;
+  }
+  if (detail == "system settings reported a failure" ||
+      detail == "driver handoff failed" ||
+      detail == "installation batch needs explicit recovery" ||
+      detail == "software optimization needs explicit recovery" ||
+      detail == "software optimization catalog is incomplete") {
+    return text.stage_failed_body;
+  }
+  if (detail == "driver handoff is available" ||
+      detail == "driver handoff is not restored" ||
+      detail == "system settings are ready for review" ||
+      detail == "software installation is ready for selection" ||
+      detail == "software optimization recommendations are ready") {
+    return text.stage_pending_body;
+  }
+  return raw_detail(record.detail, text);
 }
 
 [[nodiscard]] std::string summary_body(guided::Summary const& summary,
@@ -143,7 +243,7 @@ make_guided_initialization_presentation(
   summary.commands.push_back(command(
       "refresh", text.refresh_command, CommandRole::secondary,
       IntentKind::continue_workflow, summary.id, source.writable,
-      false, source.writable ? "" : "flow state is read-only"));
+      false, source.writable ? "" : text.read_only_disabled_reason));
   summary.commands.push_back(command(
       "history", text.history_command, CommandRole::navigation,
       IntentKind::open_details, summary.id));
@@ -167,12 +267,12 @@ make_guided_initialization_presentation(
         .id = id,
         .automation_id = std::string{"AzzsGuidedStage"} +
                          std::to_string(static_cast<int>(stage_id)),
-        .accessible_name = stage_title(stage_id),
+        .accessible_name = stage_title(stage_id, text),
         .kind = ComponentKind::stage_summary,
         .state = record ? presentation_state(record->state)
                         : PresentationState::neutral,
-        .title = stage_title(stage_id),
-        .body = record ? record->detail : "No flow has recorded this stage yet.",
+        .title = stage_title(stage_id, text),
+        .body = record ? localized_detail(*record, text) : text.stage_empty_body,
         .stage = static_cast<WorkflowStage>(stage_id),
     };
     stage.commands.push_back(command(
@@ -268,7 +368,9 @@ make_guided_initialization_presentation(
         .state = PresentationState::failed,
         .announcement = AnnouncementMode::assertive,
         .title = text.read_only_title,
-        .body = source.error.empty() ? text.read_only_body : source.error,
+        .body = source.error.empty()
+                    ? text.read_only_body
+                    : text.raw_error_prefix + source.error,
     });
   }
 
