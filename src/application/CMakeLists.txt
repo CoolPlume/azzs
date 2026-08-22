@@ -2,6 +2,7 @@ find_package(Threads REQUIRED)
 
 add_library(azzs_application STATIC
   src/advanced_view_preferences.cpp
+  src/sidebar_width_preferences.cpp
   src/application_update.cpp
   src/bounded_cpu_scheduler.cpp
   src/device_state_store.cpp
