@@ -377,7 +377,8 @@ def validate_build_rejects_invalid_version_mappings(
                 f"build.ps1 accepted {description}; " + powershell_diagnostic(result),
             )
             contract.require(
-                "unsupported version mapping" in output.lower(),
+                re.search(r"unsupported\s+version\s+mapping", output, re.IGNORECASE)
+                is not None,
                 f"build.ps1 did not reject {description} at its version gate; "
                 + powershell_diagnostic(result),
             )
