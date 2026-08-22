@@ -201,7 +201,7 @@
   <data name="SoftwareSelectionNotRestoredBody" xml:space="preserve"><value>软件选择状态尚未恢复；不会自动访问网络或检测软件。</value></data>
   <data name="SoftwareSelectionRestoreFailedBody" xml:space="preserve"><value>无法恢复软件选择状态。</value></data>
   <data name="SoftwareSelectionAdvancedAvailable" xml:space="preserve"><value>标准与高级视图共享相同的软件选择状态。</value></data>
-  <data name="SoftwareSelectionAdvancedAbsentCatalog" xml:space="preserve"><value>当前页面不会将内置 draft 目录当作当前有效目录，也不会启动来源解析、浏览器或软件检测。</value></data>
+  <data name="SoftwareSelectionAdvancedAbsentCatalog" xml:space="preserve"><value>当前页面不会将内置草稿目录当作当前有效目录，也不会启动来源解析、浏览器或软件检测。</value></data>
   <data name="OfflinePackageCacheStatusAccessibleName" xml:space="preserve"><value>离线资源缓存状态</value></data>
   <data name="OfflinePackageCacheAvailableTitle" xml:space="preserve"><value>离线资源缓存</value></data>
   <data name="OfflinePackageCacheUnavailableTitle" xml:space="preserve"><value>离线资源缓存不可用</value></data>
@@ -403,6 +403,61 @@
   <data name="OverviewGuidedInitializationStages.AutomationProperties.Name" xml:space="preserve"><value>推荐初始化阶段</value></data>
   <data name="OverviewGuidedStagesTitle.Text" xml:space="preserve"><value>推荐初始化阶段</value></data>
   <data name="OverviewGuidedIndependenceNotice.Text" xml:space="preserve"><value>每个一级页面均可独立使用，推荐流程不会锁定其他操作。</value></data>
+  <data name="OverviewGuidedSummaryAccessibleName" xml:space="preserve"><value>推荐初始化摘要</value></data>
+  <data name="OverviewGuidedSummaryTitle" xml:space="preserve"><value>推荐初始化</value></data>
+  <data name="OverviewGuidedSummaryCompletedPrefix" xml:space="preserve"><value>已完成：</value></data>
+  <data name="OverviewGuidedSummaryExternalPrefix" xml:space="preserve"><value>；已识别外部安装：</value></data>
+  <data name="OverviewGuidedSummaryPartialPrefix" xml:space="preserve"><value>；部分完成：</value></data>
+  <data name="OverviewGuidedSummaryFailedPrefix" xml:space="preserve"><value>；失败：</value></data>
+  <data name="OverviewGuidedSummarySkippedPrefix" xml:space="preserve"><value>；已跳过：</value></data>
+  <data name="OverviewGuidedSummaryNoApplicablePrefix" xml:space="preserve"><value>；无适用项目：</value></data>
+  <data name="OverviewGuidedSummaryNotExecutedPrefix" xml:space="preserve"><value>；未执行：</value></data>
+  <data name="OverviewGuidedSummaryConfirmationPrefix" xml:space="preserve"><value>；等待确认结果：</value></data>
+  <data name="OverviewGuidedSummaryExplorerRestartPrefix" xml:space="preserve"><value>；等待资源管理器重启：</value></data>
+  <data name="OverviewGuidedSummaryRestartPrefix" xml:space="preserve"><value>；等待 Windows 重启：</value></data>
+  <data name="OverviewGuidedSummaryWithdrawnPrefix" xml:space="preserve"><value>；已紧急撤回：</value></data>
+  <data name="OverviewGuidedSummaryErrorSuffix" xml:space="preserve"><value>。请先查看当前阶段，再继续操作。</value></data>
+  <data name="OverviewGuidedStartCommand" xml:space="preserve"><value>开始推荐初始化</value></data>
+  <data name="OverviewGuidedRefreshCommand" xml:space="preserve"><value>刷新状态</value></data>
+  <data name="OverviewGuidedCancelCommand" xml:space="preserve"><value>取消流程</value></data>
+  <data name="OverviewGuidedHistoryCommand" xml:space="preserve"><value>查看历史与日志</value></data>
+  <data name="OverviewGuidedSkipCommand" xml:space="preserve"><value>暂时跳过此阶段</value></data>
+  <data name="OverviewGuidedContinueCommand" xml:space="preserve"><value>继续</value></data>
+  <data name="OverviewGuidedRetryCommand" xml:space="preserve"><value>从专属页面重试</value></data>
+  <data name="OverviewGuidedOpenCommand" xml:space="preserve"><value>打开专属页面</value></data>
+  <data name="OverviewGuidedLocalTrialAccessibleName" xml:space="preserve"><value>软件目录身份</value></data>
+  <data name="OverviewGuidedLocalTrialTitle" xml:space="preserve"><value>正在使用本机试用目录</value></data>
+  <data name="OverviewGuidedLocalTrialBody" xml:space="preserve"><value>此目录已通过本机加载检查，但尚未通过正式发布检查。之后创建的任务会使用它。</value></data>
+  <data name="OverviewGuidedHandoffAccessibleName" xml:space="preserve"><value>外部安装交接</value></data>
+  <data name="OverviewGuidedHandoffTitle" xml:space="preserve"><value>外部安装交接</value></data>
+  <data name="OverviewGuidedHandoffWaitingBody" xml:space="preserve"><value>正在等待外部安装完成，之后还需要重新检查。</value></data>
+  <data name="OverviewGuidedHandoffRecognizedBody" xml:space="preserve"><value>已识别外部安装。请核对结果后再继续。</value></data>
+  <data name="OverviewGuidedHandoffContinueCommand" xml:space="preserve"><value>继续此交接</value></data>
+  <data name="OverviewGuidedReadOnlyAccessibleName" xml:space="preserve"><value>推荐初始化恢复</value></data>
+  <data name="OverviewGuidedReadOnlyTitle" xml:space="preserve"><value>推荐初始化处于只读状态</value></data>
+  <data name="OverviewGuidedReadOnlyBody" xml:space="preserve"><value>流程记录的持久化状态需要先修复，当前不能安全修改。</value></data>
+  <data name="OverviewGuidedReadOnlyDisabledReason" xml:space="preserve"><value>流程状态为只读</value></data>
+  <data name="OverviewGuidedStageEmptyBody" xml:space="preserve"><value>当前流程尚未记录此阶段。</value></data>
+  <data name="OverviewGuidedRawDetailPrefix" xml:space="preserve"><value>原始系统信息：</value></data>
+  <data name="OverviewGuidedRawErrorPrefix" xml:space="preserve"><value>原始错误信息：</value></data>
+  <data name="OverviewGuidedDriversStageTitle" xml:space="preserve"><value>驱动</value></data>
+  <data name="OverviewGuidedSystemOptimizationStageTitle" xml:space="preserve"><value>系统优化</value></data>
+  <data name="OverviewGuidedSoftwareInstallationStageTitle" xml:space="preserve"><value>软件安装</value></data>
+  <data name="OverviewGuidedSoftwareOptimizationStageTitle" xml:space="preserve"><value>软件优化</value></data>
+  <data name="OverviewGuidedUnknownStageTitle" xml:space="preserve"><value>未知阶段</value></data>
+  <data name="OverviewGuidedStagePendingBody" xml:space="preserve"><value>等待执行</value></data>
+  <data name="OverviewGuidedStageActiveBody" xml:space="preserve"><value>正在执行</value></data>
+  <data name="OverviewGuidedStageCompletedBody" xml:space="preserve"><value>已完成</value></data>
+  <data name="OverviewGuidedStageSkippedBody" xml:space="preserve"><value>已跳过</value></data>
+  <data name="OverviewGuidedStageNoApplicableBody" xml:space="preserve"><value>没有适用项目</value></data>
+  <data name="OverviewGuidedStagePartialBody" xml:space="preserve"><value>部分完成</value></data>
+  <data name="OverviewGuidedStageFailedBody" xml:space="preserve"><value>执行失败</value></data>
+  <data name="OverviewGuidedStageConfirmationBody" xml:space="preserve"><value>等待确认结果</value></data>
+  <data name="OverviewGuidedStageWaitingExplorerBody" xml:space="preserve"><value>等待资源管理器重启</value></data>
+  <data name="OverviewGuidedStageWaitingRestartBody" xml:space="preserve"><value>等待 Windows 重启</value></data>
+  <data name="OverviewGuidedStageWithdrawnBody" xml:space="preserve"><value>已紧急撤回</value></data>
+  <data name="OverviewGuidedStageExternalHandoffBody" xml:space="preserve"><value>等待外部安装交接</value></data>
+  <data name="OverviewGuidedStageNotExecutedBody" xml:space="preserve"><value>未执行</value></data>
   <data name="NavigationSoftwareCatalogEditor.Content" xml:space="preserve"><value>目录编辑器</value></data>
   <data name="SoftwareCatalogEditorPageTitle.Text" xml:space="preserve"><value>软件目录编辑器</value></data>
   <data name="SoftwareCatalogEditorStatusTitle" xml:space="preserve"><value>目录编辑状态</value></data>
