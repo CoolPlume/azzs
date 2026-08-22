@@ -474,6 +474,15 @@ class InMemoryAdvancedViewPreferenceStore final
 [[nodiscard]] bool verify_guided_initialization_projection() {
   namespace guided = azzs::application::guided_initialization;
 
+  azzs::ui::presentation::GuidedInitializationPresentationText localized_text;
+  localized_text.summary_title = "推荐初始化";
+  localized_text.summary_prefix = "已完成：";
+  localized_text.stage_completed_body = "已完成";
+  localized_text.stage_partial_body = "部分完成";
+  localized_text.stage_waiting_restart_body = "等待 Windows 重启";
+  localized_text.stage_withdrawn_body = "已紧急撤回";
+  localized_text.raw_detail_prefix = "原始系统信息：";
+
   guided::Snapshot source;
   source.mode = guided::LifecycleMode::ready;
   source.writable = true;
@@ -493,17 +502,17 @@ class InMemoryAdvancedViewPreferenceStore final
   };
   source.evidence.restart_gate = guided::RestartGateState::awaiting_user_continue;
 
-  auto projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+  auto projected = azzs::ui::presentation::make_guided_initialization_presentation(
+      source, localized_text);
   auto const* localized_summary = projected->find_component("guided.summary");
-  bool localized_defaults =
+  bool has_localized_projection =
       localized_summary != nullptr &&
       localized_summary->title == "推荐初始化" &&
       localized_summary->body.find("已完成：") != std::string::npos;
   auto const* restart_stage =
       projected->find_component("guided.stage.system-optimization");
-  bool passed = expect(localized_defaults,
-                       "guided projection defaults must be Simplified Chinese");
+  bool passed = expect(has_localized_projection,
+                       "guided projection must use injected Simplified Chinese text");
   passed &= expect(restart_stage != nullptr,
                    "guided projection must expose the current restart stage");
   bool has_restart_continue = false;
@@ -526,7 +535,8 @@ class InMemoryAdvancedViewPreferenceStore final
   source.active->stages[0].state = guided::StageState::failed;
   source.evidence.restart_gate = guided::RestartGateState::none;
   projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
   auto const* failed_stage = projected->find_component("guided.stage.drivers");
   bool has_retry = false;
   if (failed_stage != nullptr) {
@@ -553,7 +563,8 @@ class InMemoryAdvancedViewPreferenceStore final
   source.active->stages[0].state = guided::StageState::completed;
   source.active->stages[0].detail = "driver stage marked complete by the user";
   projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
   auto const* completed_stage =
       projected->find_component("guided.stage.drivers");
   passed &= expect(completed_stage != nullptr &&
@@ -564,7 +575,8 @@ class InMemoryAdvancedViewPreferenceStore final
   source.active->stages[0].detail =
       "external installation remains an explicitly recognized fact";
   projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
   auto const* partial_stage = projected->find_component("guided.stage.drivers");
   passed &= expect(partial_stage != nullptr &&
                        partial_stage->body == "部分完成",
@@ -574,7 +586,8 @@ class InMemoryAdvancedViewPreferenceStore final
   source.active->stages[0].detail =
       "restart barrier is available only for read-only recovery";
   projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
   auto const* read_only_restart_stage =
       projected->find_component("guided.stage.drivers");
   passed &= expect(read_only_restart_stage != nullptr &&
@@ -584,7 +597,8 @@ class InMemoryAdvancedViewPreferenceStore final
   source.active->stages[0].state = guided::StageState::emergency_withdrawn;
   source.active->stages[0].detail = "controlled emergency withdrawal";
   projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
   auto const* withdrawn_stage = projected->find_component("guided.stage.drivers");
   passed &= expect(withdrawn_stage != nullptr &&
                        withdrawn_stage->body == "已紧急撤回",
@@ -593,7 +607,8 @@ class InMemoryAdvancedViewPreferenceStore final
   source.active->stages[0].state = guided::StageState::failed;
   source.active->stages[0].detail = "vendor-specific failure 0x80070005";
   projected =
-      azzs::ui::presentation::make_guided_initialization_presentation(source);
+      azzs::ui::presentation::make_guided_initialization_presentation(
+          source, localized_text);
   auto const* raw_stage = projected->find_component("guided.stage.drivers");
   passed &= expect(raw_stage != nullptr &&
                        raw_stage->body.find("原始系统信息：vendor-specific failure") ==
