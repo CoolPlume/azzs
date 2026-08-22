@@ -22,6 +22,7 @@ using azzs::adapters::windows::parse_windows_controlled_https_address;
 using azzs::adapters::windows::windows_controlled_content_range_matches;
 using azzs::adapters::windows::
     windows_controlled_github_release_redirect_matches;
+using azzs::adapters::windows::windows_controlled_pe_machine_matches;
 using azzs::adapters::windows::windows_controlled_redirect_matches;
 using azzs::adapters::windows::inspect_windows_controlled_archive;
 using azzs::adapters::windows::WindowsArchiveValidationCode;
@@ -248,6 +249,46 @@ struct FixtureZipEntry final {
   passed &= expect(
       inspection.code == WindowsArchiveValidationCode::member_mismatch,
       "a ZIP directory marker must not satisfy the executable whitelist");
+  return passed;
+}
+
+[[nodiscard]] bool pe_machine_policy_is_explicit() {
+  bool passed = true;
+  constexpr std::uint16_t reviewed_machines[] = {
+      0x014cU,  // x86
+      0x8664U,  // x64
+      0xaa64U,  // arm64
+  };
+  for (auto const machine : reviewed_machines) {
+    passed &= expect(
+        windows_controlled_pe_machine_matches(
+            CacheArchitecture::architecture_independent, machine),
+        "architecture-independent EXE packages must accept each reviewed Windows PE machine");
+  }
+  passed &= expect(
+      !windows_controlled_pe_machine_matches(
+          CacheArchitecture::architecture_independent, 0x01c4U),
+      "architecture-independent EXE packages must reject unreviewed ARM32 PE machines");
+  passed &= expect(
+      !windows_controlled_pe_machine_matches(
+          CacheArchitecture::architecture_independent, 0U),
+      "architecture-independent EXE packages must reject an unknown PE machine");
+
+  passed &= expect(
+      windows_controlled_pe_machine_matches(CacheArchitecture::x86, 0x014cU) &&
+          windows_controlled_pe_machine_matches(CacheArchitecture::x64, 0x8664U) &&
+          windows_controlled_pe_machine_matches(CacheArchitecture::arm64, 0xaa64U),
+      "specific cache architectures must retain their exact PE machine mapping");
+  passed &= expect(
+      !windows_controlled_pe_machine_matches(CacheArchitecture::x64, 0x014cU) &&
+          !windows_controlled_pe_machine_matches(CacheArchitecture::x86, 0x8664U) &&
+          !windows_controlled_pe_machine_matches(CacheArchitecture::arm64, 0x014cU),
+      "specific cache architectures must reject a different PE machine");
+  passed &= expect(
+      !windows_controlled_pe_machine_matches(CacheArchitecture::unknown, 0x8664U) &&
+          !windows_controlled_pe_machine_matches(
+              static_cast<CacheArchitecture>(0xffU), 0x8664U),
+      "unknown cache architectures must fail closed");
   return passed;
 }
 
@@ -512,7 +553,8 @@ struct FixtureZipEntry final {
 }  // namespace
 
 int main() {
-  return archive_member_policy_is_fail_closed() && resolves_fixed_assets() &&
+  return pe_machine_policy_is_explicit() && archive_member_policy_is_fail_closed() &&
+                 resolves_fixed_assets() &&
                  production_registrations_are_frozen() &&
                  resolves_office_archive_snapshot() &&
                  fail_closed_entries_are_not_resolved() &&

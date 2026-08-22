@@ -1001,6 +1001,28 @@ struct ParsedArchive final {
 
 }  // namespace
 
+bool windows_controlled_pe_machine_matches(
+    domain::offline_package_cache::CacheArchitecture expected_architecture,
+    std::uint16_t actual_machine) noexcept {
+  switch (expected_architecture) {
+    case domain::offline_package_cache::CacheArchitecture::x64:
+      return actual_machine == 0x8664U;
+    case domain::offline_package_cache::CacheArchitecture::x86:
+      return actual_machine == 0x014cU;
+    case domain::offline_package_cache::CacheArchitecture::arm64:
+      return actual_machine == 0xaa64U;
+    case domain::offline_package_cache::CacheArchitecture::architecture_independent:
+      // The package may contain either native Windows width, but only the
+      // reviewed PE machine set is accepted.  This is not an arbitrary
+      // machine wildcard and deliberately excludes ARM32/unknown values.
+      return actual_machine == 0x014cU || actual_machine == 0x8664U ||
+             actual_machine == 0xaa64U;
+    case domain::offline_package_cache::CacheArchitecture::unknown:
+      return false;
+  }
+  return false;
+}
+
 WindowsArchiveInspection inspect_windows_controlled_archive(
     std::span<std::byte const> archive,
     std::span<std::string const> allowed_members,
@@ -1316,9 +1338,9 @@ WindowsOpaqueCacheInstallerLauncher::launch(
     auto const payload_is_valid = *kind == ControlledInstallerKind::msi
                                       ? has_msi_signature(payload.bytes)
                                       : machine.has_value() &&
-                                       ((request.target.cache_asset.identity.architecture == cache_domain::CacheArchitecture::x64 && *machine == 0x8664U) ||
-                                        (request.target.cache_asset.identity.architecture == cache_domain::CacheArchitecture::x86 && *machine == 0x014cU) ||
-                                        (request.target.cache_asset.identity.architecture == cache_domain::CacheArchitecture::arm64 && *machine == 0xaa64U));
+                                            windows_controlled_pe_machine_matches(
+                                                request.target.cache_asset.identity.architecture,
+                                                *machine);
     if (!payload_is_valid) {
       return {.code = batch::InstallerLaunchCode::source_invalid,
               .detail = "controlled cache payload is not a matching installer or PE architecture"};

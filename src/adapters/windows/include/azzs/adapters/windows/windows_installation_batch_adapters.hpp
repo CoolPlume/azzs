@@ -40,6 +40,14 @@ struct WindowsArchiveInspection final {
   std::string detail;
 };
 
+// Architecture-independent executable packages still have to be one of the
+// reviewed Windows PE machine types.  This contract is shared by the
+// production launcher and headless adapter tests; unknown machine values are
+// never accepted as a wildcard.
+[[nodiscard]] bool windows_controlled_pe_machine_matches(
+    domain::offline_package_cache::CacheArchitecture expected_architecture,
+    std::uint16_t actual_machine) noexcept;
+
 [[nodiscard]] WindowsArchiveInspection inspect_windows_controlled_archive(
     std::span<std::byte const> archive,
     std::span<std::string const> allowed_members,
