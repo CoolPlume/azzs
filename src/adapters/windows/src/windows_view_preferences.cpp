@@ -1,6 +1,7 @@
 #include "azzs/adapters/windows/windows_view_preferences.hpp"
 
 #include <cstdint>
+#include <cmath>
 #include <optional>
 
 #include <winrt/Windows.Foundation.h>
@@ -14,6 +15,7 @@ constexpr wchar_t kAdvancedViewPreference[] = L"AzzsAdvancedView";
 constexpr wchar_t kArchitecturePreference[] = L"AzzsArchitecturePreference";
 constexpr wchar_t kCacheRetentionPreference[] = L"AzzsCacheRetentionPreference";
 constexpr wchar_t kDebugModePreference[] = L"AzzsDebugMode";
+constexpr wchar_t kSidebarWidthPreference[] = L"AzzsSidebarWidthDip";
 
 [[nodiscard]] std::optional<std::int32_t> read_int32(
     wchar_t const* key) {
@@ -28,6 +30,30 @@ constexpr wchar_t kDebugModePreference[] = L"AzzsDebugMode";
     return std::nullopt;
   }
   return winrt::unbox_value<std::int32_t>(value);
+}
+
+[[nodiscard]] std::optional<double> read_sidebar_width_value(
+    wchar_t const* key) {
+  auto const value = winrt::Windows::Storage::ApplicationData::Current()
+                         .LocalSettings()
+                         .Values()
+                         .TryLookup(key);
+  auto const property_value =
+      value.try_as<winrt::Windows::Foundation::IPropertyValue>();
+  if (!property_value) {
+    return std::nullopt;
+  }
+  if (property_value.Type() ==
+      winrt::Windows::Foundation::PropertyType::Double) {
+    return winrt::unbox_value<double>(value);
+  }
+  // Accept the first implementation's integral representation when upgrading
+  // an existing profile, but always write the canonical Double form below.
+  if (property_value.Type() ==
+      winrt::Windows::Foundation::PropertyType::Int32) {
+    return static_cast<double>(winrt::unbox_value<std::int32_t>(value));
+  }
+  return std::nullopt;
 }
 
 }  // namespace
@@ -159,6 +185,44 @@ WindowsViewPreferences::write_debug_mode(bool enabled) {
     return application::DebugModePreferenceWriteStatus::saved;
   } catch (...) {
     return application::DebugModePreferenceWriteStatus::unavailable;
+  }
+}
+
+application::SidebarWidthPreferenceRead
+WindowsViewPreferences::read_sidebar_width() {
+  try {
+    auto const value = read_sidebar_width_value(kSidebarWidthPreference);
+    if (!value.has_value()) {
+      return {.status = application::SidebarWidthPreferenceReadStatus::loaded};
+    }
+    auto const width = *value;
+    if (!std::isfinite(width) ||
+        width < application::kSidebarWidthMinimumDip ||
+        width > application::kSidebarWidthMaximumDip) {
+      return {.status = application::SidebarWidthPreferenceReadStatus::loaded};
+    }
+    return {.status = application::SidebarWidthPreferenceReadStatus::loaded,
+            .width_dip = width};
+  } catch (...) {
+    return {};
+  }
+}
+
+application::SidebarWidthPreferenceWriteStatus
+WindowsViewPreferences::write_sidebar_width(double width_dip) {
+  try {
+    if (!std::isfinite(width_dip) ||
+        width_dip < application::kSidebarWidthMinimumDip ||
+        width_dip > application::kSidebarWidthMaximumDip) {
+      return application::SidebarWidthPreferenceWriteStatus::unavailable;
+    }
+    winrt::Windows::Storage::ApplicationData::Current()
+        .LocalSettings()
+        .Values()
+        .Insert(kSidebarWidthPreference, winrt::box_value(width_dip));
+    return application::SidebarWidthPreferenceWriteStatus::saved;
+  } catch (...) {
+    return application::SidebarWidthPreferenceWriteStatus::unavailable;
   }
 }
 
