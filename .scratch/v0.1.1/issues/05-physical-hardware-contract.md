@@ -34,3 +34,4 @@ Windows 硬件适配器负责取得原始观测并在单一过滤接缝确认物
 ## Comments
 
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md` 与 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 均已核实；这些记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
+- 2026-08-23 07:20:51 +08:00（最终候选证据）：硬件概览/物理过滤合同在 `d8a4367adc1e322351126e8ab3676d30584475d5` 上通过，并已普通合并到 `0.1.1` 提交 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b`。Windows 设备数据合同受宿主 `CreateSymbolicLinkW` 权限限制，真实设备观察、ARM64 和 UI 投影仍未验证；未知物理性继续 fail-closed。
