@@ -248,6 +248,30 @@ using azzs::ui::presentation::SettingsNavigationBridge;
                  "a failed commit must not be reported as a core page commit");
 }
 
+[[nodiscard]] bool verify_post_commit_projection_failure_is_not_swallowed() {
+  SettingsNavigationBridge bridge;
+  int recovery_count = 0;
+  int failure_count = 0;
+  auto const result = bridge.navigate(SettingsNavigationCallbacks{
+      .prepare = [&] {
+        return SettingsNavigationPreparation{
+            .commit = [] {
+              throw std::runtime_error{"injected post-commit projection failure"};
+            },
+            .recover = [&] { ++recovery_count; }};
+      },
+      .present_failure = [&](SettingsNavigationFailure const& failure) {
+        if (failure.stage == SettingsNavigationFailureStage::commit) {
+          ++failure_count;
+        }
+      },
+      .clear_failure = [] {},
+  });
+  return expect(!result && recovery_count == 1 && failure_count == 1 &&
+                    bridge.failed(),
+                "post-commit projection failures must recover instead of reporting success");
+}
+
 }  // namespace
 
 int main() {
@@ -259,6 +283,7 @@ int main() {
   passed &= verify_empty_callbacks_are_safe();
   passed &= verify_success_invalidates_callbacks();
   passed &= verify_commit_failure_is_not_core_success();
+  passed &= verify_post_commit_projection_failure_is_not_swallowed();
   if (!passed) {
     return EXIT_FAILURE;
   }

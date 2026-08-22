@@ -393,6 +393,11 @@ def verify(root: Path) -> None:
         "workbench_->navigate(PageId::application_settings)" not in failure_body,
         "application-settings failure handling must record and project without committing the failed page",
     )
+    require(
+        "post-commit projection is part of the transaction boundary" in main_window and
+        "settings page post-commit projection failed" not in main_window,
+        "post-commit projection failures must reach the single recovery boundary",
+    )
     for automation_id in (
         "AzzsSettingsNavigationFailureInfoBar",
         "AzzsRetrySettingsNavigation",
