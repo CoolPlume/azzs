@@ -558,6 +558,37 @@ struct DebugModeCatalogEditorFixture final {
                        runtime.catalog->software.size() == 11 &&
                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
+  if (runtime.catalog.has_value()) {
+    auto cheat_engine = std::ranges::find_if(
+        runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+          return item.definition.id == "cheat-engine";
+        });
+    auto geometers = std::ranges::find_if(
+        runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+          return item.definition.id == "the-geometers-sketchpad";
+        });
+    passed &= expect(
+        cheat_engine != runtime.catalog->software.end() &&
+            cheat_engine->availability ==
+                catalog::ItemAvailability::install_profile_unavailable &&
+            geometers != runtime.catalog->software.end() &&
+            geometers->availability ==
+                catalog::ItemAvailability::install_profile_unavailable,
+        "unresolved controlled profiles must disable only their own catalog items");
+    passed &= expect(
+        std::ranges::count_if(
+            runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+              return item.availability == catalog::ItemAvailability::available;
+            }) == 9,
+        "the nine registered controlled profiles must remain independently available");
+    passed &= expect(
+        std::ranges::all_of(
+            runtime.issues, [](catalog::CatalogIssue const& issue) {
+              return issue.code != catalog::CatalogIssueCode::install_profile_unavailable ||
+                     issue.scope == catalog::CatalogIssueScope::item;
+            }),
+        "a missing profile must be reported at item scope rather than rejecting the package");
+  }
   auto const sogou_runtime = std::ranges::find_if(
       runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
         return item.definition.id == "sogou-input";
@@ -642,8 +673,12 @@ struct DebugModeCatalogEditorFixture final {
 
   auto const profiles = catalog::initial_controlled_install_profiles();
   auto const facts = catalog::initial_software_install_facts();
-  passed &= expect(profiles.size() == 11 && facts.size() == 11,
-                   "initial declarations must cover eleven controlled profiles and eleven software facts");
+  std::vector<std::string> executable_ids{
+      "qq", "sogou-input", "game-cheats-manager", "office-tool-plus",
+      "internet-download-manager", "java-runtime", "dotnet-runtime",
+      "directx-runtime", "powershell-7"};
+  passed &= expect(profiles.size() == 9 && facts.size() == 9,
+                   "initial declarations must cover nine executable profiles and nine software facts");
   passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
                        catalog::validate_software_install_facts(facts).accepted(),
                    "initial declaration registries must satisfy their value contracts");
@@ -663,8 +698,9 @@ struct DebugModeCatalogEditorFixture final {
         "initial third-party installation facts must remain explicitly unknown");
   }
   std::ranges::sort(fact_ids);
-  passed &= expect(fact_ids == expected_ids,
-                   "typed install facts must cover the same eleven software ids");
+  std::ranges::sort(executable_ids);
+  passed &= expect(fact_ids == executable_ids,
+                   "typed install facts must cover the nine executable software ids");
   auto const dotnet_facts = std::ranges::find(
       facts, "dotnet-runtime", &catalog::SoftwareInstallFacts::software_id);
   passed &= expect(dotnet_facts != facts.end() &&
@@ -742,9 +778,9 @@ struct DebugModeCatalogEditorFixture final {
 
   std::vector<std::string> required = policy.required_release_software;
   std::ranges::sort(required);
-  passed &= expect(required == expected_ids && policy.supported_driver_hardware_kinds ==
+  passed &= expect(required == executable_ids && policy.supported_driver_hardware_kinds ==
                        std::vector<std::string>{"gpu"},
-                   "the initial policy must require all eleven software ids and the registered GPU kind");
+                   "the initial policy must require the nine executable software ids and the registered GPU kind");
   std::vector<std::string> release_fact_ids;
   release_fact_ids.reserve(policy.required_release_install_facts.size());
   for (auto const& requirement : policy.required_release_install_facts) {
@@ -753,8 +789,8 @@ struct DebugModeCatalogEditorFixture final {
                      "unvalidated third-party facts must not be release-ready");
   }
   std::ranges::sort(release_fact_ids);
-  passed &= expect(release_fact_ids == expected_ids,
-                   "the release policy must consume install facts for every required software id");
+  passed &= expect(release_fact_ids == executable_ids,
+                   "the release policy must consume install facts for every executable software id");
   auto const* sogou_profile = find_by_id(
       policy.install_profiles, "sogou-input-defaults-v1",
       &catalog::InstallProfileSupport::id);
@@ -762,7 +798,7 @@ struct DebugModeCatalogEditorFixture final {
                        sogou_profile->runtime_status ==
                            catalog::InstallProfileRuntimeStatus::available &&
                        !sogou_profile->release_ready &&
-                       policy.required_install_profiles.size() == 11,
+                       policy.required_install_profiles.size() == 9,
                    "registered controlled profiles must be runtime-available without release evidence");
   passed &= expect(
       std::ranges::all_of(policy.install_profiles, [](auto const& support) {
