@@ -32,6 +32,12 @@ using azzs::application::ExecutionLogReceipt;
 using azzs::application::HardwareObservation;
 using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareObservationResult;
+using azzs::application::HardwareDeviceKind;
+using azzs::application::HardwareDevicePhysicality;
+using azzs::application::HardwareDeviceStatus;
+using azzs::application::HardwareObservationConfidence;
+using azzs::application::HardwareObservationSource;
+using azzs::application::HardwareVendor;
 using azzs::application::HardwareObserver;
 using azzs::application::HardwareOverviewService;
 using azzs::application::HardwareOverviewState;
@@ -77,14 +83,54 @@ class FixtureHardwareObserver final : public HardwareObserver {
  public:
   [[nodiscard]] HardwareObservationResult observe(std::stop_token) override {
     ++observe_calls;
+    HardwareObservation observation{
+        .cpu = "AMD Ryzen 7",
+        .gpu = "NVIDIA GeForce RTX",
+        .motherboard = "ASUS PRIME",
+        .network_adapter = "Intel Ethernet",
+        .oem_model = "Dell Desktop",
+        .oem_vendor = HardwareVendor::dell,
+    };
+    observation.devices = {
+        {.kind = HardwareDeviceKind::cpu,
+         .name = observation.cpu,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::amd,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+        {.kind = HardwareDeviceKind::gpu,
+         .name = observation.gpu,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::nvidia,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+        {.kind = HardwareDeviceKind::motherboard,
+         .name = observation.motherboard,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::asus,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+        {.kind = HardwareDeviceKind::network_adapter,
+         .name = observation.network_adapter,
+         .physicality = HardwareDevicePhysicality::confirmed_physical,
+         .source = HardwareObservationSource::wmi,
+         .confidence = HardwareObservationConfidence::confirmed,
+         .status = HardwareDeviceStatus::enabled,
+         .vendor = HardwareVendor::intel,
+         .physically_present = true,
+         .filter_reason = "contract fixture"},
+    };
     return {.code = HardwareObservationCode::succeeded,
-            .observation = HardwareObservation{
-                .cpu = "AMD Ryzen 7",
-                .gpu = "NVIDIA GeForce RTX",
-                .motherboard = "ASUS PRIME",
-                .network_adapter = "Intel Ethernet",
-                .oem_model = "Dell Desktop",
-            }};
+            .observation = std::move(observation)};
   }
 
   std::size_t observe_calls{0};
