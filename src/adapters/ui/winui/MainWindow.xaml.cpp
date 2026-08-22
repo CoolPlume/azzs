@@ -586,18 +586,10 @@ void MainWindow::commit_application_settings_page(
       services->debug_mode_catalog_editor().end_temporary_close_recovery();
     }
   }
-  try {
-    project(workbench_->snapshot());
-  } catch (...) {
-    // The candidate page and core navigation are already committed. Keep the
-    // page usable and leave a diagnostic rather than rolling back a complete
-    // page because a secondary shell projection failed.
-    record_settings_navigation_failure(
-        {.stage = azzs::ui::presentation::SettingsNavigationFailureStage::commit,
-         .detail = "settings page post-commit projection failed"});
-    ::OutputDebugStringW(
-        L"WinUI application-settings post-commit projection failed.\n");
-  }
+  // A post-commit projection is part of the transaction boundary. Let any
+  // exception escape so SettingsNavigationBridge performs the single recovery
+  // path; swallowing it would report navigation success with a partial shell.
+  project(workbench_->snapshot());
 }
 
 void MainWindow::restore_settings_navigation_state(
