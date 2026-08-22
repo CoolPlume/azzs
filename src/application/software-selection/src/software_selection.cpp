@@ -1159,7 +1159,8 @@ SelectionActionResult SoftwareSelectionLifecycle::evaluate_architecture(
   std::vector<architecture_selection::selection_domain::PackageCandidate>
       online_packages;
   for (auto const& package : source.packages) {
-    if (package.package_type == selection_domain::PackageType::full_package &&
+    if ((package.package_type == selection_domain::PackageType::full_package ||
+         package.package_type == selection_domain::PackageType::archive_package) &&
         package.complete_package) {
       complete_packages.push_back(package.candidate);
     } else if (package.package_type ==
