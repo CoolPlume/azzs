@@ -63,9 +63,18 @@ def validate_mapping(version: dict[str, Any], contract: Contract) -> None:
     contract.require(isinstance(windows, str) and bool(WINDOWS_VERSION.fullmatch(windows)), "windowsVersion is not a four-part numeric version")
     contract.require(isinstance(wix, str) and bool(NUMERIC_VERSION.fullmatch(wix)), "wixVersion is not a three-part numeric version")
     if isinstance(application, str) and channel in RELEASE_CHANNELS:
-        expected_channel = "prerelease" if "-" in application else "stable"
-        contract.equal(channel, expected_channel, "releaseChannel must match the applicationVersion prerelease suffix")
-    if isinstance(application, str) and bool(NUMERIC_VERSION.fullmatch(application)):
+        # The first Beta is intentionally represented by the numeric product
+        # version 0.1.0 plus an explicit prerelease channel.  Once a semantic
+        # prerelease suffix is present, the channel must still be prerelease;
+        # a numeric version may be either stable or an explicitly named Beta
+        # channel.
+        if "-" in application:
+            contract.equal(channel, "prerelease", "releaseChannel must be prerelease when applicationVersion has a prerelease suffix")
+    if (
+        isinstance(application, str)
+        and channel == "stable"
+        and bool(NUMERIC_VERSION.fullmatch(application))
+    ):
         contract.equal(cmake, application, "stable CMake version must derive directly from applicationVersion")
         contract.equal(wix, application, "stable WiX version must derive directly from applicationVersion")
         contract.equal(windows, f"{application}.0", "stable Windows version must derive directly from applicationVersion")
@@ -535,7 +544,7 @@ def validate_mutated_cmake_consumers(
             root,
             fixture_root,
             dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns(".git", ".scratch", "out"),
+            ignore=shutil.ignore_patterns(".git", ".gitnexus", ".scratch", "out"),
         )
         source_path = fixture_root / "release/product-version.json"
         build_directory = Path(

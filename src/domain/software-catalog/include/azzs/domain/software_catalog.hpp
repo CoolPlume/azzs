@@ -328,6 +328,14 @@ enum class ReleaseGateOutcome {
   not_evaluated,
 };
 
+// Formal publication is intentionally strict. The beta candidate mode is an
+// explicit, local exception for the v0.1.0 candidate workflow; it does not
+// change the semantics of the ordinary release gate.
+enum class SoftwareCatalogReleaseGateMode {
+  formal,
+  v0_1_0_beta_candidate,
+};
+
 struct SoftwareCatalogReleaseGate final {
   ReleaseGateOutcome outcome{ReleaseGateOutcome::not_evaluated};
   std::vector<CatalogIssue> issues;
@@ -346,6 +354,16 @@ struct SoftwareCatalogReleaseGate final {
     SoftwareCatalogPolicy const& policy);
 
 [[nodiscard]] SoftwareCatalogReleaseGate evaluate_release_gate(
+    SoftwareCatalogDocument const& document,
+    RuntimeCatalogLoad const& runtime,
+    SoftwareCatalogPolicy const& policy,
+    std::string_view content_identity);
+
+// Evaluates the explicit v0.1.0 Beta candidate gate. Unknown third-party
+// installation facts and unproven profile release readiness are deferred, but
+// catalog, runtime, dependency, driver, and revision rules remain strict.
+[[nodiscard]] SoftwareCatalogReleaseGate
+evaluate_beta_candidate_release_gate(
     SoftwareCatalogDocument const& document,
     RuntimeCatalogLoad const& runtime,
     SoftwareCatalogPolicy const& policy,

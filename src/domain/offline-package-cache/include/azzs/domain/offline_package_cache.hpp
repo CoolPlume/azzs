@@ -44,6 +44,7 @@ struct CacheAsset final {
   CacheAssetKind kind{CacheAssetKind::unsupported};
   bool resume_supported{false};
   std::optional<std::uint64_t> expected_bytes;
+  std::optional<std::string> expected_sha256;
 
   [[nodiscard]] bool valid() const noexcept;
   [[nodiscard]] bool cacheable() const noexcept;
