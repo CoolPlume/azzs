@@ -13,13 +13,30 @@
 namespace winrt::Azzs::Ui::implementation {
 namespace {
 
+[[nodiscard]] wchar_t const* startup_failure_resource_key(
+    unsigned int message_id) noexcept {
+  switch (message_id) {
+    case AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_RESOURCES:
+      return L"AppStartupFailureResources";
+    case AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_WINDOW:
+      return L"AppStartupFailureWindow";
+    case AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_UNEXPECTED:
+      return L"AppStartupFailureUnexpected";
+    default:
+      return L"AppStartupFailureUnexpected";
+  }
+}
+
 void show_last_resort_startup_failure(unsigned int message_id) noexcept {
   try {
     using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
     auto const resources = ResourceLoader{};
     auto const title = resources.GetString(L"AppStartupFailureTitle");
-    auto const message = resources.GetString(message_key);
+    // ResourceLoader uses the stable key that corresponds to the native
+    // fallback id; unknown ids stay on the generic localized message.
+    auto const message =
+        resources.GetString(startup_failure_resource_key(message_id));
     if (!title.empty() && !message.empty()) {
       ::OutputDebugStringW(message.c_str());
       ::OutputDebugStringW(L"\n");
@@ -31,9 +48,9 @@ void show_last_resort_startup_failure(unsigned int message_id) noexcept {
     // Resource loading can fail while the application is still bootstrapping.
   }
 
-  auto const title = native_resources::load_string(
+  auto const title = azzs::ui::winui::native_resources::load_string(
       AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_TITLE);
-  auto const message = native_resources::load_string(message_id);
+  auto const message = azzs::ui::winui::native_resources::load_string(message_id);
   if (!title.empty() && !message.empty()) {
     ::OutputDebugStringW(message.c_str());
     ::OutputDebugStringW(L"\n");
