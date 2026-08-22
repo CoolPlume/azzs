@@ -163,6 +163,8 @@
     <ClInclude Include="DesignSystem\guided_initialization_presentation.hpp" />
     <ClInclude Include="DesignSystem\software_selection_presentation.hpp" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="native_resource_fallback.hpp" />
+    <ClInclude Include="resource_ids.h" />
     <ClInclude Include="Pages\ApplicationSettingsPage.xaml.h">
       <DependentUpon>ApplicationSettingsPage.xaml</DependentUpon>
     </ClInclude>

@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "PageHeader.xaml.h"
+#include "../../native_resource_fallback.hpp"
 
 #include <string>
 
@@ -25,7 +26,10 @@ PageHeader::PageHeader() {
     auto const resource =
         winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader{}
             .GetString(L"PageHeaderFallbackTitle");
-    fallback.Text(resource.empty() ? winrt::hstring{L"页面"} : resource);
+    auto const native_resource =
+        azzs::ui::winui::native_resources::load_string(
+            AZZS_NATIVE_STRING_PAGE_HEADER_FALLBACK_TITLE);
+    fallback.Text(resource.empty() ? winrt::hstring{native_resource} : resource);
     fallback.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
     TitleContent(fallback);
   }
