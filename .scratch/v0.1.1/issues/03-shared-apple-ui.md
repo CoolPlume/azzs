@@ -3,7 +3,7 @@
 Type: task
 Status: ready-for-agent
 Resolution: open
-Blocked by: 24
+Blocked by: none
 Owner: issue-03
 Claimed by: none
 Consumers: 02, 04, 07
