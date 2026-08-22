@@ -834,13 +834,16 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
   restoring_navigation_selection_ = false;
   try {
     using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
-    using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
-    auto const resources = ResourceLoader{};
     auto const title =
-        resources.GetString(L"MainWindowSettingsNavigationFailed.Title");
+        azzs::ui::winui::native_resources::localized_or_native_string(
+            L"MainWindowSettingsNavigationFailed.Title",
+            AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_TITLE);
+    auto const message =
+        azzs::ui::winui::native_resources::localized_or_native_string(
+            L"MainWindowSettingsNavigationFailed.Message",
+            AZZS_NATIVE_STRING_SETTINGS_NAVIGATION_FAILED_MESSAGE);
+    SettingsNavigationFailureInfoBar().Message(message);
     SettingsNavigationFailureInfoBar().Title(title);
-    SettingsNavigationFailureInfoBar().Message(
-        resources.GetString(L"MainWindowSettingsNavigationFailed.Message"));
     AutomationProperties::SetName(SettingsNavigationFailureInfoBar(), title);
   } catch (...) {
     try {

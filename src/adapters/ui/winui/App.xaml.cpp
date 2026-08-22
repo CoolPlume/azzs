@@ -28,29 +28,11 @@ namespace {
 }
 
 void show_last_resort_startup_failure(unsigned int message_id) noexcept {
-  try {
-    using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
-
-    auto const resources = ResourceLoader{};
-    auto const title = resources.GetString(L"AppStartupFailureTitle");
-    // ResourceLoader uses the stable key that corresponds to the native
-    // fallback id; unknown ids stay on the generic localized message.
-    auto const message =
-        resources.GetString(startup_failure_resource_key(message_id));
-    if (!title.empty() && !message.empty()) {
-      ::OutputDebugStringW(message.c_str());
-      ::OutputDebugStringW(L"\n");
-      (void)::MessageBoxW(nullptr, message.c_str(), title.c_str(),
-                          MB_OK | MB_ICONERROR | MB_TOPMOST);
-      return;
-    }
-  } catch (...) {
-    // Resource loading can fail while the application is still bootstrapping.
-  }
-
-  auto const title = azzs::ui::winui::native_resources::load_string(
-      AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_TITLE);
-  auto const message = azzs::ui::winui::native_resources::load_string(message_id);
+  auto const title = azzs::ui::winui::native_resources::localized_or_native_string(
+      L"AppStartupFailureTitle", AZZS_NATIVE_STRING_APP_STARTUP_FAILURE_TITLE);
+  auto const message =
+      azzs::ui::winui::native_resources::localized_or_native_string(
+          startup_failure_resource_key(message_id), message_id);
   if (!title.empty() && !message.empty()) {
     ::OutputDebugStringW(message.c_str());
     ::OutputDebugStringW(L"\n");
