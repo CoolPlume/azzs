@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include "resource_fallback.hpp"
+
 // App.xaml.g.hpp renames its generated entry point when the project defines
 // DISABLE_XAML_GENERATED_MAIN. Keep the wrapper at the process boundary so
 // failures raised before App::App() still produce a visible diagnostic.
@@ -9,9 +11,14 @@ namespace {
 
 void show_startup_failure() noexcept {
   ::OutputDebugStringW(L"Azzs WinUI startup failed before the application was created.\n");
+  auto const title = azzs::ui::winui::compiled_resource_string(
+      IDS_AZZS_STARTUP_FAILURE_TITLE);
+  auto const message = azzs::ui::winui::compiled_resource_string(
+      IDS_AZZS_STARTUP_FAILURE_UNEXPECTED);
   (void)::MessageBoxW(
-      nullptr, L"工作台未能启动。请重新启动工作台；如果问题持续，请收集诊断资料。",
-      L"无法进入工作台", MB_OK | MB_ICONERROR | MB_TOPMOST);
+      nullptr, message.empty() ? L"Startup failure." : message.c_str(),
+      title.empty() ? L"Windows Initial Setup Workbench" : title.c_str(),
+      MB_OK | MB_ICONERROR | MB_TOPMOST);
 }
 
 }  // namespace

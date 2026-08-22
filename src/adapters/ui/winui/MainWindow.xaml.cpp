@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "MainWindow.xaml.h"
+#include "resource_fallback.hpp"
 
 #include <algorithm>
 #include <string>
@@ -834,23 +835,18 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
   restoring_navigation_selection_ = false;
   try {
     using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
-    using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
-    auto const resources = ResourceLoader{};
-    auto const title =
-        resources.GetString(L"MainWindowSettingsNavigationFailed.Title");
+    auto const title = azzs::ui::winui::localized_resource_or_compiled_fallback(
+        L"MainWindowSettingsNavigationFailed.Title",
+        IDS_AZZS_SETTINGS_NAVIGATION_FAILURE_TITLE);
     SettingsNavigationFailureInfoBar().Title(title);
     SettingsNavigationFailureInfoBar().Message(
-        resources.GetString(L"MainWindowSettingsNavigationFailed.Message"));
+        azzs::ui::winui::localized_resource_or_compiled_fallback(
+            L"MainWindowSettingsNavigationFailed.Message",
+            IDS_AZZS_SETTINGS_NAVIGATION_FAILURE_MESSAGE));
     AutomationProperties::SetName(SettingsNavigationFailureInfoBar(), title);
   } catch (...) {
-    try {
-      SettingsNavigationFailureInfoBar().Title(L"应用设置暂时无法打开");
-      SettingsNavigationFailureInfoBar().Message(
-          L"设置数据或页面资源读取失败。现有页面已保留，请重试或返回当前页面。");
-    } catch (...) {
-      ::OutputDebugStringW(
-          L"WinUI application-settings fallback message projection failed.\n");
-    }
+    ::OutputDebugStringW(
+        L"WinUI application-settings fallback message projection failed.\n");
     ::OutputDebugStringW(L"WinUI application-settings navigation recovery failed.\n");
   }
 

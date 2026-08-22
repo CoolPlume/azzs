@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "PageHeader.xaml.h"
+#include "../../resource_fallback.hpp"
 
 #include <string>
 
@@ -22,10 +23,9 @@ PageHeader::PageHeader() {
                        .Resources().Lookup(
                        box_value(L"AzzsPageTitleTextStyle"))
                        .as<Microsoft::UI::Xaml::Style>());
-    auto const resource =
-        winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader{}
-            .GetString(L"PageHeaderFallbackTitle");
-    fallback.Text(resource.empty() ? winrt::hstring{L"页面"} : resource);
+    auto const resource = azzs::ui::winui::localized_resource_or_compiled_fallback(
+        L"PageHeaderFallbackTitle", IDS_AZZS_PAGE_HEADER_FALLBACK_TITLE);
+    fallback.Text(resource.empty() ? winrt::hstring{L"Page"} : resource);
     fallback.TextWrapping(Microsoft::UI::Xaml::TextWrapping::Wrap);
     TitleContent(fallback);
   }
