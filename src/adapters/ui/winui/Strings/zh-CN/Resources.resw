@@ -89,6 +89,11 @@
   <data name="DriverAssistantNotInstalled" xml:space="preserve"><value>未检测到本机 AMD Software；可打开其官方安装页面。</value></data>
   <data name="DriverAssistantInstalled" xml:space="preserve"><value>已检测到本机 AMD Software；可将流程交接给该程序。</value></data>
   <data name="DriverRecommendationTitle" xml:space="preserve"><value>基于当前硬件的推荐入口</value></data>
+  <data name="DriverRecommendationUnavailableTitle" xml:space="preserve"><value>暂无硬件推荐</value></data>
+  <data name="DriverRecommendationHandoffSuffix" xml:space="preserve"><value>；入口仅交接到官方页面或助手，工作台不会下载或安装驱动。</value></data>
+  <data name="DriverRecommendationDegradedHardwareSuffix" xml:space="preserve"><value>部分真实物理设备处于禁用、无驱动或异常状态；推荐不代表驱动已完成。</value></data>
+  <data name="DriverRecommendationNoPhysicalMessage" xml:space="preserve"><value>未确认到真实物理硬件（可能是检测失败，或仅发现虚拟、软件、VPN、回环和未知设备），无法生成基于硬件的推荐；下方固定官方入口仍可用。工作台不会下载或安装驱动。</value></data>
+  <data name="DriverRecommendationNoMatchMessage" xml:space="preserve"><value>已确认真实物理硬件，但没有匹配的厂商推荐；下方固定官方入口仍可用。工作台不会下载或安装驱动。</value></data>
   <data name="DriverEntrypointAmd" xml:space="preserve"><value>AMD Software</value></data>
   <data name="DriverEntrypointIntel" xml:space="preserve"><value>Intel 驱动助手</value></data>
   <data name="DriverEntrypointNvidia" xml:space="preserve"><value>NVIDIA 驱动页</value></data>
