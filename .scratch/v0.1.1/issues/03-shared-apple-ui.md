@@ -32,3 +32,7 @@ Evidence freshness: 绑定主题、控件模板、页头/按钮组件和 WinUI/S
 `V011-G03`、`V011-UI-01` 至 `V011-UI-08`、ADR-0021、事项 24、`docs/design/winui3-apple-inspired.md`、`apple-design`、`emil-design-eng`
 
 ## Comments
+
+- 2026-08-23（集成证据核对）：共享页头和统一按钮/主题实现提交 `96c80e63e1059017f810d7fed2a460b6a39b1d17` 已通过普通合并 `da12eb5ea087cf0d9645148c30d0a7a706a837c7` 进入候选链，当前本地头为 `80713109b1cd71be19689f0c4fbbc4775d413797`。此前静态检查 `python tests/ui-design-contract/check_design_system.py .` 与 `python tests/ui-design-contract/check_winui_async_contract.py .` 均通过。
+- 静态通过不等于视觉验收；仍需在当前候选头执行浅色/深色/高对比度/减少动画、宽窄窗口和键盘/触摸/无障碍快速反向，并记录 `apple-design`、`emil-design-eng` 审查证据。
+- 未验证边界：真实 Windows x64 视觉/UIA、DPI、触摸、Narrator、ARM64、安装生命周期和性能/减少透明度实机行为均未验证。

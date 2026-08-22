@@ -32,4 +32,6 @@ Evidence freshness: 绑定 GitHub 分支清单、保护设置、集成提交和�
 
 ## Comments
 
-- 2026-08-23（只读接管核对）：GitHub `CoolPlume/azzs` 分支清单显示唯一裸版本分支 `0.1.1` 指向 `180cb20ee60ee58915b917a6b91b4781aaba570b`；未发现 `v0.1.1` 或 `codex/v0.1.1`，既有 `v0.1.0` 与 `codex/v0.1.0-*` 历史分支保持存在。`origin/codex/v1-integration` 当前指向 `6b0e8e25b4fb4d0411f25d793ac0606ac3603163`，比权威 `origin/0.1.1` 少 19 个祖先提交；本次接管从 `origin/0.1.1` 精确起点创建 D: 工作树，未向滞后 integration 盲推。GitHub protection API 对 `0.1.1` 返回 HTTP 404（Branch not protected），因此保护配置仍是未满足/待维护者授权项；未创建 tag、Release 或合入 `main`。
+- 2026-08-23（当前事实核对）：远端 `origin/0.1.1` 为 `180cb20ee60ee58915b917a6b91b4781aaba570b`；远端 `origin/codex/v1-integration` 为 `ec80d9ed68bf547481adb38c15d0fbfcd4407693`。本地 `codex/v011-integration` 当前候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`，通过普通 merge 依次纳入共享页头 `da12eb5ea087cf0d9645148c30d0a7a706a837c7`、物理硬件 `67810a87014b50c28847b580c9bb35e8d1b8dba9`、驱动 `ec80d9ed68bf547481adb38c15d0fbfcd4407693`、设置恢复 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c` 和侧栏 `80713109b1cd71be19689f0c4fbbc4775d413797`；功能候选相对远端集成仍待总调度普通推送。
+- 远端分支核对未发现 `v0.1.1`、`codex/v0.1.1` 或其他同版本长期别名；既有 `v0.1.0`/`codex/v0.1.0-*` 历史分支未删除。GitHub protection API 对 `0.1.1` 返回 HTTP 404（未保护），因此版本分支保护仍未完成且需维护者授权；不得写成已保护。
+- 本轮未创建 tag/Release、未合入 `main`、未接受 WiX 条款、未 rebase/force push/删除历史分支。未验证边界：保护规则实际生效、PR/CI 放行、最终 x64 构建和 ARM64/DPI/安装生命周期/实机 UI 均未完成。
