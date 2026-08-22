@@ -57,9 +57,9 @@ struct SettingsNavigationPreparationError final {
 // table are unavailable. This is an emergency presentation fallback, not a
 // second localization source for normal UI rendering.
 constexpr wchar_t kSettingsNavigationFailureTitle[] =
-    L"应用设置暂时无法打开";
+    L"\u5E94\u7528\u8BBE\u7F6E\u6682\u65F6\u65E0\u6CD5\u6253\u5F00";
 constexpr wchar_t kSettingsNavigationFailureMessage[] =
-    L"设置数据或页面资源读取失败。现有页面已保留，请重试或返回当前页面。";
+    L"\u8BBE\u7F6E\u6570\u636E\u6216\u9875\u9762\u8D44\u6E90\u8BFB\u53D6\u5931\u8D25\u3002\u73B0\u6709\u9875\u9762\u5DF2\u4FDD\u7559\uFF0C\u8BF7\u91CD\u8BD5\u6216\u8FD4\u56DE\u5F53\u524D\u9875\u9762\u3002";
 
 [[nodiscard]] std::string_view settings_navigation_stage_name(
     azzs::ui::presentation::SettingsNavigationFailureStage stage) noexcept {
