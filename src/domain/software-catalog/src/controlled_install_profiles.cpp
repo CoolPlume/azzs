@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -23,21 +24,19 @@ SoftwareInstallFacts make_initial_facts(std::string software_id) {
   return {.software_id = std::move(software_id)};
 }
 
-std::array<SoftwareInstallFacts, 11> const k_initial_facts{{
+std::array<SoftwareInstallFacts, 9> const k_initial_facts{{
     make_initial_facts("qq"),
     make_initial_facts("sogou-input"),
     make_initial_facts("game-cheats-manager"),
-    make_initial_facts("cheat-engine"),
     make_initial_facts("office-tool-plus"),
     make_initial_facts("internet-download-manager"),
-    make_initial_facts("the-geometers-sketchpad"),
     make_initial_facts("java-runtime"),
     make_initial_facts("dotnet-runtime"),
     make_initial_facts("directx-runtime"),
     make_initial_facts("powershell-7"),
 }};
 
-std::array<ControlledInstallProfile, 11> const k_initial_profiles{{
+std::array<ControlledInstallProfile, 9> const k_initial_profiles{{
     {
         .id = "sogou-input-defaults-v1",
         .software_id = "sogou-input",
@@ -96,17 +95,6 @@ std::array<ControlledInstallProfile, 11> const k_initial_profiles{{
         .interaction_scope = InstallerInteractionScope::official_identity_required,
     },
     {
-        .id = "cheat-engine-windows-v1",
-        .software_id = "cheat-engine",
-        .baselines = {{.id = "cheat-engine-windows-7.7", .version = "7.7"}},
-         .execution = WindowsExecutionReadiness::project_executor_registered,
-        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
-        .post_install_behavior = PostInstallBehavior::none,
-        .restart_verification = RestartVerification::not_required,
-        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
-        .interaction_scope = InstallerInteractionScope::official_identity_required,
-    },
-    {
         .id = "office-tool-plus-windows-v1",
         .software_id = "office-tool-plus",
         .baselines = {{.id = "office-tool-plus-windows-11.6.6.0", .version = "11.6.6.0"}},
@@ -121,17 +109,6 @@ std::array<ControlledInstallProfile, 11> const k_initial_profiles{{
         .id = "internet-download-manager-windows-v1",
         .software_id = "internet-download-manager",
         .baselines = {{.id = "internet-download-manager-windows-trial-2026-08", .version = "trial-2026-08"}},
-         .execution = WindowsExecutionReadiness::project_executor_registered,
-        .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
-        .post_install_behavior = PostInstallBehavior::none,
-        .restart_verification = RestartVerification::not_required,
-        .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
-        .interaction_scope = InstallerInteractionScope::official_identity_required,
-    },
-    {
-        .id = "the-geometers-sketchpad-windows-v1",
-        .software_id = "the-geometers-sketchpad",
-        .baselines = {{.id = "the-geometers-sketchpad-windows-version-5", .version = "5"}},
          .execution = WindowsExecutionReadiness::project_executor_registered,
         .completion_boundary = InstallationCompletionBoundary::post_install_then_result_detection,
         .post_install_behavior = PostInstallBehavior::none,
@@ -547,6 +524,26 @@ SoftwareCatalogPolicy initial_software_catalog_policy() {
     policy.required_install_profiles.push_back({
         .software_id = profile.software_id,
         .profile_id = profile.id,
+    });
+  }
+  // These catalog identities intentionally retain their stable profile
+  // references without a registered executable support entry. Runtime
+  // validation therefore keeps them visible but marks them unavailable while
+  // still enforcing the exact profile reference in the catalog document.
+  constexpr std::array missing_profile_ids{
+      "cheat-engine-windows-v1", "the-geometers-sketchpad-windows-v1"};
+  constexpr std::array missing_profile_software_ids{
+      "cheat-engine", "the-geometers-sketchpad"};
+  for (std::size_t index = 0; index < missing_profile_ids.size(); ++index) {
+    policy.install_profiles.push_back({
+        .id = missing_profile_ids[index],
+        .software_ids = {missing_profile_software_ids[index]},
+        .runtime_status = InstallProfileRuntimeStatus::missing,
+        .release_ready = false,
+    });
+    policy.required_install_profiles.push_back({
+        .software_id = missing_profile_software_ids[index],
+        .profile_id = missing_profile_ids[index],
     });
   }
   for (auto const& fact : initial_software_install_facts()) {

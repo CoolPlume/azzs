@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <limits>
 #include <map>
+#include <new>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -51,10 +52,8 @@ constexpr std::array k_controlled_installer_registrations{
     ControlledInstallerRegistration{"qq-windows-v1", "qq", ControlledInstallerKind::exe},
     ControlledInstallerRegistration{"sogou-input-defaults-v1", "sogou-input", ControlledInstallerKind::exe},
     ControlledInstallerRegistration{"game-cheats-manager-windows-v1", "game-cheats-manager", ControlledInstallerKind::exe},
-    ControlledInstallerRegistration{"cheat-engine-windows-v1", "cheat-engine", ControlledInstallerKind::exe},
     ControlledInstallerRegistration{"office-tool-plus-windows-v1", "office-tool-plus", ControlledInstallerKind::archive},
     ControlledInstallerRegistration{"internet-download-manager-windows-v1", "internet-download-manager", ControlledInstallerKind::exe},
-    ControlledInstallerRegistration{"the-geometers-sketchpad-windows-v1", "the-geometers-sketchpad", ControlledInstallerKind::exe},
     ControlledInstallerRegistration{"java-runtime-windows-v1", "java-runtime", ControlledInstallerKind::msi},
     ControlledInstallerRegistration{"dotnet-runtime-windows-v1", "dotnet-runtime", ControlledInstallerKind::exe},
     ControlledInstallerRegistration{"directx-runtime-windows-v1", "directx-runtime", ControlledInstallerKind::exe},
@@ -163,6 +162,26 @@ class DeflateBitReader final {
 
   void align_byte() noexcept { bit_offset_ = (bit_offset_ + 7U) & ~std::size_t{7U}; }
 
+  [[nodiscard]] std::size_t bit_offset() const noexcept { return bit_offset_; }
+
+  [[nodiscard]] std::size_t remaining_bits() const noexcept {
+    const auto total_bits = bytes_.size() * 8U;
+    return bit_offset_ > total_bits ? 0U : total_bits - bit_offset_;
+  }
+
+  [[nodiscard]] bool remaining_bits_are_zero() const noexcept {
+    auto copy = *this;
+    std::uint32_t value{};
+    while (copy.remaining_bits() != 0U) {
+      const auto count = static_cast<std::uint32_t>(
+          std::min<std::size_t>(copy.remaining_bits(), 24U));
+      if (!copy.read(count, value) || value != 0U) {
+        return false;
+      }
+    }
+    return true;
+  }
+
  private:
   std::span<std::byte const> bytes_;
   std::size_t bit_offset_{};
@@ -178,8 +197,11 @@ struct DeflateHuffman final {
   std::size_t count{};
   std::uint8_t max_length{};
 
-  [[nodiscard]] bool build(std::span<std::uint8_t const> lengths) noexcept {
+  [[nodiscard]] bool build(std::span<std::uint8_t const> lengths,
+                           bool allow_empty = false,
+                           bool allow_single_incomplete = false) noexcept {
     std::array<std::uint16_t, 16> frequencies{};
+    std::size_t nonzero{};
     for (auto length : lengths) {
       if (length > 15U) {
         return false;
@@ -187,9 +209,25 @@ struct DeflateHuffman final {
       if (length != 0U) {
         ++frequencies[length];
         max_length = std::max(max_length, length);
+        ++nonzero;
       }
     }
     if (max_length == 0U) {
+      return allow_empty;
+    }
+    // RFC 1951 code-space accounting catches both malformed
+    // oversubscription and incomplete trees. The decoder only accepts the
+    // one-bit, one-symbol exception where that form is permitted.
+    int left = 1;
+    for (std::uint8_t length = 1U; length <= 15U; ++length) {
+      left = (left << 1) - frequencies[length];
+      if (left < 0) {
+        return false;
+      }
+    }
+    if (left != 0 &&
+        !(allow_single_incomplete && nonzero == 1U &&
+          frequencies[1U] == 1U)) {
       return false;
     }
     std::array<std::uint16_t, 16> next{};
@@ -216,6 +254,13 @@ struct DeflateHuffman final {
       codes[count++] = Code{reversed, length, symbol};
     }
     return count != 0U;
+  }
+
+  [[nodiscard]] bool contains(std::uint16_t symbol) const noexcept {
+    return std::ranges::any_of(codes.begin(), codes.begin() + count,
+                               [symbol](Code const& code) {
+                                 return code.symbol == symbol;
+                               });
   }
 
   [[nodiscard]] bool decode(DeflateBitReader& reader, std::uint16_t& symbol) const noexcept {
@@ -312,7 +357,7 @@ struct DeflateHuffman final {
         code_lengths[order[index]] = static_cast<std::uint8_t>(value);
       }
       DeflateHuffman code_tree;
-      if (!code_tree.build(code_lengths)) return false;
+      if (!code_tree.build(code_lengths, false, true)) return false;
       std::array<std::uint8_t, 320> all_lengths{};
       auto const total = hlit + hdist;
       std::size_t index = 0;
@@ -342,10 +387,18 @@ struct DeflateHuffman final {
       }
       std::copy_n(all_lengths.begin(), hlit, literal_lengths.begin());
       std::copy_n(all_lengths.begin() + static_cast<std::ptrdiff_t>(hlit), hdist, distance_lengths.begin());
+      if (literal_lengths[286U] != 0U || literal_lengths[287U] != 0U ||
+          distance_lengths[30U] != 0U || distance_lengths[31U] != 0U) {
+        return false;
+      }
     }
     DeflateHuffman literal_tree;
     DeflateHuffman distance_tree;
-    if (!literal_tree.build(literal_lengths) || !distance_tree.build(distance_lengths)) return false;
+    if (!literal_tree.build(literal_lengths, false, true) ||
+        !literal_tree.contains(256U) ||
+        !distance_tree.build(distance_lengths, true, true)) {
+      return false;
+    }
     for (;;) {
       std::uint16_t symbol{};
       if (!literal_tree.decode(reader, symbol)) return false;
@@ -371,7 +424,11 @@ struct DeflateHuffman final {
       }
     }
   }
-  return output.size() == expected_size;
+  // A raw Deflate member may end in at most seven zero padding bits.  Any
+  // additional byte or non-zero tail would otherwise permit hidden data after
+  // the authenticated stream.
+  return output.size() == expected_size && reader.remaining_bits() <= 7U &&
+         reader.remaining_bits_are_zero();
 }
 
 [[nodiscard]] std::uint32_t crc32(std::span<std::byte const> bytes) noexcept {
@@ -431,6 +488,27 @@ struct DeflateHuffman final {
   return result;
 }
 
+[[nodiscard]] std::optional<std::string> normalize_sha256(
+    std::string_view value) {
+  if (value.size() != 64U) {
+    return std::nullopt;
+  }
+  std::string normalized;
+  normalized.reserve(value.size());
+  for (unsigned char character : value) {
+    if (character >= '0' && character <= '9') {
+      normalized.push_back(static_cast<char>(character));
+    } else if (character >= 'a' && character <= 'f') {
+      normalized.push_back(static_cast<char>(character));
+    } else if (character >= 'A' && character <= 'F') {
+      normalized.push_back(static_cast<char>(character - 'A' + 'a'));
+    } else {
+      return std::nullopt;
+    }
+  }
+  return normalized;
+}
+
 struct ParsedArchiveMember final {
   std::string path;
   std::vector<std::byte> bytes;
@@ -464,14 +542,34 @@ struct ParsedArchive final {
 
 [[nodiscard]] bool safe_archive_path(std::string_view path) noexcept {
   if (path.empty() || path.front() == '/' || path.front() == '\\' ||
-      path.find('\\') != std::string_view::npos || path.find('\0') != std::string_view::npos) return false;
-  std::size_t start = 0;
-  while (start <= path.size()) {
+      path.find('\\') != std::string_view::npos ||
+      path.find('\0') != std::string_view::npos) {
+    return false;
+  }
+  if (path.back() == '/' &&
+      (path.size() == 1U || path[path.size() - 2U] == '/')) {
+    return false;
+  }
+  // A single trailing slash is the ZIP directory marker. Empty segments
+  // anywhere else would make separator normalization ambiguous.
+  auto const segment_end = path.back() == '/' ? path.size() - 1U : path.size();
+  if (segment_end == 0U) {
+    return false;
+  }
+  std::size_t start = 0U;
+  while (start < segment_end) {
     auto const end = path.find('/', start);
-    auto const segment = path.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
+    auto const bounded_end = end == std::string_view::npos
+                                 ? segment_end
+                                 : std::min(end, segment_end);
+    auto const segment = path.substr(start, bounded_end - start);
     if (segment.empty() || segment == "." || segment == ".." ||
-        (segment.size() == 2U && segment[1] == ':' && std::isalpha(static_cast<unsigned char>(segment[0])))) return false;
-    if (end == std::string_view::npos) break;
+        segment.find(':') != std::string_view::npos) {
+      return false;
+    }
+    if (end == std::string_view::npos || end >= segment_end) {
+      break;
+    }
     start = end + 1U;
   }
   return true;
@@ -489,10 +587,35 @@ struct ParsedArchive final {
   return 0U;
 }
 
-[[nodiscard]] ParsedArchive parse_controlled_archive(
+[[nodiscard]] ParsedArchive parse_controlled_archive_impl(
     std::span<std::byte const> bytes, std::span<std::string const> allowed,
     cache_domain::CacheArchitecture architecture) {
+  constexpr std::uint16_t kMaximumMembers = 4096U;
+  constexpr std::uint64_t kMaximumMemberBytes = 512ULL * 1024ULL * 1024ULL;
+  constexpr std::uint64_t kMaximumUncompressedBytes =
+      512ULL * 1024ULL * 1024ULL;
   ParsedArchive result;
+  if (allowed.empty()) {
+    result.code = WindowsArchiveValidationCode::member_mismatch;
+    result.detail = "controlled archive whitelist is empty";
+    return result;
+  }
+  if (allowed.size() > kMaximumMembers) {
+    result.code = WindowsArchiveValidationCode::member_mismatch;
+    result.detail = "controlled archive whitelist exceeds the member budget";
+    return result;
+  }
+  std::vector<bool> matched(allowed.size(), false);
+  for (std::size_t index = 0U; index < allowed.size(); ++index) {
+    if (!safe_archive_path(allowed[index]) || allowed[index].back() == '/' ||
+        std::ranges::find(allowed.begin(), allowed.begin() + index,
+                          allowed[index]) != allowed.begin() + index) {
+      result.code = WindowsArchiveValidationCode::member_mismatch;
+      result.detail =
+          "controlled archive whitelist contains an unsafe or duplicate member";
+      return result;
+    }
+  }
   if (bytes.size() < 22U) {
     result.detail = "controlled archive is shorter than the ZIP end record";
     return result;
@@ -511,22 +634,34 @@ struct ParsedArchive final {
   auto cd_size = archive_u32(bytes, *eocd + 12U);
   auto cd_offset = archive_u32(bytes, *eocd + 16U);
   auto comment = archive_u16(bytes, *eocd + 20U);
-  if (!disk || !cd_disk || !disk_count || !total_count || !cd_size || !cd_offset || !comment ||
+  if (!disk.has_value() || !cd_disk.has_value() || !disk_count.has_value() ||
+      !total_count.has_value() || !cd_size.has_value() ||
+      !cd_offset.has_value() || !comment.has_value() ||
       *disk != 0U || *cd_disk != 0U || *disk_count != *total_count ||
-      *comment != bytes.size() - (*eocd + 22U) || *total_count == 0U || *total_count > 64U ||
+      *comment != bytes.size() - (*eocd + 22U) || *total_count == 0U ||
+      *total_count == 0xffffU || *total_count > kMaximumMembers ||
+      *cd_size == 0xffffffffU || *cd_offset == 0xffffffffU ||
       *cd_offset > bytes.size() || *cd_size > bytes.size() - *cd_offset ||
-      *eocd < static_cast<std::size_t>(*cd_offset) + *cd_size) {
+      *eocd != static_cast<std::size_t>(*cd_offset) + *cd_size) {
     result.detail = "ZIP end record has unsupported or out-of-range fields";
     return result;
   }
   std::size_t cursor = *cd_offset;
-  std::vector<bool> matched(allowed.size(), false);
-  for (std::uint16_t entry_index = 0; entry_index < *total_count; ++entry_index) {
-    if (archive_u32(bytes, cursor) != 0x02014b50U || cursor > bytes.size() || bytes.size() - cursor < 46U) {
+  std::uint64_t total_uncompressed{};
+  std::vector<std::string> names;
+  names.reserve(*total_count);
+  std::vector<std::pair<std::size_t, std::size_t>> local_ranges;
+  local_ranges.reserve(*total_count);
+  result.members.reserve(allowed.size());
+  for (std::uint16_t entry_index = 0U; entry_index < *total_count;
+       ++entry_index) {
+    if (cursor > bytes.size() || bytes.size() - cursor < 46U ||
+        archive_u32(bytes, cursor) != 0x02014b50U) {
       result.detail = "ZIP central directory entry is malformed"; return result;
     }
     auto flags = archive_u16(bytes, cursor + 8U);
     auto method = archive_u16(bytes, cursor + 10U);
+    auto disk_start = archive_u16(bytes, cursor + 34U);
     auto expected_crc = archive_u32(bytes, cursor + 16U);
     auto compressed_size = archive_u32(bytes, cursor + 20U);
     auto uncompressed_size = archive_u32(bytes, cursor + 24U);
@@ -534,10 +669,17 @@ struct ParsedArchive final {
     auto extra_size = archive_u16(bytes, cursor + 30U);
     auto comment_size = archive_u16(bytes, cursor + 32U);
     auto local_offset = archive_u32(bytes, cursor + 42U);
-    if (!flags || !method || !expected_crc || !compressed_size || !uncompressed_size || !name_size || !extra_size || !comment_size || !local_offset ||
-        (*flags & 0x0001U) != 0U || (*flags & 0x0008U) != 0U || (*method != 0U && *method != 8U) ||
-        *compressed_size > 512ULL * 1024ULL * 1024ULL || *uncompressed_size > 512ULL * 1024ULL * 1024ULL ||
-        *name_size == 0U || cursor + 46U > bytes.size() ||
+    if (!flags.has_value() || !method.has_value() || !disk_start.has_value() ||
+        !expected_crc.has_value() || !compressed_size.has_value() ||
+        !uncompressed_size.has_value() || !name_size.has_value() ||
+        !extra_size.has_value() || !comment_size.has_value() ||
+        !local_offset.has_value() || ((*flags & ~0x0800U) != 0U) ||
+        *disk_start != 0U ||
+        (*method != 0U && *method != 8U) ||
+        *compressed_size == 0xffffffffU || *uncompressed_size == 0xffffffffU ||
+        *local_offset == 0xffffffffU ||
+        *compressed_size > kMaximumMemberBytes ||
+        *uncompressed_size > kMaximumMemberBytes || *name_size == 0U ||
         *name_size > bytes.size() - (cursor + 46U) ||
         *extra_size > bytes.size() - (cursor + 46U + *name_size) ||
         *comment_size > bytes.size() - (cursor + 46U + *name_size + *extra_size)) {
@@ -545,41 +687,126 @@ struct ParsedArchive final {
     }
     auto const name_start = cursor + 46U;
     std::string name(reinterpret_cast<char const*>(bytes.data() + name_start), *name_size);
-    if (!safe_archive_path(name)) { result.detail = "ZIP member path is unsafe"; return result; }
-    auto allowed_it = std::ranges::find(allowed, name);
-    if (allowed_it == allowed.end() || matched[static_cast<std::size_t>(allowed_it - allowed.begin())]) {
-      result.code = WindowsArchiveValidationCode::member_mismatch;
-      result.detail = "ZIP members do not match the reviewed whitelist";
+    auto const entry_end = name_start + *name_size + *extra_size + *comment_size;
+    if (entry_end > static_cast<std::size_t>(*eocd) || !safe_archive_path(name) ||
+        std::ranges::find(names, name) != names.end()) {
+      result.detail = "ZIP central directory contains an unsafe or duplicate member";
       return result;
     }
-    matched[static_cast<std::size_t>(allowed_it - allowed.begin())] = true;
-    if (*local_offset > bytes.size() || bytes.size() - *local_offset < 30U || archive_u32(bytes, *local_offset) != 0x04034b50U) {
+    names.push_back(name);
+    auto const is_directory = !name.empty() && name.back() == '/';
+    auto allowed_it = std::ranges::find(allowed, name);
+    auto const is_allowed = allowed_it != allowed.end();
+    if (is_directory && is_allowed) {
+      result.code = WindowsArchiveValidationCode::member_mismatch;
+      result.detail = "ZIP directory marker cannot be a whitelist member";
+      return result;
+    }
+    if (!is_directory && !is_allowed) {
+      result.code = WindowsArchiveValidationCode::member_mismatch;
+      result.detail = "ZIP central directory contains an unreviewed file";
+      return result;
+    }
+    if (is_allowed && matched[static_cast<std::size_t>(allowed_it - allowed.begin())]) {
+      result.code = WindowsArchiveValidationCode::member_mismatch;
+      result.detail = "ZIP whitelist member is duplicated";
+      return result;
+    }
+    if (is_directory && (*method != 0U || *compressed_size != 0U ||
+                         *uncompressed_size != 0U)) {
+      result.detail = "ZIP directory marker carries file data";
+      return result;
+    }
+    if (*method == 0U && *compressed_size != *uncompressed_size) {
+      result.detail = "stored ZIP member has inconsistent sizes";
+      return result;
+    }
+    if (total_uncompressed > kMaximumUncompressedBytes - *uncompressed_size) {
+      result.detail = "ZIP total uncompressed size exceeds the safety budget";
+      return result;
+    }
+    total_uncompressed += *uncompressed_size;
+    if (*local_offset >= *cd_offset || *local_offset > bytes.size() ||
+        bytes.size() - *local_offset < 30U ||
+        archive_u32(bytes, *local_offset) != 0x04034b50U) {
       result.detail = "ZIP local file header is malformed"; return result;
     }
     auto local_flags = archive_u16(bytes, *local_offset + 6U);
     auto local_method = archive_u16(bytes, *local_offset + 8U);
+    auto local_crc = archive_u32(bytes, *local_offset + 14U);
+    auto local_compressed_size = archive_u32(bytes, *local_offset + 18U);
+    auto local_uncompressed_size = archive_u32(bytes, *local_offset + 22U);
     auto local_name_size = archive_u16(bytes, *local_offset + 26U);
     auto local_extra_size = archive_u16(bytes, *local_offset + 28U);
-    if (!local_flags || !local_method || !local_name_size || !local_extra_size || *local_flags != *flags || *local_method != *method || *local_name_size != *name_size ||
-        *local_extra_size > bytes.size() - (*local_offset + 30U) || *local_name_size > bytes.size() - (*local_offset + 30U + *local_extra_size) ||
-        !std::ranges::equal(bytes.subspan(name_start, *name_size), bytes.subspan(*local_offset + 30U, *name_size))) {
+    if (!local_flags.has_value() || !local_method.has_value() ||
+        !local_crc.has_value() || !local_compressed_size.has_value() ||
+        !local_uncompressed_size.has_value() || !local_name_size.has_value() ||
+        !local_extra_size.has_value() || *local_flags != *flags ||
+        *local_method != *method || *local_crc != *expected_crc ||
+        *local_compressed_size != *compressed_size ||
+        *local_uncompressed_size != *uncompressed_size ||
+        *local_name_size != *name_size ||
+        *local_extra_size != *extra_size ||
+        *local_name_size > bytes.size() - (*local_offset + 30U) ||
+        *local_extra_size > bytes.size() - (*local_offset + 30U + *local_name_size)) {
       result.detail = "ZIP local header does not match its central entry"; return result;
     }
-    auto const data_start = static_cast<std::size_t>(*local_offset) + 30U + *local_name_size + *local_extra_size;
-    if (*compressed_size > bytes.size() - data_start) { result.detail = "ZIP member data exceeds archive"; return result; }
-    std::vector<std::byte> member;
-    auto const compressed = bytes.subspan(data_start, *compressed_size);
-    if (*method == 0U) member.assign(compressed.begin(), compressed.end());
-    else if (!inflate_raw_deflate(compressed, *uncompressed_size, member)) { result.detail = "ZIP Deflate member could not be decoded"; return result; }
-    if (member.size() != *uncompressed_size || crc32(member) != *expected_crc) { result.detail = "ZIP member CRC or size verification failed"; return result; }
-    auto const machine = pe_machine(member);
-    if (!machine.has_value() || expected_machine(architecture) == 0U || *machine != expected_machine(architecture)) {
-      result.code = WindowsArchiveValidationCode::architecture_mismatch;
-      result.detail = "ZIP member is not a PE image for the selected architecture";
+    auto const local_name_start = static_cast<std::size_t>(*local_offset) + 30U;
+    if (!std::ranges::equal(bytes.subspan(name_start, *name_size),
+                            bytes.subspan(local_name_start, *name_size))) {
+      result.detail = "ZIP local header filename differs from its central entry";
       return result;
     }
-    result.members.push_back(ParsedArchiveMember{std::move(name), std::move(member), *method, *compressed_size, *uncompressed_size, *machine});
-    cursor = name_start + *name_size + *extra_size + *comment_size;
+    auto const data_start = local_name_start + *local_name_size + *local_extra_size;
+    if (data_start > *cd_offset || *compressed_size > bytes.size() - data_start ||
+        *compressed_size > *cd_offset - data_start) {
+      result.detail = "ZIP member data exceeds the local or central directory boundary";
+      return result;
+    }
+    auto const data_end = data_start + *compressed_size;
+    for (auto const& range : local_ranges) {
+      if (static_cast<std::size_t>(*local_offset) < range.second &&
+          range.first < data_end) {
+        result.detail = "ZIP local member ranges overlap";
+        return result;
+      }
+    }
+    local_ranges.emplace_back(static_cast<std::size_t>(*local_offset), data_end);
+
+    if (is_directory) {
+      if (*expected_crc != 0U) {
+        result.detail = "ZIP directory marker has a non-empty CRC";
+        return result;
+      }
+    } else {
+      std::vector<std::byte> member;
+      auto const compressed = bytes.subspan(data_start, *compressed_size);
+      if (*method == 0U) {
+        member.assign(compressed.begin(), compressed.end());
+      } else if (!inflate_raw_deflate(compressed, *uncompressed_size, member)) {
+        result.detail = "ZIP Deflate member could not be decoded";
+        return result;
+      }
+      if (member.size() != *uncompressed_size || crc32(member) != *expected_crc) {
+        result.detail = "ZIP member CRC or size verification failed";
+        return result;
+      }
+      if (is_allowed) {
+        matched[static_cast<std::size_t>(allowed_it - allowed.begin())] = true;
+        auto const machine = pe_machine(member);
+        if (!machine.has_value() || expected_machine(architecture) == 0U ||
+            *machine != expected_machine(architecture)) {
+          result.code = WindowsArchiveValidationCode::architecture_mismatch;
+          result.detail =
+              "ZIP member is not a PE image for the selected architecture";
+          return result;
+        }
+        result.members.push_back(ParsedArchiveMember{
+            std::move(name), std::move(member), *method, *compressed_size,
+            *uncompressed_size, *machine});
+      }
+    }
+    cursor = entry_end;
   }
   if (cursor != static_cast<std::size_t>(*cd_offset) + *cd_size ||
       std::ranges::any_of(matched, [](bool value) { return !value; })) {
@@ -592,6 +819,19 @@ struct ParsedArchive final {
   return result;
 }
 
+[[nodiscard]] ParsedArchive parse_controlled_archive(
+    std::span<std::byte const> bytes, std::span<std::string const> allowed,
+    cache_domain::CacheArchitecture architecture) noexcept {
+  try {
+    return parse_controlled_archive_impl(bytes, allowed, architecture);
+  } catch (...) {
+    ParsedArchive result;
+    result.code = WindowsArchiveValidationCode::malformed;
+    result.detail = "controlled archive validation failed closed";
+    return result;
+  }
+}
+
 [[nodiscard]] std::optional<std::filesystem::path> controlled_payload_path(
     std::span<std::byte const> bytes,
     std::wstring_view extension) {
@@ -601,13 +841,13 @@ struct ParsedArchive final {
   if (length == 0 || length >= std::size(temp_buffer)) {
     return std::nullopt;
   }
-  auto directory = std::filesystem::path{temp_buffer} / L"azzs-controlled-install";
+  auto const root = std::filesystem::path{temp_buffer} / L"azzs-controlled-install";
   std::error_code error;
-  std::filesystem::create_directories(directory, error);
+  std::filesystem::create_directories(root, error);
   if (error) {
     return std::nullopt;
   }
-  auto const directory_attributes = ::GetFileAttributesW(directory.c_str());
+  auto const directory_attributes = ::GetFileAttributesW(root.c_str());
   if (directory_attributes == INVALID_FILE_ATTRIBUTES ||
       (directory_attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
       (directory_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
@@ -622,13 +862,27 @@ struct ParsedArchive final {
   if (::StringFromGUID2(guid, guid_text, static_cast<int>(std::size(guid_text))) <= 0) {
     return std::nullopt;
   }
-  auto const path = directory / (std::wstring{guid_text} + std::wstring{extension});
+  auto const operation_directory = root / guid_text;
+  if (!std::filesystem::create_directory(operation_directory, error) || error) {
+    return std::nullopt;
+  }
+  auto const operation_attributes =
+      ::GetFileAttributesW(operation_directory.c_str());
+  if (operation_attributes == INVALID_FILE_ATTRIBUTES ||
+      (operation_attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+      (operation_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    std::filesystem::remove(operation_directory, error);
+    return std::nullopt;
+  }
+  auto const path = operation_directory /
+                    (std::wstring{guid_text} + std::wstring{extension});
   auto const native = path.wstring();
   HANDLE file = ::CreateFileW(
       native.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
       FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_WRITE_THROUGH | FILE_FLAG_OPEN_REPARSE_POINT,
       nullptr);
   if (file == INVALID_HANDLE_VALUE) {
+    std::filesystem::remove(operation_directory, error);
     return std::nullopt;
   }
   bool written = true;
@@ -651,6 +905,7 @@ struct ParsedArchive final {
   if (!written) {
     std::error_code remove_error;
     std::filesystem::remove(path, remove_error);
+    std::filesystem::remove(operation_directory, remove_error);
     return std::nullopt;
   }
   return path;
@@ -1011,8 +1266,14 @@ WindowsOpaqueCacheInstallerLauncher::launch(
             .detail = "controlled cache payload size does not match the frozen asset"};
   }
   if (request.target.cache_asset.expected_sha256.has_value()) {
+    auto const expected_sha256 =
+        normalize_sha256(*request.target.cache_asset.expected_sha256);
+    if (!expected_sha256.has_value()) {
+      return {.code = batch::InstallerLaunchCode::source_invalid,
+              .detail = "controlled cache payload SHA-256 is malformed"};
+    }
     auto digest = sha256_hex(payload.bytes);
-    if (!digest.has_value() || *digest != *request.target.cache_asset.expected_sha256) {
+    if (!digest.has_value() || *digest != *expected_sha256) {
       return {.code = batch::InstallerLaunchCode::source_invalid,
               .detail = "controlled cache payload SHA-256 does not match the frozen asset"};
     }
@@ -1070,6 +1331,7 @@ WindowsOpaqueCacheInstallerLauncher::launch(
     return {.code = batch::InstallerLaunchCode::failed,
             .detail = "controlled installer payload could not be materialized"};
   }
+  cleanup_directory = path->parent_path();
   auto const native_path = path->wstring();
   std::wstring application_path = native_path;
   std::wstring command_line = quote_argument(native_path);
@@ -1079,6 +1341,7 @@ WindowsOpaqueCacheInstallerLauncher::launch(
         ::GetFileAttributesW(msiexec->c_str()) == INVALID_FILE_ATTRIBUTES) {
       std::error_code error;
       std::filesystem::remove(*path, error);
+      std::filesystem::remove(cleanup_directory, error);
       return {.code = batch::InstallerLaunchCode::failed,
               .detail = "the fixed Windows Installer executable is unavailable"};
     }
@@ -1093,6 +1356,7 @@ WindowsOpaqueCacheInstallerLauncher::launch(
                         &startup, &process)) {
     std::error_code error;
     std::filesystem::remove(*path, error);
+    std::filesystem::remove(cleanup_directory, error);
     return {.code = batch::InstallerLaunchCode::failed,
             .detail = "controlled installer process could not be created"};
   }
