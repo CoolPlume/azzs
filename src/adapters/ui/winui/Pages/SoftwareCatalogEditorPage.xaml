@@ -2,6 +2,7 @@
     x:Class="Azzs.Ui.Pages.SoftwareCatalogEditorPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Azzs.Ui.DesignSystem.Controls"
     AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorPage">
     <ScrollViewer Style="{StaticResource AzzsPageScrollViewerStyle}">
         <Grid x:Name="PageRoot" Style="{StaticResource AzzsPageRootGridStyle}">
@@ -28,11 +29,15 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBlock
-                x:Uid="SoftwareCatalogEditorPageTitle"
-                AutomationProperties.HeadingLevel="Level1"
-                Style="{StaticResource AzzsPageTitleTextStyle}"
-                TextWrapping="Wrap" />
+            <controls:PageHeader Grid.Row="0">
+                <controls:PageHeader.TitleContent>
+                    <TextBlock
+                        x:Uid="SoftwareCatalogEditorPageTitle"
+                        AutomationProperties.HeadingLevel="Level1"
+                        Style="{StaticResource AzzsPageTitleTextStyle}"
+                        TextWrapping="Wrap" />
+                </controls:PageHeader.TitleContent>
+            </controls:PageHeader>
             <InfoBar
                 x:Name="StatusInfoBar"
                 Grid.Row="1"

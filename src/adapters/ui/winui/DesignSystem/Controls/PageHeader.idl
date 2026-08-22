@@ -1,0 +1,11 @@
+namespace Azzs.Ui.DesignSystem.Controls
+{
+    [default_interface]
+    runtimeclass PageHeader : Microsoft.UI.Xaml.Controls.UserControl
+    {
+        PageHeader();
+        Object TitleContent;
+        Object SummaryContent;
+        Object CommandContent;
+    }
+}

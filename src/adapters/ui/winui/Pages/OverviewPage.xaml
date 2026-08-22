@@ -24,13 +24,15 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <TextBlock
-                x:Uid="OverviewPageTitle"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Top"
-                AutomationProperties.HeadingLevel="Level1"
-                Style="{StaticResource AzzsPageTitleTextStyle}"
-                TextWrapping="Wrap" />
+            <controls:PageHeader Grid.Row="0">
+                <controls:PageHeader.TitleContent>
+                    <TextBlock
+                        x:Uid="OverviewPageTitle"
+                        AutomationProperties.HeadingLevel="Level1"
+                        Style="{StaticResource AzzsPageTitleTextStyle}"
+                        TextWrapping="Wrap" />
+                </controls:PageHeader.TitleContent>
+            </controls:PageHeader>
 
             <StackPanel
                 Grid.Row="1"

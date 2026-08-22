@@ -10,8 +10,8 @@ namespace {
 void show_startup_failure() noexcept {
   ::OutputDebugStringW(L"Azzs WinUI startup failed before the application was created.\n");
   (void)::MessageBoxW(
-      nullptr, L"The workbench could not start.",
-      L"Windows Initial Setup Workbench", MB_OK | MB_ICONERROR | MB_TOPMOST);
+      nullptr, L"工作台未能启动。请重新启动工作台；如果问题持续，请收集诊断资料。",
+      L"无法进入工作台", MB_OK | MB_ICONERROR | MB_TOPMOST);
 }
 
 }  // namespace
