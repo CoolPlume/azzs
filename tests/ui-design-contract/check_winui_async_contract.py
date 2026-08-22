@@ -92,7 +92,16 @@ def braced_body(source: str, opening_brace: int) -> str:
             depth -= 1
             if depth == 0:
                 return source[opening_brace + 1:index]
-    raise ContractFailure("startup_entry.cpp has an unterminated wWinMain body")
+    raise ContractFailure("C++ function has an unterminated body")
+
+
+def cpp_function_body(source: str, signature: str) -> str:
+    start = source.find(signature)
+    require(start >= 0, f"missing C++ function signature: {signature}")
+    opening_brace = source.find("{", start)
+    require(opening_brace >= 0,
+            f"missing opening brace for C++ function: {signature}")
+    return braced_body(source, opening_brace)
 
 
 def verify_winui_project(project_path: Path) -> ET.Element:
@@ -218,7 +227,7 @@ def verify_startup_entry(source: str) -> None:
 
 
 def verify_file(root: Path, relative_path: str, expected_handlers: int,
-                guard_name: str) -> None:
+                guard_name: str, expected_catches: int | None = None) -> None:
     path = root / relative_path
     source = read(path)
     handlers = re.findall(
@@ -229,8 +238,9 @@ def verify_file(root: Path, relative_path: str, expected_handlers: int,
             f"{relative_path} must keep {expected_handlers} fire-and-forget handlers")
     require(source.count("co_await dialog.ShowAsync()") == expected_handlers,
             f"{relative_path} must guard every dialog await")
-    require(source.count("catch (...) {") == expected_handlers,
-            f"{relative_path} must catch every fire-and-forget failure")
+    if expected_catches is not None:
+        require(source.count("catch (...) {") == expected_catches,
+                f"{relative_path} must keep {expected_catches} catch-all boundaries")
     require(source.count("OutputDebugStringW") >= expected_handlers,
             f"{relative_path} must leave a no-throw diagnostic for each catch")
     require(source.count(guard_name) >= expected_handlers,
@@ -241,15 +251,15 @@ def verify(root: Path) -> None:
     verify_file(root, "src/adapters/ui/winui/MainWindow.xaml.cpp", 1,
                 "catalog_close_dialog_open_")
     verify_file(root, "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.cpp",
-                4, "confirmation_dialog_open_")
+                4, "confirmation_dialog_open_", expected_catches=4)
     verify_file(root, "src/adapters/ui/winui/Pages/HistoryAndLogsPage.xaml.cpp", 1,
-                "confirmation_dialog_open_")
+                "confirmation_dialog_open_", expected_catches=1)
     verify_file(root, "src/adapters/ui/winui/Pages/SoftwareCatalogEditorPage.xaml.cpp",
-                2, "confirmation_dialog_open_")
+                2, "confirmation_dialog_open_", expected_catches=2)
     verify_file(root, "src/adapters/ui/winui/Pages/SoftwareOptimizationPage.xaml.cpp",
-                1, "confirmation_dialog_open_")
+                1, "confirmation_dialog_open_", expected_catches=1)
     verify_file(root, "src/adapters/ui/winui/Pages/SystemOptimizationPage.xaml.cpp",
-                1, "confirmation_dialog_open_")
+                1, "confirmation_dialog_open_", expected_catches=1)
 
     for relative_path in (
         "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.h",
@@ -309,6 +319,99 @@ def verify(root: Path) -> None:
         "startup_status_ = std::move(startup.status)" in app_source,
         "App must retain the typed startup status returned by the composition root",
     )
+
+    main_window = read(root / "src/adapters/ui/winui/MainWindow.xaml.cpp")
+    main_window_header = read(root / "src/adapters/ui/winui/MainWindow.xaml.h")
+    main_window_xaml = read(root / "src/adapters/ui/winui/MainWindow.xaml")
+    navigate_body = cpp_function_body(
+        main_window, "bool MainWindow::navigate_and_commit(")
+    prepare_body = cpp_function_body(
+        main_window, "MainWindow::prepare_application_settings_page()")
+    commit_body = cpp_function_body(
+        main_window, "void MainWindow::commit_application_settings_page(")
+    recovery_body = cpp_function_body(
+        main_window, "void MainWindow::restore_settings_navigation_state(")
+    failure_body = cpp_function_body(
+        main_window, "void MainWindow::handle_settings_navigation_failure()")
+    retry_body = cpp_function_body(
+        main_window, "void MainWindow::OnRetrySettingsNavigationClick(")
+    return_body = cpp_function_body(
+        main_window, "void MainWindow::OnReturnToCurrentPageClick(")
+    require(
+        "if (page == PageId::application_settings)" in navigate_body and
+        "settings_navigation_bridge_.navigate({" in navigate_body,
+        "application-settings navigation must use the recovery bridge at its user-navigation boundary",
+    )
+    require(
+        "prepare_application_settings_page()" in navigate_body and
+        "commit_application_settings_page(prepared," in navigate_body and
+        "restore_settings_navigation_state(" in navigate_body,
+        "application-settings preparation, commit, and recovery must stay in one boundary",
+    )
+    require(
+        "ContentFrame().Content(" not in prepare_body and
+        "workbench_->navigate(" not in prepare_body and
+        "workbench_->snapshot()" in prepare_body and
+        "settings.snapshot()" in prepare_body and
+        "->bind(" in prepare_body,
+        "settings preparation must read snapshots and bind a candidate without publishing visible/core state",
+    )
+    require(
+        "ContentFrame().Content(prepared);" in commit_body and
+        "displayed_page_ = PageId::application_settings;" in commit_body and
+        "workbench_->navigate(PageId::application_settings);" in commit_body,
+        "settings commit must publish the candidate only after preparation succeeds",
+    )
+    require(
+        "navigate_to(previous_page)" not in navigate_body and
+        "navigate_and_commit(previous_page)" not in navigate_body,
+        "settings failure recovery must use the single recovery owner without rebinding the old page",
+    )
+    require(
+        "ContentFrame().Content(previous_content);" in recovery_body and
+        "workbench_->navigate(previous_core_page);" in recovery_body and
+        "PrimaryNavigation().SelectedItem" in recovery_body,
+        "settings recovery must restore the prior frame, core page, and selection",
+    )
+    require(
+        "MainWindowSettingsNavigationFailed.Title" in failure_body and
+        "MainWindowSettingsNavigationFailed.Message" in failure_body and
+        "SettingsNavigationFailureInfoBar().IsOpen(true)" in failure_body and
+        "PrimaryNavigation().SelectedItem" not in failure_body,
+        "settings failures must project a localized, discoverable InfoBar after state restore",
+    )
+    require(
+        "settings_navigation_bridge_.retry()" in retry_body and
+        "settings_navigation_bridge_.return_to_current()" in return_body and
+        "OnRetrySettingsNavigationClick" in main_window_header and
+        "OnReturnToCurrentPageClick" in main_window_header,
+        "application-settings recovery actions must be declared by MainWindow",
+    )
+    require(
+        "record_settings_navigation_failure(failure);" in navigate_body and
+        "handle_settings_navigation_failure();" in navigate_body and
+        "workbench_->navigate(PageId::application_settings)" not in failure_body,
+        "application-settings failure handling must record and project without committing the failed page",
+    )
+    for automation_id in (
+        "AzzsSettingsNavigationFailureInfoBar",
+        "AzzsRetrySettingsNavigation",
+        "AzzsReturnToCurrentPage",
+    ):
+        require(
+            automation_id in main_window_xaml,
+            f"settings navigation recovery must expose {automation_id}",
+        )
+    for resource_key in (
+        "MainWindowSettingsNavigationFailed.Title",
+        "MainWindowSettingsNavigationFailed.Message",
+        "MainWindowRetrySettingsNavigation.Content",
+        "MainWindowReturnToCurrentPage.Content",
+    ):
+        require(
+            f'name="{resource_key}"' in resources,
+            f"settings navigation recovery must define resource {resource_key}",
+        )
 
 
 def main() -> int:

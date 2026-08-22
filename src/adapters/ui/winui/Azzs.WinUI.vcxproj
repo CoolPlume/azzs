@@ -159,6 +159,7 @@
     <ClInclude Include="DesignSystem\motion_contract.hpp" />
     <ClInclude Include="DesignSystem\motion_preferences.hpp" />
     <ClInclude Include="DesignSystem\presentation_contract.hpp" />
+    <ClInclude Include="DesignSystem\settings_navigation_recovery.hpp" />
     <ClInclude Include="DesignSystem\guided_initialization_presentation.hpp" />
     <ClInclude Include="DesignSystem\software_selection_presentation.hpp" />
     <ClInclude Include="pch.h" />
