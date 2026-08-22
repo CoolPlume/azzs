@@ -63,6 +63,9 @@
   <data name="NavigationSoftwareOptimization.Content" xml:space="preserve"><value>软件优化</value></data>
   <data name="NavigationHistoryAndLogs.Content" xml:space="preserve"><value>历史与日志</value></data>
   <data name="NavigationApplicationSettings.Content" xml:space="preserve"><value>应用设置</value></data>
+  <data name="SidebarResizeThumb.AutomationProperties.Name" xml:space="preserve"><value>调整侧边栏宽度</value></data>
+  <data name="SidebarResizeThumb.AutomationProperties.HelpText" xml:space="preserve"><value>拖动调整宽度；使用左右方向键微调，Home 或 End 可到达边界。</value></data>
+  <data name="SidebarResizeThumb.ToolTipService.ToolTip" xml:space="preserve"><value>调整侧边栏宽度</value></data>
   <data name="OverviewPageTitle.Text" xml:space="preserve"><value>概览</value></data>
   <data name="DriversPageTitle.Text" xml:space="preserve"><value>驱动</value></data>
   <data name="DriversRefresh.Text" xml:space="preserve"><value>刷新硬件</value></data>

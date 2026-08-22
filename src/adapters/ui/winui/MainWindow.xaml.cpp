@@ -2,6 +2,7 @@
 
 #include "MainWindow.xaml.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <winrt/Microsoft.UI.Windowing.h>
@@ -21,6 +22,7 @@
 #include "azzs/application/advanced_view_preferences.hpp"
 #include "azzs/application/application_settings.hpp"
 #include "azzs/application/debug_mode_catalog_editor.hpp"
+#include "azzs/application/sidebar_width_preferences.hpp"
 #include "azzs/application/software_selection.hpp"
 #include "azzs/application/system_settings_apply.hpp"
 #include "azzs/application/workbench_services.hpp"
@@ -38,6 +40,10 @@ using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
 using winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragDeltaEventArgs;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragStartedEventArgs;
+using winrt::Microsoft::UI::Xaml::Controls::Primitives::Thumb;
 
 [[nodiscard]] std::wstring version_text(SystemVersion const version) {
   return std::to_wstring(version.major) + L"." +
@@ -72,14 +78,21 @@ void MainWindow::bind(
     std::shared_ptr<azzs::application::SystemSettingsApplyService>
         system_settings,
     std::shared_ptr<azzs::application::AdvancedViewPreferences>
-        advanced_view_preferences) {
+        advanced_view_preferences,
+    std::shared_ptr<azzs::application::SidebarWidthPreferences>
+        sidebar_width_preferences) {
   workbench_ = std::move(workbench);
   motion_preferences_ = std::move(motion_preferences);
   system_settings_ = std::move(system_settings);
   advanced_view_preferences_ = std::move(advanced_view_preferences);
+  sidebar_width_preferences_ = std::move(sidebar_width_preferences);
   advanced_view_ = advanced_view_preferences_
                        ? advanced_view_preferences_->enabled()
                        : false;
+  sidebar_width_dip_ = sidebar_width_preferences_
+                           ? sidebar_width_preferences_->width_dip()
+                           : azzs::application::kSidebarWidthDefaultDip;
+  apply_sidebar_width(sidebar_width_dip_, false);
   project(workbench_->snapshot());
 }
 
@@ -511,6 +524,101 @@ bool MainWindow::set_advanced_view(bool enabled) {
     advanced_view_ = advanced_view_preferences_->set_enabled(enabled);
   }
   return advanced_view_;
+}
+
+void MainWindow::apply_sidebar_width(double width_dip, bool persist) {
+  auto const clamped = azzs::application::SidebarWidthPreferences::clamp(width_dip);
+  sidebar_width_dip_ = persist && sidebar_width_preferences_
+                           ? sidebar_width_preferences_->set_width_dip(clamped)
+                           : clamped;
+  PrimaryNavigation().OpenPaneLength(sidebar_width_dip_);
+  update_sidebar_resize_thumb();
+}
+
+void MainWindow::update_sidebar_resize_thumb() {
+  if (!SidebarResizeThumb()) {
+    return;
+  }
+
+  auto const display_mode = PrimaryNavigation().DisplayMode();
+  auto const expanded =
+      display_mode ==
+          Microsoft::UI::Xaml::Controls::NavigationViewDisplayMode::Expanded &&
+      PrimaryNavigation().IsPaneOpen();
+  SidebarResizeThumb().Visibility(
+      expanded ? Microsoft::UI::Xaml::Visibility::Visible
+               : Microsoft::UI::Xaml::Visibility::Collapsed);
+  if (expanded) {
+    SidebarResizeThumb().Margin(
+        Microsoft::UI::Xaml::Thickness{std::max(0.0, sidebar_width_dip_ - 4.0),
+                                       0.0, 0.0, 0.0});
+  }
+}
+
+void MainWindow::OnNavigationDisplayModeChanged(
+    Microsoft::UI::Xaml::Controls::NavigationView const&,
+    Microsoft::UI::Xaml::Controls::NavigationViewDisplayModeChangedEventArgs const&) {
+  update_sidebar_resize_thumb();
+}
+
+void MainWindow::OnShellSizeChanged(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::SizeChangedEventArgs const&) {
+  update_sidebar_resize_thumb();
+}
+
+void MainWindow::OnSidebarResizeDragStarted(Thumb const&,
+                                            DragStartedEventArgs const&) {
+  sidebar_drag_active_ = true;
+  sidebar_drag_width_dip_ = sidebar_width_dip_;
+}
+
+void MainWindow::OnSidebarResizeDragDelta(Thumb const&,
+                                          DragDeltaEventArgs const& args) {
+  if (!sidebar_drag_active_) {
+    return;
+  }
+  // DragDelta reports the change since the previous event. Accumulate it so
+  // a continuous drag follows the pointer instead of jumping from its start.
+  sidebar_drag_width_dip_ =
+      azzs::application::SidebarWidthPreferences::clamp(
+          sidebar_drag_width_dip_ + args.HorizontalChange());
+  apply_sidebar_width(sidebar_drag_width_dip_, false);
+}
+
+void MainWindow::OnSidebarResizeDragCompleted(
+    Thumb const&, DragCompletedEventArgs const&) {
+  if (!sidebar_drag_active_) {
+    return;
+  }
+  sidebar_drag_active_ = false;
+  apply_sidebar_width(sidebar_drag_width_dip_, true);
+}
+
+void MainWindow::OnSidebarResizeKeyDown(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args) {
+  using winrt::Windows::System::VirtualKey;
+  auto const current = sidebar_width_dip_;
+  double next = current;
+  switch (args.Key()) {
+    case VirtualKey::Left:
+      next = current - 8.0;
+      break;
+    case VirtualKey::Right:
+      next = current + 8.0;
+      break;
+    case VirtualKey::Home:
+      next = azzs::application::kSidebarWidthMinimumDip;
+      break;
+    case VirtualKey::End:
+      next = azzs::application::kSidebarWidthMaximumDip;
+      break;
+    default:
+      return;
+  }
+  args.Handled(true);
+  apply_sidebar_width(next, true);
 }
 
 void MainWindow::refresh_drivers_page() {
