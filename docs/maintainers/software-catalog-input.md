@@ -22,7 +22,7 @@
 
 地址可以是打开后直接下载的链接、会发生跳转的链接、普通软件官网或下载页、GitHub 仓库、Releases 页面、具体 Release 或资产地址。维护者不填写“官网页面”“直链”“GitHub Releases”等地址类型，也不需要追踪会随版本改变的最终安装包链接。
 
-文件已为 Game Cheats Manager、Cheat Engine、Office Tool Plus、Internet Download Manager、几何画板、Java、.NET、DirectX 和 PowerShell 7 保留 `enabled = false` 的未启用条目，因此根字段当前为 `release_state = "draft"`。以后补齐软件分支、来源与必要安装档案后再改为 `enabled = true`；这些候选软件都可以按目录与制品构建清单添加 `project_backup` 或 `large_offline`，但不代表每种制品都必须携带。`draft` 可以在调试模式中通过运行时加载校验后应用到本机试用，但不能进入正式发行包；首版范围条目和结构性发布门槛全部满足后才能把根字段改为 `release_state = "release"`。
+首版目录目前已填写 Game Cheats Manager、Cheat Engine、Office Tool Plus、Internet Download Manager 和几何画板的官方原始来源，并保持它们为 `tier = "normal"`；Java、.NET、DirectX 和 PowerShell 7 仍是 `enabled = false` 的未启用条目。根字段继续为 `release_state = "draft"`，因为首版安装档案和 Windows 执行／检测能力尚未闭合。未启用条目补齐可复核的分支、来源与受控安装档案后才能改为 `enabled = true`；候选软件是否进入 `large_offline` 或 `project_backup` 仍由目录与制品构建清单决定。`draft` 可以在调试模式中通过运行时加载校验后应用到本机试用，但不能进入正式发行包；首版范围条目和结构性发布门槛全部满足后才能把根字段改为 `release_state = "release"`。
 
 ## 2. 文件级字段
 
@@ -66,6 +66,30 @@ name = "沟通"
 | `education` | 可选的官方教育资源地址和取得说明；未填写时界面隐藏 |
 
 基础软件与普通软件已经决定默认选择状态，不重复填写 `default_selected`。是否存在项目 GitHub 备用包只由 `project_backup` 来源决定，不再另设布尔开关。`install_profile` 中的条款、隐私和附加推广按受控处置规则处理；已知可靠的附加推广默认拒绝。登录、注册、验证码、付款和个人资料步骤一律由用户在官方安装界面完成，不应作为维护者可填写的自动化规则。
+
+软件架构、离线能力、静默安装、完成边界、安装后置行为、重启验证和结果检测事实由项目内置的类型化受控安装档案注册，不复制到 TOML。未取得可靠事实时注册为 `unknown`；本事项的档案只声明事实和搜狗安装阶段偏好，不包含命令、脚本、参数、路径、下载器、注册表写入或 UI Automation 选择器。搜狗档案 `sogou-input-defaults-v1` 固定记录构建观察到的 `16.7` 基线、两个默认拒绝偏好及“受控自动处置 -> 工作台确认 -> 官方安装界面”的回退顺序；Windows 执行器、完成边界和结果检测由生产适配器提供，真实第三方安装仍由事项 39 单独验证。
+
+驱动入口同样只表达官方来源交接：`assistant` 和 `vendor_page` 是当前受控类型，首版 GPU 入口使用 AMD 自动检测工具、Intel 官方下载中心和 NVIDIA 官方驱动页。工作台不匹配、下载或安装具体驱动包；硬件检测只用于推荐入口。
+
+### 驱动入口模板
+
+```toml
+[[drivers]]
+id = "stable-driver-id"
+enabled = true
+name = "厂商驱动入口"
+entry_type = "assistant"          # assistant 或 vendor_page
+hardware_kinds = ["gpu"]
+branch = "Windows stable channel"
+version_policy = "latest_stable"
+notice = "仅交接官方资源；工作台不管理具体驱动包。"
+
+[[drivers.sources]]
+purpose = "primary"
+address = "https://vendor.example/drivers"
+```
+
+启用驱动必须有稳定 `id`、唯一 `primary` 来源、`entry_type`、非空 `hardware_kinds`、发行分支和版本规则。当前 schema v1 只注册 `gpu`；未注册的硬件类别会以未知执行语义拒绝整份目录。驱动不支持 `dependencies`、`tier`、`category_id`、`bundled_editions` 或 `install_profile`。未完成入口可以保留 `enabled = false`，此时只要求稳定 `id` 和 `enabled`。
 
 ## 5. 来源用途
 

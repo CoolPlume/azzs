@@ -1,0 +1,45 @@
+set(negative_driver "${CMAKE_CURRENT_SOURCE_DIR}/RunNegativeGroup.cmake")
+set(architecture_validator
+  "${AZZS_GUARDRAILS_MODULE_DIR}/guardrails/ValidateArchitecture.cmake")
+set(cmake_project_fixture
+  "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cmake-project")
+
+azzs_register_test(
+  NAME architecture.reject.reverse-or-cycle
+  LABELS architecture
+  COMMAND
+    "${CMAKE_COMMAND}"
+    "-DAZZS_NEGATIVE_GROUP=reverse-or-cycle"
+    "-DAZZS_ARCHITECTURE_VALIDATOR=${architecture_validator}"
+    "-DAZZS_ARCHITECTURE_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    "-DAZZS_ARCHITECTURE_PROJECT_FIXTURE=${cmake_project_fixture}"
+    "-DAZZS_ARCHITECTURE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+    "-DAZZS_GUARDRAILS_MODULE_DIR=${AZZS_GUARDRAILS_MODULE_DIR}"
+    "-DAZZS_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+    "-DAZZS_CMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+    "-DAZZS_CMAKE_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+    "-DAZZS_CMAKE_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+    "-DAZZS_CMAKE_GENERATOR_INSTANCE=${CMAKE_GENERATOR_INSTANCE}"
+    "-P"
+    "${negative_driver}"
+)
+
+azzs_register_test(
+  NAME architecture.reject.test-support-or-composition-bypass
+  LABELS architecture
+  COMMAND
+    "${CMAKE_COMMAND}"
+    "-DAZZS_NEGATIVE_GROUP=test-support-or-composition-bypass"
+    "-DAZZS_ARCHITECTURE_VALIDATOR=${architecture_validator}"
+    "-DAZZS_ARCHITECTURE_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    "-DAZZS_ARCHITECTURE_PROJECT_FIXTURE=${cmake_project_fixture}"
+    "-DAZZS_ARCHITECTURE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+    "-DAZZS_GUARDRAILS_MODULE_DIR=${AZZS_GUARDRAILS_MODULE_DIR}"
+    "-DAZZS_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+    "-DAZZS_CMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+    "-DAZZS_CMAKE_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+    "-DAZZS_CMAKE_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+    "-DAZZS_CMAKE_GENERATOR_INSTANCE=${CMAKE_GENERATOR_INSTANCE}"
+    "-P"
+    "${negative_driver}"
+)

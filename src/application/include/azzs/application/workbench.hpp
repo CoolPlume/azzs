@@ -1,0 +1,62 @@
+#pragma once
+
+#include <memory>
+#include <optional>
+#include <stop_token>
+
+#include "azzs/application/application_update.hpp"
+#include "azzs/application/driver_acquisition.hpp"
+#include "azzs/application/page_id.hpp"
+#include "azzs/application/hardware_overview.hpp"
+#include "azzs/application/platform_info.hpp"
+#include "azzs/application/system_settings_apply.hpp"
+#include "azzs/domain/minimum_version_policy.hpp"
+#include "azzs/domain/system_version.hpp"
+
+namespace azzs::application {
+
+class WorkbenchServices;
+
+struct WorkbenchSnapshot final {
+  PageId current_page{PageId::overview};
+  domain::MinimumVersionRisk minimum_version_risk{
+      domain::MinimumVersionRisk::version_unavailable};
+  std::optional<domain::SystemVersion> observed_windows_version;
+  domain::SystemVersion target_windows_version;
+  SystemSettingsApplySnapshot system_settings;
+  UpdateSnapshot update;
+  HardwareOverviewSnapshot hardware_overview;
+  driver_acquisition::DriverAcquisitionSnapshot driver_acquisition;
+};
+
+class Workbench final {
+ public:
+  static constexpr domain::SystemVersion kWindows10Version22H2{10, 0, 19045};
+
+  explicit Workbench(PlatformInfo const& platform_info);
+  Workbench(PlatformInfo const& platform_info,
+            std::shared_ptr<WorkbenchServices> services);
+
+  void navigate(PageId page) noexcept;
+  [[nodiscard]] UpdateCommandResult handle_update(UpdateUserIntent intent);
+  [[nodiscard]] HardwareOverviewSnapshot observe_hardware(
+      HardwareOverviewTrigger trigger,
+      std::stop_token cancellation = {});
+  [[nodiscard]] HardwareOverviewSnapshot refresh_hardware(
+      std::stop_token cancellation = {});
+  [[nodiscard]] driver_acquisition::DriverActionResult begin_driver_handoff(
+      driver_acquisition::DriverEntrypoint entrypoint);
+  [[nodiscard]] driver_acquisition::DriverActionResult begin_rescue_folder_handoff(
+      driver_acquisition::RescueToolTarget target);
+  [[nodiscard]] driver_acquisition::DriverActionResult driver_flow_returned();
+  [[nodiscard]] driver_acquisition::DriverActionResult decide_driver_handoff(
+      driver_acquisition::DriverHandoffDecision decision);
+  [[nodiscard]] WorkbenchSnapshot snapshot() const;
+  [[nodiscard]] std::shared_ptr<WorkbenchServices> services() const noexcept;
+
+ private:
+  WorkbenchSnapshot snapshot_;
+  std::shared_ptr<WorkbenchServices> services_;
+};
+
+}  // namespace azzs::application

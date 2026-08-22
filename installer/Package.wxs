@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Windows 初装工作台"
+      Manufacturer="CoolPlume"
+      Version="$(var.AzzsWixVersion)"
+      Language="2052"
+      UpgradeCode="{F632F744-7177-4861-86D8-B4A493EE08D0}"
+      Scope="perMachine"
+      Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="此设备已安装更新版本的 Windows 初装工作台。" />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="ProductIcon" SourceFile="$(var.ProductIconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Windows 初装工作台" />
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="Windows 初装工作台" Level="1">
+      <ComponentGroupRef Id="PayloadComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="PayloadComponents" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PayloadDirectory)\**" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

@@ -1,8 +1,14 @@
 # 建立设备级状态与执行日志
 
 Type: task  
-Status: needs-info  
+Status: ready-for-agent  
+Resolution: completed
 Blocked by: 01
+Owner: issue-02
+Claimed by: Codex task 019fef2a-7779-73d2-938a-76703e42f7bd
+Consumers: 03, 04, 05, 07, 08, 10, 12, 13, 15, 17, 25, 27, 28, 32
+Verification: 无界面持久化、事件与恢复合同测试，覆盖 N/N-1、原子提交、并发、ACL、故障注入及双代损坏只读恢复。
+Evidence freshness: 绑定当前提交、存储模式与适配器版本；平台证据绑定具体 Windows build 和状态主体。
 
 ## Goal
 
@@ -24,11 +30,20 @@ Blocked by: 01
 - [ ] 日志可导出和清空；清空不影响来源手动交接记录、恢复记录、安装或优化历史、待恢复状态及有效紧急撤回信息。
 - [ ] 首版不采集或发送使用遥测，执行日志不会被当作遥测上传。
 - [ ] 状态存储异常有明确错误并且不会静默破坏已有记录。
+- [ ] 当前权威状态与最后可信代次都无法通过校验时进入显式不可修改的状态损坏恢复模式；不得创建空状态、继续初始化或发起任何设备修改。原始字节、事务残留和诊断事实继续保留，只允许诊断导出、读取仍可恢复的历史，以及在逐类说明数据影响后由用户明确确认重新初始化。
+- [ ] 重新初始化形成新的权威代次，并把受影响数据类别与确认事实写入诊断记录；损坏内容不得被标为已恢复，仍可读取的历史不得因重新初始化而被改写或伪造。
+- [ ] 无界面持久化故障注入覆盖当前代次与最后可信代次同时损坏、残留临时写入或替换事务、只读恢复能力、诊断证据保留、所有修改意图被拒绝及明确重新初始化出口。
 
 ## References
 
-`RUN-02`、`RUN-06` 至 `RUN-07`、`SW-46` 至 `SW-49`、`FLOW-11` 至 `FLOW-12`、`RST-14`、`SET-09` 至 `SET-14`、`SET-24` 至 `SET-35`、`HIST-01` 至 `HIST-07`、`LOG-01` 至 `LOG-13`、`CAT-51`、`DBG-08`、`DBG-10`、`OPT-52`、`OPT-56`、`OPT-57`
+`RUN-02`、`RUN-06` 至 `RUN-07`、`SW-46` 至 `SW-49`、`FLOW-11` 至 `FLOW-12`、`RST-14`、`SET-09` 至 `SET-14`、`SET-24` 至 `SET-35`、`HIST-01` 至 `HIST-07`、`LOG-01` 至 `LOG-13`、`CAT-51`、`DBG-08`、`DBG-10`、`OPT-52`、`OPT-56`、`OPT-57`、ADR-0029、ADR-0042
 
 ## Comments
 
-- 2026-08-10：维护者确认 Q5a-l，完整持久化边界见 ADR-0029：首版只支持同一登录用户的拆分管理员令牌、权威状态位于本机 `ProgramData`、兼容 N/N-1、共享缓存只保证同机并发、未保存修改最多丢失 10 秒并在应用失活和高风险操作前检查点；日志退化、清理边界和证据范围也已冻结。本事项仍需实现与合同证据，不能把未验证状态写成通过。
+- 2026-08-10：维护者确认 Q5a-l，完整持久化边界见 ADR-0029：首版只支持同一登录用户的拆分管理员令牌、权威状态位于本机 `ProgramData`、兼容 N/N-1、共享缓存只保证同机并发、未保存修改最多丢失 10 秒并在应用失活和高风险操作前检查点；日志退化、清理边界和证据范围也已冻结。ADR-0042 进一步冻结双代损坏时的只读恢复出口，产品决定已经闭合，本事项改为 `ready-for-agent`；仍需实现与合同证据，不能把未验证状态写成通过。
+
+- 2026-08-11：实施基线为 `edaafae0add79022116967f3340a45ff4c5e9897`。范围包括版本化设备状态与严格 N/N-1、原子提交/事务恢复/双代损坏只读与显式重新初始化、检查点与跨实例占用、版本化结构化本机日志与集中脱敏、ProgramData/ACL 适配器和唯一 Windows 装配入口；未实现下游业务状态机或页面。已通过 `cmake --preset host-debug`、`cmake --build --preset host-debug`、`ctest --preset host-debug --output-on-failure`（4/4：`core.smoke`、`device-state.contract`、`execution-log.contract`、`operation-occupancy.contract`）。未实机验证：真实 Windows ProgramData ACL/reparse、断电、独立 Windows 多进程、Windows x64 运行、ARM64 编译，以及便携版/安装版发行形态切换。
+- 2026-08-11：实现基于 `edaafae0add79022116967f3340a45ff4c5e9897`，实现提交为 `69d3a6b460a523122a495621b28bd7d031474b7f`。应用层新增设备状态双代提交/损坏恢复、结构化执行日志与跨实例占用合同；基础设施层提供本机文件日志和系统时钟，Windows 适配器拥有 `ProgramData` 路径、卷级持久化、租约令牌与安全文件系统，唯一装配仍位于 `composition_root.cpp`。
+- 2026-08-11：macOS host Debug/Release 构建及 `core.smoke`、`device-state.contract`、`execution-log.contract`、`operation-occupancy.contract` 均为 4/4 Pass；最终 diff、未跟踪文件与 GitNexus staged 门禁已核对，GitNexus `critical` 来自 45 个文件、977 个符号和 121 条状态/日志流程的预期事项范围。Windows x64 的 `windows-device-data.contract`、真实 `ProgramData` ACL/重解析点防护、跨进程与重启行为留给本 PR CI 和 Windows 实机验证；ARM64 仅要求编译链接，不把本机 host 结果外推为平台通过。
+- 2026-08-11：基于 `edaafae0add79022116967f3340a45ff4c5e9897` 完成事项 02 范围实现：设备级版本化状态与 N/N-1 原子提交/恢复、检查点与占用原语、`ProgramData`/SID/ACL 平台适配、集中写前脱敏的结构化日志、清空与单文件诊断导出，以及无界面测试接缝和唯一装配入口；下游事项仅提供类型化接缝，未实现其业务规则、页面或状态机。已通过 `cmake --preset host-debug`、`cmake --build --preset host-debug`、`ctest --preset host-debug --output-on-failure` （4/4）和 `git diff --check`。未实机验证：真实 `ProgramData` ACL/reparse、断电恢复、独立 OS 多进程并发、便携版/安装版发行形态切换；Windows x64 运行和 ARM64 编译待 Draft PR CI 验证。
+- 2026-08-11：事项 02 已通过 PR #4 Squash 合入 `codex/v1-integration`，最终提交为 `730010a05e43c54474191c6084c07e570011c707`；Windows read-only validation run `31480472987` 的 x64 Release 与 ARM64 Release 均为 SUCCESS。随后事项 31 集成在 `829282e5c9981a7673fa36cc96e8ceaa04517e56` 上通过 host `host-guardrails` 10/10（含 `device-state.contract`、`execution-log.contract`、`operation-occupancy.contract`）、`BUILD_TESTING=OFF` 配置/构建和双架构 run `31482733757`。据此把实现事项标记为 `Resolution: completed`。这些自动证据不替代真实断电、独立 Windows 多进程/重启、便携版与安装版切换及具体设备上的 `ProgramData` ACL/reparse 实机验收，后者仍保持“未实机验证”。

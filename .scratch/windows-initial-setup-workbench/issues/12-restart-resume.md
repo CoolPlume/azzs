@@ -2,7 +2,13 @@
 
 Type: task  
 Status: ready-for-agent  
+Resolution: completed
 Blocked by: 02, 05, 08, 10, 11, 27
+Owner: issue-12
+Claimed by: issue-12-x64
+Consumers: 14, 15, 16, 21
+Verification: 无界面恢复状态机与 Windows 登录恢复集成测试，覆盖只读重检、取消、屏障、异常退出和紧急撤回。
+Evidence freshness: 绑定当前提交、检查点与存储模式和具体 Windows build；新修改前重新检测当前状态。
 
 ## Goal
 
@@ -30,4 +36,14 @@ Blocked by: 02, 05, 08, 10, 11, 27
 
 `FLOW-04` 至 `FLOW-12`、`RUN-01` 至 `RUN-04`、`RUN-06` 至 `RUN-07`、`SW-46` 至 `SW-49`、`RST-01` 至 `RST-14`、`HIST-07`、`SET-20`、`SET-33` 至 `SET-35`、`OPT-33`、`OPT-55`
 
+## Answer
+
+- 功能提交为 `7fa985c4ef23e615468828abc64742b1cf2ef682`，状态闭环修复为 `2b8d61937b9157e6d9f7bc3eb877cec76727c319`。PR [#43](https://github.com/CoolPlume/azzs/pull/43) 已以普通 merge 合入 `codex/v1-integration`，merge SHA 为 `7ffcfe07a43580dcda5dcf9e7fefcf4a18e78a75`。
+- 已实现持久化重启检查点、Windows HKCU `RunOnce` 登录启动、登录后的只读恢复、显式继续或取消决定，以及安装批次和软件优化批次在“等待重启”事实持久化后建立统一屏障。安装页在继续或停止恢复批次前先写入相应的显式决定；只有全部参与者的只读恢复成功，组合根才进入 `awaiting_user_decision`。失败、无活动批次或租约失败保留在只读验证状态，不会错误放行；明确决定清除检查点后，后续等待重启可重新建立一次性登录启动。
+- 本次 x64 实测：`restart-resume.contract`、`installation-batch-runner.contract` 与 `software-optimization-batch-runner.contract` 为 3/3 通过；`eng/build.ps1 -Architecture x64 -SkipCoreSmoke` 通过，包含 C++ 核心、Windows 适配器和 WinUI 宿主，0 error。GitHub Actions run `31800156597` 的 x64 Release 在最终候选 `2b8d619` 上成功。
+- x64 主机边界：本次按变更风险只重跑上述 focused 合同和完整 x64 build，未重跑全量 CTest 或 host guardrails；此前候选的全量 x64 CTest 中 `execution-log.contract` 与 `windows-device-data.contract` 仅因当前主机缺少 ACL 根目录和目录符号链接创建前置失败，不能计为通过，也未因本事项改动。
+- 未执行真实 Windows 重启、登录后实机交互、DPI/辅助功能、安装生命周期、签名、WiX 或发布验收。ARM64 未在本机执行，且未作为 PR 合入门禁；GitHub ARM64 job 的状态不外推为 ARM64 本机验证，ARM64 硬件验证延期。
+
 ## Comments
+
+- 2026-08-17：PR [#95](https://github.com/CoolPlume/azzs/pull/95) 的 feature `9de76facc30a48bd0682d3beafb06eafe5944566` 已由普通 merge `b65dc23` 合入 `codex/v1-integration`。`windows_restart_resume_registration.cpp` 的 `GetModuleFileNameW` 读取从固定 `MAX_PATH` 改为 512 至 32768 的增长缓冲，接受合法的最后字符槽位并在上限处 fail-closed；RunOnce 注册、命令行 token、注册失败回滚和清理语义未改动。证据仅为源码、Git diff、PR 范围和空白静态核对，未运行构建、重启恢复合同、EXE、调试器或真实 Windows 长路径；事项 12 的 `Resolution: completed` 依据既有证据保持不变。

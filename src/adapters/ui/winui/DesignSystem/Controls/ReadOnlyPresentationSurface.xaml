@@ -1,0 +1,53 @@
+<UserControl
+    x:Class="Azzs.Ui.DesignSystem.Controls.ReadOnlyPresentationSurface"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False"
+    Loaded="OnLoaded">
+    <Grid>
+        <Border
+            x:Name="CardSurface"
+            Style="{StaticResource AzzsSectionSurfaceStyle}">
+            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                <TextBlock
+                    x:Name="TitleText"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                <TextBlock
+                    x:Name="BodyText"
+                    Style="{StaticResource AzzsBodyTextStyle}" />
+                <StackPanel
+                    x:Name="ProgressSurface"
+                    Spacing="{StaticResource AzzsSpaceSmall}"
+                    Visibility="Collapsed">
+                    <ProgressBar
+                        x:Name="ProjectedProgressBar"
+                        Style="{StaticResource AzzsProgressStyle}" />
+                    <TextBlock
+                        x:Name="ProgressValueText"
+                        Style="{StaticResource AzzsBodyTextStyle}" />
+                </StackPanel>
+                <TextBlock
+                    x:Name="AdvancedDetailText"
+                    Style="{StaticResource AzzsMetadataTextStyle}"
+                    Visibility="Collapsed" />
+                <StackPanel
+                    x:Name="CardCommandHost"
+                    Spacing="{StaticResource AzzsSpaceSmall}" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel
+            x:Name="StatusSurface"
+            Spacing="{StaticResource AzzsSpaceSmall}"
+            Visibility="Collapsed">
+            <InfoBar
+                x:Name="StatusBand"
+                IsOpen="True"
+                Style="{StaticResource AzzsStatusBandStyle}" />
+            <StackPanel
+                x:Name="StatusCommandHost"
+                Spacing="{StaticResource AzzsSpaceSmall}" />
+        </StackPanel>
+    </Grid>
+</UserControl>
