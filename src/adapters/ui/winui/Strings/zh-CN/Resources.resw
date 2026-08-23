@@ -57,7 +57,7 @@
   <data name="AppStartupFailureUnexpected" xml:space="preserve"><value>工作台启动失败。请重新启动工作台；如果问题持续，请收集诊断资料。</value></data>
   <data name="PageHeaderFallbackTitle" xml:space="preserve"><value>页面</value></data>
   <data name="NavigationOverview.Content" xml:space="preserve"><value>概览</value></data>
-  <data name="NavigationDrivers.Content" xml:space="preserve"><value>驱动</value></data>
+  <data name="NavigationDrivers.Content" xml:space="preserve"><value>硬件信息</value></data>
   <data name="NavigationSystemOptimization.Content" xml:space="preserve"><value>系统优化</value></data>
   <data name="NavigationSoftwareInstallation.Content" xml:space="preserve"><value>软件安装</value></data>
   <data name="NavigationSoftwareOptimization.Content" xml:space="preserve"><value>软件优化</value></data>
@@ -67,7 +67,7 @@
   <data name="SidebarResizeThumb.AutomationProperties.HelpText" xml:space="preserve"><value>拖动调整宽度；使用左右方向键微调，Home 或 End 可到达边界。</value></data>
   <data name="SidebarResizeThumb.ToolTipService.ToolTip" xml:space="preserve"><value>调整侧边栏宽度</value></data>
   <data name="OverviewPageTitle.Text" xml:space="preserve"><value>概览</value></data>
-  <data name="DriversPageTitle.Text" xml:space="preserve"><value>驱动</value></data>
+  <data name="DriversPageTitle.Text" xml:space="preserve"><value>硬件信息</value></data>
   <data name="DriversRefresh.Text" xml:space="preserve"><value>刷新硬件</value></data>
   <data name="HardwareUnrecognizedValue" xml:space="preserve"><value>未识别</value></data>
   <data name="HardwareStatusTitle" xml:space="preserve"><value>硬件未识别</value></data>
@@ -75,6 +75,12 @@
   <data name="HardwareCpuLabel.Text" xml:space="preserve"><value>CPU</value></data>
   <data name="HardwareGpuLabel.Text" xml:space="preserve"><value>显卡</value></data>
   <data name="HardwareMotherboardLabel.Text" xml:space="preserve"><value>主板</value></data>
+  <data name="HardwareOperatingSystemLabel.Text" xml:space="preserve"><value>系统</value></data>
+  <data name="HardwareMemoryLabel.Text" xml:space="preserve"><value>内存</value></data>
+  <data name="HardwareDisplayLabel.Text" xml:space="preserve"><value>显示器</value></data>
+  <data name="HardwareStorageLabel.Text" xml:space="preserve"><value>磁盘</value></data>
+  <data name="HardwareNpuLabel.Text" xml:space="preserve"><value>NPU</value></data>
+  <data name="HardwareAudioLabel.Text" xml:space="preserve"><value>声卡</value></data>
   <data name="HardwareNetworkLabel.Text" xml:space="preserve"><value>网卡</value></data>
   <data name="HardwareOemLabel.Text" xml:space="preserve"><value>整机 OEM 型号</value></data>
   <data name="FixedDriverEntrypointsTitle.Text" xml:space="preserve"><value>固定驱动入口</value></data>

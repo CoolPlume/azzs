@@ -23,11 +23,17 @@ bool HardwareObservation::has_confirmed_physical_hardware() const noexcept {
 std::string HardwareObservation::model_fingerprint() const {
   // Keep the cache key limited to non-unique model text. Never add serial
   // numbers, MAC/IP addresses, computer names, or other device identifiers.
-  std::array<std::string_view, 6> const fields{
+  std::array<std::string_view, 12> const fields{
       cpu,
       gpu,
       motherboard,
       network_adapter,
+      memory,
+      display,
+      storage,
+      npu,
+      audio,
+      operating_system,
       oem_model,
       to_string(oem_vendor),
   };
@@ -60,6 +66,11 @@ char const* to_string(HardwareDeviceKind value) noexcept {
     case HardwareDeviceKind::gpu: return "gpu";
     case HardwareDeviceKind::motherboard: return "motherboard";
     case HardwareDeviceKind::network_adapter: return "network-adapter";
+    case HardwareDeviceKind::memory: return "memory";
+    case HardwareDeviceKind::display: return "display";
+    case HardwareDeviceKind::storage: return "storage";
+    case HardwareDeviceKind::npu: return "npu";
+    case HardwareDeviceKind::audio: return "audio";
   }
   return "unknown";
 }
