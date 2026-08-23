@@ -10,11 +10,43 @@
                 <VisualStateGroup x:Name="AdaptiveLayoutStates">
                     <VisualState x:Name="NarrowLayout">
                         <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="0" /></VisualState.StateTriggers>
-                        <VisualState.Setters><Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePaddingNarrow}" /></VisualState.Setters>
+                        <VisualState.Setters>
+                            <Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePaddingNarrow}" />
+                            <Setter Target="HardwareSystemSummary.(Grid.Column)" Value="0" />
+                            <Setter Target="HardwareSystemSummary.(Grid.Row)" Value="1" />
+                            <Setter Target="HardwareSummarySecondColumn.Width" Value="0" />
+                            <Setter Target="HardwareSummaryGrid.ColumnSpacing" Value="0" />
+                            <Setter Target="HardwareSummaryGrid.RowSpacing" Value="{StaticResource AzzsSpaceStandard}" />
+                            <Setter Target="HardwareGraphicsGroup.(Grid.Column)" Value="0" />
+                            <Setter Target="HardwareGraphicsGroup.(Grid.Row)" Value="1" />
+                            <Setter Target="HardwareStorageGroup.(Grid.Column)" Value="0" />
+                            <Setter Target="HardwareStorageGroup.(Grid.Row)" Value="2" />
+                            <Setter Target="HardwareConnectivityGroup.(Grid.Column)" Value="0" />
+                            <Setter Target="HardwareConnectivityGroup.(Grid.Row)" Value="3" />
+                            <Setter Target="HardwareDetailsSecondColumn.Width" Value="0" />
+                            <Setter Target="HardwareDetailsGroups.ColumnSpacing" Value="0" />
+                            <Setter Target="HardwareDetailsGroups.RowSpacing" Value="{StaticResource AzzsSpaceStandard}" />
+                        </VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="WideLayout">
                         <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="{StaticResource AzzsWideLayoutMinWidth}" /></VisualState.StateTriggers>
-                        <VisualState.Setters><Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePadding}" /></VisualState.Setters>
+                        <VisualState.Setters>
+                            <Setter Target="PageRoot.Padding" Value="{StaticResource AzzsPagePadding}" />
+                            <Setter Target="HardwareSystemSummary.(Grid.Column)" Value="1" />
+                            <Setter Target="HardwareSystemSummary.(Grid.Row)" Value="0" />
+                            <Setter Target="HardwareSummarySecondColumn.Width" Value="*" />
+                            <Setter Target="HardwareSummaryGrid.ColumnSpacing" Value="{StaticResource AzzsSpaceStandard}" />
+                            <Setter Target="HardwareSummaryGrid.RowSpacing" Value="0" />
+                            <Setter Target="HardwareGraphicsGroup.(Grid.Column)" Value="1" />
+                            <Setter Target="HardwareGraphicsGroup.(Grid.Row)" Value="0" />
+                            <Setter Target="HardwareStorageGroup.(Grid.Column)" Value="0" />
+                            <Setter Target="HardwareStorageGroup.(Grid.Row)" Value="1" />
+                            <Setter Target="HardwareConnectivityGroup.(Grid.Column)" Value="1" />
+                            <Setter Target="HardwareConnectivityGroup.(Grid.Row)" Value="1" />
+                            <Setter Target="HardwareDetailsSecondColumn.Width" Value="*" />
+                            <Setter Target="HardwareDetailsGroups.ColumnSpacing" Value="{StaticResource AzzsSpaceStandard}" />
+                            <Setter Target="HardwareDetailsGroups.RowSpacing" Value="{StaticResource AzzsSpaceLarge}" />
+                        </VisualState.Setters>
                     </VisualState>
                 </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
@@ -58,11 +90,18 @@
                 IsClosable="False"
                 IsOpen="False"
                 Style="{StaticResource AzzsStatusBandStyle}" />
-            <Grid Grid.Row="2" ColumnSpacing="{StaticResource AzzsSpaceStandard}">
+            <Grid
+                x:Name="HardwareSummaryGrid"
+                Grid.Row="2"
+                ColumnSpacing="{StaticResource AzzsSpaceStandard}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="HardwareSummarySecondColumn" Width="*" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Border
                     Grid.Column="0"
                     AutomationProperties.AutomationId="AzzsHardwareModelSummary"
@@ -77,6 +116,7 @@
                     </StackPanel>
                 </Border>
                 <Border
+                    x:Name="HardwareSystemSummary"
                     Grid.Column="1"
                     AutomationProperties.AutomationId="AzzsHardwareSystemSummary"
                     Style="{StaticResource AzzsSummarySurfaceStyle}">
@@ -94,49 +134,111 @@
                 Grid.Row="3"
                 AutomationProperties.AutomationId="AzzsHardwareDetails"
                 Style="{StaticResource AzzsDetailSurfaceStyle}">
-                <Grid RowSpacing="{StaticResource AzzsSpaceMedium}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Uid="HardwareDetailsTitle" Grid.ColumnSpan="2" Style="{StaticResource AzzsSectionTitleTextStyle}" />
-                    <TextBlock x:Uid="HardwareCpuLabel" Grid.Row="1" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="CpuValue" Grid.Row="1" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareCpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareMotherboardLabel" Grid.Row="2" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="MotherboardValue" Grid.Row="2" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareMemoryLabel" Grid.Row="3" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="MemoryValue" Grid.Row="3" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMemory" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareGpuLabel" Grid.Row="4" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="GpuValue" Grid.Row="4" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareDisplayLabel" Grid.Row="5" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="DisplayValue" Grid.Row="5" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareDisplay" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareSolidStateStorageLabel" Grid.Row="6" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="SolidStateStorageValue" Grid.Row="6" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareSolidStateStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareHardDiskStorageLabel" Grid.Row="7" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="HardDiskStorageValue" Grid.Row="7" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareHardDiskStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareNpuLabel" Grid.Row="8" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="NpuValue" Grid.Row="8" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareNpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareAudioLabel" Grid.Row="9" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="AudioValue" Grid.Row="9" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareAudio" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareWiredNetworkLabel" Grid.Row="10" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="WiredNetworkValue" Grid.Row="10" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareWiredNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareWirelessNetworkLabel" Grid.Row="11" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="WirelessNetworkValue" Grid.Row="11" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareWirelessNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                </Grid>
+                <StackPanel Spacing="{StaticResource AzzsSpaceLarge}">
+                    <TextBlock
+                        x:Uid="HardwareDetailsTitle"
+                        AutomationProperties.HeadingLevel="Level2"
+                        Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                    <Grid
+                        x:Name="HardwareDetailsGroups"
+                        ColumnSpacing="{StaticResource AzzsSpaceStandard}"
+                        RowSpacing="{StaticResource AzzsSpaceLarge}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition x:Name="HardwareDetailsSecondColumn" Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel
+                            x:Name="HardwareCoreGroup"
+                            Spacing="{StaticResource AzzsSpaceMedium}">
+                            <TextBlock
+                                x:Uid="HardwareCoreGroupTitle"
+                                AutomationProperties.HeadingLevel="Level3"
+                                Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareCpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="CpuValue" AutomationProperties.AutomationId="AzzsHardwareCpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareMotherboardLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="MotherboardValue" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareMemoryLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="MemoryValue" AutomationProperties.AutomationId="AzzsHardwareMemory" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel
+                            x:Name="HardwareGraphicsGroup"
+                            Grid.Column="1"
+                            Spacing="{StaticResource AzzsSpaceMedium}">
+                            <TextBlock
+                                x:Uid="HardwareGraphicsGroupTitle"
+                                AutomationProperties.HeadingLevel="Level3"
+                                Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareGpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="GpuValue" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareDisplayLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="DisplayValue" AutomationProperties.AutomationId="AzzsHardwareDisplay" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareNpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="NpuValue" AutomationProperties.AutomationId="AzzsHardwareNpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel
+                            x:Name="HardwareStorageGroup"
+                            Grid.Row="1"
+                            Spacing="{StaticResource AzzsSpaceMedium}">
+                            <TextBlock
+                                x:Uid="HardwareStorageGroupTitle"
+                                AutomationProperties.HeadingLevel="Level3"
+                                Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareSolidStateStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="SolidStateStorageValue" AutomationProperties.AutomationId="AzzsHardwareSolidStateStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareHardDiskStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="HardDiskStorageValue" AutomationProperties.AutomationId="AzzsHardwareHardDiskStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareUnclassifiedStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="UnclassifiedStorageValue" AutomationProperties.AutomationId="AzzsHardwareUnclassifiedStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel
+                            x:Name="HardwareConnectivityGroup"
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Spacing="{StaticResource AzzsSpaceMedium}">
+                            <TextBlock
+                                x:Uid="HardwareConnectivityGroupTitle"
+                                AutomationProperties.HeadingLevel="Level3"
+                                Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareWiredNetworkLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="WiredNetworkValue" AutomationProperties.AutomationId="AzzsHardwareWiredNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareWirelessNetworkLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="WirelessNetworkValue" AutomationProperties.AutomationId="AzzsHardwareWirelessNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                                <TextBlock x:Uid="HardwareAudioLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
+                                <TextBlock x:Name="AudioValue" AutomationProperties.AutomationId="AzzsHardwareAudio" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
             </Border>
             <Border
                 Grid.Row="4"

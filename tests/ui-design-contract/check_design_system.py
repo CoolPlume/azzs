@@ -1173,6 +1173,7 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         ("HardwareDisplayLabel", "AzzsHardwareDisplay"),
         ("HardwareSolidStateStorageLabel", "AzzsHardwareSolidStateStorage"),
         ("HardwareHardDiskStorageLabel", "AzzsHardwareHardDiskStorage"),
+        ("HardwareUnclassifiedStorageLabel", "AzzsHardwareUnclassifiedStorage"),
         ("HardwareNpuLabel", "AzzsHardwareNpu"),
         ("HardwareAudioLabel", "AzzsHardwareAudio"),
         ("HardwareWiredNetworkLabel", "AzzsHardwareWiredNetwork"),
@@ -1186,14 +1187,28 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     require(
         resource_values.get("HardwareSolidStateStorageLabel.Text") == "固态硬盘" and
         resource_values.get("HardwareHardDiskStorageLabel.Text") == "机械硬盘" and
+        resource_values.get("HardwareUnclassifiedStorageLabel.Text") == "未分类物理磁盘" and
         resource_values.get("HardwareWiredNetworkLabel.Text") == "有线网卡" and
         resource_values.get("HardwareWirelessNetworkLabel.Text") == "无线网卡",
         "storage media and network link labels must remain explicit Simplified Chinese",
     )
+    for group in (
+        "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",
+        "HardwareConnectivityGroup",
+    ):
+        require(group in drivers_xaml,
+                f"drivers page is missing the {group} hardware information group")
+    require(
+        'Target="HardwareDetailsSecondColumn.Width" Value="0"' in drivers_xaml and
+        'Target="HardwareDetailsSecondColumn.Width" Value="*"' in drivers_xaml and
+        'Target="HardwareSummarySecondColumn.Width" Value="0"' in drivers_xaml and
+        'Target="HardwareSummarySecondColumn.Width" Value="*"' in drivers_xaml,
+        "drivers hardware details and summary must collapse to one readable column",
+    )
     for field in (
         "facts.operating_system", "facts.cpu", "facts.gpu", "facts.motherboard",
         "facts.memory", "facts.display", "facts.solid_state_storage",
-        "facts.hard_disk_storage", "facts.npu", "facts.audio",
+        "facts.hard_disk_storage", "facts.unclassified_storage", "facts.npu", "facts.audio",
         "facts.wired_network_adapter", "facts.wireless_network_adapter",
         "facts.oem_model",
     ):
