@@ -129,6 +129,11 @@ struct MainWindow : MainWindowT<MainWindow> {
   bool allow_window_close_{false};
   bool restoring_navigation_selection_{false};
   std::optional<azzs::application::PageId> displayed_page_;
+  // Keep the last successfully projected core snapshot so a transient copy
+  // failure does not make the settings page unreachable. The settings page
+  // marks this path as degraded and never writes the cached values back.
+  std::optional<azzs::application::WorkbenchSnapshot>
+      last_projected_snapshot_;
   azzs::ui::presentation::SettingsNavigationBridge
       settings_navigation_bridge_;
 };
