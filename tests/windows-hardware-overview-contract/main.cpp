@@ -1,8 +1,9 @@
 #include <algorithm>
-#include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <stop_token>
 #include <string>
@@ -18,7 +19,10 @@ using azzs::adapters::windows::WindowsHardwareObserver;
 using azzs::adapters::windows::WindowsHardwareQueryCode;
 using azzs::adapters::windows::WindowsHardwareQueryExecutor;
 using azzs::adapters::windows::WindowsHardwareQueryResult;
+using azzs::adapters::windows::WindowsCpuTopology;
+using azzs::adapters::windows::WindowsGpuMemory;
 using azzs::application::HardwareObservationCode;
+using azzs::application::HardwareDisplayConnection;
 using azzs::application::HardwareDeviceKind;
 using azzs::application::HardwareDeviceStatus;
 
@@ -39,6 +43,8 @@ struct ExpectedQuery final {
 class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
  public:
   std::vector<ExpectedQuery> expected;
+  std::optional<WindowsCpuTopology> topology;
+  std::vector<WindowsGpuMemory> dxgi_adapters;
   std::size_t calls{0};
   bool mismatch{false};
 
@@ -69,6 +75,16 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       }
     }
     return query.result;
+  }
+
+  [[nodiscard]] std::optional<WindowsCpuTopology> cpu_topology(
+      std::stop_token) override {
+    return topology;
+  }
+
+  [[nodiscard]] std::vector<WindowsGpuMemory> gpu_memory(
+      std::stop_token) override {
+    return dxgi_adapters;
   }
 };
 
@@ -159,6 +175,12 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   auto executor = std::make_unique<FakeQueryExecutor>();
   auto* raw_executor = executor.get();
   raw_executor->expected = full_queries();
+  raw_executor->dxgi_adapters = {
+      {.model_name = "NVIDIA GeForce RTX",
+       .dedicated_video_memory = 16ull * 1024ull * 1024ull * 1024ull},
+      {.model_name = "AMD Radeon",
+       .dedicated_video_memory = 4ull * 1024ull * 1024ull * 1024ull},
+  };
   WindowsHardwareObserver observer{std::move(executor)};
 
   auto const result = observer.observe({});
@@ -168,42 +190,70 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
           expect(!raw_executor->mismatch && raw_executor->calls == 11,
                  "the adapter must use exactly the approved read-only "
                  "model queries") &&
-                expect(result.observation->cpu == "AMD Ryzen 7 (8C/16T)" &&
-                    result.observation->gpu ==
-                        "NVIDIA GeForce RTX (16GB); AMD Radeon (4GB)" &&
-                    result.observation->motherboard == "ASUS PRIME B650" &&
-                    result.observation->network_adapter ==
-                        "Intel Ethernet; Intel(R) Wi-Fi 7 BE200" &&
-                    result.observation->wired_network_adapter == "Intel Ethernet" &&
-                    result.observation->wireless_network_adapter ==
-                        "Intel(R) Wi-Fi 7 BE200" &&
-                    result.observation->memory ==
-                        "Micron DDR5 48GB 5600MHz (24GB + 24GB)" &&
-                    result.observation->display ==
-                        "BOE Display (2560x1600) x2" &&
-                    result.observation->storage.find("PC801 SK hynix") !=
-                        std::string::npos &&
-                    result.observation->storage.find("Samsung SSD 990 PRO") !=
-                        std::string::npos &&
-                    result.observation->storage.find("标准磁盘驱动器") ==
-                        std::string::npos &&
-                    result.observation->storage.find("Standard disk drive") ==
-                        std::string::npos &&
-                    result.observation->solid_state_storage.find("Samsung SSD 990 PRO") !=
-                        std::string::npos &&
-                    result.observation->solid_state_storage.find("PC801 SK hynix") !=
-                        std::string::npos &&
-                    result.observation->hard_disk_storage.find("PC801 SK hynix") ==
-                        std::string::npos &&
-                    result.observation->hard_disk_storage.find("Seagate BarraCuda HDD") !=
-                        std::string::npos &&
-                    result.observation->audio ==
-                        "Realtek High Definition Audio; NVIDIA High Definition Audio" &&
-                    result.observation->npu == "Intel(R) AI Boost" &&
-                    result.observation->operating_system.find("Windows 11 Pro") !=
-                        std::string::npos &&
-                    result.observation->oem_model == "ASUS ROG" &&
-                    result.observation->devices.size() == 14 &&
+                 expect(result.observation->cpu.find("核心 8，线程 16") !=
+                             std::string::npos &&
+                     result.observation->gpu.find("英伟达 NVIDIA") !=
+                         std::string::npos &&
+                     result.observation->gpu.find("专用显存 16 GB") !=
+                         std::string::npos &&
+                     result.observation->gpu.find("专用显存 4 GB") !=
+                         std::string::npos &&
+                     result.observation->motherboard.find("华硕 ASUS") !=
+                         std::string::npos &&
+                     result.observation->motherboard.find("PRIME B650") !=
+                         std::string::npos &&
+                     result.observation->wired_network_adapter.find("英特尔 Intel") !=
+                         std::string::npos &&
+                     result.observation->wireless_network_adapter.find("英特尔 Intel") !=
+                         std::string::npos &&
+                     result.observation->memory.find("美光 Micron") !=
+                         std::string::npos &&
+                     result.observation->memory.find("48GB 5600MHz (24GB + 24GB)") !=
+                         std::string::npos &&
+                     result.observation->display.find("京东方 BOE") !=
+                         std::string::npos &&
+                     result.observation->display.find("类型未确认") !=
+                         std::string::npos &&
+                     result.observation->display.find("2560 × 1600") !=
+                         std::string::npos &&
+                     result.observation->storage.find("PC801 SK 海力士") !=
+                         std::string::npos &&
+                     result.observation->storage.find("三星 Samsung SSD 990 PRO") !=
+                         std::string::npos &&
+                     result.observation->storage.find("接口：NVMe") !=
+                         std::string::npos &&
+                     result.observation->storage.find("PCIe 代际：PCIe 4.0") !=
+                         std::string::npos &&
+                     result.observation->storage.find("NAND 颗粒：TLC") !=
+                         std::string::npos &&
+                     result.observation->storage.find("标准磁盘驱动器") ==
+                         std::string::npos &&
+                     result.observation->storage.find("Standard disk drive") ==
+                         std::string::npos &&
+                     result.observation->solid_state_storage.find("Samsung SSD 990 PRO") !=
+                         std::string::npos &&
+                     result.observation->solid_state_storage.find("PC801 SK") !=
+                         std::string::npos &&
+                     result.observation->hard_disk_storage.find("PC801 SK") ==
+                         std::string::npos &&
+                     result.observation->hard_disk_storage.find("Seagate BarraCuda HDD") !=
+                         std::string::npos &&
+                     result.observation->audio.find("瑞昱 Realtek") !=
+                         std::string::npos &&
+                     result.observation->npu.find("英特尔 Intel") !=
+                         std::string::npos &&
+                     result.observation->operating_system.find("24H2") !=
+                         std::string::npos &&
+                     result.observation->operating_system.find("版本 10.0.26100") !=
+                         std::string::npos &&
+                     result.observation->oem_model == "华硕 ASUS ROG" &&
+                     std::ranges::any_of(
+                         result.observation->devices, [](auto const& device) {
+                           return device.kind == HardwareDeviceKind::cpu &&
+                                  device.core_count == 8 &&
+                                  device.thread_count == 16;
+                         }) &&
+                     result.observation->devices.size() == 14 &&
                     result.observation->has_confirmed_physical_hardware(),
                 "CPU, GPU, board, network, and OEM model facts must map "
                 "without serial, MAC, IP, or computer-name fields and only "
@@ -313,7 +363,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return expect(result.code == HardwareObservationCode::partial &&
                     result.observation.has_value() &&
                     result.observation->gpu.empty() &&
-                    result.observation->cpu == "AMD Ryzen 7 (8C/16T)",
+                    result.observation->cpu.find("核心 8，线程 16") !=
+                        std::string::npos,
                 "a non-terminal probe failure must return usable partial facts") &&
           expect(!raw_executor->mismatch && raw_executor->calls == 11,
                 "a partial failure must still collect independent model facts");
@@ -337,10 +388,13 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
   return expect(result.succeeded() && result.observation.has_value() &&
-                    result.observation->cpu == "Intel(R) Core(TM) Ultra 9 (24C/24T)" &&
-                    result.observation->motherboard == "HP 8A43" &&
-                    result.observation->display ==
-                        "BOE NE160QDM-NY4 (2560x1600)" &&
+                    result.observation->cpu.find("核心 24，线程 24") !=
+                        std::string::npos &&
+                    result.observation->motherboard == "惠普 HP 8A43" &&
+                    result.observation->display.find("京东方 BOE") !=
+                        std::string::npos &&
+                    result.observation->display.find("2560 × 1600") !=
+                        std::string::npos &&
                     std::ranges::any_of(
                         result.observation->devices, [](auto const& device) {
                           return device.kind == HardwareDeviceKind::display &&
@@ -348,6 +402,201 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                         }) &&
                     !raw_executor->mismatch && raw_executor->calls == 11,
                 "missing processor and motherboard PNP ids, optional HostingBoard, and generic monitor rows must use concrete OEM WMI fallbacks");
+}
+
+[[nodiscard]] bool incomplete_board_rows_fail_closed() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[2].result.rows = {
+      {"HP", "", "True", "", "OK", "0"},
+      {"", "8D41", "True", "", "OK", "0"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->motherboard.empty() &&
+                    !std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind ==
+                                 HardwareDeviceKind::motherboard;
+                        }) &&
+                    !raw_executor->mismatch && raw_executor->calls == 11,
+                "a baseboard without both manufacturer and product must not "
+                "be promoted from an empty-PNP WMI row");
+}
+
+[[nodiscard]] bool real_machine_wmi_field_shapes_are_projected() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[0].result.rows = {
+      {"Intel(R) Core(TM) Ultra 9 275HX", "GenuineIntel", "", "OK", "",
+       "24", "24"}};
+  raw_executor->expected[2].result.rows = {
+      {"HP", "8D41", "True", "", "OK", ""}};
+  raw_executor->expected[3].result.rows = {
+      {"Realtek Gaming 2.5GbE Family Controller", "Realtek",
+       "以太网 802.3", "True",
+       "PCI\\VEN_10EC&DEV_8125&SUBSYS_8D41103C&REV_05\\01000000684CE00000",
+       "", "0", "rt25cx21", "2"},
+      {"Intel(R) Wi-Fi 7 BE200 320MHz", "Intel Corporation", "以太网 802.3",
+       "True", "PCI\\VEN_8086&DEV_272B&SUBSYS_00F48086&REV_1A\\4&2354814&0&0031",
+       "", "0", "Netwaw18", "7"}};
+  raw_executor->expected[5].result.rows = {
+      {"Micron Technology", "25769803776", "5600", "CT24G56C46S5.M8B1   ",
+       "Bottom-Slot 1(left)", "Physical Memory 0", "34", "5600"},
+      {"Micron Technology", "25769803776", "5600", "CT24G56C46S5.M8B1   ",
+       "Bottom-Slot 2(right)", "Physical Memory 1", "34", "5600"}};
+  raw_executor->expected[6].result.rows = {
+      {"默认监视器", "", "OK", "", "", ""},
+      {"通用即插即用监视器", "DISPLAY\\LHC907D\\5&18F24B9&0&UID8449", "OK",
+       "0", "", ""},
+      {"通用即插即用监视器", "DISPLAY\\BOE0CD1\\4&1739F381&1&UID8388688", "OK",
+       "0", "2560", "1600"}};
+  raw_executor->expected[7].result.rows = {
+      {"Samsung SSD 990 PRO 2TB", "(标准磁盘驱动器)", "2000396321280",
+       "SCSI\\DISK&VEN_NVME&PROD_SAMSUNG_SSD_990\\5&211D8CE7&0&000000", "OK",
+       "0", "SCSI", "Fixed hard disk media"},
+      {"SK hynix PCB01 HFS001TFM9X187N", "(标准磁盘驱动器)", "1024203640320",
+       "SCSI\\DISK&VEN_NVME&PROD_SK_HYNIX_PCB01_H\\5&24C09446&0&000000", "OK",
+       "0", "SCSI", "Fixed hard disk media"}};
+  raw_executor->expected[9].result.rows = {
+      {"Integrated Monitor", "(标准监视器类型)",
+       "DISPLAY\\BOE0CD1\\4&1739F381&1&UID8388688", "OK", "0", "Monitor"},
+      {"Generic Monitor (P275MV PLUS)", "(标准监视器类型)",
+       "DISPLAY\\LHC907D\\5&18F24B9&0&UID8449", "OK", "0", "Monitor"}};
+  raw_executor->expected[10].result.rows = {
+      {"Microsoft Windows 11 专业版", "10.0.26200", "26200", "64-bit"}};
+  raw_executor->topology = WindowsCpuTopology{
+      .performance_cores = 8,
+      .efficiency_cores = 16,
+      .logical_processors = 24,
+      .split_known = true,
+  };
+
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  auto const& observation = result.observation;
+  return expect(result.succeeded() && observation.has_value() &&
+                    !raw_executor->mismatch && raw_executor->calls == 11,
+                "real WMI field shapes must satisfy the approved query contract") &&
+         expect(observation->cpu.find("核心 24，线程 24；P 核 8，E 核 16") !=
+                         std::string::npos &&
+                     observation->motherboard == "惠普 HP 8D41" &&
+                     observation->wired_network_adapter.find("瑞昱 Realtek") !=
+                         std::string::npos &&
+                     observation->wireless_network_adapter.find("英特尔 Intel") !=
+                         std::string::npos &&
+                     observation->operating_system.find("25H2") !=
+                         std::string::npos &&
+                     observation->operating_system.find("版本 10.0.26200") !=
+                         std::string::npos,
+                "empty CPU/board PNP ids and localized network adapter types must retain concrete physical models") &&
+         expect(observation->memory.find(
+                     "美光 Micron Technology DDR5 48GB 5600MHz (24GB + 24GB)") !=
+                     std::string::npos,
+                "matching physical DIMMs must be aggregated by part number") &&
+         expect(observation->display.find("京东方 BOE0CD1（内建") !=
+                         std::string::npos &&
+                     observation->display.find("泰坦军团 TITAN ARMY P275MV PLUS（外接）") !=
+                         std::string::npos &&
+                    observation->display.find("默认监视器") == std::string::npos,
+                "EDID PNP tokens and parenthetical monitor models must replace generic monitor names") &&
+         expect(observation->solid_state_storage.find("Samsung SSD 990 PRO 2TB") !=
+                        std::string::npos &&
+                     observation->solid_state_storage.find("SK 海力士 PCB01") !=
+                         std::string::npos &&
+                    observation->solid_state_storage.find("PCIe 代际：未读取") !=
+                        std::string::npos &&
+                    observation->solid_state_storage.find("NAND 颗粒：未读取") !=
+                        std::string::npos &&
+                    observation->hard_disk_storage.empty() &&
+                    observation->storage.find("标准磁盘驱动器") == std::string::npos,
+                    "SCSI NVMe PNP ids must classify SSDs without exposing localized disk-class prefixes");
+}
+
+[[nodiscard]] bool topology_and_dxgi_enrich_only_verified_models() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[0].result.rows = {
+      {"Intel(R) Core(TM) Ultra 9 275HX", "GenuineIntel", "", "OK", "0",
+       "24", "24"}};
+  raw_executor->expected[1].result.rows = {
+      {"NVIDIA GeForce RTX 5080 Laptop GPU", "NVIDIA",
+       "PCI\\VEN_10DE&DEV_1F00", "OK", "0", "", "4293918720"},
+      {"Intel Graphics", "Intel", "PCI\\VEN_8086&DEV_7D55", "OK", "0",
+       "", "4293918720"}};
+  raw_executor->topology = WindowsCpuTopology{
+      .performance_cores = 8,
+      .efficiency_cores = 16,
+      .logical_processors = 24,
+      .split_known = true,
+  };
+  raw_executor->dxgi_adapters = {
+      {.model_name = "NVIDIA GeForce RTX 5080 Laptop GPU",
+       .dedicated_video_memory = 16003ull * 1024ull * 1024ull},
+      {.model_name = "Intel Graphics",
+       .dedicated_video_memory = 128ull * 1024ull * 1024ull,
+       .shared_system_memory = 32175ull * 1024ull * 1024ull},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value(),
+                "verified DXGI and topology facts must enrich a complete observation") &&
+         expect(result.observation->cpu.find("P 核 8，E 核 16") !=
+                    std::string::npos &&
+                    result.observation->gpu.find("专用显存 16 GB") !=
+                        std::string::npos &&
+                    result.observation->gpu.find("专用显存 128 MB；共享内存 31.4 GB") !=
+                        std::string::npos &&
+                    result.observation->gpu.find("专用显存 4 GB") ==
+                        std::string::npos &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::cpu &&
+                                 device.core_count == 24 &&
+                                 device.thread_count == 24 &&
+                                 device.performance_core_count == 8 &&
+                                 device.efficiency_core_count == 16;
+                        }),
+                "CPU P/E and GPU memory must use the platform facts, never the truncated WMI AdapterRAM value");
+}
+
+[[nodiscard]] bool unclassified_physical_storage_remains_visible() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[7].result.rows.push_back(
+      {"Example USB Storage", "Example", "1000204886016",
+       "USB\\VID_0000&PID_0000", "OK", "0", "USB", "Fixed media"});
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->storage.find("Example USB Storage") !=
+                        std::string::npos &&
+                    result.observation->unclassified_storage.find(
+                        "Example USB Storage") != std::string::npos &&
+                    result.observation->unclassified_storage.find("接口：USB") !=
+                        std::string::npos,
+                "a confirmed physical disk with unknown media class must remain visible in its own summary");
+}
+
+[[nodiscard]] bool memory_quantity_rendering_scales_past_two_modules() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[5].result.rows.push_back(
+      {"Micron", "25769803776", "5600", "MTC20C2085S1EC48BA1", "DIMM2",
+       "Physical Memory 2", "34", "5600"});
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->memory.find(
+                        "美光 Micron DDR5 72GB 5600MHz (24GB + 24GB + 24GB)") !=
+                        std::string::npos,
+                "memory summaries must render every matching module instead of two hard-coded entries");
 }
 
 [[nodiscard]] bool permission_denial_and_cancellation_are_terminal() {
@@ -410,6 +659,11 @@ int main() {
   passed &= virtual_software_vpn_loopback_and_unknown_rows_are_filtered();
   passed &= partial_failure_preserves_usable_model_facts();
   passed &= oem_firmware_fallbacks_keep_concrete_models();
+  passed &= incomplete_board_rows_fail_closed();
+  passed &= real_machine_wmi_field_shapes_are_projected();
+  passed &= topology_and_dxgi_enrich_only_verified_models();
+  passed &= unclassified_physical_storage_remains_visible();
+  passed &= memory_quantity_rendering_scales_past_two_modules();
   passed &= permission_denial_and_cancellation_are_terminal();
   passed &= model_change_probe_requires_complete_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
