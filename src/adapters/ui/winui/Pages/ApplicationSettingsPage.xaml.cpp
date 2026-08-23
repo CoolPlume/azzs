@@ -44,6 +44,63 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   if (name == L"ApplicationUpdateTitle.Text") {
     return L"\u5E94\u7528\u66F4\u65B0";
   }
+  if (name == L"ApplicationUpdateSchedule.Header") {
+    return L"\u81EA\u52A8\u68C0\u67E5\u8BA1\u5212";
+  }
+  if (name == L"ApplicationUpdateScheduleDisabled.Content") {
+    return L"\u5173\u95ED";
+  }
+  if (name == L"ApplicationUpdateScheduleStartup.Content") {
+    return L"\u542F\u52A8\u65F6";
+  }
+  if (name == L"ApplicationUpdateScheduleDaily.Content") {
+    return L"\u6BCF\u65E5";
+  }
+  if (name == L"ApplicationUpdateScheduleWeekly.Content") {
+    return L"\u6BCF\u5468";
+  }
+  if (name == L"ApplicationUpdateCandidateButton.Content") {
+    return L"\u6253\u5F00\u5019\u9009 Release";
+  }
+  if (name == L"ApplicationUpdateLastCheckNever") {
+    return L"\u4ECE\u672A\u68C0\u67E5";
+  }
+  if (name == L"ApplicationUpdateLastCheckValue") {
+    return L"\u4E0A\u6B21\u68C0\u67E5\uFF1A{time}\uFF08UTC \u6BEB\u79D2\uFF09";
+  }
+  if (name == L"ApplicationUpdateCheckResultValue") {
+    return L"\u68C0\u67E5\u7ED3\u679C\uFF1A{result}";
+  }
+  if (name == L"ApplicationUpdateCheckDetailValue") {
+    return L"\u4E8B\u5B9E\u8BF4\u660E\uFF1A{detail}";
+  }
+  if (name == L"ApplicationUpdateCheckResultNever") {
+    return L"\u5C1A\u672A\u68C0\u67E5";
+  }
+  if (name == L"ApplicationUpdateCheckResultNoUpdate") {
+    return L"\u6CA1\u6709\u66F4\u65B0";
+  }
+  if (name == L"ApplicationUpdateCheckResultAvailable") {
+    return L"\u53D1\u73B0\u66F4\u65B0";
+  }
+  if (name == L"ApplicationUpdateCheckResultUnavailable") {
+    return L"\u6682\u4E0D\u53EF\u7528";
+  }
+  if (name == L"ApplicationUpdateCheckResultDeferred") {
+    return L"\u5DF2\u5EF6\u540E";
+  }
+  if (name == L"ApplicationUpdateCandidateVersionValue") {
+    return L"\u5019\u9009\u7248\u672C\uFF1A{version}\uFF08{tag}\uFF09";
+  }
+  if (name == L"ApplicationUpdateCandidateDateValue") {
+    return L"\u53D1\u5E03\u65E5\u671F\uFF1A{date}";
+  }
+  if (name == L"ApplicationUpdateCandidateSummaryValue") {
+    return L"\u6458\u8981\uFF1A{summary}";
+  }
+  if (name == L"ApplicationUpdateCandidateReleaseValue") {
+    return L"Release \u5730\u5740\uFF1A{url}";
+  }
   if (name.find(L"ApplicationSettingsAction") == 0) {
     return L"\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1B\u73B0\u6709\u72B6\u6001\u5DF2\u4FDD\u7559\u3002";
   }
@@ -101,6 +158,65 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
     // the already constructed settings page from being displayed.
     return winrt::hstring{resource_fallback(key)};
   }
+}
+
+[[nodiscard]] std::int32_t update_schedule_index(
+    azzs::application::ApplicationUpdateCheckSchedule schedule) noexcept {
+  return static_cast<std::int32_t>(schedule);
+}
+
+[[nodiscard]] azzs::application::ApplicationUpdateCheckSchedule
+update_schedule_for_index(std::int32_t index) noexcept {
+  using Schedule = azzs::application::ApplicationUpdateCheckSchedule;
+  switch (index) {
+    case 0:
+      return Schedule::disabled;
+    case 1:
+      return Schedule::startup;
+    case 2:
+      return Schedule::daily;
+    case 3:
+      return Schedule::weekly;
+    default:
+      return Schedule::startup;
+  }
+}
+
+[[nodiscard]] winrt::hstring update_check_outcome_text(
+    azzs::application::ApplicationUpdateCheckOutcome outcome) {
+  using Outcome = azzs::application::ApplicationUpdateCheckOutcome;
+  switch (outcome) {
+    case Outcome::never:
+      return resource_string(L"ApplicationUpdateCheckResultNever");
+    case Outcome::succeeded_no_update:
+      return resource_string(L"ApplicationUpdateCheckResultNoUpdate");
+    case Outcome::update_available:
+      return resource_string(L"ApplicationUpdateCheckResultAvailable");
+    case Outcome::unavailable:
+      return resource_string(L"ApplicationUpdateCheckResultUnavailable");
+    case Outcome::deferred:
+      return resource_string(L"ApplicationUpdateCheckResultDeferred");
+  }
+  return resource_string(L"ApplicationUpdateCheckResultUnavailable");
+}
+
+[[nodiscard]] std::wstring update_text(std::string const& value) {
+  if (value.empty()) {
+    return L"-";
+  }
+  auto const count = ::MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+      static_cast<int>(value.size()), nullptr, 0);
+  if (count <= 0) {
+    return std::wstring{value.begin(), value.end()};
+  }
+  std::wstring result(static_cast<std::size_t>(count), L'\0');
+  if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                            static_cast<int>(value.size()), result.data(),
+                            count) != count) {
+    return std::wstring{value.begin(), value.end()};
+  }
+  return result;
 }
 
 void set_settings_operation_open(InfoBar const& info_bar, bool open) {
@@ -256,6 +372,8 @@ ApplicationSettingsPage::ApplicationSettingsPage() {
       winrt::box_value(resource_string(L"ApplicationUpdateManualButton")));
   ApplicationUpdateDiagnosticButton().Content(
       winrt::box_value(resource_string(L"ApplicationUpdateDiagnosticButton")));
+  ApplicationUpdateCandidateButton().Content(
+      winrt::box_value(resource_string(L"ApplicationUpdateCandidateButton.Content")));
   ArchitecturePromptItem().Content(winrt::box_value(
       resource_string(L"ApplicationSettingsArchitecturePrompt.Content")));
   ArchitectureAutoFallbackItem().Content(winrt::box_value(
@@ -670,6 +788,43 @@ void ApplicationSettingsPage::OnApplicationUpdateDiagnosticClick(
   }
 }
 
+void ApplicationSettingsPage::OnApplicationUpdateScheduleSelectionChanged(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&) {
+  try {
+    if (projecting_ || !workbench_ ||
+        ApplicationUpdateScheduleComboBox().SelectedIndex() < 0) {
+      return;
+    }
+    auto const result = workbench_->set_update_check_schedule(
+        update_schedule_for_index(
+            ApplicationUpdateScheduleComboBox().SelectedIndex()));
+    project_update(result.snapshot);
+  } catch (...) {
+    show_operation_failure();
+  }
+}
+
+void ApplicationSettingsPage::OnApplicationUpdateReleaseClick(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  try {
+    if (workbench_) {
+      project_update(workbench_->handle_update(
+                               azzs::application::UpdateUserIntent::
+                                   open_matching_stable_download)
+                          .snapshot);
+    }
+  } catch (...) {
+    show_operation_failure();
+  }
+}
+
+void ApplicationSettingsPage::project_update_snapshot(
+    azzs::application::UpdateSnapshot const& snapshot) {
+  project_update(snapshot);
+}
+
 void ApplicationSettingsPage::project(
     azzs::application::ApplicationSettingsSnapshot const& snapshot) {
   projecting_ = true;
@@ -775,6 +930,79 @@ void ApplicationSettingsPage::project_update(
     azzs::application::UpdateSnapshot const& snapshot) {
   using azzs::application::UpdateState;
   using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
+
+  auto const was_projecting = projecting_;
+  projecting_ = true;
+  struct ProjectionGuard final {
+    bool& projecting;
+    bool previous;
+    ~ProjectionGuard() { projecting = previous; }
+  } guard{projecting_, was_projecting};
+
+  ApplicationUpdateScheduleComboBox().SelectedIndex(
+      update_schedule_index(snapshot.check_schedule));
+  auto last_check = std::wstring{
+      snapshot.last_checked_at.has_value()
+          ? resource_string(L"ApplicationUpdateLastCheckValue")
+          : resource_string(L"ApplicationUpdateLastCheckNever")};
+  if (snapshot.last_checked_at.has_value()) {
+    replace_token(last_check, L"{time}",
+                  std::to_wstring(snapshot.last_checked_at->time_since_epoch().count()));
+  }
+  ApplicationUpdateLastCheckText().Text(winrt::hstring{last_check});
+
+  auto check_result = std::wstring{
+      resource_string(L"ApplicationUpdateCheckResultValue")};
+  replace_token(check_result, L"{result}",
+                update_check_outcome_text(snapshot.last_check_outcome).c_str());
+  ApplicationUpdateCheckResultText().Text(winrt::hstring{check_result});
+  auto check_detail = std::wstring{
+      resource_string(L"ApplicationUpdateCheckDetailValue")};
+  replace_token(check_detail, L"{detail}",
+                update_text(snapshot.last_check_detail));
+  ApplicationUpdateCheckDetailText().Text(winrt::hstring{check_detail});
+
+  auto const candidate_visible = snapshot.candidate.has_value();
+  auto set_candidate_text = [&](auto const& control, std::wstring value) {
+    control.Text(winrt::hstring{std::move(value)});
+    control.Visibility(candidate_visible ? Visibility::Visible
+                                         : Visibility::Collapsed);
+  };
+  if (candidate_visible) {
+    auto version = std::wstring{
+        resource_string(L"ApplicationUpdateCandidateVersionValue")};
+    replace_token(version, L"{version}",
+                  update_text(snapshot.candidate->target.version));
+    replace_token(version, L"{tag}", update_text(snapshot.candidate->release_tag));
+    set_candidate_text(ApplicationUpdateCandidateVersionText(),
+                       std::move(version));
+
+    auto date = std::wstring{
+        resource_string(L"ApplicationUpdateCandidateDateValue")};
+    replace_token(date, L"{date}", update_text(snapshot.candidate->published_at));
+    set_candidate_text(ApplicationUpdateCandidateDateText(), std::move(date));
+
+    auto summary = std::wstring{
+        resource_string(L"ApplicationUpdateCandidateSummaryValue")};
+    replace_token(summary, L"{summary}", update_text(snapshot.candidate->summary));
+    set_candidate_text(ApplicationUpdateCandidateSummaryText(),
+                       std::move(summary));
+
+    auto release = std::wstring{
+        resource_string(L"ApplicationUpdateCandidateReleaseValue")};
+    replace_token(release, L"{url}", update_text(snapshot.candidate->release_url));
+    set_candidate_text(ApplicationUpdateCandidateReleaseText(),
+                       std::move(release));
+  } else {
+    ApplicationUpdateCandidateVersionText().Visibility(Visibility::Collapsed);
+    ApplicationUpdateCandidateDateText().Visibility(Visibility::Collapsed);
+    ApplicationUpdateCandidateSummaryText().Visibility(Visibility::Collapsed);
+    ApplicationUpdateCandidateReleaseText().Visibility(Visibility::Collapsed);
+  }
+  ApplicationUpdateCandidateButton().Visibility(
+      candidate_visible && !snapshot.candidate->release_url.empty()
+          ? Visibility::Visible
+          : Visibility::Collapsed);
 
   auto const title = resource_string(L"ApplicationUpdateTitle.Text");
   auto message = std::wstring{

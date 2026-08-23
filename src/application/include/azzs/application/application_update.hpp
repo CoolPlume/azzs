@@ -117,6 +117,49 @@ struct ManualApplicationDownloadRequest final {
   std::optional<ApplicationUpdateCandidate> candidate;
 };
 
+// Automatic checks only read release metadata. They never authorize a
+// download, replacement, or channel switch.
+enum class ApplicationUpdateCheckSchedule {
+  disabled,
+  startup,
+  daily,
+  weekly,
+};
+
+enum class ApplicationUpdateCheckOutcome {
+  never,
+  succeeded_no_update,
+  update_available,
+  unavailable,
+  deferred,
+};
+
+struct ApplicationUpdateCheckState final {
+  ApplicationUpdateCheckSchedule schedule{
+      ApplicationUpdateCheckSchedule::startup};
+  std::optional<WallClockTime> last_checked_at;
+  ApplicationUpdateCheckOutcome outcome{ApplicationUpdateCheckOutcome::never};
+  std::optional<ApplicationUpdateCandidate> candidate;
+  std::string detail;
+
+  friend bool operator==(ApplicationUpdateCheckState const&,
+                         ApplicationUpdateCheckState const&) = default;
+};
+
+struct ApplicationUpdateCheckRead final {
+  UpdatePlatformResultCode code{UpdatePlatformResultCode::failed};
+  std::optional<ApplicationUpdateCheckState> state;
+  std::string detail;
+};
+
+class ApplicationUpdateCheckStorage {
+ public:
+  virtual ~ApplicationUpdateCheckStorage() = default;
+  [[nodiscard]] virtual ApplicationUpdateCheckRead read() = 0;
+  [[nodiscard]] virtual UpdatePlatformResult write(
+      ApplicationUpdateCheckState const& state) = 0;
+};
+
 class ApplicationUpdateHealthStorage {
  public:
   virtual ~ApplicationUpdateHealthStorage() = default;
@@ -176,6 +219,12 @@ struct UpdateSnapshot final {
   bool manual_download_available{true};
   bool diagnostics_available{false};
   bool return_to_current_task_available{false};
+  ApplicationUpdateCheckSchedule check_schedule{
+      ApplicationUpdateCheckSchedule::startup};
+  ApplicationUpdateCheckOutcome last_check_outcome{
+      ApplicationUpdateCheckOutcome::never};
+  std::optional<WallClockTime> last_checked_at;
+  std::string last_check_detail;
 };
 
 enum class UpdateUserIntent {
@@ -210,12 +259,36 @@ class ApplicationUpdateLifecycle final {
                              InitializationOperationActivity& activity,
                              ExecutionLog& log,
                              Clock const& clock);
+  ApplicationUpdateLifecycle(ApplicationUpdatePlatform& platform,
+                             InitializationOperationActivity& activity,
+                             ExecutionLog& log, Clock const& clock,
+                             ApplicationUpdateCheckStorage* check_storage);
 
   [[nodiscard]] UpdateSnapshot snapshot() const;
   [[nodiscard]] UpdateCommandResult handle(UpdateUserIntent intent);
 
+  // Persist the user's preference. The default schedule is startup for a new
+  // installation; setting disabled never affects manual checks.
+  [[nodiscard]] UpdateCommandResult set_check_schedule(
+      ApplicationUpdateCheckSchedule schedule);
+
+  // Called by the host after the workbench is ready and from a lightweight
+  // run-loop poll. It is deliberately typed and has no UI/platform types.
+  [[nodiscard]] UpdateCommandResult check_if_due();
+  [[nodiscard]] UpdateCommandResult run_automatic_check() {
+    return check_if_due();
+  }
+  [[nodiscard]] UpdateCommandResult on_workbench_ready() {
+    return check_if_due();
+  }
+
  private:
-  [[nodiscard]] UpdateCommandResult check_for_update();
+  [[nodiscard]] UpdateCommandResult check_for_update(bool automatic = false);
+  [[nodiscard]] UpdateCommandResult record_deferred_check(
+      std::string detail);
+  [[nodiscard]] bool persist_check_state();
+  void initialize_from_check_state();
+  [[nodiscard]] bool automatic_check_due() const;
   [[nodiscard]] UpdateCommandResult request_update();
   [[nodiscard]] UpdateCommandResult confirm_update();
   [[nodiscard]] UpdateCommandResult retry_new_version();
@@ -235,6 +308,8 @@ class ApplicationUpdateLifecycle final {
   InitializationOperationActivity& activity_;
   ExecutionLog& log_;
   Clock const& clock_;
+  ApplicationUpdateCheckStorage* check_storage_{nullptr};
+  bool startup_check_attempted_{false};
   UpdateSnapshot snapshot_;
 };
 

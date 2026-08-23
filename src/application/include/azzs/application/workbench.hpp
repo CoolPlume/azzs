@@ -39,6 +39,9 @@ class Workbench final {
 
   void navigate(PageId page) noexcept;
   [[nodiscard]] UpdateCommandResult handle_update(UpdateUserIntent intent);
+  [[nodiscard]] UpdateCommandResult set_update_check_schedule(
+      ApplicationUpdateCheckSchedule schedule);
+  [[nodiscard]] UpdateCommandResult check_application_update_if_due();
   [[nodiscard]] HardwareOverviewSnapshot observe_hardware(
       HardwareOverviewTrigger trigger,
       std::stop_token cancellation = {});

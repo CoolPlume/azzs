@@ -24,6 +24,7 @@
 #include "azzs/adapters/infrastructure/local_software_optimization_catalog_file.hpp"
 #include "azzs/adapters/infrastructure/software_catalog_file.hpp"
 #include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
+#include "azzs/adapters/infrastructure/state_application_update_check_storage.hpp"
 #include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
@@ -716,10 +717,11 @@ class WindowsWorkbenchServices final
                                system_settings_recovery_, occupancy_, log_),
         operation_activity_(occupancy_),
         application_update_health_storage_(states_),
+        application_update_check_storage_(states_),
         application_update_platform_(platform_info_,
                                      application_update_health_storage_),
         application_updates_(application_update_platform_, operation_activity_,
-                             log_, clock_),
+                             log_, clock_, &application_update_check_storage_),
         architecture_preferences_(std::move(architecture_preferences)),
         cache_retention_preferences_(std::move(cache_retention_preferences)),
         architecture_selection_(
@@ -1118,6 +1120,8 @@ class WindowsWorkbenchServices final
   } operation_activity_;
   adapters::infrastructure::StateApplicationUpdateHealthStorage
       application_update_health_storage_;
+  adapters::infrastructure::StateApplicationUpdateCheckStorage
+      application_update_check_storage_;
   adapters::windows::WindowsApplicationUpdatePlatform
       application_update_platform_;
   application::ApplicationUpdateLifecycle application_updates_;

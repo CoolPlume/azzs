@@ -10,6 +10,19 @@ if("${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}" STREQUAL "" OR
     "AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT must be a non-empty fixed HTTPS URL")
 endif()
 
+set(AZZS_APPLICATION_UPDATE_ENDPOINT
+  "https://api.github.com/repos/CoolPlume/azzs/releases?per_page=100"
+  CACHE INTERNAL
+  "Fixed project HTTPS endpoint embedded in the Windows application update adapter"
+  FORCE)
+
+if("${AZZS_APPLICATION_UPDATE_ENDPOINT}" STREQUAL "" OR
+   NOT "${AZZS_APPLICATION_UPDATE_ENDPOINT}" MATCHES
+       "^https://api\\.github\\.com/repos/CoolPlume/azzs/releases\\?per_page=100$")
+  message(FATAL_ERROR
+    "AZZS_APPLICATION_UPDATE_ENDPOINT must remain the fixed GitHub releases API endpoint")
+endif()
+
 if(WIN32)
   set(AZZS_CPPWINRT_VERSION "3.0.260715.1")
   if(DEFINED ENV{NUGET_PACKAGES})
@@ -91,6 +104,7 @@ if(WIN32)
       AZZS_APPLICATION_VERSION="${AZZS_APPLICATION_VERSION}"
       AZZS_APPLICATION_RELEASE_CHANNEL="${AZZS_APPLICATION_RELEASE_CHANNEL}"
       AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT="${AZZS_EMERGENCY_WITHDRAWAL_NOTICE_ENDPOINT}"
+      AZZS_APPLICATION_UPDATE_ENDPOINT="${AZZS_APPLICATION_UPDATE_ENDPOINT}"
   )
 endif()
 
