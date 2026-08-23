@@ -907,8 +907,15 @@ void append_grouped_device(
     auto const position = result.find(marker);
     if (position != std::string::npos) {
       result.replace(position, marker.size(), std::to_string(total_gb) + "GB");
-      result += " (" + std::to_string(module_gb) + "GB + " +
-                std::to_string(module_gb) + "GB)";
+      result += " (";
+      for (std::uint32_t index = 0; index < record.quantity; ++index) {
+        if (index != 0) {
+          result += " + ";
+        }
+        result += std::to_string(module_gb);
+        result += "GB";
+      }
+      result += ")";
     }
   }
   // Part numbers remain structured in the record but are omitted from the
