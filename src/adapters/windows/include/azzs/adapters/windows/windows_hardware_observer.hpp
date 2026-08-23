@@ -48,6 +48,14 @@ struct WindowsGpuMemory final {
   std::uint64_t shared_system_memory{0};
 };
 
+// Raw EDID remains inside the Windows adapter. The observer projects only the
+// model key and a validated physical refresh-rate limit into application data,
+// so serial descriptors and instance identifiers never cross the boundary.
+struct WindowsDisplayEdid final {
+  std::string model_key;
+  std::vector<std::uint8_t> bytes;
+};
+
 // The production implementation executes read-only WMI queries. Tests may
 // provide a deterministic implementation without touching a Windows host.
 class WindowsHardwareQueryExecutor {
@@ -66,6 +74,11 @@ class WindowsHardwareQueryExecutor {
 
   [[nodiscard]] virtual std::vector<WindowsGpuMemory> gpu_memory(
       std::stop_token) {
+    return {};
+  }
+
+  [[nodiscard]] virtual std::vector<WindowsDisplayEdid> display_edids(
+      std::span<std::string const>, std::stop_token) {
     return {};
   }
 };

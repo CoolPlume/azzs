@@ -64,6 +64,9 @@ std::string HardwareObservation::model_fingerprint() const {
     append_field(to_string(device.network_link));
     append_field(to_string(device.storage_media));
     append_field(to_string(device.display_connection));
+    append_field(std::to_string(device.display_width));
+    append_field(std::to_string(device.display_height));
+    append_field(std::to_string(device.physical_refresh_rate_limit_hz));
     append_field(device.storage_interface);
     append_field(device.pcie_generation);
     append_field(device.nand_type);
