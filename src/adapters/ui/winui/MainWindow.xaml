@@ -95,6 +95,7 @@
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
                 IsOpen="False"
+                Visibility="Collapsed"
                 Margin="{StaticResource AzzsShellStatusMargin}"
                 Severity="Warning"
                 Style="{StaticResource AzzsStatusBandStyle}" />
@@ -106,6 +107,7 @@
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
                 IsOpen="False"
+                Visibility="Collapsed"
                 Margin="{StaticResource AzzsShellStatusMargin}"
                 Severity="Warning"
                 Style="{StaticResource AzzsStatusBandStyle}">
@@ -128,6 +130,7 @@
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
                 IsOpen="False"
+                Visibility="Collapsed"
                 Margin="{StaticResource AzzsShellStatusMargin}"
                 Severity="Error"
                 Style="{StaticResource AzzsErrorStatusBandStyle}">

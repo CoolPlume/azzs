@@ -969,6 +969,10 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "ApplicationSettingsCatalogHeading.Text",
         "ApplicationSettingsCacheTitle.Text",
         "ApplicationSettingsArchitectureTitle.Text",
+        "ApplicationSettingsArchitecturePreference.Header",
+        "ApplicationSettingsArchitecturePrompt.Content",
+        "ApplicationSettingsArchitectureAutoFallback.Content",
+        "ApplicationSettingsArchitecturePreferX64.Content",
         "ApplicationSettingsLogsTitle.Text",
         "ApplicationSettingsRecoveryTitle.Text",
         "ApplicationSettingsDebugTitle.Text",
@@ -1072,6 +1076,30 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             "only the system-optimization advanced projection may expose force attempt")
     require('x:Uid="ApplicationSettingsCatalogHeading"' in settings_xaml,
             "the application settings catalog heading must resolve its localized text")
+    require(
+        'x:Name="ArchitecturePromptItem"' in settings_xaml and
+        'x:Uid="ApplicationSettingsArchitecturePrompt"' in settings_xaml and
+        'x:Name="ArchitectureAutoFallbackItem"' in settings_xaml and
+        'x:Uid="ApplicationSettingsArchitectureAutoFallback"' in settings_xaml and
+        'x:Name="ArchitecturePreferX64Item"' in settings_xaml and
+        'x:Uid="ApplicationSettingsArchitecturePreferX64"' in settings_xaml and
+        'ArchitecturePromptItem().Content' in settings_cpp and
+        'ArchitectureAutoFallbackItem().Content' in settings_cpp and
+        'ArchitecturePreferX64Item().Content' in settings_cpp,
+        "application settings must keep all package architecture choices visible and localized",
+    )
+    require(
+        all(
+            f'x:Name="{name}"' in settings_xaml and
+            f'AutomationProperties.AutomationId="{automation_id}"' in settings_xaml
+            for name, automation_id in (
+                ("ArchitecturePromptItem", "AzzsApplicationArchitecturePrompt"),
+                ("ArchitectureAutoFallbackItem", "AzzsApplicationArchitectureAutoFallback"),
+                ("ArchitecturePreferX64Item", "AzzsApplicationArchitecturePreferX64"),
+            )
+        ),
+        "package architecture choices must expose stable accessibility ids",
+    )
     for automation_id in (
         "AzzsApplicationSettingsPage",
         "AzzsApplicationAdvancedView",
@@ -1283,6 +1311,32 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             "recovered_editor_available" in main_window_cpp and
             "!debug.enabled" in main_window_cpp,
             "a hidden debug editor must expose only a static recovered-draft continuation entry")
+    require(
+        all(
+            f'x:Name="{name}"' in main_window_xaml and
+            'IsOpen="False"' in main_window_xaml and
+            'Visibility="Collapsed"' in main_window_xaml
+            for name in (
+                "VersionRiskInfoBar",
+                "RecoveredCatalogEditorInfoBar",
+                "SettingsNavigationFailureInfoBar",
+            )
+        ) and
+        "void set_shell_status_open(InfoBar const& info_bar, bool open)" in main_window_cpp and
+        "set_shell_status_open(VersionRiskInfoBar(), true)" in main_window_cpp and
+        "set_shell_status_open(RecoveredCatalogEditorInfoBar()," in main_window_cpp and
+        "set_shell_status_open(SettingsNavigationFailureInfoBar(), true)" in main_window_cpp,
+        "hidden shell status bands must collapse layout and reopen through one visibility owner",
+    )
+    require(
+        'x:Name="SettingsOperationStatus"' in settings_xaml and
+        'IsOpen="False"' in settings_xaml and
+        'Visibility="Collapsed"' in settings_xaml and
+        "void set_settings_operation_open(InfoBar const& info_bar, bool open)" in settings_cpp and
+        "set_settings_operation_open(SettingsOperationStatus(), true)" in settings_cpp and
+        "set_settings_operation_open(SettingsOperationStatus(), false)" in settings_cpp,
+        "closed settings operation status must not reserve page layout",
+    )
     require("TextChanged=\"OnImportPathChanged\"" in catalog_editor_xaml and
             "AzzsSoftwareCatalogEditorImportPreview" in catalog_editor_xaml and
             "clear_import_preview()" in catalog_editor_cpp and

@@ -42,10 +42,12 @@ using winrt::Microsoft::UI::Windowing::AppWindowClosingEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
+using winrt::Microsoft::UI::Xaml::Controls::InfoBar;
 using winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragDeltaEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragStartedEventArgs;
+using winrt::Microsoft::UI::Xaml::Visibility;
 
 struct SettingsNavigationPreparationError final {
   azzs::ui::presentation::SettingsNavigationFailureStage stage{
@@ -95,6 +97,16 @@ void replace_token(std::wstring& value,
     value.replace(position, token.size(), replacement);
     position = value.find(token, position + replacement.size());
   }
+}
+
+void set_shell_status_open(InfoBar const& info_bar, bool open) {
+  if (open) {
+    info_bar.Visibility(Visibility::Visible);
+    info_bar.IsOpen(true);
+    return;
+  }
+  info_bar.IsOpen(false);
+  info_bar.Visibility(Visibility::Collapsed);
 }
 
 }  // namespace
@@ -928,7 +940,7 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
   }
 
   try {
-    SettingsNavigationFailureInfoBar().IsOpen(true);
+    set_shell_status_open(SettingsNavigationFailureInfoBar(), true);
   } catch (...) {
     ::OutputDebugStringW(L"WinUI application-settings failure state projection failed.\n");
   }
@@ -936,7 +948,7 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
 
 void MainWindow::clear_settings_navigation_failure() noexcept {
   try {
-    SettingsNavigationFailureInfoBar().IsOpen(false);
+    set_shell_status_open(SettingsNavigationFailureInfoBar(), false);
   } catch (...) {
     ::OutputDebugStringW(L"WinUI application-settings failure state clear failed.\n");
   }
@@ -1133,18 +1145,19 @@ void MainWindow::project(
         editor_snapshot.catalog.draft.state ==
             azzs::application::software_catalog::
                 DraftWorkState::recovered_unsaved;
-    RecoveredCatalogEditorInfoBar().IsOpen(recovered_editor_available);
+    set_shell_status_open(RecoveredCatalogEditorInfoBar(),
+                          recovered_editor_available);
     ContinueRecoveredCatalogEditorButton().IsEnabled(
         recovered_editor_available);
   } else {
-    RecoveredCatalogEditorInfoBar().IsOpen(false);
+    set_shell_status_open(RecoveredCatalogEditorInfoBar(), false);
     ContinueRecoveredCatalogEditorButton().IsEnabled(false);
   }
   auto const risk_title = resources.GetString(L"VersionRiskTitle");
   AutomationProperties::SetName(VersionRiskInfoBar(), risk_title);
 
   if (snapshot.minimum_version_risk == MinimumVersionRisk::none) {
-    VersionRiskInfoBar().IsOpen(false);
+    set_shell_status_open(VersionRiskInfoBar(), false);
     return;
   }
 
@@ -1154,7 +1167,7 @@ void MainWindow::project(
       MinimumVersionRisk::version_unavailable) {
     VersionRiskInfoBar().Message(
         resources.GetString(L"VersionRiskUnavailableMessage"));
-    VersionRiskInfoBar().IsOpen(true);
+    set_shell_status_open(VersionRiskInfoBar(), true);
     return;
   }
 
@@ -1166,7 +1179,7 @@ void MainWindow::project(
   replace_token(message, L"{observed}", observed_text);
   replace_token(message, L"{target}", target_text);
   VersionRiskInfoBar().Message(winrt::hstring{message});
-  VersionRiskInfoBar().IsOpen(true);
+  set_shell_status_open(VersionRiskInfoBar(), true);
 }
 
 }  // namespace winrt::Azzs::Ui::implementation
