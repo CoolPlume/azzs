@@ -21,6 +21,11 @@ enum class HardwareDeviceKind {
   gpu,
   motherboard,
   network_adapter,
+  memory,
+  display,
+  storage,
+  npu,
+  audio,
 };
 
 enum class HardwareDevicePhysicality {
@@ -91,6 +96,12 @@ struct HardwareObservation final {
   std::string gpu;
   std::string motherboard;
   std::string network_adapter;
+  std::string memory;
+  std::string display;
+  std::string storage;
+  std::string npu;
+  std::string audio;
+  std::string operating_system;
   std::string oem_model;
   HardwareVendor oem_vendor{HardwareVendor::unknown};
   std::vector<HardwareDeviceRecord> devices;

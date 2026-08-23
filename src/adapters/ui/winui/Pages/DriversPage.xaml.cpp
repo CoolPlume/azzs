@@ -144,6 +144,13 @@ void DriversPage::project(
   CpuValue().Text(display_value(facts.cpu, unrecognized_value));
   GpuValue().Text(display_value(facts.gpu, unrecognized_value));
   MotherboardValue().Text(display_value(facts.motherboard, unrecognized_value));
+  OperatingSystemValue().Text(
+      display_value(facts.operating_system, unrecognized_value));
+  MemoryValue().Text(display_value(facts.memory, unrecognized_value));
+  DisplayValue().Text(display_value(facts.display, unrecognized_value));
+  StorageValue().Text(display_value(facts.storage, unrecognized_value));
+  NpuValue().Text(display_value(facts.npu, unrecognized_value));
+  AudioValue().Text(display_value(facts.audio, unrecognized_value));
   NetworkValue().Text(display_value(facts.network_adapter, unrecognized_value));
   OemValue().Text(display_value(facts.oem_model, unrecognized_value));
 
