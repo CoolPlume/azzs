@@ -113,6 +113,11 @@ struct ApplicationSettingsSnapshot final {
   settings_catalog::CatalogSnapshot settings_catalog;
   SoftwareOptimizationCatalogSnapshot software_optimization_catalog;
   ApplicationSettingsDebugSnapshot debug;
+  // A settings read may be partially unavailable (for example, a persisted
+  // preference or catalog file can be temporarily unreadable).  The UI must
+  // still be able to open the settings page with the values that were read;
+  // this flag keeps the degraded state explicit without manufacturing data.
+  bool read_degraded{false};
 };
 
 enum class ApplicationSettingsActionCode {

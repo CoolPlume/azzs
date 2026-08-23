@@ -210,18 +210,58 @@ ApplicationSettingsService::ApplicationSettingsService(
 
 ApplicationSettingsSnapshot ApplicationSettingsService::snapshot() {
   ApplicationSettingsSnapshot current;
-  current.architecture_preference = architecture_preferences_.preference();
-  current.cache = package_cache_.snapshot();
-  current.history_and_logs = history_and_logs_.refresh();
-  current.system_settings = system_settings_.snapshot();
-  current.recovery_records = system_settings_.recovery_records();
-  current.software_catalog = software_catalog_.snapshot();
-  current.settings_catalog = settings_catalog_.snapshot();
-  current.software_optimization_catalog =
-      software_optimization_catalog_.snapshot();
-  current.debug = debug_ ? debug_->snapshot()
-                         : ApplicationSettingsDebugSnapshot{
-                               .detail = "the debug settings provider is unavailable"};
+  // Each owner is read independently. A single unavailable persisted value
+  // must not prevent the settings page from opening with the remaining
+  // values; the default-initialized field is an explicit unavailable state.
+  auto mark_degraded = [&current] { current.read_degraded = true; };
+  try {
+    current.architecture_preference = architecture_preferences_.preference();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.cache = package_cache_.snapshot();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.history_and_logs = history_and_logs_.refresh();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.system_settings = system_settings_.snapshot();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.recovery_records = system_settings_.recovery_records();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.software_catalog = software_catalog_.snapshot();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.settings_catalog = settings_catalog_.snapshot();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.software_optimization_catalog =
+        software_optimization_catalog_.snapshot();
+  } catch (...) {
+    mark_degraded();
+  }
+  try {
+    current.debug = debug_ ? debug_->snapshot()
+                           : ApplicationSettingsDebugSnapshot{
+                                 .detail = "\xE5\xBD\x93\xE5\x89\x8D\xE4\xB8\xBB\xE6\x9C\xBA\xE5\xB0\x9A\xE6\x9C\xAA\xE6\x8F\x90\xE4\xBE\x9B\xE8\xB0\x83\xE8\xAF\x95\xE6\xA8\xA1\xE5\xBC\x8F\xE7\x8A\xB6\xE6\x80\x81"};
+  } catch (...) {
+    mark_degraded();
+  }
   return current;
 }
 

@@ -33,5 +33,10 @@ Evidence freshness: 绑定主题、控件模板、页头/按钮组件和 WinUI/S
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：共享 UI 源提交 `96c80e63e1059017f810d7fed2a460b6a39b1d17` 经普通合并 `da12eb5ea087cf0d9645148c30d0a7a706a837c7` 进入当前链，当前远端候选头为 `d8a4367adc1e322351126e8ab3676d30584475d5`。`check_design_system.py` 与 `check_winui_async_contract.py` 均通过；已按 `apple-design` 与 `emil-design-eng` 记录静态动效/可访问性审查，未把静态结果写成视觉验收。
+- 未验证边界：真实 WinUI 3 宽/窄窗口、DPI、高对比度、减少动画/透明度、触摸和屏幕阅读器视觉/交互仍未完成，事项保持 `Resolution: open`。
+- 2026-08-23（最终代码验证基线）：共享 UI 代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`d8a4367adc1e322351126e8ab3676d30584475d5` 为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`。
+
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
 - 2026-08-23 07:20:51 +08:00（最终候选证据）：UI design、async 和 presentation 合同在 `d8a4367adc1e322351126e8ab3676d30584475d5` 上通过，并已普通合并到 `0.1.1` 的 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b`。这只证明静态/合同约束；真实浅色深色、高对比度、减少透明度、宽窄窗口和键盘/触摸视觉验收仍未执行。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 保持不变；真实 WinUI 视觉、DPI、触摸、屏幕阅读器和 ARM64 仍未验证。

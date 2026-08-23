@@ -189,10 +189,12 @@ def verify_resource_dictionary(root: Path) -> None:
         "AzzsPagePaddingNarrow",
         "AzzsSectionPadding",
         "AzzsListRowPadding",
+        "AzzsHardwareRowTextMargin",
         "AzzsStageItemMargin",
         "AzzsTopMarginLarge",
         "AzzsTouchTargetMinHeight",
         "AzzsStageMinimumWidth",
+        "AzzsHardwareTypeColumnWidth",
         "AzzsWideLayoutMinWidth",
         "AzzsPageHeaderWideLayoutMinWidth",
         "AzzsPageHeaderSummaryMargin",
@@ -969,6 +971,10 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "ApplicationSettingsCatalogHeading.Text",
         "ApplicationSettingsCacheTitle.Text",
         "ApplicationSettingsArchitectureTitle.Text",
+        "ApplicationSettingsArchitecturePreference.Header",
+        "ApplicationSettingsArchitecturePrompt.Content",
+        "ApplicationSettingsArchitectureAutoFallback.Content",
+        "ApplicationSettingsArchitecturePreferX64.Content",
         "ApplicationSettingsLogsTitle.Text",
         "ApplicationSettingsRecoveryTitle.Text",
         "ApplicationSettingsDebugTitle.Text",
@@ -1048,7 +1054,9 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     system_optimization_cpp = read(root / (
         "src/adapters/ui/winui/Pages/SystemOptimizationPage.xaml.cpp"
     ))
-    drivers_xaml = read(root / "src/adapters/ui/winui/Pages/DriversPage.xaml")
+    drivers_path = root / "src/adapters/ui/winui/Pages/DriversPage.xaml"
+    drivers_xaml = read(drivers_path)
+    drivers_root = parse_xml(drivers_path)
     drivers_cpp = read(root / "src/adapters/ui/winui/Pages/DriversPage.xaml.cpp")
     drivers_header = read(root / "src/adapters/ui/winui/Pages/DriversPage.xaml.h")
     workbench_header = read(root / (
@@ -1072,6 +1080,55 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             "only the system-optimization advanced projection may expose force attempt")
     require('x:Uid="ApplicationSettingsCatalogHeading"' in settings_xaml,
             "the application settings catalog heading must resolve its localized text")
+    require(
+        'x:Name="ArchitecturePromptItem"' in settings_xaml and
+        'x:Uid="ApplicationSettingsArchitecturePrompt"' in settings_xaml and
+        'x:Name="ArchitectureAutoFallbackItem"' in settings_xaml and
+        'x:Uid="ApplicationSettingsArchitectureAutoFallback"' in settings_xaml and
+        'x:Name="ArchitecturePreferX64Item"' in settings_xaml and
+        'x:Uid="ApplicationSettingsArchitecturePreferX64"' in settings_xaml and
+        'ArchitecturePromptItem().Content' in settings_cpp and
+        'ArchitectureAutoFallbackItem().Content' in settings_cpp and
+        'ArchitecturePreferX64Item().Content' in settings_cpp,
+        "application settings must keep all package architecture choices localized",
+    )
+    require(
+        all(
+            f'x:Name="{name}"' in settings_xaml and
+            f'AutomationProperties.AutomationId="{automation_id}"' in settings_xaml
+            for name, automation_id in (
+                ("ArchitecturePromptItem", "AzzsApplicationArchitecturePrompt"),
+                ("ArchitectureAutoFallbackItem", "AzzsApplicationArchitectureAutoFallback"),
+                ("ArchitecturePreferX64Item", "AzzsApplicationArchitecturePreferX64"),
+            )
+        ),
+        "package architecture choices must expose stable accessibility ids",
+    )
+    architecture_section = re.search(
+        r'<Border\s+x:Name="ArchitecturePreferenceSection"\s+'
+        r'Visibility="Collapsed"\s+'
+        r'Style="\{StaticResource AzzsSectionSurfaceStyle\}">',
+        settings_xaml,
+    )
+    settings_projection = settings_cpp[settings_cpp.index(
+        "void ApplicationSettingsPage::project("
+    ):]
+    require(
+        architecture_section is not None and
+        re.search(
+            r"\[\[nodiscard\]\]\s+constexpr\s+bool\s+current_package_is_x64\(\)\s+noexcept\s*"
+            r"\{\s*#if\s+defined\(_M_X64\)\s*return true;\s*#else\s*return false;\s*#endif\s*\}",
+            settings_cpp,
+        ) is not None and
+        "auto const architecture_preferences_visible = !current_package_is_x64();" in settings_projection and
+        "ArchitecturePreferenceSection().Visibility(" in settings_projection and
+        "architecture_preferences_visible ? Visibility::Visible" in settings_projection and
+        "if (architecture_preferences_visible) {" in settings_projection and
+        settings_projection.index("ArchitecturePreferenceSection().Visibility(") <
+        settings_projection.index("ArchitecturePreferenceComboBox().SelectedIndex(") and
+        "if (projecting_ || current_package_is_x64() || settings_ == nullptr" in settings_cpp,
+        "x64 packages must collapse the architecture section while non-x64 packages project it without persisting hidden or initialization selections",
+    )
     for automation_id in (
         "AzzsApplicationSettingsPage",
         "AzzsApplicationAdvancedView",
@@ -1134,6 +1191,179 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "AzzsFixedDriverEntrypoints" in drivers_xaml,
         "driver recommendations must fail closed while fixed official entrypoints remain visible",
     )
+    for label, automation_id in (
+        ("HardwareModelSummaryTitle", "AzzsHardwareModel"),
+        ("HardwareSystemSummaryTitle", "AzzsHardwareSystem"),
+        ("HardwareDetailsTitle", "AzzsHardwareDetails"),
+        ("HardwareCpuLabel", "AzzsHardwareCpu"),
+        ("HardwareMotherboardLabel", "AzzsHardwareMotherboard"),
+        ("HardwareMemoryLabel", "AzzsHardwareMemory"),
+        ("HardwareGpuLabel", "AzzsHardwareGpu"),
+        ("HardwareDisplayLabel", "AzzsHardwareDisplay"),
+        ("HardwareSolidStateStorageLabel", "AzzsHardwareSolidStateStorage"),
+        ("HardwareHardDiskStorageLabel", "AzzsHardwareHardDiskStorage"),
+        ("HardwareUnclassifiedStorageLabel", "AzzsHardwareUnclassifiedStorage"),
+        ("HardwareNpuLabel", "AzzsHardwareNpu"),
+        ("HardwareAudioLabel", "AzzsHardwareAudio"),
+        ("HardwareWiredNetworkLabel", "AzzsHardwareWiredNetwork"),
+        ("HardwareWirelessNetworkLabel", "AzzsHardwareWirelessNetwork"),
+    ):
+        require(
+            f'x:Uid="{label}"' in drivers_xaml and
+            f'AutomationProperties.AutomationId="{automation_id}"' in drivers_xaml,
+            f"drivers page is missing hardware detail surface {label}",
+        )
+    require(
+        resource_values.get("HardwareSolidStateStorageLabel.Text") == "固态硬盘" and
+        resource_values.get("HardwareHardDiskStorageLabel.Text") == "机械硬盘" and
+        resource_values.get("HardwareUnclassifiedStorageLabel.Text") == "未分类物理磁盘" and
+        resource_values.get("HardwareWiredNetworkLabel.Text") == "有线网卡" and
+        resource_values.get("HardwareWirelessNetworkLabel.Text") == "无线网卡",
+        "storage media and network link labels must remain explicit Simplified Chinese",
+    )
+    obsolete_hardware_groups = (
+        "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",
+        "HardwareConnectivityGroup", "HardwareCoreGroupTitle",
+        "HardwareGraphicsGroupTitle", "HardwareStorageGroupTitle",
+        "HardwareConnectivityGroupTitle",
+    )
+    require(
+        not any(group in drivers_xaml for group in obsolete_hardware_groups),
+        "drivers hardware facts must not be split into core, graphics, storage, or connectivity groups",
+    )
+    require(
+        'Target="HardwareDetailsSecondColumn.Width"' not in drivers_xaml and
+        'x:Name="HardwareSummaryGrid"' not in drivers_xaml and
+        'x:Name="HardwareSystemSummary"' not in drivers_xaml and
+        'x:Name="HardwareSummarySecondColumn"' not in drivers_xaml and
+        "AzzsSummarySurfaceStyle" not in drivers_xaml,
+        "drivers hardware facts must remain one two-column surface at every window width",
+    )
+    details_surfaces = [
+        element for element in drivers_root.iter()
+        if local_name(element.tag) == "Border" and
+        element.attrib.get("AutomationProperties.AutomationId") == "AzzsHardwareDetails"
+    ]
+    require(len(details_surfaces) == 1 and
+            details_surfaces[0].attrib.get("Style") ==
+            "{StaticResource AzzsDetailSurfaceStyle}",
+            "drivers hardware facts must share one native rounded detail surface")
+    page_roots = [
+        element for element in drivers_root.iter()
+        if element.attrib.get(X_NAME) == "PageRoot"
+    ]
+    root_row_groups = [
+        child for child in page_roots[0]
+        if local_name(child.tag) == "Grid.RowDefinitions"
+    ] if len(page_roots) == 1 else []
+    require(len(root_row_groups) == 1 and len(root_row_groups[0]) == 8,
+            "drivers page must allocate one non-overlapping row per top-level section")
+    for automation_id, row in (
+        ("AzzsHardwareDetails", "2"),
+        ("AzzsDriverHandoffState", "3"),
+        ("AzzsDriverRecommendation", "4"),
+        ("AzzsDriverAssistant", "5"),
+        ("AzzsFixedDriverEntrypoints", "6"),
+        ("AzzsFixedRescueToolFolders", "7"),
+    ):
+        sections = [
+            element for element in page_roots[0]
+            if element.attrib.get("AutomationProperties.AutomationId") == automation_id
+        ]
+        require(len(sections) == 1 and sections[0].attrib.get("Grid.Row") == row,
+                f"{automation_id} must retain its own top-level page row")
+    details_grids = [
+        element for element in details_surfaces[0].iter()
+        if element.attrib.get(X_NAME) == "HardwareDetailsGrid"
+    ]
+    require(len(details_grids) == 1 and
+            local_name(details_grids[0].tag) == "Grid",
+            "drivers hardware facts must use one unified row grid")
+    details_grid = details_grids[0]
+    detail_columns = [
+        element for element in details_grid.iter()
+        if local_name(element.tag) == "ColumnDefinition"
+    ]
+    require(len(detail_columns) == 2 and
+            detail_columns[0].attrib.get(X_NAME) == "HardwareTypeColumn" and
+            detail_columns[0].attrib.get("Width") ==
+            "{StaticResource AzzsHardwareTypeColumnWidth}" and
+            detail_columns[1].attrib.get(X_NAME) == "HardwareDetailsSecondColumn" and
+            detail_columns[1].attrib.get("Width") == "*",
+            "drivers hardware rows need a stable Chinese type column and a filling value column")
+    hardware_rows = (
+        ("HardwareModelSummaryTitle", "ModelValue", "AzzsHardwareModel"),
+        ("HardwareSystemSummaryTitle", "SystemValue", "AzzsHardwareSystem"),
+        ("HardwareCpuLabel", "CpuValue", "AzzsHardwareCpu"),
+        ("HardwareMotherboardLabel", "MotherboardValue", "AzzsHardwareMotherboard"),
+        ("HardwareMemoryLabel", "MemoryValue", "AzzsHardwareMemory"),
+        ("HardwareGpuLabel", "GpuValue", "AzzsHardwareGpu"),
+        ("HardwareDisplayLabel", "DisplayValue", "AzzsHardwareDisplay"),
+        ("HardwareNpuLabel", "NpuValue", "AzzsHardwareNpu"),
+        ("HardwareSolidStateStorageLabel", "SolidStateStorageValue", "AzzsHardwareSolidStateStorage"),
+        ("HardwareHardDiskStorageLabel", "HardDiskStorageValue", "AzzsHardwareHardDiskStorage"),
+        ("HardwareUnclassifiedStorageLabel", "UnclassifiedStorageValue", "AzzsHardwareUnclassifiedStorage"),
+        ("HardwareWiredNetworkLabel", "WiredNetworkValue", "AzzsHardwareWiredNetwork"),
+        ("HardwareWirelessNetworkLabel", "WirelessNetworkValue", "AzzsHardwareWirelessNetwork"),
+        ("HardwareAudioLabel", "AudioValue", "AzzsHardwareAudio"),
+    )
+    detail_rows = [
+        element for element in details_grid.iter()
+        if local_name(element.tag) == "RowDefinition"
+    ]
+    require(len(detail_rows) == len(hardware_rows) and
+            all(row.attrib.get("Height") == "Auto" for row in detail_rows),
+            "every hardware fact needs its own content-sized row")
+    require(
+        'AutomationProperties.AutomationId="AzzsHardwareModelSummary"' in drivers_xaml and
+        'AutomationProperties.AutomationId="AzzsHardwareSystemSummary"' in drivers_xaml,
+        "merged model and system rows must preserve their automation identities",
+    )
+    for row_index, (label_uid, value_name, automation_id) in enumerate(hardware_rows):
+        labels = [
+            element for element in details_grid.iter()
+            if element.attrib.get(f"{{{X_NS}}}Uid") == label_uid
+        ]
+        values = [
+            element for element in details_grid.iter()
+            if element.attrib.get(X_NAME) == value_name
+        ]
+        require(len(labels) == 1 and
+                labels[0].attrib.get("Grid.Row") == str(row_index) and
+                labels[0].attrib.get("Grid.Column") == "0" and
+                labels[0].attrib.get("Margin") ==
+                "{StaticResource AzzsHardwareRowTextMargin}" and
+                labels[0].attrib.get("TextWrapping") == "Wrap",
+                f"{label_uid} must occupy the fixed type column without clipping")
+        require(len(values) == 1 and
+                values[0].attrib.get("Grid.Row") == str(row_index) and
+                values[0].attrib.get("Grid.Column") == "1" and
+                values[0].attrib.get("AutomationProperties.AutomationId") == automation_id and
+                values[0].attrib.get("Margin") ==
+                "{StaticResource AzzsHardwareRowTextMargin}" and
+                values[0].attrib.get("TextWrapping") == "Wrap" and
+                "MaxLines" not in values[0].attrib and
+                "TextTrimming" not in values[0].attrib,
+                f"{value_name} must fill the value column and preserve wrapped multi-device lines")
+    row_dividers = [
+        element for element in details_grid.iter()
+        if local_name(element.tag) == "Border" and
+        element.attrib.get("BorderThickness") == "0,0,0,1"
+    ]
+    require(len(row_dividers) == len(hardware_rows) - 1 and
+            all(divider.attrib.get("BorderBrush") ==
+                "{ThemeResource AzzsSurfaceBorderBrush}"
+                for divider in row_dividers),
+            "hardware rows need one subtle high-contrast-aware divider between adjacent facts")
+    for field in (
+        "facts.operating_system", "facts.cpu", "facts.gpu", "facts.motherboard",
+        "facts.memory", "facts.display", "facts.solid_state_storage",
+        "facts.hard_disk_storage", "facts.unclassified_storage", "facts.npu", "facts.audio",
+        "facts.wired_network_adapter", "facts.wireless_network_adapter",
+        "facts.oem_model",
+    ):
+        require(field in drivers_cpp,
+                f"drivers page must project hardware detail field {field}")
     require(
         resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
         "通用网卡驱动救援工具" and
@@ -1283,6 +1513,41 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             "recovered_editor_available" in main_window_cpp and
             "!debug.enabled" in main_window_cpp,
             "a hidden debug editor must expose only a static recovered-draft continuation entry")
+    require(
+        all(
+            f'x:Name="{name}"' in main_window_xaml and
+            'IsOpen="False"' in main_window_xaml and
+            'Visibility="Collapsed"' in main_window_xaml
+            for name in (
+                "VersionRiskInfoBar",
+                "RecoveredCatalogEditorInfoBar",
+                "SettingsNavigationFailureInfoBar",
+            )
+        ) and
+        "void set_shell_status_open(InfoBar const& info_bar, bool open)" in main_window_cpp and
+        "set_shell_status_open(VersionRiskInfoBar(), true)" in main_window_cpp and
+        "set_shell_status_open(RecoveredCatalogEditorInfoBar()," in main_window_cpp and
+        "set_shell_status_open(SettingsNavigationFailureInfoBar(), true)" in main_window_cpp,
+        "hidden shell status bands must collapse layout and reopen through one visibility owner",
+    )
+    require(
+        'x:Name="SettingsOperationStatus"' in settings_xaml and
+        'IsOpen="False"' in settings_xaml and
+        'Visibility="Collapsed"' in settings_xaml and
+        "void set_settings_operation_open(InfoBar const& info_bar, bool open)" in settings_cpp and
+        "set_settings_operation_open(SettingsOperationStatus(), true)" in settings_cpp and
+        "set_settings_operation_open(SettingsOperationStatus(), false)" in settings_cpp,
+        "closed settings operation status must not reserve page layout",
+    )
+    require(
+        'x:Name="ApplicationUpdateStatus"' in settings_xaml and
+        'IsOpen="False"' in settings_xaml and
+        'Visibility="Collapsed"' in settings_xaml and
+        "void set_update_status_open(InfoBar const& info_bar, bool open)" in settings_cpp and
+        "set_update_status_open(ApplicationUpdateStatus()," in settings_cpp and
+        "snapshot.state != UpdateState::idle" in settings_cpp,
+        "idle update status must collapse instead of reserving a blank settings-page band",
+    )
     require("TextChanged=\"OnImportPathChanged\"" in catalog_editor_xaml and
             "AzzsSoftwareCatalogEditorImportPreview" in catalog_editor_xaml and
             "clear_import_preview()" in catalog_editor_cpp and

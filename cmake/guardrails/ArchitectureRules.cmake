@@ -241,6 +241,7 @@ set(AZZS_ARCHITECTURE_PLATFORM_HEADER_PATTERNS
   "^setupapi\\.h$"
   "^cfgmgr32\\.h$"
   "^dwmapi\\.h$"
+  "^dxgi[^/]*\\.h$"
   "^uxtheme\\.h$"
   "^fcntl\\.h$"
   "^sys/file\\.h$"

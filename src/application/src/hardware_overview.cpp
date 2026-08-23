@@ -23,11 +23,22 @@ bool HardwareObservation::has_confirmed_physical_hardware() const noexcept {
 std::string HardwareObservation::model_fingerprint() const {
   // Keep the cache key limited to non-unique model text. Never add serial
   // numbers, MAC/IP addresses, computer names, or other device identifiers.
-  std::array<std::string_view, 6> const fields{
+  std::array<std::string_view, 17> const fields{
       cpu,
       gpu,
       motherboard,
       network_adapter,
+      wired_network_adapter,
+      wireless_network_adapter,
+      memory,
+      display,
+      storage,
+      solid_state_storage,
+      hard_disk_storage,
+      unclassified_storage,
+      npu,
+      audio,
+      operating_system,
       oem_model,
       to_string(oem_vendor),
   };
@@ -50,6 +61,20 @@ std::string HardwareObservation::model_fingerprint() const {
     append_field(to_string(device.vendor));
     append_field(to_string(device.status));
     append_field(to_string(device.physicality));
+    append_field(to_string(device.network_link));
+    append_field(to_string(device.storage_media));
+    append_field(to_string(device.display_connection));
+    append_field(std::to_string(device.display_width));
+    append_field(std::to_string(device.display_height));
+    append_field(std::to_string(device.physical_refresh_rate_limit_hz));
+    append_field(device.storage_interface);
+    append_field(device.pcie_generation);
+    append_field(device.nand_type);
+    append_field(std::to_string(device.core_count));
+    append_field(std::to_string(device.thread_count));
+    append_field(std::to_string(device.performance_core_count));
+    append_field(std::to_string(device.efficiency_core_count));
+    append_field(std::to_string(device.quantity));
   }
   return result;
 }
@@ -60,6 +85,11 @@ char const* to_string(HardwareDeviceKind value) noexcept {
     case HardwareDeviceKind::gpu: return "gpu";
     case HardwareDeviceKind::motherboard: return "motherboard";
     case HardwareDeviceKind::network_adapter: return "network-adapter";
+    case HardwareDeviceKind::memory: return "memory";
+    case HardwareDeviceKind::display: return "display";
+    case HardwareDeviceKind::storage: return "storage";
+    case HardwareDeviceKind::npu: return "npu";
+    case HardwareDeviceKind::audio: return "audio";
   }
   return "unknown";
 }
@@ -117,6 +147,33 @@ char const* to_string(HardwareVendor value) noexcept {
     case HardwareVendor::hp: return "hp";
     case HardwareVendor::lenovo: return "lenovo";
     case HardwareVendor::asus: return "asus";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareNetworkLink value) noexcept {
+  switch (value) {
+    case HardwareNetworkLink::unknown: return "unknown";
+    case HardwareNetworkLink::wired: return "wired";
+    case HardwareNetworkLink::wireless: return "wireless";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareStorageMedia value) noexcept {
+  switch (value) {
+    case HardwareStorageMedia::unknown: return "unknown";
+    case HardwareStorageMedia::solid_state: return "solid-state";
+    case HardwareStorageMedia::hard_disk: return "hard-disk";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareDisplayConnection value) noexcept {
+  switch (value) {
+    case HardwareDisplayConnection::unknown: return "unknown";
+    case HardwareDisplayConnection::internal: return "internal";
+    case HardwareDisplayConnection::external: return "external";
   }
   return "unknown";
 }

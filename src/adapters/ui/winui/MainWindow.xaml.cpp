@@ -4,6 +4,7 @@
 #include "native_resource_fallback.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -42,10 +43,12 @@ using winrt::Microsoft::UI::Windowing::AppWindowClosingEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogButton;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
+using winrt::Microsoft::UI::Xaml::Controls::InfoBar;
 using winrt::Microsoft::UI::Xaml::Controls::NavigationViewItem;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragDeltaEventArgs;
 using winrt::Microsoft::UI::Xaml::Controls::Primitives::DragStartedEventArgs;
+using winrt::Microsoft::UI::Xaml::Visibility;
 
 struct SettingsNavigationPreparationError final {
   azzs::ui::presentation::SettingsNavigationFailureStage stage{
@@ -95,6 +98,16 @@ void replace_token(std::wstring& value,
     value.replace(position, token.size(), replacement);
     position = value.find(token, position + replacement.size());
   }
+}
+
+void set_shell_status_open(InfoBar const& info_bar, bool open) {
+  if (open) {
+    info_bar.Visibility(Visibility::Visible);
+    info_bar.IsOpen(true);
+    return;
+  }
+  info_bar.IsOpen(false);
+  info_bar.Visibility(Visibility::Collapsed);
 }
 
 }  // namespace
@@ -422,9 +435,12 @@ bool MainWindow::navigate_and_commit(PageId page) {
                 auto const previous_page = displayed_page_;
                 auto previous_core_page =
                     previous_page.value_or(PageId::overview);
+                auto previous_core_page_available = previous_page.has_value();
                 Windows::Foundation::IInspectable previous_content{nullptr};
+                bool previous_content_available = false;
                 try {
                   previous_content = ContentFrame().Content();
+                  previous_content_available = true;
                 } catch (...) {
                   ::OutputDebugStringW(
                       L"WinUI application-settings previous content snapshot failed.\n");
@@ -432,24 +448,61 @@ bool MainWindow::navigate_and_commit(PageId page) {
                 try {
                   if (workbench_) {
                     previous_core_page = workbench_->snapshot().current_page;
+                    previous_core_page_available = true;
                   }
                 } catch (...) {
                   ::OutputDebugStringW(
                       L"WinUI application-settings core page snapshot failed.\n");
+                  // The page that is actually displayed is a valid recovery
+                  // source when the live core snapshot is temporarily
+                  // unavailable. Startup may instead reuse the last stable
+                  // projection. Do not manufacture a core page when neither
+                  // source exists.
+                  if (last_projected_snapshot_.has_value()) {
+                    previous_core_page = last_projected_snapshot_->current_page;
+                    previous_core_page_available = true;
+                  }
                 }
+                auto const content_replaced = std::make_shared<bool>(false);
+                auto const core_navigation_started =
+                    std::make_shared<bool>(false);
                 auto recover =
                     [this, previous_page, previous_core_page,
-                     previous_content]() noexcept {
+                     previous_content, content_replaced,
+                     core_navigation_started]() noexcept {
                       restore_settings_navigation_state(
-                          previous_page, previous_core_page, previous_content);
+                          previous_page, previous_core_page, previous_content,
+                          *content_replaced, *core_navigation_started);
                     };
+                // A failed read of the current visual or core state must not
+                // publish a candidate page: after a later commit failure the
+                // shell would have no truthful state to restore. This is an
+                // actionable, retryable error; ordinary persisted settings
+                // reads are still degraded by ApplicationSettingsService and
+                // do not take this branch.
+                if (!previous_content_available ||
+                    !previous_core_page_available) {
+                  return azzs::ui::presentation::
+                      SettingsNavigationPreparation{
+                          .failure = azzs::ui::presentation::
+                              SettingsNavigationFailure{
+                                  .stage = azzs::ui::presentation::
+                                      SettingsNavigationFailureStage::snapshot_read,
+                                  .detail =
+                                      "settings navigation recovery snapshot failed"},
+                          .recover = std::move(recover)};
+                }
                 try {
                   auto const prepared = prepare_application_settings_page();
                   return azzs::ui::presentation::
                       SettingsNavigationPreparation{
-                          .commit = [this, prepared, previous_page] {
+                          .commit = [this, prepared, previous_page,
+                                     content_replaced,
+                                     core_navigation_started] {
                             commit_application_settings_page(prepared,
-                                                             previous_page);
+                                                             previous_page,
+                                                             *content_replaced,
+                                                             *core_navigation_started);
                           },
                           .recover = std::move(recover)};
                 } catch (SettingsNavigationPreparationError const& error) {
@@ -523,19 +576,47 @@ MainWindow::prepare_application_settings_page() {
   }
 
   // Snapshot and bind the candidate while the existing Frame content remains
-  // visible. Any resource, persistence, or projection exception therefore
-  // leaves both the old page and the core page untouched.
+  // visible. The application-settings owner exposes a fail-soft snapshot:
+  // an unavailable persisted value is represented as a degraded field so the
+  // page can still open. Only construction/binding failures below abort the
+  // transaction and restore the old page.
   auto& settings = services->application_settings();
   azzs::application::WorkbenchSnapshot workbench_snapshot;
   azzs::application::ApplicationSettingsSnapshot settings_snapshot;
+  bool used_cached_workbench_snapshot = false;
   try {
     workbench_snapshot = workbench_->snapshot();
+  } catch (...) {
+    // A copy of the immutable Workbench snapshot can fail independently of
+    // the live services. Reuse the last projected value for presentation so
+    // settings remains reachable; the page exposes the degraded read state
+    // and no cached value is persisted.
+    if (!last_projected_snapshot_.has_value()) {
+      throw SettingsNavigationPreparationError{
+          .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+              snapshot_read,
+          .detail = "workbench snapshot read failed"};
+    }
+    try {
+      workbench_snapshot = *last_projected_snapshot_;
+      used_cached_workbench_snapshot = true;
+    } catch (...) {
+      throw SettingsNavigationPreparationError{
+          .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+              snapshot_read,
+          .detail = "workbench snapshot read failed"};
+    }
+  }
+  try {
     settings_snapshot = settings.snapshot();
   } catch (...) {
-    throw SettingsNavigationPreparationError{
-        .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
-            snapshot_read,
-        .detail = "settings snapshot read failed"};
+    // Keep navigation usable even if a legacy owner still throws instead of
+    // returning its degraded field. Default values are rendered as unavailable
+    // by the page; no persisted value is manufactured or written back.
+    settings_snapshot.read_degraded = true;
+  }
+  if (used_cached_workbench_snapshot) {
+    settings_snapshot.read_degraded = true;
   }
 
   Pages::ApplicationSettingsPage page{nullptr};
@@ -578,7 +659,8 @@ MainWindow::prepare_application_settings_page() {
 
 void MainWindow::commit_application_settings_page(
     Windows::Foundation::IInspectable const& page,
-    std::optional<PageId> const previous_page) {
+    std::optional<PageId> const previous_page, bool& content_replaced,
+    bool& core_navigation_started) {
   auto const prepared = page.try_as<Pages::ApplicationSettingsPage>();
   if (!prepared || !workbench_) {
     throw winrt::hresult_error(E_FAIL);
@@ -599,33 +681,57 @@ void MainWindow::commit_application_settings_page(
   restoring_navigation_selection_ = false;
 
   ContentFrame().Content(prepared);
+  content_replaced = true;
   displayed_page_ = PageId::application_settings;
+  // Set this before invoking the core so a partially completed core
+  // navigation is still restored by the transaction's single recovery path.
+  core_navigation_started = true;
   workbench_->navigate(PageId::application_settings);
 
+  // A post-commit projection is part of the transaction boundary. Let any
+  // exception escape so SettingsNavigationBridge performs the single recovery
+  // path; swallowing it would report navigation success with a partial shell.
+  // Keep the catalog editor's temporary access until projection succeeds so a
+  // failed projection can restore the exact prior core state.
+  // Projection remains inside the transaction. If the live snapshot copy is
+  // transiently unavailable, use the same last-known presentation value that
+  // allowed preparation to complete; any actual projection exception still
+  // escapes to the bridge's single recovery boundary.
+  azzs::application::WorkbenchSnapshot projection_snapshot;
+  try {
+    projection_snapshot = workbench_->snapshot();
+  } catch (...) {
+    if (!last_projected_snapshot_.has_value()) {
+      throw;
+    }
+    projection_snapshot = *last_projected_snapshot_;
+  }
+  project(projection_snapshot);
   if (previous_page == PageId::software_catalog_editor) {
     if (auto const services = workbench_->services()) {
       services->debug_mode_catalog_editor().end_temporary_close_recovery();
     }
   }
-  // A post-commit projection is part of the transaction boundary. Let any
-  // exception escape so SettingsNavigationBridge performs the single recovery
-  // path; swallowing it would report navigation success with a partial shell.
-  project(workbench_->snapshot());
 }
 
 void MainWindow::restore_settings_navigation_state(
     std::optional<PageId> previous_page, PageId previous_core_page,
-    Windows::Foundation::IInspectable const& previous_content) noexcept {
+    Windows::Foundation::IInspectable const& previous_content,
+    bool restore_content, bool restore_core) noexcept {
   restoring_navigation_selection_ = false;
-  try {
-    ContentFrame().Content(previous_content);
-  } catch (...) {
-    ::OutputDebugStringW(
-        L"WinUI application-settings previous content restore failed.\n");
+  if (restore_content) {
+    try {
+      ContentFrame().Content(previous_content);
+    } catch (...) {
+      ::OutputDebugStringW(
+          L"WinUI application-settings previous content restore failed.\n");
+    }
   }
 
-  displayed_page_ = previous_page;
-  if (workbench_) {
+  if (restore_content || restore_core) {
+    displayed_page_ = previous_page;
+  }
+  if (restore_core && workbench_) {
     try {
       workbench_->navigate(previous_core_page);
     } catch (...) {
@@ -769,9 +875,10 @@ bool MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::application_settings:
-      // Application settings owns a prepare/commit/recovery transaction and
-      // must never be entered through the generic Navigate path.
-      return false;
+      // Keep one owner for the settings transaction.  The dedicated branch in
+      // navigate_and_commit() does not call navigate_to(), so delegating here
+      // removes the old hard block without introducing recursive navigation.
+      return navigate_and_commit(PageId::application_settings);
     case PageId::software_catalog_editor:
       if (!ContentFrame().Navigate(
               xaml_typename<Pages::SoftwareCatalogEditorPage>(), nullptr,
@@ -884,7 +991,7 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
   }
 
   try {
-    SettingsNavigationFailureInfoBar().IsOpen(true);
+    set_shell_status_open(SettingsNavigationFailureInfoBar(), true);
   } catch (...) {
     ::OutputDebugStringW(L"WinUI application-settings failure state projection failed.\n");
   }
@@ -892,7 +999,7 @@ void MainWindow::handle_settings_navigation_failure() noexcept {
 
 void MainWindow::clear_settings_navigation_failure() noexcept {
   try {
-    SettingsNavigationFailureInfoBar().IsOpen(false);
+    set_shell_status_open(SettingsNavigationFailureInfoBar(), false);
   } catch (...) {
     ::OutputDebugStringW(L"WinUI application-settings failure state clear failed.\n");
   }
@@ -1065,6 +1172,12 @@ void MainWindow::project_drivers_page(
 
 void MainWindow::project(
     azzs::application::WorkbenchSnapshot const& snapshot) {
+  try {
+    last_projected_snapshot_ = snapshot;
+  } catch (...) {
+    // The cache is an availability aid only. A failed cache copy must never
+    // change the current projection result or become a user-visible error.
+  }
   using azzs::domain::MinimumVersionRisk;
   using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
@@ -1083,18 +1196,19 @@ void MainWindow::project(
         editor_snapshot.catalog.draft.state ==
             azzs::application::software_catalog::
                 DraftWorkState::recovered_unsaved;
-    RecoveredCatalogEditorInfoBar().IsOpen(recovered_editor_available);
+    set_shell_status_open(RecoveredCatalogEditorInfoBar(),
+                          recovered_editor_available);
     ContinueRecoveredCatalogEditorButton().IsEnabled(
         recovered_editor_available);
   } else {
-    RecoveredCatalogEditorInfoBar().IsOpen(false);
+    set_shell_status_open(RecoveredCatalogEditorInfoBar(), false);
     ContinueRecoveredCatalogEditorButton().IsEnabled(false);
   }
   auto const risk_title = resources.GetString(L"VersionRiskTitle");
   AutomationProperties::SetName(VersionRiskInfoBar(), risk_title);
 
   if (snapshot.minimum_version_risk == MinimumVersionRisk::none) {
-    VersionRiskInfoBar().IsOpen(false);
+    set_shell_status_open(VersionRiskInfoBar(), false);
     return;
   }
 
@@ -1104,7 +1218,7 @@ void MainWindow::project(
       MinimumVersionRisk::version_unavailable) {
     VersionRiskInfoBar().Message(
         resources.GetString(L"VersionRiskUnavailableMessage"));
-    VersionRiskInfoBar().IsOpen(true);
+    set_shell_status_open(VersionRiskInfoBar(), true);
     return;
   }
 
@@ -1116,7 +1230,7 @@ void MainWindow::project(
   replace_token(message, L"{observed}", observed_text);
   replace_token(message, L"{target}", target_text);
   VersionRiskInfoBar().Message(winrt::hstring{message});
-  VersionRiskInfoBar().IsOpen(true);
+  set_shell_status_open(VersionRiskInfoBar(), true);
 }
 
 }  // namespace winrt::Azzs::Ui::implementation

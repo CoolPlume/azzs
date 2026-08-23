@@ -34,7 +34,13 @@ Evidence freshness: 绑定最终 0.1.1 候选提交、Windows/SDK、显示器/DP
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：最终候选头为 `d8a4367adc1e322351126e8ab3676d30584475d5`，普通合并链包含共享页头 `da12eb5ea087cf0d9645148c30d0a7a706a837c7`、物理硬件 `67810a87014b50c28847b580c9bb35e8d1b8dba9`、驱动 `ec80d9ed68bf547481adb38c15d0fbfcd4407693`、设置恢复/回退 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c`/`f76b075e5181e582f0ddc533170d2a2a76929513`/`d8a4367adc1e322351126e8ab3676d30584475d5` 和侧栏 `80713109b1cd71be19689f0c4fbbc4775d413797`。定向 CTest 10/10 通过；全量 CTest 40/44，4 项因 ACL/符号链接权限失败（`execution-log.contract`、`portable.package.contract`、`bundled-catalog-resource.contract`、`windows-device-data.contract`），不得视为产品回归通过。
+- 静态 `check_design_system.py`、`check_winui_async_contract.py` 和 `git diff --check` 均通过。x64 CMake 配置在既有 D: 集成环境成功，但 Release 构建受 `MSB3501` 缺失中间状态文件阻断；未执行真实 Windows 视觉/输入验收。
+- 未验证边界：ARM64、DPI/多显示器、触摸、Narrator/屏幕阅读器、真实硬件样本、安装/卸载/升级生命周期及 WiX/MSI 均未执行；事项仍 `ready-for-human/open`。
+
 - 2026-08-23（集成证据核对）：当前本地候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`，其普通合并链依次包含共享页头 `da12eb5ea087cf0d9645148c30d0a7a706a837c7`、物理硬件 `67810a87014b50c28847b580c9bb35e8d1b8dba9`、驱动 `ec80d9ed68bf547481adb38c15d0fbfcd4407693`、设置恢复 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c` 和侧栏 `80713109b1cd71be19689f0c4fbbc4775d413797`。事项 07 仍为 ready-for-human/open，未以静态合同结票。
+- 2026-08-23（最终代码验证基线）：视觉/无障碍待验收的代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`d8a4367adc1e322351126e8ab3676d30584475d5` 为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`，真实 WinUI、无障碍、DPI、ARM64 和安装生命周期边界未改变。
 - 待执行证据包括 Windows 11 x64 宽/窄窗口、100%/高 DPI、键盘/触摸、Narrator、减少动画/透明度、高对比度、重复导航和设置异常恢复；需绑定最终候选 SHA、构建目录、截图/日志及实际环境。
 - 未验证边界：ARM64 实机、DPI/多显示器专项、安装/卸载/升级生命周期、真实硬件样本、触摸和屏幕阅读器均未执行；任何自动合同或 macOS/CI 结果都不能替代真实 Windows 视觉验收。
 - 2026-08-23 07:20:51 +08:00（最终候选证据）：最终集成头 `d8a4367adc1e322351126e8ab3676d30584475d5` 已通过普通合并进入版本分支提交 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b`；13 项定向合同中 12 项通过，设备数据合同受宿主符号链接权限阻断。事项仍为 `ready-for-human/open`，真实宽窄窗口、DPI、键盘、触摸、Narrator、高对比度、减少动画和安装生命周期均未验收。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 和 `Blocked by: 01, 02, 03, 04, 05, 06` 均保持不变；真实 WinUI/无障碍、DPI、触摸、ARM64、硬件样本和安装生命周期仍未验证。

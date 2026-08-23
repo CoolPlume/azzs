@@ -21,6 +21,29 @@ enum class HardwareDeviceKind {
   gpu,
   motherboard,
   network_adapter,
+  memory,
+  display,
+  storage,
+  npu,
+  audio,
+};
+
+enum class HardwareNetworkLink {
+  unknown,
+  wired,
+  wireless,
+};
+
+enum class HardwareStorageMedia {
+  unknown,
+  solid_state,
+  hard_disk,
+};
+
+enum class HardwareDisplayConnection {
+  unknown,
+  internal,
+  external,
 };
 
 enum class HardwareDevicePhysicality {
@@ -75,6 +98,28 @@ struct HardwareDeviceRecord final {
   HardwareVendor vendor{HardwareVendor::unknown};
   bool physically_present{false};
   std::string filter_reason;
+  std::string model_detail;
+  std::uint64_t capacity_bytes{0};
+  HardwareNetworkLink network_link{HardwareNetworkLink::unknown};
+  HardwareStorageMedia storage_media{HardwareStorageMedia::unknown};
+  std::uint32_t quantity{1};
+  // Optional topology and media facts are kept structured so UI consumers can
+  // present them without parsing display strings. Zero/empty means the
+  // Windows source did not expose that fact.
+  std::uint32_t core_count{0};
+  std::uint32_t thread_count{0};
+  std::uint32_t performance_core_count{0};
+  std::uint32_t efficiency_core_count{0};
+  HardwareDisplayConnection display_connection{
+      HardwareDisplayConnection::unknown};
+  std::uint32_t display_width{0};
+  std::uint32_t display_height{0};
+  // Zero means the raw monitor capability data did not provide a trustworthy
+  // physical vertical-field-rate upper bound.
+  std::uint32_t physical_refresh_rate_limit_hz{0};
+  std::string storage_interface;
+  std::string pcie_generation;
+  std::string nand_type;
 
   [[nodiscard]] bool confirmed_physical() const noexcept {
     return physically_present &&
@@ -91,6 +136,19 @@ struct HardwareObservation final {
   std::string gpu;
   std::string motherboard;
   std::string network_adapter;
+  // The legacy aggregate remains populated for existing consumers. These
+  // fields provide stable category-specific summaries for the UI.
+  std::string wired_network_adapter;
+  std::string wireless_network_adapter;
+  std::string memory;
+  std::string display;
+  std::string storage;
+  std::string solid_state_storage;
+  std::string hard_disk_storage;
+  std::string unclassified_storage;
+  std::string npu;
+  std::string audio;
+  std::string operating_system;
   std::string oem_model;
   HardwareVendor oem_vendor{HardwareVendor::unknown};
   std::vector<HardwareDeviceRecord> devices;
@@ -171,6 +229,9 @@ enum class HardwareOverviewTrigger {
 [[nodiscard]] char const* to_string(HardwareObservationConfidence value) noexcept;
 [[nodiscard]] char const* to_string(HardwareDeviceStatus value) noexcept;
 [[nodiscard]] char const* to_string(HardwareVendor value) noexcept;
+[[nodiscard]] char const* to_string(HardwareNetworkLink value) noexcept;
+[[nodiscard]] char const* to_string(HardwareStorageMedia value) noexcept;
+[[nodiscard]] char const* to_string(HardwareDisplayConnection value) noexcept;
 
 // Owns the session-only ten-minute cache and the user-visible hardware state.
 // Calls are synchronous and must be made by the application/use-case layer;
