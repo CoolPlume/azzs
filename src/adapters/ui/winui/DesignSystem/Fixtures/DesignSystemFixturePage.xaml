@@ -125,7 +125,8 @@
                 AutomationProperties.Name="摘要与分组"
                 Header="摘要与分组"
                 IsExpanded="True"
-                TabIndex="10">
+                TabIndex="10"
+                Style="{StaticResource AzzsExpanderStyle}">
                 <controls:ReadOnlyPresentationSurface x:Name="SummarySurface" />
             </Expander>
 
@@ -134,7 +135,7 @@
                 AutomationProperties.AutomationId="AzzsFixturePresentationList"
                 AutomationProperties.Name="只读呈现列表"
                 Style="{StaticResource AzzsReadOnlyListStyle}">
-                <ListViewItem IsTabStop="False">
+                <ListViewItem IsTabStop="False" Style="{StaticResource AzzsListViewItemStyle}">
                     <controls:ReadOnlyPresentationSurface x:Name="LongChineseSurface" />
                 </ListViewItem>
             </ListView>
@@ -219,7 +220,8 @@
                     AutomationProperties.Name="设置字段固定值"
                     IsReadOnly="True"
                     TabIndex="50"
-                    Text="固定只读值，不保存第二份业务状态" />
+                    Text="固定只读值，不保存第二份业务状态"
+                    Style="{StaticResource AzzsTextBoxStyle}" />
                 <TextBlock
                     x:Name="FieldHelpText"
                     Grid.Row="1"

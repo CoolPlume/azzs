@@ -57,7 +57,8 @@
                     <Button
                         x:Name="SelectRecommendedButton"
                         AutomationProperties.AutomationId="AzzsSelectRecommendedSystemSettings"
-                        Click="OnSelectRecommended">
+                        Click="OnSelectRecommended"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
                             <SymbolIcon Symbol="AllApps" />
                             <TextBlock x:Uid="SystemSettingsSelectRecommendedButtonText" />
@@ -66,7 +67,8 @@
                     <Button
                         x:Name="ApplySelectedButton"
                         AutomationProperties.AutomationId="AzzsApplySelectedSystemSettings"
-                        Click="OnApplySelected">
+                        Click="OnApplySelected"
+                        Style="{StaticResource AzzsPrimaryCommandButtonStyle}">
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
                             <SymbolIcon Symbol="Accept" />
                             <TextBlock x:Uid="SystemSettingsApplySelectedButtonText" />
@@ -76,7 +78,8 @@
                         x:Name="RestartExplorerButton"
                         AutomationProperties.AutomationId="AzzsRestartExplorerNow"
                         Click="OnRestartExplorerNow"
-                        Visibility="Collapsed">
+                        Visibility="Collapsed"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
                             <SymbolIcon Symbol="Refresh" />
                             <TextBlock x:Uid="SystemSettingsRestartExplorerButtonText" />

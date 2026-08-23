@@ -19,49 +19,56 @@
                 x:Uid="NavigationOverview"
                 AutomationProperties.AutomationId="AzzsNavigationOverview"
                 IsSelected="True"
-                TabIndex="0">
+                TabIndex="0"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
                 x:Name="DriversItem"
                 x:Uid="NavigationDrivers"
                 AutomationProperties.AutomationId="AzzsNavigationDrivers"
-                TabIndex="1">
+                TabIndex="1"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Manage" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
                 x:Name="SystemOptimizationItem"
                 x:Uid="NavigationSystemOptimization"
                 AutomationProperties.AutomationId="AzzsNavigationSystemOptimization"
-                TabIndex="2">
+                TabIndex="2"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Repair" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
                 x:Name="SoftwareInstallationItem"
                 x:Uid="NavigationSoftwareInstallation"
                 AutomationProperties.AutomationId="AzzsNavigationSoftwareInstallation"
-                TabIndex="3">
+                TabIndex="3"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Download" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
                 x:Name="SoftwareOptimizationItem"
                 x:Uid="NavigationSoftwareOptimization"
                 AutomationProperties.AutomationId="AzzsNavigationSoftwareOptimization"
-                TabIndex="4">
+                TabIndex="4"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
                 x:Name="HistoryAndLogsItem"
                 x:Uid="NavigationHistoryAndLogs"
                 AutomationProperties.AutomationId="AzzsNavigationHistoryAndLogs"
-                TabIndex="5">
+                TabIndex="5"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Clock" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
                 x:Name="ApplicationSettingsItem"
                 x:Uid="NavigationApplicationSettings"
                 AutomationProperties.AutomationId="AzzsNavigationApplicationSettings"
-                TabIndex="6">
+                TabIndex="6"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
@@ -69,7 +76,8 @@
                 x:Uid="NavigationSoftwareCatalogEditor"
                 AutomationProperties.AutomationId="AzzsNavigationSoftwareCatalogEditor"
                 TabIndex="7"
-                Visibility="Collapsed">
+                Visibility="Collapsed"
+                Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
             </NavigationViewItem>
         </NavigationView.MenuItems>
@@ -106,7 +114,8 @@
                         x:Name="ContinueRecoveredCatalogEditorButton"
                         x:Uid="MainWindowContinueRecoveredCatalogEditor"
                         AutomationProperties.AutomationId="AzzsContinueRecoveredCatalogEditor"
-                        Click="OnContinueRecoveredCatalogEditorClick">
+                        Click="OnContinueRecoveredCatalogEditorClick"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
                         <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Edit" /><TextBlock x:Uid="MainWindowContinueRecoveredCatalogEditorLabel" /></StackPanel></Button.Content>
                     </Button>
                 </InfoBar.ActionButton>
@@ -127,14 +136,16 @@
                         x:Name="RetrySettingsNavigationButton"
                         x:Uid="MainWindowRetrySettingsNavigation"
                         AutomationProperties.AutomationId="AzzsRetrySettingsNavigation"
-                        Click="OnRetrySettingsNavigationClick" />
+                        Click="OnRetrySettingsNavigationClick"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
                 </InfoBar.ActionButton>
                 <InfoBar.Content>
                     <Button
                         x:Name="ReturnToCurrentPageButton"
                         x:Uid="MainWindowReturnToCurrentPage"
                         AutomationProperties.AutomationId="AzzsReturnToCurrentPage"
-                        Click="OnReturnToCurrentPageClick" />
+                        Click="OnReturnToCurrentPageClick"
+                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
                 </InfoBar.Content>
             </InfoBar>
             <Frame
