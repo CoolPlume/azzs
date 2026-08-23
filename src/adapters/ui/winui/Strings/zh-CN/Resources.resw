@@ -331,7 +331,7 @@
   <data name="ApplicationSettingsCacheLocationRemovable" xml:space="preserve"><value>可移动介质受控位置</value></data>
   <data name="ApplicationSettingsCacheLocationUnavailable" xml:space="preserve"><value>不可用的受控位置</value></data>
   <data name="ApplicationSettingsArchitectureTitle.Text" xml:space="preserve"><value>软件包架构</value></data>
-  <data name="ApplicationSettingsArchitecturePreference.Header" xml:space="preserve"><value>ARM64 软件包偏好</value></data>
+  <data name="ApplicationSettingsArchitecturePreference.Header" xml:space="preserve"><value>软件包架构偏好</value></data>
   <data name="ApplicationSettingsArchitecturePrompt.Content" xml:space="preserve"><value>优先 ARM64，x64 回退前询问</value></data>
   <data name="ApplicationSettingsArchitectureAutoFallback.Content" xml:space="preserve"><value>优先 ARM64，自动回退 x64</value></data>
   <data name="ApplicationSettingsArchitecturePreferX64.Content" xml:space="preserve"><value>优先 x64 兼容包</value></data>

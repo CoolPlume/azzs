@@ -38,6 +38,7 @@
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
                     IsOpen="False"
+                    Visibility="Collapsed"
                     Style="{StaticResource AzzsStatusBandStyle}" />
 
                 <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
@@ -130,9 +131,21 @@
                             AutomationProperties.AutomationId="AzzsApplicationArchitecturePreference"
                             SelectionChanged="OnArchitecturePreferenceSelectionChanged"
                             Style="{StaticResource AzzsComboBoxStyle}">
-                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePrompt" Style="{StaticResource AzzsComboBoxItemStyle}" />
-                            <ComboBoxItem x:Uid="ApplicationSettingsArchitectureAutoFallback" Style="{StaticResource AzzsComboBoxItemStyle}" />
-                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePreferX64" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem
+                                x:Name="ArchitecturePromptItem"
+                                x:Uid="ApplicationSettingsArchitecturePrompt"
+                                AutomationProperties.AutomationId="AzzsApplicationArchitecturePrompt"
+                                Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem
+                                x:Name="ArchitectureAutoFallbackItem"
+                                x:Uid="ApplicationSettingsArchitectureAutoFallback"
+                                AutomationProperties.AutomationId="AzzsApplicationArchitectureAutoFallback"
+                                Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem
+                                x:Name="ArchitecturePreferX64Item"
+                                x:Uid="ApplicationSettingsArchitecturePreferX64"
+                                AutomationProperties.AutomationId="AzzsApplicationArchitecturePreferX64"
+                                Style="{StaticResource AzzsComboBoxItemStyle}" />
                         </ComboBox>
                     </StackPanel>
                 </Border>
