@@ -167,6 +167,28 @@ class ComApartment final {
   return parsed.ec == std::errc{} && parsed.ptr == last;
 }
 
+[[nodiscard]] bool parse_unsigned(std::string_view value,
+                                  std::uint64_t& result) {
+  if (value.empty()) {
+    return false;
+  }
+  auto const* first = value.data();
+  auto const* last = first + value.size();
+  auto const parsed = std::from_chars(first, last, result);
+  return parsed.ec == std::errc{} && parsed.ptr == last;
+}
+
+[[nodiscard]] std::string decimal_gigabytes(std::uint64_t bytes) {
+  // Windows exposes memory/disk capacities as bytes; report the conventional
+  // rounded binary GB value so a 24 GiB DIMM is not shown as 25 GB.
+  constexpr std::uint64_t kGigabyte = 1024ull * 1024ull * 1024ull;
+  auto gigabytes = (bytes + kGigabyte / 2) / kGigabyte;
+  if (gigabytes == 0 && bytes != 0) {
+    gigabytes = 1;
+  }
+  return std::to_string(gigabytes) + "GB";
+}
+
 [[nodiscard]] application::HardwareVendor vendor_from_text(
     std::string_view value) noexcept {
   auto const lowered = lower_ascii(value);
@@ -198,9 +220,10 @@ class ComApartment final {
 
 [[nodiscard]] bool virtualization_marker(std::string_view value) noexcept {
   auto const lowered = lower_ascii(value);
-  constexpr std::array<std::string_view, 12> markers{
+  constexpr std::array<std::string_view, 16> markers{
       "hyper-v", "hyperv", "vmware", "virtualbox", "qemu", "kvm",
       "xen", "parallels", "bochs", "virtual machine", "hvm dom", "bhyve",
+      "remote display", "rdp", "indirect display", "miracast",
   };
   for (auto const marker : markers) {
     if (lowered.find(marker) != std::string::npos) {
@@ -248,7 +271,24 @@ class ComApartment final {
       return starts_with_ascii(lowered, bus);
     });
   }
-  return starts_with_ascii(lowered, "pci\\");
+  constexpr std::array<std::string_view, 8> buses{
+      "pci\\", "usb\\", "sd\\", "acpi\\", "hdaudio\\", "scsi\\",
+      "sas\\", "ide\\",
+  };
+  return std::ranges::any_of(buses, [&](auto const bus) {
+    return starts_with_ascii(lowered, bus);
+  });
+}
+
+[[nodiscard]] bool physical_storage_bus(std::string_view value) noexcept {
+  auto const lowered = lower_ascii(value);
+  constexpr std::array<std::string_view, 8> buses{
+      "pci\\", "usb\\", "sd\\", "acpi\\", "scsi\\", "sas\\", "ide\\",
+      "ata\\",
+  };
+  return std::ranges::any_of(buses, [&](auto const bus) {
+    return starts_with_ascii(lowered, bus);
+  });
 }
 
 [[nodiscard]] application::HardwareDeviceStatus device_status(
@@ -307,9 +347,30 @@ class ComApartment final {
       !starts_with_ascii(pnp_id, "processor\\")) {
     return std::nullopt;
   }
+  auto display_name = name;
+  std::uint32_t cores{};
+  std::uint32_t threads{};
+  auto const cores_valid = parse_integer(row_value(row, 5), cores) && cores > 0;
+  auto const threads_valid =
+      parse_integer(row_value(row, 6), threads) && threads > 0;
+  if (cores_valid || threads_valid) {
+    display_name += " (";
+    if (cores_valid) {
+      display_name += std::to_string(cores);
+      display_name += "C";
+    }
+    if (cores_valid && threads_valid) {
+      display_name += "/";
+    }
+    if (threads_valid) {
+      display_name += std::to_string(threads);
+      display_name += "T";
+    }
+    display_name += ")";
+  }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::cpu,
-      .name = name,
+      .name = std::move(display_name),
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
@@ -329,9 +390,16 @@ class ComApartment final {
       !physical_bus(pnp_id, false)) {
     return std::nullopt;
   }
+  auto display_name = name;
+  std::uint64_t adapter_ram{};
+  if (parse_unsigned(row_value(row, 6), adapter_ram) && adapter_ram != 0) {
+    display_name += " (";
+    display_name += decimal_gigabytes(adapter_ram);
+    display_name += ")";
+  }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::gpu,
-      .name = name,
+      .name = std::move(display_name),
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
@@ -392,6 +460,195 @@ class ComApartment final {
   };
 }
 
+[[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_memory(
+    std::vector<std::string> const& row, bool virtual_host) {
+  auto const manufacturer = row_value(row, 0);
+  auto const capacity_text = row_value(row, 1);
+  auto const speed_text = row_value(row, 2);
+  auto const part_number = row_value(row, 3);
+  auto const locator = row_value(row, 4);
+  auto const tag = row_value(row, 5);
+  auto const memory_type = row_value(row, 6);
+  auto const configured_speed = row_value(row, 7);
+  std::uint64_t capacity{};
+  std::uint32_t speed{};
+  std::uint32_t configured{};
+  if (virtual_host || manufacturer.empty() || locator.empty() ||
+      !parse_unsigned(capacity_text, capacity) || capacity == 0 ||
+      !starts_with_ascii(tag, "physical memory")) {
+    return std::nullopt;
+  }
+  if (!parse_integer(configured_speed, configured) || configured == 0) {
+    static_cast<void>(parse_integer(speed_text, speed));
+  } else {
+    speed = configured;
+  }
+
+  std::string name = manufacturer;
+  if (memory_type == "24") {
+    name += " DDR3";
+  } else if (memory_type == "26") {
+    name += " DDR4";
+  } else if (memory_type == "34") {
+    name += " DDR5";
+  }
+  name += " ";
+  name += decimal_gigabytes(capacity);
+  if (speed != 0) {
+    name += " ";
+    name += std::to_string(speed);
+    name += "MHz";
+  }
+  if (!part_number.empty()) {
+    name += " (";
+    name += part_number;
+    name += ")";
+  }
+  return application::HardwareDeviceRecord{
+      .kind = application::HardwareDeviceKind::memory,
+      .name = std::move(name),
+      .physicality = application::HardwareDevicePhysicality::confirmed_physical,
+      .source = application::HardwareObservationSource::wmi,
+      .confidence = application::HardwareObservationConfidence::confirmed,
+      .status = application::HardwareDeviceStatus::enabled,
+      .vendor = vendor_from_text(manufacturer),
+      .physically_present = true,
+      .filter_reason = "Win32_PhysicalMemory module with a positive capacity",
+  };
+}
+
+[[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_display(
+    std::vector<std::string> const& row, bool virtual_host) {
+  auto const name = row_value(row, 0);
+  auto const pnp_entity_row = row.size() >= 6 &&
+                              !starts_with_ascii(row_value(row, 1), "display\\");
+  auto const pnp_id = row_value(row, pnp_entity_row ? 2 : 1);
+  auto const pnp_class = row_value(row, pnp_entity_row ? 5 : 0);
+  if (name.empty() || virtual_host || virtual_pnp_id(pnp_id) ||
+      !starts_with_ascii(pnp_id, "display\\") ||
+      (pnp_entity_row && !contains_ascii(pnp_class, "monitor")) ||
+      contains_ascii(name, "remote display") ||
+      contains_ascii(name, "virtual")) {
+    return std::nullopt;
+  }
+  auto display_name = name;
+  if (!pnp_entity_row) {
+    std::uint32_t width{};
+    std::uint32_t height{};
+    auto const width_valid = parse_integer(row_value(row, 4), width) && width > 0;
+    auto const height_valid =
+        parse_integer(row_value(row, 5), height) && height > 0;
+    if (width_valid && height_valid) {
+      display_name += " (";
+      display_name += std::to_string(width);
+      display_name += "x";
+      display_name += std::to_string(height);
+      display_name += ")";
+    }
+  }
+  return application::HardwareDeviceRecord{
+      .kind = application::HardwareDeviceKind::display,
+      .name = std::move(display_name),
+      .physicality = application::HardwareDevicePhysicality::confirmed_physical,
+      .source = application::HardwareObservationSource::wmi,
+      .confidence = application::HardwareObservationConfidence::confirmed,
+      .status = device_status(row_value(row, pnp_entity_row ? 3 : 2),
+                              row_value(row, pnp_entity_row ? 4 : 3)),
+      .vendor = vendor_from_text(name),
+      .physically_present = true,
+      .filter_reason = "DISPLAY PNP id on a non-virtual host",
+  };
+}
+
+[[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_storage(
+    std::vector<std::string> const& row, bool virtual_host) {
+  auto const model = row_value(row, 0);
+  auto const manufacturer = row_value(row, 1);
+  auto const size_text = row_value(row, 2);
+  auto const pnp_id = row_value(row, 3);
+  std::uint64_t size{};
+  if (model.empty() || virtual_host || virtual_pnp_id(pnp_id) ||
+      !parse_unsigned(size_text, size) || size == 0 ||
+      !physical_storage_bus(pnp_id)) {
+    return std::nullopt;
+  }
+  std::string name;
+  if (!manufacturer.empty() && !contains_ascii(model, manufacturer)) {
+    name = manufacturer + " ";
+  }
+  name += model;
+  name += " (";
+  name += decimal_gigabytes(size);
+  name += ")";
+  return application::HardwareDeviceRecord{
+      .kind = application::HardwareDeviceKind::storage,
+      .name = std::move(name),
+      .physicality = application::HardwareDevicePhysicality::confirmed_physical,
+      .source = application::HardwareObservationSource::wmi,
+      .confidence = application::HardwareObservationConfidence::confirmed,
+      .status = device_status(row_value(row, 5), row_value(row, 6)),
+      .vendor = vendor_from_text(manufacturer.empty() ? model : manufacturer),
+      .physically_present = true,
+      .filter_reason = "physical storage PNP id with a positive capacity",
+  };
+}
+
+[[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_audio(
+    std::vector<std::string> const& row, bool virtual_host) {
+  auto const name = row_value(row, 0);
+  auto const manufacturer = row_value(row, 1);
+  auto const pnp_id = row_value(row, 2);
+  auto const pnp_entity_row = row.size() >= 6;
+  auto const pnp_class = row_value(row, pnp_entity_row ? 5 : 0);
+  if (name.empty() || virtual_host || virtual_pnp_id(pnp_id) ||
+      !physical_bus(pnp_id, false) ||
+      (pnp_entity_row && !contains_ascii(pnp_class, "media")) ||
+      contains_ascii(name, "virtual") || contains_ascii(name, "remote")) {
+    return std::nullopt;
+  }
+  return application::HardwareDeviceRecord{
+      .kind = application::HardwareDeviceKind::audio,
+      .name = name,
+      .physicality = application::HardwareDevicePhysicality::confirmed_physical,
+      .source = application::HardwareObservationSource::wmi,
+      .confidence = application::HardwareObservationConfidence::confirmed,
+      .status = device_status(row_value(row, pnp_entity_row ? 3 : 3),
+                              row_value(row, pnp_entity_row ? 4 : 4)),
+      .vendor = vendor_from_text(manufacturer.empty() ? name : manufacturer),
+      .physically_present = true,
+      .filter_reason = "physical audio PNP id on a non-virtual host",
+  };
+}
+
+[[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_npu(
+    std::vector<std::string> const& row, bool virtual_host) {
+  auto const name = row_value(row, 0);
+  auto const manufacturer = row_value(row, 1);
+  auto const pnp_id = row_value(row, 2);
+  auto const pnp_class = row_value(row, 5);
+  if (name.empty() || virtual_host || virtual_pnp_id(pnp_id) ||
+      !physical_bus(pnp_id, false) ||
+      !(contains_ascii(pnp_class, "npu") ||
+        contains_ascii(pnp_class, "compute") ||
+        contains_ascii(pnp_class, "system")) ||
+      !(contains_ascii(name, "npu") || contains_ascii(name, "ai boost") ||
+        contains_ascii(name, "neural") ||
+        contains_ascii(name, "compute accelerator"))) {
+    return std::nullopt;
+  }
+  return application::HardwareDeviceRecord{
+      .kind = application::HardwareDeviceKind::npu,
+      .name = name,
+      .physicality = application::HardwareDevicePhysicality::confirmed_physical,
+      .source = application::HardwareObservationSource::wmi,
+      .confidence = application::HardwareObservationConfidence::confirmed,
+      .status = device_status(row_value(row, 3), row_value(row, 4)),
+      .vendor = vendor_from_text(manufacturer.empty() ? name : manufacturer),
+      .physically_present = true,
+      .filter_reason = "physical compute-device PNP id with an NPU marker",
+  };
+}
+
 void append_unique_summary(std::string& target,
                            application::HardwareDeviceRecord const& record) {
   if (!target.empty()) {
@@ -433,15 +690,16 @@ struct CollectedObservation final {
     std::array<std::string_view, 12> properties;
     std::size_t property_count;
   };
-  std::array<QuerySpec, 5> const specs{
+  std::array<QuerySpec, 11> const specs{
       QuerySpec{"Win32_Processor",
                 {"Name", "Manufacturer", "PNPDeviceID", "Status",
-                 "ConfigManagerErrorCode"},
-                5},
+                 "ConfigManagerErrorCode", "NumberOfCores",
+                 "NumberOfLogicalProcessors"},
+                7},
       QuerySpec{"Win32_VideoController",
                 {"Name", "AdapterCompatibility", "PNPDeviceID", "Status",
-                 "ConfigManagerErrorCode", "VideoProcessor"},
-                6},
+                 "ConfigManagerErrorCode", "VideoProcessor", "AdapterRAM"},
+                7},
       QuerySpec{"Win32_BaseBoard",
                 {"Manufacturer", "Product", "HostingBoard", "Status",
                  "ConfigManagerErrorCode"},
@@ -452,6 +710,29 @@ struct CollectedObservation final {
                  "ServiceName", "NetConnectionStatus"},
                 9},
       QuerySpec{"Win32_ComputerSystem", {"Manufacturer", "Model"}, 2},
+      QuerySpec{"Win32_PhysicalMemory",
+                {"Manufacturer", "Capacity", "Speed", "PartNumber",
+                 "DeviceLocator", "Tag", "SMBIOSMemoryType",
+                 "ConfiguredClockSpeed"},
+                8},
+      QuerySpec{"Win32_DesktopMonitor",
+                {"Name", "PNPDeviceID", "Status", "ConfigManagerErrorCode",
+                 "ScreenWidth", "ScreenHeight"},
+                6},
+      QuerySpec{"Win32_DiskDrive",
+                {"Model", "Manufacturer", "Size", "PNPDeviceID", "Status",
+                 "ConfigManagerErrorCode", "InterfaceType"},
+                7},
+      QuerySpec{"Win32_SoundDevice",
+                {"Name", "Manufacturer", "PNPDeviceID", "Status",
+                 "ConfigManagerErrorCode"},
+                5},
+      QuerySpec{"Win32_PnPEntity",
+                {"Name", "Manufacturer", "PNPDeviceID", "Status",
+                 "ConfigManagerErrorCode", "PNPClass"},
+                6},
+      QuerySpec{"Win32_OperatingSystem",
+                {"Caption", "Version", "BuildNumber", "OSArchitecture"}, 4},
   };
 
   // Keep one row matrix per approved query so classification consumes the
@@ -494,6 +775,28 @@ struct CollectedObservation final {
             vendor_from_text(row_value(result.rows.front(), 0));
         virtual_host = virtualization_marker(pair_value(result));
       }
+    } else if (spec_index == 10) {
+      if (!result.rows.empty()) {
+        auto const& row = result.rows.front();
+        auto const caption = row_value(row, 0);
+        auto const version = row_value(row, 1);
+        auto const build = row_value(row, 2);
+        auto const architecture = row_value(row, 3);
+        collected.observation.operating_system = caption;
+        if (!version.empty()) {
+          collected.observation.operating_system += " ";
+          collected.observation.operating_system += version;
+        }
+        if (!build.empty()) {
+          collected.observation.operating_system += " (";
+          collected.observation.operating_system += build;
+          collected.observation.operating_system += ")";
+        }
+        if (!architecture.empty()) {
+          collected.observation.operating_system += " ";
+          collected.observation.operating_system += architecture;
+        }
+      }
     } else {
       rows_by_spec[spec_index] = result.rows;
     }
@@ -520,6 +823,36 @@ struct CollectedObservation final {
   for (auto const& row : rows_by_spec[3]) {
     if (auto record = classify_network(row, virtual_host)) {
       append_unique_summary(collected.observation.network_adapter, *record);
+      collected.observation.devices.push_back(std::move(*record));
+    }
+  }
+  for (auto const& row : rows_by_spec[5]) {
+    if (auto record = classify_memory(row, virtual_host)) {
+      append_unique_summary(collected.observation.memory, *record);
+      collected.observation.devices.push_back(std::move(*record));
+    }
+  }
+  for (auto const& row : rows_by_spec[6]) {
+    if (auto record = classify_display(row, virtual_host)) {
+      append_unique_summary(collected.observation.display, *record);
+      collected.observation.devices.push_back(std::move(*record));
+    }
+  }
+  for (auto const& row : rows_by_spec[7]) {
+    if (auto record = classify_storage(row, virtual_host)) {
+      append_unique_summary(collected.observation.storage, *record);
+      collected.observation.devices.push_back(std::move(*record));
+    }
+  }
+  for (auto const& row : rows_by_spec[8]) {
+    if (auto record = classify_audio(row, virtual_host)) {
+      append_unique_summary(collected.observation.audio, *record);
+      collected.observation.devices.push_back(std::move(*record));
+    }
+  }
+  for (auto const& row : rows_by_spec[9]) {
+    if (auto record = classify_npu(row, virtual_host)) {
+      append_unique_summary(collected.observation.npu, *record);
       collected.observation.devices.push_back(std::move(*record));
     }
   }

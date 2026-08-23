@@ -74,18 +74,20 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return {
       {"Win32_Processor",
        {"Name", "Manufacturer", "PNPDeviceID", "Status",
-        "ConfigManagerErrorCode"},
+        "ConfigManagerErrorCode", "NumberOfCores",
+        "NumberOfLogicalProcessors"},
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"AMD Ryzen 7", "AuthenticAMD",
-                  "ACPI\\AuthenticAMD_0000", "OK", "0"}}}},
+                  "ACPI\\AuthenticAMD_0000", "OK", "0", "8", "16"}}}},
       {"Win32_VideoController",
        {"Name", "AdapterCompatibility", "PNPDeviceID", "Status",
-        "ConfigManagerErrorCode", "VideoProcessor"},
+        "ConfigManagerErrorCode", "VideoProcessor", "AdapterRAM"},
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"NVIDIA GeForce RTX", "NVIDIA",
-                  "PCI\\VEN_10DE&DEV_0001", "OK", "0", "RTX"},
+                  "PCI\\VEN_10DE&DEV_0001", "OK", "0", "RTX",
+                  "17179869184"},
                  {"AMD Radeon", "AMD", "PCI\\VEN_1002&DEV_0002", "OK",
-                  "0", "Radeon"}}}},
+                  "0", "Radeon", "4294967296"}}}},
       {"Win32_BaseBoard",
        {"Manufacturer", "Product", "HostingBoard", "Status",
         "ConfigManagerErrorCode"},
@@ -101,6 +103,49 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"Win32_ComputerSystem", {"Manufacturer", "Model"},
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"ASUS", "ROG"}}}},
+      {"Win32_PhysicalMemory",
+       {"Manufacturer", "Capacity", "Speed", "PartNumber",
+        "DeviceLocator", "Tag", "SMBIOSMemoryType", "ConfiguredClockSpeed"},
+       {.code = WindowsHardwareQueryCode::succeeded,
+        .rows = {{"Micron", "25769803776", "5600", "MTC20C2085S1EC48BA1",
+                  "DIMM0", "Physical Memory 0", "34", "5600"},
+                 {"Micron", "25769803776", "5600", "MTC20C2085S1EC48BA2",
+                  "DIMM1", "Physical Memory 1", "34", "5600"}}}},
+      {"Win32_DesktopMonitor",
+       {"Name", "PNPDeviceID", "Status", "ConfigManagerErrorCode",
+        "ScreenWidth", "ScreenHeight"},
+       {.code = WindowsHardwareQueryCode::succeeded,
+        .rows = {{"BOE Display", "DISPLAY\\BOE1234\\1", "OK", "0", "2560",
+                  "1600"},
+                 {"BOE Display", "DISPLAY\\BOE1234\\2", "OK", "0", "2560",
+                  "1600"}}}},
+      {"Win32_DiskDrive",
+       {"Model", "Manufacturer", "Size", "PNPDeviceID", "Status",
+        "ConfigManagerErrorCode", "InterfaceType"},
+       {.code = WindowsHardwareQueryCode::succeeded,
+        .rows = {{"PC801 NVMe SK hynix", "SK hynix", "1099511627776",
+                  "PCI\\VEN_1C5C&DEV_174A", "OK", "0", "NVMe"},
+                 {"Samsung SSD 990 PRO", "Samsung", "2199023255552",
+                  "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe"}}}},
+      {"Win32_SoundDevice",
+       {"Name", "Manufacturer", "PNPDeviceID", "Status",
+        "ConfigManagerErrorCode"},
+       {.code = WindowsHardwareQueryCode::succeeded,
+        .rows = {{"Realtek High Definition Audio", "Realtek",
+                  "HDAUDIO\\FUNC_01&VEN_10EC", "OK", "0"},
+                 {"NVIDIA High Definition Audio", "NVIDIA",
+                  "HDAUDIO\\FUNC_01&VEN_10DE", "OK", "0"}}}},
+      {"Win32_PnPEntity",
+       {"Name", "Manufacturer", "PNPDeviceID", "Status",
+        "ConfigManagerErrorCode", "PNPClass"},
+       {.code = WindowsHardwareQueryCode::succeeded,
+        .rows = {{"Intel(R) AI Boost", "Intel",
+                  "PCI\\VEN_8086&DEV_7D1D", "OK", "0", "ComputeAccelerator"},
+                 {"Microsoft Remote Display Adapter", "Microsoft",
+                  "ROOT\\RDP_MF", "OK", "0", "Display"}}}},
+      {"Win32_OperatingSystem", {"Caption", "Version", "BuildNumber", "OSArchitecture"},
+       {.code = WindowsHardwareQueryCode::succeeded,
+        .rows = {{"Microsoft Windows 11 Pro", "10.0.26100", "26100", "64-bit"}}}},
   };
 }
 
@@ -115,16 +160,29 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return expect(result.code == HardwareObservationCode::succeeded &&
                     result.observation.has_value(),
                 "complete WMI facts must produce a successful observation") &&
-         expect(!raw_executor->mismatch && raw_executor->calls == 5,
-                "the adapter must use exactly the five approved read-only "
-                "model queries") &&
-                expect(result.observation->cpu == "AMD Ryzen 7" &&
+          expect(!raw_executor->mismatch && raw_executor->calls == 11,
+                 "the adapter must use exactly the approved read-only "
+                 "model queries") &&
+                expect(result.observation->cpu == "AMD Ryzen 7 (8C/16T)" &&
                     result.observation->gpu ==
-                        "NVIDIA GeForce RTX; AMD Radeon" &&
+                        "NVIDIA GeForce RTX (16GB); AMD Radeon (4GB)" &&
                     result.observation->motherboard == "ASUS PRIME B650" &&
                     result.observation->network_adapter == "Intel Ethernet" &&
+                    result.observation->memory ==
+                        "Micron DDR5 24GB 5600MHz (MTC20C2085S1EC48BA1); Micron DDR5 24GB 5600MHz (MTC20C2085S1EC48BA2)" &&
+                    result.observation->display ==
+                        "BOE Display (2560x1600); BOE Display (2560x1600)" &&
+                    result.observation->storage.find("PC801 NVMe SK hynix") !=
+                        std::string::npos &&
+                    result.observation->storage.find("Samsung SSD 990 PRO") !=
+                        std::string::npos &&
+                    result.observation->audio ==
+                        "Realtek High Definition Audio; NVIDIA High Definition Audio" &&
+                    result.observation->npu == "Intel(R) AI Boost" &&
+                    result.observation->operating_system.find("Windows 11 Pro") !=
+                        std::string::npos &&
                     result.observation->oem_model == "ASUS ROG" &&
-                    result.observation->devices.size() == 5 &&
+                    result.observation->devices.size() == 14 &&
                     result.observation->has_confirmed_physical_hardware(),
                 "CPU, GPU, board, network, and OEM model facts must map "
                 "without serial, MAC, IP, or computer-name fields and only "
@@ -143,6 +201,11 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   raw_executor->expected[3].result.rows = {
       {"Intel Ethernet", "Intel", "Ethernet 802.3", "TRUE",
        "PCI\\VEN_8086&DEV_0003", "Error", "10", "e1iexpress", "2"}};
+  raw_executor->expected[5].result.rows = {};
+  raw_executor->expected[6].result.rows = {};
+  raw_executor->expected[7].result.rows = {};
+  raw_executor->expected[8].result.rows = {};
+  raw_executor->expected[9].result.rows = {};
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
   if (!expect(result.code == HardwareObservationCode::succeeded &&
@@ -196,6 +259,11 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
        "unknown", "2"}};
   raw_executor->expected[4].result.rows =
       {{"Microsoft Corporation", "Virtual Machine"}};
+  raw_executor->expected[5].result.rows = {};
+  raw_executor->expected[6].result.rows = {};
+  raw_executor->expected[7].result.rows = {};
+  raw_executor->expected[8].result.rows = {};
+  raw_executor->expected[9].result.rows = {};
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
   return expect(result.code == HardwareObservationCode::failed,
@@ -224,9 +292,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return expect(result.code == HardwareObservationCode::partial &&
                     result.observation.has_value() &&
                     result.observation->gpu.empty() &&
-                    result.observation->cpu == "AMD Ryzen 7",
+                    result.observation->cpu == "AMD Ryzen 7 (8C/16T)",
                 "a non-terminal probe failure must return usable partial facts") &&
-         expect(!raw_executor->mismatch && raw_executor->calls == 5,
+          expect(!raw_executor->mismatch && raw_executor->calls == 11,
                 "a partial failure must still collect independent model facts");
 }
 
@@ -275,9 +343,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   WindowsHardwareObserver partial_observer{std::move(partial_executor)};
   auto const partial = partial_observer.current_model_observation({});
 
-  return expect(complete.has_value() && complete_raw->calls == 5,
+  return expect(complete.has_value() && complete_raw->calls == 11,
                 "a complete read-only model probe may provide a cache key") &&
-         expect(!partial.has_value() && partial_raw->calls == 5,
+          expect(!partial.has_value() && partial_raw->calls == 11,
                 "partial probes must not falsely declare a hardware change");
 }
 
