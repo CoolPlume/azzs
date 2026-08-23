@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "applicationVersion": "0.1.1",
+  "applicationVersion": "0.2.0",
   "releaseChannel": "stable",
-  "cmakeVersion": "0.1.1",
-  "windowsVersion": "0.1.1.0",
-  "wixVersion": "0.1.1"
+  "cmakeVersion": "0.2.0",
+  "windowsVersion": "0.2.0.0",
+  "wixVersion": "0.2.0"
 }
