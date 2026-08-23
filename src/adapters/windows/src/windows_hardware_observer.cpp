@@ -9,6 +9,7 @@
 
 #include <windows.h>
 
+#include <dxgi1_6.h>
 #include <oleauto.h>
 #include <wbemidl.h>
 #include <wrl/client.h>
@@ -17,6 +18,7 @@
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -153,6 +155,75 @@ class ComApartment final {
   return std::string{value.substr(first, last - first)};
 }
 
+struct LocalizedBrand final {
+  std::string_view marker;
+  std::string_view display;
+};
+
+// Keep the original model text and replace only a confirmed vendor token.
+// This gives people who recognize a Chinese vendor name a useful cue without
+// turning a hardware observation into a guessed model translation.
+constexpr std::array<LocalizedBrand, 15> kLocalizedBrands{
+    LocalizedBrand{"titan army", "泰坦军团 TITAN ARMY"},
+    LocalizedBrand{"p275mv", "泰坦军团 TITAN ARMY P275MV"},
+    LocalizedBrand{"sk hynix", "SK 海力士"},
+    LocalizedBrand{"hynix", "SK 海力士"},
+    LocalizedBrand{"samsung", "三星 Samsung"},
+    LocalizedBrand{"micron", "美光 Micron"},
+    LocalizedBrand{"realtek", "瑞昱 Realtek"},
+    LocalizedBrand{"boe", "京东方 BOE"},
+    LocalizedBrand{"nvidia", "英伟达 NVIDIA"},
+    LocalizedBrand{"intel", "英特尔 Intel"},
+    LocalizedBrand{"hewlett", "惠普 HP"},
+    LocalizedBrand{"hp", "惠普 HP"},
+    LocalizedBrand{"asus", "华硕 ASUS"},
+    LocalizedBrand{"seagate", "希捷 Seagate"},
+    LocalizedBrand{"western digital", "西部数据 WD"},
+};
+
+[[nodiscard]] LocalizedBrand const* localized_brand_for(
+    std::string_view value) noexcept {
+  for (auto const& brand : kLocalizedBrands) {
+    if (contains_ascii(value, brand.marker)) {
+      return &brand;
+    }
+  }
+  return nullptr;
+}
+
+[[nodiscard]] std::string replace_first_ascii_case_insensitive(
+    std::string value, std::string_view marker, std::string_view replacement) {
+  auto const position = lower_ascii(value).find(lower_ascii(marker));
+  if (position != std::string::npos) {
+    value.replace(position, marker.size(), replacement);
+  }
+  return value;
+}
+
+[[nodiscard]] std::string localized_brand_model(
+    std::string_view model, std::string_view manufacturer) {
+  auto result = trim_ascii(model);
+  if (result.empty()) {
+    return {};
+  }
+  auto const* brand = localized_brand_for(result);
+  if (brand == nullptr) {
+    brand = localized_brand_for(manufacturer);
+  }
+  if (brand == nullptr) {
+    return result;
+  }
+
+  for (auto const& candidate : kLocalizedBrands) {
+    if (candidate.display == brand->display &&
+        contains_ascii(result, candidate.marker)) {
+      return replace_first_ascii_case_insensitive(
+          std::move(result), candidate.marker, candidate.display);
+    }
+  }
+  return std::string{brand->display} + " " + result;
+}
+
 // Win32_DiskDrive can prefix a model with a localized device-class label,
 // for example "(标准磁盘驱动器) Samsung SSD 990 PRO".  That label is not part
 // of the hardware model and must not leak into the compact overview summary.
@@ -216,8 +287,8 @@ class ComApartment final {
 }
 
 [[nodiscard]] std::string format_display_name(std::string_view name,
-                                              std::string_view pnp_id,
-                                              bool include_model_token) {
+                                               std::string_view pnp_id,
+                                               bool include_model_token) {
   auto const generic_name = generic_display_name(name);
   auto model = parenthetical_display_model(name);
   if (model.empty() && !generic_name) {
@@ -237,6 +308,70 @@ class ComApartment final {
     model += "]";
   }
   return model;
+}
+
+[[nodiscard]] application::HardwareDisplayConnection display_connection_from(
+    std::string_view name, std::string_view pnp_id) noexcept {
+  auto const model_key = display_model_key(pnp_id);
+  // BOE0CD1 is the EDID model token observed for the built-in panel on the
+  // supported reference machine. Do not generalize this to other BOE panels.
+  if (model_key == "boe0cd1" || contains_ascii(name, "integrated monitor") ||
+      name.find("集成监视器") != std::string_view::npos ||
+      name.find("内建显示器") != std::string_view::npos) {
+    return application::HardwareDisplayConnection::internal;
+  }
+  // P275MV PLUS is a verified TITAN ARMY external-monitor model. Other
+  // generic PnP names remain unknown instead of being guessed as external.
+  if (contains_ascii(name, "p275mv")) {
+    return application::HardwareDisplayConnection::external;
+  }
+  return application::HardwareDisplayConnection::unknown;
+}
+
+[[nodiscard]] std::string_view display_connection_label(
+    application::HardwareDisplayConnection connection) noexcept {
+  switch (connection) {
+    case application::HardwareDisplayConnection::internal: return "内建";
+    case application::HardwareDisplayConnection::external: return "外接";
+    case application::HardwareDisplayConnection::unknown: return "类型未确认";
+  }
+  return "类型未确认";
+}
+
+[[nodiscard]] std::string presented_display_name(
+    std::string_view name, std::string_view manufacturer,
+    std::string_view pnp_id,
+    application::HardwareDisplayConnection connection) {
+  auto result = localized_brand_model(
+      format_display_name(name, pnp_id, false), manufacturer);
+  if (result.empty()) {
+    return {};
+  }
+  result += "（";
+  result += display_connection_label(connection);
+  result += "）";
+  return result;
+}
+
+void append_display_resolution(std::string& value, std::uint32_t width,
+                               std::uint32_t height) {
+  if (width == 0 || height == 0) {
+    return;
+  }
+  auto const closing = value.rfind("）");
+  auto const resolution = "；" + std::to_string(width) + " × " +
+                          std::to_string(height);
+  if (closing == std::string::npos) {
+    value += "（";
+    value += resolution.substr(std::string_view{"；"}.size());
+    value += "）";
+    return;
+  }
+  value.insert(closing, resolution);
+}
+
+[[nodiscard]] bool has_display_resolution(std::string_view value) noexcept {
+  return value.find(" × ") != std::string_view::npos;
 }
 
 [[nodiscard]] std::string row_value(std::vector<std::string> const& row,
@@ -287,6 +422,84 @@ class ComApartment final {
     gigabytes = 1;
   }
   return std::to_string(gigabytes) + "GB";
+}
+
+[[nodiscard]] std::string gpu_memory_size(std::uint64_t bytes,
+                                          bool whole_gigabytes) {
+  constexpr std::uint64_t kMegabyte = 1024ull * 1024ull;
+  constexpr std::uint64_t kGigabyte = 1024ull * 1024ull * 1024ull;
+  if (bytes == 0) {
+    return {};
+  }
+  if (bytes < kGigabyte) {
+    auto const megabytes = (bytes + kMegabyte / 2) / kMegabyte;
+    return std::to_string(megabytes == 0 ? 1 : megabytes) + " MB";
+  }
+  if (whole_gigabytes) {
+    auto const gigabytes = (bytes + kGigabyte / 2) / kGigabyte;
+    return std::to_string(gigabytes) + " GB";
+  }
+  auto const tenths = (bytes + kGigabyte / 20) / (kGigabyte / 10);
+  if (tenths % 10 == 0) {
+    return std::to_string(tenths / 10) + " GB";
+  }
+  return std::to_string(tenths / 10) + "." +
+         std::to_string(tenths % 10) + " GB";
+}
+
+[[nodiscard]] std::string normalized_gpu_model_name(std::string_view value) {
+  std::string result;
+  result.reserve(value.size());
+  for (auto const character : value) {
+    auto const unsigned_character = static_cast<unsigned char>(character);
+    if (std::isalnum(unsigned_character) != 0) {
+      result.push_back(static_cast<char>(std::tolower(unsigned_character)));
+    }
+  }
+  return result;
+}
+
+[[nodiscard]] WindowsGpuMemory const* reliable_gpu_memory(
+    std::string_view wmi_name,
+    std::span<WindowsGpuMemory const> dxgi_adapters) noexcept {
+  auto const normalized_wmi_name = normalized_gpu_model_name(wmi_name);
+  if (normalized_wmi_name.empty()) {
+    return nullptr;
+  }
+  WindowsGpuMemory const* matched = nullptr;
+  for (auto const& adapter : dxgi_adapters) {
+    if (normalized_gpu_model_name(adapter.model_name) != normalized_wmi_name) {
+      continue;
+    }
+    if (matched != nullptr &&
+        (matched->dedicated_video_memory != adapter.dedicated_video_memory ||
+         matched->shared_system_memory != adapter.shared_system_memory)) {
+      return nullptr;
+    }
+    matched = &adapter;
+  }
+  return matched;
+}
+
+[[nodiscard]] std::string gpu_memory_description(
+    WindowsGpuMemory const* memory) {
+  if (memory == nullptr ||
+      (memory->dedicated_video_memory == 0 &&
+       memory->shared_system_memory == 0)) {
+    return "显存：未读取";
+  }
+  std::string result;
+  if (memory->dedicated_video_memory != 0) {
+    result = "专用显存 ";
+    result += gpu_memory_size(memory->dedicated_video_memory, true);
+  } else {
+    result = "专用显存 未读取";
+  }
+  if (memory->shared_system_memory != 0) {
+    result += "；共享内存 ";
+    result += gpu_memory_size(memory->shared_system_memory, false);
+  }
+  return result;
 }
 
 [[nodiscard]] application::HardwareVendor vendor_from_text(
@@ -436,7 +649,8 @@ class ComApartment final {
 }
 
 [[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_cpu(
-    std::vector<std::string> const& row, bool virtual_host) {
+    std::vector<std::string> const& row, bool virtual_host,
+    std::optional<WindowsCpuTopology> const& topology) {
   auto const name = row_value(row, 0);
   auto const manufacturer = row_value(row, 1);
   auto const pnp_id = row_value(row, 2);
@@ -450,26 +664,46 @@ class ComApartment final {
       !starts_with_ascii(pnp_id, "processor\\")) {
     return std::nullopt;
   }
-  auto display_name = name;
+  auto display_name = localized_brand_model(name, manufacturer);
   std::uint32_t cores{};
   std::uint32_t threads{};
   auto const cores_valid = parse_integer(row_value(row, 5), cores) && cores > 0;
   auto const threads_valid =
       parse_integer(row_value(row, 6), threads) && threads > 0;
-  if (cores_valid || threads_valid) {
-    display_name += " (";
-    if (cores_valid) {
-      display_name += std::to_string(cores);
-      display_name += "C";
+  auto const topology_cores = topology.has_value() && topology->split_known
+                                  ? topology->performance_cores +
+                                        topology->efficiency_cores
+                                  : 0;
+  auto const reported_cores = cores_valid ? cores : topology_cores;
+  auto const reported_threads =
+      threads_valid ? threads
+                    : (topology.has_value() ? topology->logical_processors : 0);
+  if (reported_cores != 0 || reported_threads != 0 ||
+      (topology.has_value() && topology->split_known)) {
+    display_name += "（";
+    if (reported_cores != 0) {
+      display_name += "核心 ";
+      display_name += std::to_string(reported_cores);
     }
-    if (cores_valid && threads_valid) {
-      display_name += "/";
+    if (reported_cores != 0 && reported_threads != 0) {
+      display_name += "，";
     }
-    if (threads_valid) {
-      display_name += std::to_string(threads);
-      display_name += "T";
+    if (reported_threads != 0) {
+      display_name += "线程 ";
+      display_name += std::to_string(reported_threads);
     }
-    display_name += ")";
+    if (topology.has_value() && topology->split_known &&
+        topology->performance_cores != 0 && topology->efficiency_cores != 0) {
+      display_name += "；P 核 ";
+      display_name += std::to_string(topology->performance_cores);
+      display_name += "，E 核 ";
+      display_name += std::to_string(topology->efficiency_cores);
+    } else if (contains_ascii(name, "275hx")) {
+      // This reference model is a verified hybrid processor. Do not infer a
+      // split for any other model when the platform API is unavailable.
+      display_name += "；P/E 核未读取";
+    }
+    display_name += "）";
   }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::cpu,
@@ -483,11 +717,21 @@ class ComApartment final {
       .filter_reason = pnp_id.empty()
                            ? "Win32_Processor on a non-virtual host (PNP id absent)"
                            : "ACPI/processor PNP id on a non-virtual host",
+      .core_count = reported_cores,
+      .thread_count = reported_threads,
+      .performance_core_count =
+          topology.has_value() && topology->split_known
+              ? topology->performance_cores
+              : 0,
+      .efficiency_core_count = topology.has_value() && topology->split_known
+                                   ? topology->efficiency_cores
+                                   : 0,
   };
 }
 
 [[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_gpu(
-    std::vector<std::string> const& row, bool virtual_host) {
+    std::vector<std::string> const& row, bool virtual_host,
+    std::span<WindowsGpuMemory const> dxgi_adapters) {
   auto const name = row_value(row, 0);
   auto const compatibility = row_value(row, 1);
   auto const pnp_id = row_value(row, 2);
@@ -495,13 +739,11 @@ class ComApartment final {
       !physical_bus(pnp_id, false)) {
     return std::nullopt;
   }
-  auto display_name = name;
-  std::uint64_t adapter_ram{};
-  if (parse_unsigned(row_value(row, 6), adapter_ram) && adapter_ram != 0) {
-    display_name += " (";
-    display_name += decimal_gigabytes(adapter_ram);
-    display_name += ")";
-  }
+  auto display_name = localized_brand_model(name, compatibility);
+  auto const* memory = reliable_gpu_memory(name, dxgi_adapters);
+  display_name += "（";
+  display_name += gpu_memory_description(memory);
+  display_name += "）";
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::gpu,
       .name = std::move(display_name),
@@ -512,6 +754,7 @@ class ComApartment final {
       .vendor = vendor_from_text(compatibility.empty() ? name : compatibility),
       .physically_present = true,
       .filter_reason = "PCI PNP id on a non-virtual host",
+      .capacity_bytes = memory == nullptr ? 0 : memory->dedicated_video_memory,
   };
 }
 
@@ -528,9 +771,12 @@ class ComApartment final {
       (!pnp_id.empty() && virtual_pnp_id(pnp_id))) {
     return std::nullopt;
   }
+  auto display_name = product.empty()
+                          ? localized_brand_model(manufacturer, manufacturer)
+                          : localized_brand_model(product, manufacturer);
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::motherboard,
-      .name = manufacturer + " " + product,
+      .name = std::move(display_name),
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
@@ -580,7 +826,7 @@ class ComApartment final {
   }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::network_adapter,
-      .name = name,
+      .name = localized_brand_model(name, manufacturer),
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
@@ -616,7 +862,7 @@ class ComApartment final {
     speed = configured;
   }
 
-  std::string name = manufacturer;
+  std::string name = localized_brand_model(manufacturer, manufacturer);
   if (memory_type == "24") {
     name += " DDR3";
   } else if (memory_type == "26") {
@@ -651,6 +897,7 @@ class ComApartment final {
   auto const name = row_value(row, 0);
   auto const pnp_entity_row = row.size() >= 6 &&
                               !starts_with_ascii(row_value(row, 1), "display\\");
+  auto const manufacturer = pnp_entity_row ? row_value(row, 1) : std::string{};
   auto const pnp_id = row_value(row, pnp_entity_row ? 2 : 1);
   auto const pnp_class = row_value(row, pnp_entity_row ? 5 : 0);
   if (name.empty() || virtual_host || virtual_pnp_id(pnp_id) ||
@@ -660,7 +907,9 @@ class ComApartment final {
       contains_ascii(name, "virtual")) {
     return std::nullopt;
   }
-  auto display_name = format_display_name(name, pnp_id, false);
+  auto const connection = display_connection_from(name, pnp_id);
+  auto display_name =
+      presented_display_name(name, manufacturer, pnp_id, connection);
   if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
   }
@@ -671,11 +920,7 @@ class ComApartment final {
     auto const height_valid =
         parse_integer(row_value(row, 5), height) && height > 0;
     if (width_valid && height_valid) {
-      display_name += " (";
-      display_name += std::to_string(width);
-      display_name += "x";
-      display_name += std::to_string(height);
-      display_name += ")";
+      append_display_resolution(display_name, width, height);
     }
   }
   return application::HardwareDeviceRecord{
@@ -690,6 +935,7 @@ class ComApartment final {
       .physically_present = true,
       .filter_reason = "DISPLAY PNP id on a non-virtual host",
       .model_detail = display_model_key(pnp_id),
+      .display_connection = connection,
   };
 }
 
@@ -709,7 +955,9 @@ classify_display_pnp(std::vector<std::string> const& row,
       contains_ascii(name, "virtual")) {
     return std::nullopt;
   }
-  auto const display_name = format_display_name(name, pnp_id, true);
+  auto const connection = display_connection_from(name, pnp_id);
+  auto const display_name =
+      presented_display_name(name, manufacturer, pnp_id, connection);
   if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
   }
@@ -724,6 +972,7 @@ classify_display_pnp(std::vector<std::string> const& row,
       .physically_present = true,
       .filter_reason = "Win32_PnPEntity monitor with DISPLAY PNP id",
       .model_detail = display_model_key(pnp_id),
+      .display_connection = connection,
   };
 }
 
@@ -747,6 +996,199 @@ classify_display_pnp(std::vector<std::string> const& row,
   return application::HardwareStorageMedia::unknown;
 }
 
+[[nodiscard]] std::string storage_interface_from_text(
+    std::string_view model, std::string_view interface_type,
+    std::string_view pnp_id) {
+  std::string source{model};
+  source += " ";
+  source += interface_type;
+  source += " ";
+  source += pnp_id;
+  if (contains_ascii(source, "nvme")) {
+    return "NVMe";
+  }
+  if (contains_ascii(source, "sata")) {
+    return "SATA";
+  }
+  if (contains_ascii(source, "usb")) {
+    return "USB";
+  }
+  if (contains_ascii(source, "sas")) {
+    return "SAS";
+  }
+  if (contains_ascii(source, "scsi")) {
+    return "SCSI";
+  }
+  if (contains_ascii(source, "ide") || contains_ascii(source, "ata")) {
+    return "IDE/ATA";
+  }
+  return {};
+}
+
+[[nodiscard]] std::string pcie_generation_from_text(
+    std::string_view model, std::string_view manufacturer,
+    std::string_view interface_type, std::string_view pnp_id) {
+  std::string source{model};
+  source += " ";
+  source += manufacturer;
+  source += " ";
+  source += interface_type;
+  source += " ";
+  source += pnp_id;
+  for (int generation = 5; generation >= 3; --generation) {
+    auto const number = std::to_string(generation);
+    if (contains_ascii(source, "pcie " + number) ||
+        contains_ascii(source, "pcie" + number) ||
+        contains_ascii(source, "pcie gen " + number) ||
+        contains_ascii(source, "pcie gen" + number) ||
+        contains_ascii(source, "pci express " + number)) {
+      return number + ".0";
+    }
+  }
+
+  // These two model-specific facts are documented by the respective OEMs.
+  // They are deliberately exact: nearby model families, including PCB01, do
+  // not inherit PC801's metadata.
+  if (contains_ascii(model, "samsung ssd 990 pro")) {
+    return "4.0";
+  }
+  if (contains_ascii(model, "pc801") &&
+      (contains_ascii(model, "hynix") ||
+       contains_ascii(manufacturer, "hynix"))) {
+    return "4.0";
+  }
+  return {};
+}
+
+[[nodiscard]] std::string nand_type_from_text(
+    std::string_view model, std::string_view manufacturer,
+    std::string_view media_type, std::string_view pnp_id) {
+  std::string source{model};
+  source += " ";
+  source += manufacturer;
+  source += " ";
+  source += media_type;
+  source += " ";
+  source += pnp_id;
+  if (contains_ascii(source, "qlc")) {
+    return "QLC";
+  }
+  if (contains_ascii(source, "tlc")) {
+    return "TLC";
+  }
+  if (contains_ascii(source, "mlc")) {
+    return "MLC";
+  }
+  if (contains_ascii(source, "slc")) {
+    return "SLC";
+  }
+  if (contains_ascii(model, "samsung ssd 990 pro")) {
+    return "TLC";
+  }
+  if (contains_ascii(model, "pc801") &&
+      (contains_ascii(model, "hynix") ||
+       contains_ascii(manufacturer, "hynix"))) {
+    return "V7 176 层 4D NAND（单元类型未读取）";
+  }
+  return {};
+}
+
+[[nodiscard]] std::string storage_metadata_text(
+    std::string_view storage_interface, std::string_view pcie_generation,
+    std::string_view nand_type) {
+  std::string result{"（接口："};
+  result += (storage_interface.empty() ? "未读取" : storage_interface);
+  result += "；PCIe 代际：";
+  if (pcie_generation.empty()) {
+    result += "未读取";
+  } else {
+    result += "PCIe ";
+    result += pcie_generation;
+  }
+  result += "；NAND 颗粒：";
+  result += (nand_type.empty() ? "未读取" : nand_type);
+  result += "）";
+  return result;
+}
+
+[[nodiscard]] std::string windows_release_name(std::string_view build) {
+  std::uint32_t build_number{};
+  if (!parse_integer(build, build_number)) {
+    return {};
+  }
+  if (build_number >= 26200 && build_number < 27000) {
+    return "25H2";
+  }
+  if (build_number >= 26100 && build_number < 26200) {
+    return "24H2";
+  }
+  if (build_number >= 22631 && build_number < 26100) {
+    return "23H2";
+  }
+  if (build_number >= 22621 && build_number < 22631) {
+    return "22H2";
+  }
+  if (build_number >= 22000 && build_number < 22621) {
+    return "21H2";
+  }
+  return {};
+}
+
+[[nodiscard]] std::string localized_windows_caption(std::string_view caption) {
+  if (contains_ascii(caption, "windows 11 pro")) {
+    return "Windows 11 专业版（Windows 11 Pro）";
+  }
+  if (contains_ascii(caption, "windows 11 home")) {
+    return "Windows 11 家庭版（Windows 11 Home）";
+  }
+  if (contains_ascii(caption, "windows 10 pro")) {
+    return "Windows 10 专业版（Windows 10 Pro）";
+  }
+  if (contains_ascii(caption, "windows 10 home")) {
+    return "Windows 10 家庭版（Windows 10 Home）";
+  }
+  return trim_ascii(caption);
+}
+
+[[nodiscard]] std::string localized_architecture(std::string_view value) {
+  if (contains_ascii(value, "64")) {
+    return "64 位";
+  }
+  if (contains_ascii(value, "32")) {
+    return "32 位";
+  }
+  return trim_ascii(value);
+}
+
+[[nodiscard]] std::string presented_operating_system(
+    std::string_view caption, std::string_view version,
+    std::string_view build, std::string_view architecture) {
+  auto result = localized_windows_caption(caption);
+  if (result.empty()) {
+    return {};
+  }
+  auto const release = windows_release_name(build);
+  if (!release.empty()) {
+    result += " · ";
+    result += release;
+  }
+  if (!version.empty()) {
+    result += " · 版本 ";
+    result += version;
+  }
+  if (!build.empty()) {
+    result += "（内部版本 ";
+    result += build;
+    result += "）";
+  }
+  auto const localized_arch = localized_architecture(architecture);
+  if (!localized_arch.empty()) {
+    result += " · ";
+    result += localized_arch;
+  }
+  return result;
+}
+
 [[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_storage(
     std::vector<std::string> const& row, bool virtual_host) {
   auto const model = strip_storage_class_prefix(row_value(row, 0));
@@ -761,9 +1203,16 @@ classify_display_pnp(std::vector<std::string> const& row,
       !physical_storage_bus(pnp_id)) {
     return std::nullopt;
   }
-  std::string name = model;
+  auto const storage_interface =
+      storage_interface_from_text(model, interface_type, pnp_id);
+  auto const pcie_generation = pcie_generation_from_text(
+      model, manufacturer, interface_type, pnp_id);
+  auto const nand_type =
+      nand_type_from_text(model, manufacturer, media_type, pnp_id);
+  std::string name = localized_brand_model(model, manufacturer);
   name += " ";
   name += decimal_gigabytes(size);
+  name += storage_metadata_text(storage_interface, pcie_generation, nand_type);
   auto const media = storage_media_from_text(model, manufacturer, interface_type,
                                              media_type, pnp_id);
   return application::HardwareDeviceRecord{
@@ -777,6 +1226,9 @@ classify_display_pnp(std::vector<std::string> const& row,
       .physically_present = true,
       .filter_reason = "physical storage PNP id with a positive capacity",
       .storage_media = media,
+      .storage_interface = storage_interface,
+      .pcie_generation = pcie_generation,
+      .nand_type = nand_type,
   };
 }
 
@@ -795,7 +1247,7 @@ classify_display_pnp(std::vector<std::string> const& row,
   }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::audio,
-      .name = name,
+      .name = localized_brand_model(name, manufacturer),
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
@@ -825,7 +1277,7 @@ classify_display_pnp(std::vector<std::string> const& row,
   }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::npu,
-      .name = name,
+      .name = localized_brand_model(name, manufacturer),
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
@@ -847,10 +1299,10 @@ void append_unique_summary(std::string& target,
 void append_grouped_device(
     std::vector<application::HardwareDeviceRecord>& devices,
     application::HardwareDeviceRecord record) {
-  // Identical DIMMs and duplicate monitor projections (DesktopMonitor plus
-  // PnPEntity) are one physical model with a quantity, not separate rows.
-  if (record.kind == application::HardwareDeviceKind::memory ||
-      record.kind == application::HardwareDeviceKind::display) {
+  // Identical DIMMs are one physical model with a quantity, not separate
+  // rows. Their compact summary deliberately uses ASCII parentheses, so only
+  // this memory-specific grouping is allowed to inspect that presentation.
+  if (record.kind == application::HardwareDeviceKind::memory) {
     for (auto& existing : devices) {
       auto comparable_name = [](std::string const& value) {
         auto const marker = value.find(" (");
@@ -862,31 +1314,31 @@ void append_grouped_device(
           ((existing.model_detail.empty() && record.model_detail.empty()) ||
            (!existing.model_detail.empty() &&
             existing.model_detail == record.model_detail));
-      auto const same_display_model =
-          existing.kind == application::HardwareDeviceKind::display &&
-          !existing.model_detail.empty() &&
-          existing.model_detail == record.model_detail;
-      if (existing.kind == record.kind &&
-          (same_memory_model || same_display_model ||
-           (record.kind != application::HardwareDeviceKind::memory &&
-            comparable_name(existing.name) == comparable_name(record.name))) &&
-          existing.network_link == record.network_link &&
-          existing.storage_media == record.storage_media) {
-        if (existing.kind == application::HardwareDeviceKind::display &&
-            existing.name.find(" (") == std::string::npos &&
-            record.name.find(" (") != std::string::npos) {
-          existing.name = record.name;
-        }
+      if (existing.kind == record.kind && same_memory_model &&
+           existing.network_link == record.network_link &&
+           existing.storage_media == record.storage_media &&
+           existing.display_connection == record.display_connection) {
         existing.quantity += record.quantity;
         return;
       }
     }
   }
+  // DesktopMonitor and PnPEntity project one panel through different WMI
+  // classes.  Use the stable EDID/PNP model key and resolution helpers, not
+  // punctuation in the localized presentation string, to collapse them.
   if (record.kind == application::HardwareDeviceKind::display) {
     for (auto& existing : devices) {
       if (existing.kind == record.kind &&
-          existing.name == record.name &&
-          existing.storage_media == record.storage_media) {
+          ((!existing.model_detail.empty() &&
+            existing.model_detail == record.model_detail) ||
+           (existing.model_detail.empty() && record.model_detail.empty() &&
+            existing.name == record.name)) &&
+          existing.storage_media == record.storage_media &&
+          existing.display_connection == record.display_connection) {
+        if (!has_display_resolution(existing.name) &&
+            has_display_resolution(record.name)) {
+          existing.name = record.name;
+        }
         existing.quantity += record.quantity;
         return;
       }
@@ -1058,10 +1510,14 @@ struct CollectedObservation final {
     }
     ++collected.successful_queries;
     if (spec_index == 4) {
-      collected.observation.oem_model = pair_value(result);
       if (!result.rows.empty()) {
+        auto const& row = result.rows.front();
+        auto const manufacturer = row_value(row, 0);
+        auto const model = row_value(row, 1);
+        collected.observation.oem_model = localized_brand_model(
+            model.empty() ? manufacturer : model, manufacturer);
         collected.observation.oem_vendor =
-            vendor_from_text(row_value(result.rows.front(), 0));
+            vendor_from_text(manufacturer);
         virtual_host = virtualization_marker(pair_value(result));
       }
     } else if (spec_index == 10) {
@@ -1071,33 +1527,45 @@ struct CollectedObservation final {
         auto const version = row_value(row, 1);
         auto const build = row_value(row, 2);
         auto const architecture = row_value(row, 3);
-        collected.observation.operating_system = caption;
-        if (!version.empty()) {
-          collected.observation.operating_system += " ";
-          collected.observation.operating_system += version;
-        }
-        if (!build.empty()) {
-          collected.observation.operating_system += " (";
-          collected.observation.operating_system += build;
-          collected.observation.operating_system += ")";
-        }
-        if (!architecture.empty()) {
-          collected.observation.operating_system += " ";
-          collected.observation.operating_system += architecture;
-        }
+        collected.observation.operating_system = presented_operating_system(
+            caption, version, build, architecture);
       }
     } else {
       rows_by_spec[spec_index] = result.rows;
     }
   }
 
+  if (cancellation.stop_requested()) {
+    collected.code = application::HardwareObservationCode::cancelled;
+    collected.error = "hardware observation cancelled";
+    return collected;
+  }
+  std::optional<WindowsCpuTopology> cpu_topology;
+  std::vector<WindowsGpuMemory> gpu_adapters;
+  try {
+    cpu_topology = executor.cpu_topology(cancellation);
+    gpu_adapters = executor.gpu_memory(cancellation);
+  } catch (...) {
+    // These are optional enrichments. WMI model facts remain authoritative
+    // when a platform capability is unavailable or unexpectedly fails.
+    cpu_topology.reset();
+    gpu_adapters.clear();
+  }
+  if (cancellation.stop_requested()) {
+    collected.code = application::HardwareObservationCode::cancelled;
+    collected.error = "hardware observation cancelled";
+    return collected;
+  }
+
   for (auto const& row : rows_by_spec[0]) {
-    if (auto record = classify_cpu(row, virtual_host)) {
+    if (auto record = classify_cpu(row, virtual_host, cpu_topology)) {
       append_grouped_device(collected.observation.devices, std::move(*record));
     }
   }
   for (auto const& row : rows_by_spec[1]) {
-    if (auto record = classify_gpu(row, virtual_host)) {
+    if (auto record = classify_gpu(
+            row, virtual_host,
+            std::span<WindowsGpuMemory const>{gpu_adapters})) {
       append_grouped_device(collected.observation.devices, std::move(*record));
     }
   }
@@ -1142,10 +1610,9 @@ struct CollectedObservation final {
               existing.model_detail != desktop_key) {
             continue;
           }
-          auto const marker = record->name.find(" (");
-          if (marker != std::string::npos &&
-              existing.name.find(" (") == std::string::npos) {
-            existing.name.append(record->name.substr(marker));
+          if (!has_display_resolution(existing.name) &&
+              has_display_resolution(record->name)) {
+            existing.name = record->name;
           }
           enriched_pnp_projection = true;
           break;
@@ -1205,6 +1672,10 @@ struct CollectedObservation final {
                   collected.observation.devices,
                   application::HardwareDeviceKind::storage, std::nullopt,
                   application::HardwareStorageMedia::hard_disk);
+  rebuild_summary(collected.observation.unclassified_storage,
+                  collected.observation.devices,
+                  application::HardwareDeviceKind::storage, std::nullopt,
+                  application::HardwareStorageMedia::unknown);
   rebuild_summary(collected.observation.audio, collected.observation.devices,
                   application::HardwareDeviceKind::audio);
   rebuild_summary(collected.observation.npu, collected.observation.devices,
@@ -1226,6 +1697,153 @@ struct CollectedObservation final {
 
 class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
  public:
+  [[nodiscard]] std::optional<WindowsCpuTopology> cpu_topology(
+      std::stop_token cancellation) override {
+    if (cancellation.stop_requested()) {
+      return std::nullopt;
+    }
+    DWORD bytes = 0;
+    if (::GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr,
+                                           &bytes) != FALSE ||
+        ::GetLastError() != ERROR_INSUFFICIENT_BUFFER || bytes == 0) {
+      return std::nullopt;
+    }
+    auto const slots = (static_cast<std::size_t>(bytes) +
+                        sizeof(std::max_align_t) - 1) /
+                       sizeof(std::max_align_t);
+    std::vector<std::max_align_t> buffer(slots);
+    if (::GetLogicalProcessorInformationEx(
+            RelationProcessorCore,
+            reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(
+                buffer.data()),
+            &bytes) == FALSE) {
+      return std::nullopt;
+    }
+
+    std::array<std::uint32_t, 256> cores_by_efficiency{};
+    std::uint32_t logical_processors = 0;
+    std::size_t offset = 0;
+    while (offset < bytes) {
+      constexpr auto kProcessorOffset =
+          offsetof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX, Processor);
+      constexpr auto kGroupMaskOffset =
+          offsetof(PROCESSOR_RELATIONSHIP, GroupMask);
+      if (bytes - offset < kProcessorOffset + kGroupMaskOffset) {
+        return std::nullopt;
+      }
+      auto const* information =
+          reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX const*>(
+              reinterpret_cast<std::byte const*>(buffer.data()) + offset);
+      if (information->Size == 0 || information->Size > bytes - offset) {
+        return std::nullopt;
+      }
+      if (information->Relationship == RelationProcessorCore) {
+        auto const group_bytes =
+            static_cast<std::size_t>(information->Processor.GroupCount) *
+            sizeof(GROUP_AFFINITY);
+        if (information->Size < kProcessorOffset + kGroupMaskOffset +
+                                    group_bytes) {
+          return std::nullopt;
+        }
+        ++cores_by_efficiency[information->Processor.EfficiencyClass];
+        for (WORD group = 0; group < information->Processor.GroupCount;
+             ++group) {
+          auto mask = information->Processor.GroupMask[group].Mask;
+          while (mask != 0) {
+            logical_processors += static_cast<std::uint32_t>(mask & 1);
+            mask >>= 1;
+          }
+        }
+      }
+      offset += information->Size;
+    }
+
+    WindowsCpuTopology topology{.logical_processors = logical_processors};
+    std::uint32_t distinct_efficiency_classes = 0;
+    std::uint32_t performance_efficiency_class = 0;
+    std::uint32_t efficiency_efficiency_class = 0;
+    for (std::uint32_t index = 0; index < cores_by_efficiency.size(); ++index) {
+      if (cores_by_efficiency[index] == 0) {
+        continue;
+      }
+      if (distinct_efficiency_classes == 0) {
+        performance_efficiency_class = index;
+      }
+      efficiency_efficiency_class = index;
+      ++distinct_efficiency_classes;
+    }
+    // Windows defines lower EfficiencyClass values as more performant. Only
+    // exactly two observed classes are presented as P/E cores; more complex
+    // topologies remain unlabelled rather than being compressed incorrectly.
+    if (distinct_efficiency_classes == 2) {
+      topology.performance_cores =
+          cores_by_efficiency[performance_efficiency_class];
+      topology.efficiency_cores = cores_by_efficiency[efficiency_efficiency_class];
+      topology.split_known = topology.performance_cores != 0 &&
+                             topology.efficiency_cores != 0;
+    }
+    return topology;
+  }
+
+  [[nodiscard]] std::vector<WindowsGpuMemory> gpu_memory(
+      std::stop_token cancellation) override {
+    if (cancellation.stop_requested()) {
+      return {};
+    }
+    auto const dxgi_module = ::LoadLibraryW(L"dxgi.dll");
+    if (dxgi_module == nullptr) {
+      return {};
+    }
+    using CreateDxgiFactory1 = HRESULT(WINAPI*)(REFIID, void**);
+    auto const create_factory = reinterpret_cast<CreateDxgiFactory1>(
+        ::GetProcAddress(dxgi_module, "CreateDXGIFactory1"));
+    if (create_factory == nullptr) {
+      ::FreeLibrary(dxgi_module);
+      return {};
+    }
+
+    std::vector<WindowsGpuMemory> result;
+    {
+      ComPtr<IDXGIFactory1> factory;
+      if (FAILED(create_factory(
+              __uuidof(IDXGIFactory1),
+              reinterpret_cast<void**>(factory.GetAddressOf())))) {
+        ::FreeLibrary(dxgi_module);
+        return {};
+      }
+
+      for (UINT index = 0; !cancellation.stop_requested(); ++index) {
+        ComPtr<IDXGIAdapter1> adapter;
+        auto const enumeration =
+            factory->EnumAdapters1(index, adapter.GetAddressOf());
+        if (enumeration == DXGI_ERROR_NOT_FOUND) {
+          break;
+        }
+        if (FAILED(enumeration)) {
+          continue;
+        }
+        DXGI_ADAPTER_DESC1 description{};
+        if (FAILED(adapter->GetDesc1(&description)) ||
+            (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
+          continue;
+        }
+        auto name = utf8_from_wide(description.Description);
+        if (name.empty()) {
+          continue;
+        }
+        result.push_back(WindowsGpuMemory{
+            .model_name = std::move(name),
+            .dedicated_video_memory =
+                static_cast<std::uint64_t>(description.DedicatedVideoMemory),
+            .shared_system_memory =
+                static_cast<std::uint64_t>(description.SharedSystemMemory),
+        });
+      }
+    }
+    ::FreeLibrary(dxgi_module);
+    return result;
+  }
+
   [[nodiscard]] WindowsHardwareQueryResult query(
       std::string_view class_name,
       std::span<std::string_view const> properties,
