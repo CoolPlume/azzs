@@ -41,3 +41,4 @@ Evidence freshness: 绑定设置服务、页面绑定、组合根或资源版本
 - 已知静态验证：`python tests/ui-design-contract/check_winui_async_contract.py .` 在设置链审查中通过；仍需在当前候选头重新执行受影响合同和 Windows 11 x64 UI 自动化，确认单一恢复责任、进程存活、当前页/焦点保留、中文错误以及重试/返回行为。未做真实点击验收。
 - 未验证边界：ARM64、DPI/窄窗、多触摸、Narrator/屏幕阅读器、真实异常快照/绑定/持久化故障和安装生命周期均未验证；不得以静态合同或其他主机结果替代。
 - 2026-08-23（最终代码验证基线）：设置恢复修复后的集成代码基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`d8a4367adc1e322351126e8ab3676d30584475d5` 是历史 merge-base，`origin/0.1.1` 当前为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 保持不变；本条只更新可复核 Git 关系，真实 WinUI/无障碍、ARM64、DPI 和安装生命周期仍未验证。
