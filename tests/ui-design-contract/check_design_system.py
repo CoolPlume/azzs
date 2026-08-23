@@ -1208,7 +1208,7 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     for field in (
         "facts.operating_system", "facts.cpu", "facts.gpu", "facts.motherboard",
         "facts.memory", "facts.display", "facts.solid_state_storage",
-        "facts.hard_disk_storage", "facts.npu", "facts.audio",
+        "facts.hard_disk_storage", "facts.unclassified_storage", "facts.npu", "facts.audio",
         "facts.wired_network_adapter", "facts.wireless_network_adapter",
         "facts.oem_model",
     ):

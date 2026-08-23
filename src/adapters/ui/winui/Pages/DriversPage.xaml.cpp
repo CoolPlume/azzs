@@ -153,6 +153,8 @@ void DriversPage::project(
       display_value(facts.solid_state_storage, unrecognized_value));
   HardDiskStorageValue().Text(
       display_value(facts.hard_disk_storage, unrecognized_value));
+  UnclassifiedStorageValue().Text(
+      display_value(facts.unclassified_storage, unrecognized_value));
   NpuValue().Text(display_value(facts.npu, unrecognized_value));
   AudioValue().Text(display_value(facts.audio, unrecognized_value));
   WiredNetworkValue().Text(
