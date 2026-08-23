@@ -232,6 +232,39 @@ class FakeHardwareObserver final : public HardwareObserver {
                 "the model fingerprint");
 }
 
+[[nodiscard]] bool model_fingerprint_tracks_structured_display_facts() {
+  auto first = observation();
+  first.devices.push_back({
+      .kind = HardwareDeviceKind::display,
+      .name = "Panel",
+      .physicality = HardwareDevicePhysicality::confirmed_physical,
+      .source = HardwareObservationSource::wmi,
+      .confidence = HardwareObservationConfidence::confirmed,
+      .status = azzs::application::HardwareDeviceStatus::enabled,
+      .vendor = HardwareVendor::unknown,
+      .physically_present = true,
+      .filter_reason = "contract fixture",
+      .display_connection =
+          azzs::application::HardwareDisplayConnection::internal,
+      .display_width = 2560,
+      .display_height = 1600,
+      .physical_refresh_rate_limit_hz = 120,
+  });
+  auto const unchanged = first;
+  auto refresh_changed = first;
+  refresh_changed.devices.back().physical_refresh_rate_limit_hz = 144;
+  auto connection_changed = first;
+  connection_changed.devices.back().display_connection =
+      azzs::application::HardwareDisplayConnection::external;
+
+  return expect(first.model_fingerprint() == unchanged.model_fingerprint() &&
+                    first.model_fingerprint() !=
+                        refresh_changed.model_fingerprint() &&
+                    first.model_fingerprint() !=
+                        connection_changed.model_fingerprint(),
+                "the cache key must retain structured display facts without parsing presentation text");
+}
+
 }  // namespace
 
 int main() {
@@ -240,5 +273,6 @@ int main() {
   passed &= unsuccessful_observations_clear_cached_models();
   passed &= cancellation_presents_unrecognized_without_probing();
   passed &= cache_expires_refreshes_and_detects_model_changes();
+  passed &= model_fingerprint_tracks_structured_display_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

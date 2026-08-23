@@ -72,9 +72,12 @@
   <data name="HardwareUnrecognizedValue" xml:space="preserve"><value>未识别</value></data>
   <data name="HardwareStatusTitle" xml:space="preserve"><value>硬件未识别</value></data>
   <data name="HardwareStatusMessage" xml:space="preserve"><value>本次硬件检测没有生成可用概览。</value></data>
-  <data name="HardwareModelSummaryTitle" xml:space="preserve"><value>型号信息</value></data>
-  <data name="HardwareSystemSummaryTitle" xml:space="preserve"><value>系统信息</value></data>
+  <data name="HardwareModelSummaryTitle" xml:space="preserve"><value>机型</value></data>
+  <data name="HardwareSystemSummaryTitle" xml:space="preserve"><value>Windows 版本</value></data>
   <data name="HardwareDetailsTitle" xml:space="preserve"><value>详细信息</value></data>
+  <data name="HardwareTableItemHeader.Text" xml:space="preserve"><value>项目</value></data>
+  <data name="HardwareTableInformationHeader.Text" xml:space="preserve"><value>信息</value></data>
+  <data name="HardwareCopySection.Text" xml:space="preserve"><value>复制本节</value></data>
   <data name="HardwareCoreGroupTitle" xml:space="preserve"><value>核心组件</value></data>
   <data name="HardwareGraphicsGroupTitle" xml:space="preserve"><value>图形与显示</value></data>
   <data name="HardwareStorageGroupTitle" xml:space="preserve"><value>存储</value></data>
@@ -87,7 +90,6 @@
   <data name="HardwareDisplayLabel.Text" xml:space="preserve"><value>显示器</value></data>
   <data name="HardwareSolidStateStorageLabel.Text" xml:space="preserve"><value>固态硬盘</value></data>
   <data name="HardwareHardDiskStorageLabel.Text" xml:space="preserve"><value>机械硬盘</value></data>
-  <data name="HardwareUnclassifiedStorageLabel.Text" xml:space="preserve"><value>未分类物理磁盘</value></data>
   <data name="HardwareNpuLabel.Text" xml:space="preserve"><value>NPU</value></data>
   <data name="HardwareAudioLabel.Text" xml:space="preserve"><value>声卡</value></data>
   <data name="HardwareWiredNetworkLabel.Text" xml:space="preserve"><value>有线网卡</value></data>

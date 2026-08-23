@@ -27,6 +27,7 @@ using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareDisplayConnection;
 using azzs::application::HardwareDeviceKind;
 using azzs::application::HardwareDeviceStatus;
+using azzs::application::HardwareStorageMedia;
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
   if (!condition) {
@@ -254,22 +255,27 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                          std::string::npos &&
                      result.observation->display.find("京东方 BOE") !=
                          std::string::npos &&
-                     result.observation->display.find("类型未确认") !=
+                     result.observation->display.find("类型未确认") ==
                          std::string::npos &&
-                      result.observation->display.find("2560 × 1600") !=
-                          std::string::npos &&
-                      result.observation->display.find(
-                          "物理刷新率上限（EDID）：未读取") !=
-                          std::string::npos &&
+                     result.observation->display.find("2560 × 1600") !=
+                         std::string::npos &&
+                     result.observation->display.find(" EDID") ==
+                         std::string::npos &&
+                     result.observation->display.find("刷新率") ==
+                         std::string::npos &&
+                     result.observation->display.find(" Hz") ==
+                         std::string::npos &&
                      result.observation->storage.find("PC801 SK 海力士") !=
                          std::string::npos &&
                      result.observation->storage.find("三星 Samsung SSD 990 PRO") !=
                          std::string::npos &&
-                     result.observation->storage.find("接口：NVMe") !=
+                     result.observation->storage.find("接口：") ==
                          std::string::npos &&
-                     result.observation->storage.find("PCIe 代际：PCIe 4.0") !=
+                     result.observation->storage.find("PCIe") ==
                          std::string::npos &&
-                     result.observation->storage.find("NAND 颗粒：TLC") !=
+                     result.observation->storage.find("NAND") ==
+                         std::string::npos &&
+                     result.observation->storage.find("资料识别") ==
                          std::string::npos &&
                      result.observation->storage.find("标准磁盘驱动器") ==
                          std::string::npos &&
@@ -566,38 +572,33 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                      "美光 Micron Technology DDR5 48GB 5600MHz (24GB + 24GB)") !=
                      std::string::npos,
                 "matching physical DIMMs must be aggregated by part number") &&
-         expect(observation->display.find("京东方 BOE0CD1（内建") !=
-                          std::string::npos &&
-                     observation->display.find(
-                         "物理刷新率上限（EDID）：240 Hz") !=
-                         std::string::npos &&
-                     observation->display.find("泰坦军团 TITAN ARMY P275MV PLUS（外接；") !=
-                          std::string::npos &&
-                     observation->display.find("3840 × 2160") !=
+         expect(observation->display.find(
+                         "京东方 BOE0CD1（2560 × 1600；240 Hz；内建）") !=
                          std::string::npos &&
                      observation->display.find(
-                         "物理刷新率上限（EDID）：160 Hz") !=
+                         "泰坦军团 TITAN ARMY P275MV PLUS（3840 × 2160；160 Hz；外接）") !=
                          std::string::npos &&
+                     observation->display.find("EDID") == std::string::npos &&
+                     observation->display.find("刷新率") == std::string::npos &&
                      line_separated(observation->display) &&
                      observation->display.find("默认监视器") == std::string::npos,
-                "validated raw EDID range limits must enrich physical monitor names without using desktop modes") &&
+                "validated raw EDID range limits must enrich physical monitor names without labels or desktop modes") &&
          expect(observation->solid_state_storage.find("Samsung SSD 990 PRO 2TB") !=
                          std::string::npos &&
                      observation->solid_state_storage.find(
                          "SK 海力士 PCB01 HFS001TFM9X187N") !=
                           std::string::npos &&
                      observation->solid_state_storage.find(
-                         "PCIe 代际：PCIe 5.0 x4") != std::string::npos &&
-                     observation->solid_state_storage.find(
-                         "NAND 颗粒：238 层 4D TLC（资料识别；SLC 缓存：支持）") !=
+                         "SK 海力士 PCB01 HFS999TFM9X187N 954GB") !=
                          std::string::npos &&
                      observation->solid_state_storage.find(
-                         "SK 海力士 PCB01 HFS999TFM9X187N 954GB（接口：NVMe；PCIe 代际：未读取；NAND 颗粒：未读取）") !=
+                         "接口：") == std::string::npos &&
+                     observation->solid_state_storage.find("PCIe") ==
                          std::string::npos &&
-                     observation->solid_state_storage.find("PCIe 代际：未读取") !=
+                     observation->solid_state_storage.find("NAND") ==
                          std::string::npos &&
-                    observation->solid_state_storage.find("NAND 颗粒：未读取") !=
-                        std::string::npos &&
+                     observation->solid_state_storage.find("资料识别") ==
+                         std::string::npos &&
                      observation->hard_disk_storage.empty() &&
                      observation->storage.find("标准磁盘驱动器") ==
                          std::string::npos &&
@@ -681,33 +682,41 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {.model_key = "boe1234", .bytes = range_limit_edid(60, 144)},
   });
   auto const failed_closed = [](std::string const& value) {
-    return value.find("物理刷新率上限（EDID）：未读取") !=
-               std::string::npos &&
-           value.find("物理刷新率上限（EDID）：144 Hz") ==
-               std::string::npos;
+    return value.find(" Hz") == std::string::npos &&
+           value.find("EDID") == std::string::npos &&
+           value.find("刷新率") == std::string::npos;
   };
   return expect(failed_closed(missing) && failed_closed(invalid) &&
                     failed_closed(reserved) && failed_closed(conflicting),
-                "missing, invalid, reserved, or conflicting raw EDID must remain unread");
+                "missing, invalid, reserved, or conflicting raw EDID must not produce a refresh-rate claim");
 }
 
-[[nodiscard]] bool unclassified_physical_storage_remains_visible() {
+[[nodiscard]] bool unknown_media_physical_storage_stays_device_only() {
   auto executor = std::make_unique<FakeQueryExecutor>();
   auto* raw_executor = executor.get();
   raw_executor->expected = full_queries();
-  raw_executor->expected[7].result.rows.push_back(
+  // Isolate the unknown-media case from the known SSD/HDD rows used by the
+  // complete model fixture so category summaries remain unambiguous.
+  raw_executor->expected[7].result.rows = {
       {"Example USB Storage", "Example", "1000204886016",
-       "USB\\VID_0000&PID_0000", "OK", "0", "USB", "Fixed media"});
+       "USB\\VID_0000&PID_0000", "OK", "0", "USB", "Fixed media"}};
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
   return expect(result.succeeded() && result.observation.has_value() &&
                     result.observation->storage.find("Example USB Storage") !=
                         std::string::npos &&
-                    result.observation->unclassified_storage.find(
-                        "Example USB Storage") != std::string::npos &&
-                    result.observation->unclassified_storage.find("接口：USB") !=
-                        std::string::npos,
-                "a confirmed physical disk with unknown media class must remain visible in its own summary");
+                    result.observation->solid_state_storage.empty() &&
+                    result.observation->hard_disk_storage.empty() &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::storage &&
+                                 device.name.find("Example USB Storage") !=
+                                     std::string::npos &&
+                                 device.storage_media ==
+                                     HardwareStorageMedia::unknown &&
+                                 device.capacity_bytes == 1000204886016ull;
+                        }),
+                "a confirmed physical disk with unknown media class must remain a structured device fact without a UI category summary");
 }
 
 [[nodiscard]] bool memory_quantity_rendering_scales_past_two_modules() {
@@ -790,7 +799,7 @@ int main() {
   passed &= real_machine_wmi_field_shapes_are_projected();
   passed &= topology_and_dxgi_enrich_only_verified_models();
   passed &= invalid_or_conflicting_edid_fails_closed();
-  passed &= unclassified_physical_storage_remains_visible();
+  passed &= unknown_media_physical_storage_stays_device_only();
   passed &= memory_quantity_rendering_scales_past_two_modules();
   passed &= permission_denial_and_cancellation_are_terminal();
   passed &= model_change_probe_requires_complete_facts();
