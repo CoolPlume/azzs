@@ -392,6 +392,15 @@ def verify(root: Path) -> None:
         "settings recovery must restore the prior frame, core page, and selection",
     )
     require(
+        "content_replaced" in navigate_body and
+        "core_navigation_started" in navigate_body and
+        "content_replaced = true;" in commit_body and
+        "core_navigation_started = true;" in commit_body and
+        "if (restore_content)" in recovery_body and
+        "if (restore_core && workbench_)" in recovery_body,
+        "settings recovery must only restore frame/core state that the failed attempt actually published",
+    )
+    require(
         "MainWindowSettingsNavigationFailed.Title" in failure_body and
         "MainWindowSettingsNavigationFailed.Message" in failure_body and
         "set_shell_status_open(SettingsNavigationFailureInfoBar(), true)" in failure_body and
