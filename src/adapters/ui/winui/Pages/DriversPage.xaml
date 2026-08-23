@@ -106,6 +106,8 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -122,14 +124,18 @@
                     <TextBlock x:Name="GpuValue" Grid.Row="4" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                     <TextBlock x:Uid="HardwareDisplayLabel" Grid.Row="5" Style="{StaticResource AzzsMetadataTextStyle}" />
                     <TextBlock x:Name="DisplayValue" Grid.Row="5" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareDisplay" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareStorageLabel" Grid.Row="6" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="StorageValue" Grid.Row="6" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareNpuLabel" Grid.Row="7" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="NpuValue" Grid.Row="7" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareNpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareAudioLabel" Grid.Row="8" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="AudioValue" Grid.Row="8" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareAudio" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareNetworkLabel" Grid.Row="9" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="NetworkValue" Grid.Row="9" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareSolidStateStorageLabel" Grid.Row="6" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="SolidStateStorageValue" Grid.Row="6" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareSolidStateStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareHardDiskStorageLabel" Grid.Row="7" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="HardDiskStorageValue" Grid.Row="7" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareHardDiskStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareNpuLabel" Grid.Row="8" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="NpuValue" Grid.Row="8" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareNpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareAudioLabel" Grid.Row="9" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="AudioValue" Grid.Row="9" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareAudio" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareWiredNetworkLabel" Grid.Row="10" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="WiredNetworkValue" Grid.Row="10" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareWiredNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareWirelessNetworkLabel" Grid.Row="11" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="WirelessNetworkValue" Grid.Row="11" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareWirelessNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                 </Grid>
             </Border>
             <Border
