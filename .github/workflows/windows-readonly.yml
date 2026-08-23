@@ -3,11 +3,12 @@ name: Windows read-only validation
 on:
   pull_request:
     branches:
-      - codex/v1-integration
+      - main
+      - '[0-9]*.[0-9]*.[0-9]*'
   push:
     branches:
-      - codex/v1-integration
       - main
+      - '[0-9]*.[0-9]*.[0-9]*'
   workflow_dispatch:
 
 permissions:
