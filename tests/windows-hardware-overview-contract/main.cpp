@@ -322,7 +322,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   raw_executor->expected[0].result.rows = {
       {"Intel(R) Core(TM) Ultra 9", "GenuineIntel", "", "OK", "0", "24", "24"}};
   raw_executor->expected[2].result.rows = {
-      {"HP", "8A43", "", "ACPI\\PNP0C02", "OK", "0"}};
+      {"HP", "8A43", "", "", "OK", "0"}};
   raw_executor->expected[6].result.rows = {
       {"Generic PnP Monitor", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"}};
   raw_executor->expected[9].result.rows = {
@@ -343,7 +343,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                                  device.status == HardwareDeviceStatus::disabled;
                         }) &&
                     !raw_executor->mismatch && raw_executor->calls == 11,
-                "missing processor PNP ids, optional HostingBoard, and generic monitor rows must use concrete OEM WMI fallbacks");
+                "missing processor and motherboard PNP ids, optional HostingBoard, and generic monitor rows must use concrete OEM WMI fallbacks");
 }
 
 [[nodiscard]] bool permission_denial_and_cancellation_are_terminal() {

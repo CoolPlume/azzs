@@ -524,7 +524,6 @@ class ComApartment final {
   bool hosting_board = false;
   auto const hosting_known = parse_bool(hosting_text, hosting_board);
   if (manufacturer.empty() || product.empty() || virtual_host ||
-      (!hosting_known && pnp_id.empty()) ||
       (hosting_known && !hosting_board && pnp_id.empty()) ||
       (!pnp_id.empty() && virtual_pnp_id(pnp_id))) {
     return std::nullopt;
@@ -540,7 +539,9 @@ class ComApartment final {
       .physically_present = true,
       .filter_reason = hosting_known && hosting_board
                            ? "Win32_BaseBoard HostingBoard=true"
-                           : "Win32_BaseBoard PNP id with a concrete model",
+                           : pnp_id.empty()
+                                 ? "Win32_BaseBoard concrete model on a non-virtual host (PNP id absent)"
+                                 : "Win32_BaseBoard PNP id with a concrete model",
   };
 }
 
