@@ -523,19 +523,28 @@ MainWindow::prepare_application_settings_page() {
   }
 
   // Snapshot and bind the candidate while the existing Frame content remains
-  // visible. Any resource, persistence, or projection exception therefore
-  // leaves both the old page and the core page untouched.
+  // visible. The application-settings owner exposes a fail-soft snapshot:
+  // an unavailable persisted value is represented as a degraded field so the
+  // page can still open. Only construction/binding failures below abort the
+  // transaction and restore the old page.
   auto& settings = services->application_settings();
   azzs::application::WorkbenchSnapshot workbench_snapshot;
   azzs::application::ApplicationSettingsSnapshot settings_snapshot;
   try {
     workbench_snapshot = workbench_->snapshot();
-    settings_snapshot = settings.snapshot();
   } catch (...) {
     throw SettingsNavigationPreparationError{
         .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
             snapshot_read,
-        .detail = "settings snapshot read failed"};
+        .detail = "workbench snapshot read failed"};
+  }
+  try {
+    settings_snapshot = settings.snapshot();
+  } catch (...) {
+    // Keep navigation usable even if a legacy owner still throws instead of
+    // returning its degraded field. Default values are rendered as unavailable
+    // by the page; no persisted value is manufactured or written back.
+    settings_snapshot.read_degraded = true;
   }
 
   Pages::ApplicationSettingsPage page{nullptr};
@@ -771,9 +780,10 @@ bool MainWindow::navigate_to(PageId page) {
       }
       break;
     case PageId::application_settings:
-      // Application settings owns a prepare/commit/recovery transaction and
-      // must never be entered through the generic Navigate path.
-      return false;
+      // Keep one owner for the settings transaction.  The dedicated branch in
+      // navigate_and_commit() does not call navigate_to(), so delegating here
+      // removes the old hard block without introducing recursive navigation.
+      return navigate_and_commit(PageId::application_settings);
     case PageId::software_catalog_editor:
       if (!ContentFrame().Navigate(
               xaml_typename<Pages::SoftwareCatalogEditorPage>(), nullptr,
