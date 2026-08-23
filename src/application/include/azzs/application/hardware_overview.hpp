@@ -28,6 +28,18 @@ enum class HardwareDeviceKind {
   audio,
 };
 
+enum class HardwareNetworkLink {
+  unknown,
+  wired,
+  wireless,
+};
+
+enum class HardwareStorageMedia {
+  unknown,
+  solid_state,
+  hard_disk,
+};
+
 enum class HardwareDevicePhysicality {
   confirmed_physical,
   virtual_device,
@@ -80,6 +92,11 @@ struct HardwareDeviceRecord final {
   HardwareVendor vendor{HardwareVendor::unknown};
   bool physically_present{false};
   std::string filter_reason;
+  std::string model_detail;
+  std::uint64_t capacity_bytes{0};
+  HardwareNetworkLink network_link{HardwareNetworkLink::unknown};
+  HardwareStorageMedia storage_media{HardwareStorageMedia::unknown};
+  std::uint32_t quantity{1};
 
   [[nodiscard]] bool confirmed_physical() const noexcept {
     return physically_present &&
@@ -96,9 +113,15 @@ struct HardwareObservation final {
   std::string gpu;
   std::string motherboard;
   std::string network_adapter;
+  // The legacy aggregate remains populated for existing consumers. These
+  // fields provide stable category-specific summaries for the UI.
+  std::string wired_network_adapter;
+  std::string wireless_network_adapter;
   std::string memory;
   std::string display;
   std::string storage;
+  std::string solid_state_storage;
+  std::string hard_disk_storage;
   std::string npu;
   std::string audio;
   std::string operating_system;
@@ -182,6 +205,8 @@ enum class HardwareOverviewTrigger {
 [[nodiscard]] char const* to_string(HardwareObservationConfidence value) noexcept;
 [[nodiscard]] char const* to_string(HardwareDeviceStatus value) noexcept;
 [[nodiscard]] char const* to_string(HardwareVendor value) noexcept;
+[[nodiscard]] char const* to_string(HardwareNetworkLink value) noexcept;
+[[nodiscard]] char const* to_string(HardwareStorageMedia value) noexcept;
 
 // Owns the session-only ten-minute cache and the user-visible hardware state.
 // Calls are synchronous and must be made by the application/use-case layer;

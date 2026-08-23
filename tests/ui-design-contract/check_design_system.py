@@ -1171,20 +1171,31 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         ("HardwareMemoryLabel", "AzzsHardwareMemory"),
         ("HardwareGpuLabel", "AzzsHardwareGpu"),
         ("HardwareDisplayLabel", "AzzsHardwareDisplay"),
-        ("HardwareStorageLabel", "AzzsHardwareStorage"),
+        ("HardwareSolidStateStorageLabel", "AzzsHardwareSolidStateStorage"),
+        ("HardwareHardDiskStorageLabel", "AzzsHardwareHardDiskStorage"),
         ("HardwareNpuLabel", "AzzsHardwareNpu"),
         ("HardwareAudioLabel", "AzzsHardwareAudio"),
-        ("HardwareNetworkLabel", "AzzsHardwareNetwork"),
+        ("HardwareWiredNetworkLabel", "AzzsHardwareWiredNetwork"),
+        ("HardwareWirelessNetworkLabel", "AzzsHardwareWirelessNetwork"),
     ):
         require(
             f'x:Uid="{label}"' in drivers_xaml and
             f'AutomationProperties.AutomationId="{automation_id}"' in drivers_xaml,
             f"drivers page is missing hardware detail surface {label}",
         )
+    require(
+        resource_values.get("HardwareSolidStateStorageLabel.Text") == "固态硬盘" and
+        resource_values.get("HardwareHardDiskStorageLabel.Text") == "机械硬盘" and
+        resource_values.get("HardwareWiredNetworkLabel.Text") == "有线网卡" and
+        resource_values.get("HardwareWirelessNetworkLabel.Text") == "无线网卡",
+        "storage media and network link labels must remain explicit Simplified Chinese",
+    )
     for field in (
         "facts.operating_system", "facts.cpu", "facts.gpu", "facts.motherboard",
-        "facts.memory", "facts.display", "facts.storage", "facts.npu",
-        "facts.audio", "facts.network_adapter", "facts.oem_model",
+        "facts.memory", "facts.display", "facts.solid_state_storage",
+        "facts.hard_disk_storage", "facts.npu", "facts.audio",
+        "facts.wired_network_adapter", "facts.wireless_network_adapter",
+        "facts.oem_model",
     ):
         require(field in drivers_cpp,
                 f"drivers page must project hardware detail field {field}")
