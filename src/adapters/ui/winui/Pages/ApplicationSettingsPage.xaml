@@ -122,7 +122,10 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource AzzsSectionSurfaceStyle}">
+                <Border
+                    x:Name="ArchitecturePreferenceSection"
+                    Visibility="Collapsed"
+                    Style="{StaticResource AzzsSectionSurfaceStyle}">
                     <StackPanel Spacing="{StaticResource AzzsSpaceStandard}">
                         <TextBlock x:Uid="ApplicationSettingsArchitectureTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
                         <ComboBox

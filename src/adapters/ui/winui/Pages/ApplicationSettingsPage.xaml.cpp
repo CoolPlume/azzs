@@ -176,6 +176,14 @@ void replace_token(std::wstring& value, std::wstring_view token,
   }
 }
 
+[[nodiscard]] constexpr bool current_package_is_x64() noexcept {
+#if defined(_M_X64)
+  return true;
+#else
+  return false;
+#endif
+}
+
 [[nodiscard]] winrt::hstring cache_location_text(CacheLocationKind kind) {
   switch (kind) {
     case CacheLocationKind::system_directory:
@@ -308,7 +316,7 @@ void ApplicationSettingsPage::OnArchitecturePreferenceSelectionChanged(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&) {
   try {
-    if (projecting_ || settings_ == nullptr ||
+    if (projecting_ || current_package_is_x64() || settings_ == nullptr ||
         ArchitecturePreferenceComboBox().SelectedIndex() < 0) {
       return;
     }
@@ -677,8 +685,14 @@ void ApplicationSettingsPage::project(
   AdvancedSettingsPanel().Visibility(advanced_view_ ? Visibility::Visible
                                                      : Visibility::Collapsed);
   CacheRetentionComboBox().SelectedIndex(retention_index(snapshot.cache.retention));
-  ArchitecturePreferenceComboBox().SelectedIndex(
-      architecture_index(snapshot.architecture_preference));
+  auto const architecture_preferences_visible = !current_package_is_x64();
+  ArchitecturePreferenceSection().Visibility(
+      architecture_preferences_visible ? Visibility::Visible
+                                       : Visibility::Collapsed);
+  if (architecture_preferences_visible) {
+    ArchitecturePreferenceComboBox().SelectedIndex(
+        architecture_index(snapshot.architecture_preference));
+  }
 
   auto cache_location = std::wstring{
       resource_string(L"ApplicationSettingsCacheLocationSummary")};
