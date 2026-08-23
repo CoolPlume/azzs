@@ -3,6 +3,7 @@
 #include "ApplicationSettingsPage.xaml.h"
 
 #include <cstdint>
+#include <exception>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -78,13 +79,10 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
     if (!value.empty()) {
       return value;
     }
-  } catch (...) {
+    return winrt::hstring{resource_fallback(key)};
+  } catch (std::exception const&) {
     // Resource lookup is presentation-only. A missing PRI must not prevent
     // the already constructed settings page from being displayed.
-  }
-  try {
-    return winrt::hstring{resource_fallback(key)};
-  } catch (...) {
     return winrt::hstring{L"\u8BBE\u7F6E\u8D44\u6E90\u6682\u65F6\u4E0D\u53EF\u7528"};
   }
 }
