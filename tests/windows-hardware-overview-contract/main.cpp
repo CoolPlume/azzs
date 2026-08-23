@@ -1,7 +1,9 @@
 #include <algorithm>
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -89,17 +91,19 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                  {"AMD Radeon", "AMD", "PCI\\VEN_1002&DEV_0002", "OK",
                   "0", "Radeon", "4294967296"}}}},
       {"Win32_BaseBoard",
-       {"Manufacturer", "Product", "HostingBoard", "Status",
-        "ConfigManagerErrorCode"},
+       {"Manufacturer", "Product", "HostingBoard", "PNPDeviceID",
+        "Status", "ConfigManagerErrorCode"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"ASUS", "PRIME B650", "TRUE", "OK", "0"}}}},
+        .rows = {{"ASUS", "PRIME B650", "TRUE", "ACPI\\ASUS0001", "OK", "0"}}}},
       {"Win32_NetworkAdapter",
        {"Name", "Manufacturer", "AdapterType", "PhysicalAdapter",
         "PNPDeviceID", "Status", "ConfigManagerErrorCode", "ServiceName",
         "NetConnectionStatus"},
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"Intel Ethernet", "Intel", "Ethernet 802.3", "TRUE",
-                  "PCI\\VEN_8086&DEV_0003", "OK", "0", "e1iexpress", "2"}}}},
+                  "PCI\\VEN_8086&DEV_0003", "OK", "0", "e1iexpress", "2"},
+                 {"Intel(R) Wi-Fi 7 BE200", "Intel", "IEEE 802.11", "TRUE",
+                  "PCI\\VEN_8086&DEV_0004", "OK", "0", "Netwtw", "2"}}}},
       {"Win32_ComputerSystem", {"Manufacturer", "Model"},
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"ASUS", "ROG"}}}},
@@ -109,7 +113,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"Micron", "25769803776", "5600", "MTC20C2085S1EC48BA1",
                   "DIMM0", "Physical Memory 0", "34", "5600"},
-                 {"Micron", "25769803776", "5600", "MTC20C2085S1EC48BA2",
+                 {"Micron", "25769803776", "5600", "MTC20C2085S1EC48BA1",
                   "DIMM1", "Physical Memory 1", "34", "5600"}}}},
       {"Win32_DesktopMonitor",
        {"Name", "PNPDeviceID", "Status", "ConfigManagerErrorCode",
@@ -121,12 +125,14 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                   "1600"}}}},
       {"Win32_DiskDrive",
        {"Model", "Manufacturer", "Size", "PNPDeviceID", "Status",
-        "ConfigManagerErrorCode", "InterfaceType"},
+        "ConfigManagerErrorCode", "InterfaceType", "MediaType"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"PC801 NVMe SK hynix", "SK hynix", "1099511627776",
-                  "PCI\\VEN_1C5C&DEV_174A", "OK", "0", "NVMe"},
-                 {"Samsung SSD 990 PRO", "Samsung", "2199023255552",
-                  "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe"}}}},
+         .rows = {{"(标准磁盘驱动器) PC801 SK hynix", "SK hynix", "1099511627776",
+                   "SCSI\\DISK&VEN_NVME&PROD_PC801", "OK", "0", "SCSI", "Fixed hard disk media"},
+                  {"(Standard disk drive) Samsung SSD 990 PRO", "Samsung", "2199023255552",
+                   "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe", "SSD"},
+                  {"(标准磁盘驱动器) Seagate BarraCuda HDD", "Seagate", "1099511627776",
+                   "SCSI\\DISK_SEAGATE", "OK", "0", "SCSI", "Fixed hard disk media"}}}},
       {"Win32_SoundDevice",
        {"Name", "Manufacturer", "PNPDeviceID", "Status",
         "ConfigManagerErrorCode"},
@@ -156,7 +162,6 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   WindowsHardwareObserver observer{std::move(executor)};
 
   auto const result = observer.observe({});
-
   return expect(result.code == HardwareObservationCode::succeeded &&
                     result.observation.has_value(),
                 "complete WMI facts must produce a successful observation") &&
@@ -167,14 +172,30 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     result.observation->gpu ==
                         "NVIDIA GeForce RTX (16GB); AMD Radeon (4GB)" &&
                     result.observation->motherboard == "ASUS PRIME B650" &&
-                    result.observation->network_adapter == "Intel Ethernet" &&
+                    result.observation->network_adapter ==
+                        "Intel Ethernet; Intel(R) Wi-Fi 7 BE200" &&
+                    result.observation->wired_network_adapter == "Intel Ethernet" &&
+                    result.observation->wireless_network_adapter ==
+                        "Intel(R) Wi-Fi 7 BE200" &&
                     result.observation->memory ==
-                        "Micron DDR5 24GB 5600MHz (MTC20C2085S1EC48BA1); Micron DDR5 24GB 5600MHz (MTC20C2085S1EC48BA2)" &&
+                        "Micron DDR5 48GB 5600MHz (24GB + 24GB)" &&
                     result.observation->display ==
-                        "BOE Display (2560x1600); BOE Display (2560x1600)" &&
-                    result.observation->storage.find("PC801 NVMe SK hynix") !=
+                        "BOE Display (2560x1600) x2" &&
+                    result.observation->storage.find("PC801 SK hynix") !=
                         std::string::npos &&
                     result.observation->storage.find("Samsung SSD 990 PRO") !=
+                        std::string::npos &&
+                    result.observation->storage.find("标准磁盘驱动器") ==
+                        std::string::npos &&
+                    result.observation->storage.find("Standard disk drive") ==
+                        std::string::npos &&
+                    result.observation->solid_state_storage.find("Samsung SSD 990 PRO") !=
+                        std::string::npos &&
+                    result.observation->solid_state_storage.find("PC801 SK hynix") !=
+                        std::string::npos &&
+                    result.observation->hard_disk_storage.find("PC801 SK hynix") ==
+                        std::string::npos &&
+                    result.observation->hard_disk_storage.find("Seagate BarraCuda HDD") !=
                         std::string::npos &&
                     result.observation->audio ==
                         "Realtek High Definition Audio; NVIDIA High Definition Audio" &&
@@ -197,7 +218,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"Microsoft Basic Display Adapter", "Microsoft",
        "PCI\\VEN_1234&DEV_0001", "Error", "28", ""}};
   raw_executor->expected[2].result.rows = {
-      {"ASUS", "PRIME B650", "TRUE", "Disabled", "22"}};
+      {"ASUS", "PRIME B650", "TRUE", "ACPI\\ASUS0001", "Disabled", "22"}};
   raw_executor->expected[3].result.rows = {
       {"Intel Ethernet", "Intel", "Ethernet 802.3", "TRUE",
        "PCI\\VEN_8086&DEV_0003", "Error", "10", "e1iexpress", "2"}};
@@ -247,7 +268,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"VMware SVGA", "VMware", "PCI\\VEN_15AD&DEV_0405", "OK", "0",
        ""}};
   raw_executor->expected[2].result.rows = {
-      {"Microsoft", "Virtual Machine", "TRUE", "OK", "0"}};
+      {"Microsoft", "Virtual Machine", "TRUE", "ROOT\\VIRTUALBOARD", "OK", "0"}};
   raw_executor->expected[3].result.rows = {
       {"TAP-Windows Adapter V9", "OpenVPN", "VPN", "FALSE",
        "ROOT\\TAP0901", "OK", "0", "tap0901", "2"},
@@ -296,6 +317,37 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                 "a non-terminal probe failure must return usable partial facts") &&
           expect(!raw_executor->mismatch && raw_executor->calls == 11,
                 "a partial failure must still collect independent model facts");
+}
+
+[[nodiscard]] bool oem_firmware_fallbacks_keep_concrete_models() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[0].result.rows = {
+      {"Intel(R) Core(TM) Ultra 9", "GenuineIntel", "", "OK", "0", "24", "24"}};
+  raw_executor->expected[2].result.rows = {
+      {"HP", "8A43", "", "", "OK", "0"}};
+  raw_executor->expected[6].result.rows = {
+      {"Generic PnP Monitor", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"}};
+  raw_executor->expected[9].result.rows = {
+      {"BOE NE160QDM-NY4", "BOE", "DISPLAY\\BOE1234\\1", "Disabled", "22", "Monitor"},
+      {"Intel(R) AI Boost", "Intel", "PCI\\VEN_8086&DEV_7D1D", "OK", "0",
+       "ComputeAccelerator"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->cpu == "Intel(R) Core(TM) Ultra 9 (24C/24T)" &&
+                    result.observation->motherboard == "HP 8A43" &&
+                    result.observation->display ==
+                        "BOE NE160QDM-NY4 (2560x1600)" &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::display &&
+                                 device.status == HardwareDeviceStatus::disabled;
+                        }) &&
+                    !raw_executor->mismatch && raw_executor->calls == 11,
+                "missing processor and motherboard PNP ids, optional HostingBoard, and generic monitor rows must use concrete OEM WMI fallbacks");
 }
 
 [[nodiscard]] bool permission_denial_and_cancellation_are_terminal() {
@@ -357,6 +409,7 @@ int main() {
   passed &= disabled_driverless_and_error_devices_are_retained();
   passed &= virtual_software_vpn_loopback_and_unknown_rows_are_filtered();
   passed &= partial_failure_preserves_usable_model_facts();
+  passed &= oem_firmware_fallbacks_keep_concrete_models();
   passed &= permission_denial_and_cancellation_are_terminal();
   passed &= model_change_probe_requires_complete_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
