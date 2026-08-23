@@ -50,6 +50,23 @@ class ComApartment final {
   HRESULT result_;
 };
 
+class RegistryKey final {
+ public:
+  explicit RegistryKey(HKEY key = nullptr) noexcept : key_(key) {}
+  ~RegistryKey() {
+    if (key_ != nullptr) {
+      ::RegCloseKey(key_);
+    }
+  }
+  RegistryKey(RegistryKey const&) = delete;
+  RegistryKey& operator=(RegistryKey const&) = delete;
+
+  [[nodiscard]] HKEY get() const noexcept { return key_; }
+
+ private:
+  HKEY key_;
+};
+
 [[nodiscard]] std::string utf8_from_wide(std::wstring_view value) {
   if (value.empty()) {
     return {};
@@ -374,6 +391,92 @@ void append_display_resolution(std::string& value, std::uint32_t width,
   return value.find(" × ") != std::string_view::npos;
 }
 
+[[nodiscard]] std::optional<std::uint32_t>
+physical_refresh_rate_limit_from_edid(
+    std::span<std::uint8_t const> edid) noexcept {
+  constexpr std::array<std::uint8_t, 8> kEdidHeader{
+      0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00};
+  if (edid.size() < 128 ||
+      !std::ranges::equal(kEdidHeader, edid.first(kEdidHeader.size()))) {
+    return std::nullopt;
+  }
+  std::uint32_t checksum = 0;
+  for (std::size_t index = 0; index < 128; ++index) {
+    checksum += edid[index];
+  }
+  if (checksum % 256 != 0 || edid[18] != 1) {
+    return std::nullopt;
+  }
+
+  std::optional<std::uint32_t> limit;
+  // VESA E-EDID A2, monitor range limits descriptor (pp. 38-40):
+  // https://glenwing.github.io/docs/VESA-EEDID-A2.pdf
+  for (auto const descriptor : {54u, 72u, 90u, 108u}) {
+    if (edid[descriptor] != 0 || edid[descriptor + 1] != 0 ||
+        edid[descriptor + 2] != 0 || edid[descriptor + 3] != 0xfd) {
+      continue;
+    }
+    auto const flags = edid[descriptor + 4];
+    // EDID 1.4 defines only the low four range-offset bits. Earlier
+    // revisions do not define offsets; reserved combinations fail closed.
+    if ((flags & 0xf0) != 0 || (edid[19] < 4 && flags != 0)) {
+      return std::nullopt;
+    }
+    auto minimum = static_cast<std::uint32_t>(edid[descriptor + 5]);
+    auto maximum = static_cast<std::uint32_t>(edid[descriptor + 6]);
+    if ((flags & 0x01) != 0) {
+      minimum += 255;
+    }
+    if ((flags & 0x02) != 0) {
+      maximum += 255;
+    }
+    if (minimum == 0 || maximum == 0 || maximum < minimum ||
+        (limit.has_value() && *limit != maximum)) {
+      return std::nullopt;
+    }
+    limit = maximum;
+  }
+  return limit;
+}
+
+[[nodiscard]] std::optional<std::uint32_t> physical_refresh_rate_limit_for(
+    std::span<WindowsDisplayEdid const> edids,
+    std::string_view model_key) noexcept {
+  std::optional<std::uint32_t> limit;
+  auto const normalized_key = lower_ascii(model_key);
+  for (auto const& edid : edids) {
+    if (lower_ascii(edid.model_key) != normalized_key) {
+      continue;
+    }
+    auto const candidate = physical_refresh_rate_limit_from_edid(edid.bytes);
+    if (!candidate.has_value() ||
+        (limit.has_value() && *limit != *candidate)) {
+      return std::nullopt;
+    }
+    limit = candidate;
+  }
+  return limit;
+}
+
+void append_display_refresh_rate_limit(
+    std::string& value, std::optional<std::uint32_t> limit) {
+  std::string detail{"；物理刷新率上限（EDID）："};
+  if (limit.has_value()) {
+    detail += std::to_string(*limit);
+    detail += " Hz";
+  } else {
+    detail += "未读取";
+  }
+  auto const closing = value.rfind("）");
+  if (closing == std::string::npos) {
+    value += "（";
+    value += detail.substr(std::string_view{"；"}.size());
+    value += "）";
+    return;
+  }
+  value.insert(closing, detail);
+}
+
 [[nodiscard]] std::string row_value(std::vector<std::string> const& row,
                                     std::size_t index) {
   return index < row.size() ? row[index] : std::string{};
@@ -381,7 +484,8 @@ void append_display_resolution(std::string& value, std::uint32_t width,
 
 [[nodiscard]] bool parse_bool(std::string_view value, bool& result) {
   auto const lowered = lower_ascii(value);
-  if (lowered == "true" || lowered == "1" || lowered == "yes") {
+  if (lowered == "true" || lowered == "1" || lowered == "-1" ||
+      lowered == "yes") {
     result = true;
     return true;
   }
@@ -763,31 +867,24 @@ void append_display_resolution(std::string& value, std::uint32_t width,
   auto const manufacturer = row_value(row, 0);
   auto const product = row_value(row, 1);
   auto const hosting_text = row_value(row, 2);
-  auto const pnp_id = row_value(row, 3);
   bool hosting_board = false;
   auto const hosting_known = parse_bool(hosting_text, hosting_board);
   if (manufacturer.empty() || product.empty() || virtual_host ||
-      (hosting_known && !hosting_board && pnp_id.empty()) ||
-      (!pnp_id.empty() && virtual_pnp_id(pnp_id))) {
+      !hosting_known || !hosting_board) {
     return std::nullopt;
   }
-  auto display_name = product.empty()
-                          ? localized_brand_model(manufacturer, manufacturer)
-                          : localized_brand_model(product, manufacturer);
+  auto display_name = localized_brand_model(product, manufacturer);
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::motherboard,
       .name = std::move(display_name),
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
-      .status = device_status(row_value(row, 4), row_value(row, 5)),
+      .status = device_status(row_value(row, 3), {}),
       .vendor = vendor_from_text(manufacturer),
       .physically_present = true,
-      .filter_reason = hosting_known && hosting_board
-                           ? "Win32_BaseBoard HostingBoard=true"
-                           : pnp_id.empty()
-                                 ? "Win32_BaseBoard concrete model on a non-virtual host (PNP id absent)"
-                                 : "Win32_BaseBoard PNP id with a concrete model",
+      .filter_reason =
+          "Win32_BaseBoard concrete manufacturer/product with HostingBoard=true",
   };
 }
 
@@ -913,9 +1010,9 @@ void append_display_resolution(std::string& value, std::uint32_t width,
   if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
   }
+  std::uint32_t width{};
+  std::uint32_t height{};
   if (!pnp_entity_row) {
-    std::uint32_t width{};
-    std::uint32_t height{};
     auto const width_valid = parse_integer(row_value(row, 4), width) && width > 0;
     auto const height_valid =
         parse_integer(row_value(row, 5), height) && height > 0;
@@ -936,6 +1033,8 @@ void append_display_resolution(std::string& value, std::uint32_t width,
       .filter_reason = "DISPLAY PNP id on a non-virtual host",
       .model_detail = display_model_key(pnp_id),
       .display_connection = connection,
+      .display_width = width,
+      .display_height = height,
   };
 }
 
@@ -1025,9 +1124,21 @@ classify_display_pnp(std::vector<std::string> const& row,
   return {};
 }
 
+[[nodiscard]] bool exact_pcb01_product(std::string_view model) noexcept {
+  return lower_ascii(trim_ascii(model)) ==
+         "sk hynix pcb01 hfs001tfm9x187n";
+}
+
 [[nodiscard]] std::string pcie_generation_from_text(
     std::string_view model, std::string_view manufacturer,
     std::string_view interface_type, std::string_view pnp_id) {
+  // SK hynix identifies PCB01 as its PCIe Gen5 AI-PC SSD with SLC caching:
+  // https://news.skhynix.com/en/sk-hynix-develops-pcb01-for-artificial-intelligence-pcs/
+  // Keep the match product-specific; this fact must never leak to PC801 or a
+  // similarly named but unverified PCB01 device.
+  if (exact_pcb01_product(model)) {
+    return "5.0 x4";
+  }
   std::string source{model};
   source += " ";
   source += manufacturer;
@@ -1063,6 +1174,16 @@ classify_display_pnp(std::vector<std::string> const& row,
 [[nodiscard]] std::string nand_type_from_text(
     std::string_view model, std::string_view manufacturer,
     std::string_view media_type, std::string_view pnp_id) {
+  // The 238-layer 4D TLC detail is cross-checked against model-specific
+  // HFS001TFM9X187N/PCB01 1 TB identification and PCB01/P51 family data:
+  // https://www.storagereview.com/review/hp-elitebook-x-g2i-review
+  // https://www.storagereview.com/review/sk-hynix-platinum-p51-review-balanced-performance-for-demanding-workloads
+  // https://www.techpowerup.com/ssd-specs/sk-hynix-pcb01-2-tb.d2057
+  // These sources cross-check the NAND family only; no 2 TB capacity-specific
+  // value is applied to this 1 TB model. SLC describes cache, not cell type.
+  if (exact_pcb01_product(model)) {
+    return "238 层 4D TLC（资料识别；SLC 缓存：支持）";
+  }
   std::string source{model};
   source += " ";
   source += manufacturer;
@@ -1288,14 +1409,6 @@ classify_display_pnp(std::vector<std::string> const& row,
   };
 }
 
-void append_unique_summary(std::string& target,
-                           application::HardwareDeviceRecord const& record) {
-  if (!target.empty()) {
-    target.append("; ");
-  }
-  target.append(record.name);
-}
-
 void append_grouped_device(
     std::vector<application::HardwareDeviceRecord>& devices,
     application::HardwareDeviceRecord record) {
@@ -1337,7 +1450,10 @@ void append_grouped_device(
           existing.display_connection == record.display_connection) {
         if (!has_display_resolution(existing.name) &&
             has_display_resolution(record.name)) {
-          existing.name = record.name;
+          append_display_resolution(existing.name, record.display_width,
+                                    record.display_height);
+          existing.display_width = record.display_width;
+          existing.display_height = record.display_height;
         }
         existing.quantity += record.quantity;
         return;
@@ -1392,7 +1508,7 @@ void rebuild_summary(
       continue;
     }
     if (!target.empty()) {
-      target.append("; ");
+      target.push_back('\n');
     }
     target.append(grouped_name(device));
   }
@@ -1442,9 +1558,7 @@ struct CollectedObservation final {
                  "ConfigManagerErrorCode", "VideoProcessor", "AdapterRAM"},
                 7},
       QuerySpec{"Win32_BaseBoard",
-                {"Manufacturer", "Product", "HostingBoard", "PNPDeviceID",
-                 "Status", "ConfigManagerErrorCode"},
-                6},
+                {"Manufacturer", "Product", "HostingBoard", "Status"}, 4},
       QuerySpec{"Win32_NetworkAdapter",
                 {"Name", "Manufacturer", "AdapterType", "PhysicalAdapter",
                  "PNPDeviceID", "Status", "ConfigManagerErrorCode",
@@ -1542,14 +1656,41 @@ struct CollectedObservation final {
   }
   std::optional<WindowsCpuTopology> cpu_topology;
   std::vector<WindowsGpuMemory> gpu_adapters;
+  std::vector<WindowsDisplayEdid> display_edids;
+  // Optional capabilities are isolated: one unavailable platform source must
+  // not erase facts already obtained from another source.
   try {
     cpu_topology = executor.cpu_topology(cancellation);
+  } catch (...) {
+    cpu_topology.reset();
+  }
+  try {
     gpu_adapters = executor.gpu_memory(cancellation);
   } catch (...) {
-    // These are optional enrichments. WMI model facts remain authoritative
-    // when a platform capability is unavailable or unexpectedly fails.
-    cpu_topology.reset();
     gpu_adapters.clear();
+  }
+  std::vector<std::string> display_pnp_ids;
+  auto append_display_pnp_id = [&display_pnp_ids](std::string pnp_id) {
+    if (!starts_with_ascii(pnp_id, "display\\") ||
+        std::ranges::find(display_pnp_ids, pnp_id) !=
+            display_pnp_ids.end()) {
+      return;
+    }
+    display_pnp_ids.push_back(std::move(pnp_id));
+  };
+  for (auto const& row : rows_by_spec[6]) {
+    append_display_pnp_id(row_value(row, 1));
+  }
+  for (auto const& row : rows_by_spec[9]) {
+    if (contains_ascii(row_value(row, 5), "monitor")) {
+      append_display_pnp_id(row_value(row, 2));
+    }
+  }
+  try {
+    display_edids = executor.display_edids(
+        std::span<std::string const>{display_pnp_ids}, cancellation);
+  } catch (...) {
+    display_edids.clear();
   }
   if (cancellation.stop_requested()) {
     collected.code = application::HardwareObservationCode::cancelled;
@@ -1612,7 +1753,10 @@ struct CollectedObservation final {
           }
           if (!has_display_resolution(existing.name) &&
               has_display_resolution(record->name)) {
-            existing.name = record->name;
+            append_display_resolution(existing.name, record->display_width,
+                                      record->display_height);
+            existing.display_width = record->display_width;
+            existing.display_height = record->display_height;
           }
           enriched_pnp_projection = true;
           break;
@@ -1622,6 +1766,15 @@ struct CollectedObservation final {
         append_grouped_device(collected.observation.devices, std::move(*record));
       }
     }
+  }
+  for (auto& device : collected.observation.devices) {
+    if (device.kind != application::HardwareDeviceKind::display) {
+      continue;
+    }
+    auto const limit = physical_refresh_rate_limit_for(
+        display_edids, device.model_detail);
+    device.physical_refresh_rate_limit_hz = limit.value_or(0);
+    append_display_refresh_rate_limit(device.name, limit);
   }
   for (auto const& row : rows_by_spec[7]) {
     if (auto record = classify_storage(row, virtual_host)) {
@@ -1760,21 +1913,23 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
 
     WindowsCpuTopology topology{.logical_processors = logical_processors};
     std::uint32_t distinct_efficiency_classes = 0;
-    std::uint32_t performance_efficiency_class = 0;
     std::uint32_t efficiency_efficiency_class = 0;
+    std::uint32_t performance_efficiency_class = 0;
     for (std::uint32_t index = 0; index < cores_by_efficiency.size(); ++index) {
       if (cores_by_efficiency[index] == 0) {
         continue;
       }
       if (distinct_efficiency_classes == 0) {
-        performance_efficiency_class = index;
+        efficiency_efficiency_class = index;
       }
-      efficiency_efficiency_class = index;
+      performance_efficiency_class = index;
       ++distinct_efficiency_classes;
     }
-    // Windows defines lower EfficiencyClass values as more performant. Only
-    // exactly two observed classes are presented as P/E cores; more complex
-    // topologies remain unlabelled rather than being compressed incorrectly.
+    // PROCESSOR_RELATIONSHIP defines higher EfficiencyClass values as more
+    // performant and less efficient:
+    // https://learn.microsoft.com/windows/win32/api/winnt/ns-winnt-processor_relationship
+    // Only exactly two observed classes are presented as P/E cores; more
+    // complex topologies remain unlabelled.
     if (distinct_efficiency_classes == 2) {
       topology.performance_cores =
           cores_by_efficiency[performance_efficiency_class];
@@ -1841,6 +1996,54 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
       }
     }
     ::FreeLibrary(dxgi_module);
+    return result;
+  }
+
+  [[nodiscard]] std::vector<WindowsDisplayEdid> display_edids(
+      std::span<std::string const> pnp_device_ids,
+      std::stop_token cancellation) override {
+    std::vector<WindowsDisplayEdid> result;
+    for (auto const& pnp_device_id : pnp_device_ids) {
+      if (cancellation.stop_requested()) {
+        return {};
+      }
+      if (!starts_with_ascii(pnp_device_id, "display\\") ||
+          pnp_device_id.find("..") != std::string::npos ||
+          pnp_device_id.find('/') != std::string::npos) {
+        continue;
+      }
+      auto const wide_pnp_id = wide_from_utf8(pnp_device_id);
+      auto const model_key = display_model_key(pnp_device_id);
+      if (wide_pnp_id.empty() || model_key.empty()) {
+        continue;
+      }
+      std::wstring registry_path =
+          L"SYSTEM\\CurrentControlSet\\Enum\\" + wide_pnp_id +
+          L"\\Device Parameters";
+      HKEY raw_key = nullptr;
+      if (::RegOpenKeyExW(HKEY_LOCAL_MACHINE, registry_path.c_str(), 0,
+                          KEY_QUERY_VALUE, &raw_key) != ERROR_SUCCESS) {
+        continue;
+      }
+      RegistryKey key{raw_key};
+      DWORD type = 0;
+      DWORD byte_count = 0;
+      if (::RegQueryValueExW(key.get(), L"EDID", nullptr, &type, nullptr,
+                             &byte_count) != ERROR_SUCCESS ||
+          type != REG_BINARY || byte_count < 128 || byte_count % 128 != 0 ||
+          byte_count > 128 * 32) {
+        continue;
+      }
+      std::vector<std::uint8_t> bytes(byte_count);
+      if (::RegQueryValueExW(key.get(), L"EDID", nullptr, &type, bytes.data(),
+                             &byte_count) != ERROR_SUCCESS ||
+          type != REG_BINARY || byte_count < 128 || byte_count % 128 != 0) {
+        continue;
+      }
+      bytes.resize(byte_count);
+      result.push_back(
+          {.model_key = model_key, .bytes = std::move(bytes)});
+    }
     return result;
   }
 
