@@ -15,8 +15,9 @@ constexpr std::array k_required_disposition_order{
     InteractionDisposition::official_installer,
 };
 
-std::array<SoftwareInstallFacts, 11> const k_initial_facts{{
+std::array<SoftwareInstallFacts, 12> const k_initial_facts{{
     {.software_id = "qq"},
+    {.software_id = "qq-music"},
     {.software_id = "sogou-input"},
     {.software_id = "game-cheats-manager"},
     {.software_id = "cheat-engine"},
@@ -39,7 +40,7 @@ std::array<SoftwareInstallFacts, 11> const k_initial_facts{{
      }},
 }};
 
-std::array<ControlledInstallProfile, 2> const k_initial_profiles{{
+std::array<ControlledInstallProfile, 3> const k_initial_profiles{{
     {
         .id = "sogou-input-defaults-v1",
         .software_id = "sogou-input",
@@ -78,6 +79,19 @@ std::array<ControlledInstallProfile, 2> const k_initial_profiles{{
     {
         .id = "qq-windows-defaults-v1",
         .software_id = "qq",
+        .execution_kind =
+            ControlledWindowsExecutionKind::project_owned_windows_executor,
+        .execution = WindowsExecutionReadiness::declaration_only,
+        .completion_boundary =
+            InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::user_confirmation_only,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
+    },
+    {
+        .id = "qq-music-windows-defaults-v1",
+        .software_id = "qq-music",
         .execution_kind =
             ControlledWindowsExecutionKind::project_owned_windows_executor,
         .execution = WindowsExecutionReadiness::declaration_only,
@@ -444,7 +458,8 @@ SoftwareCatalogPolicy initial_software_catalog_policy() {
         .runtime_status = InstallProfileRuntimeStatus::missing,
         .release_ready = false,
     });
-    if (profile.software_id == "sogou-input" || profile.software_id == "qq") {
+    if (profile.software_id == "sogou-input" || profile.software_id == "qq" ||
+        profile.software_id == "qq-music") {
       policy.required_install_profiles.push_back({
           .software_id = profile.software_id,
           .profile_id = profile.id,
