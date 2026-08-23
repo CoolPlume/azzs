@@ -27,6 +27,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <controls:PageHeader Grid.Row="0">
                 <controls:PageHeader.TitleContent>
@@ -57,13 +58,44 @@
                 IsClosable="False"
                 IsOpen="False"
                 Style="{StaticResource AzzsStatusBandStyle}" />
+            <Grid Grid.Row="2" ColumnSpacing="{StaticResource AzzsSpaceStandard}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border
+                    Grid.Column="0"
+                    AutomationProperties.AutomationId="AzzsHardwareModelSummary"
+                    Style="{StaticResource AzzsSummarySurfaceStyle}">
+                    <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                        <TextBlock x:Uid="HardwareModelSummaryTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                        <TextBlock
+                            x:Name="ModelValue"
+                            AutomationProperties.AutomationId="AzzsHardwareModel"
+                            Style="{StaticResource AzzsBodyTextStyle}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+                <Border
+                    Grid.Column="1"
+                    AutomationProperties.AutomationId="AzzsHardwareSystemSummary"
+                    Style="{StaticResource AzzsSummarySurfaceStyle}">
+                    <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
+                        <TextBlock x:Uid="HardwareSystemSummaryTitle" Style="{StaticResource AzzsSectionTitleTextStyle}" />
+                        <TextBlock
+                            x:Name="SystemValue"
+                            AutomationProperties.AutomationId="AzzsHardwareSystem"
+                            Style="{StaticResource AzzsBodyTextStyle}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </Grid>
             <Border
-                Grid.Row="2"
-                AutomationProperties.AutomationId="AzzsHardwareOverview"
-                Style="{StaticResource AzzsSummarySurfaceStyle}">
+                Grid.Row="3"
+                AutomationProperties.AutomationId="AzzsHardwareDetails"
+                Style="{StaticResource AzzsDetailSurfaceStyle}">
                 <Grid RowSpacing="{StaticResource AzzsSpaceMedium}">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -79,16 +111,15 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Uid="HardwareOperatingSystemLabel" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="OperatingSystemValue" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareOperatingSystem" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareDetailsTitle" Grid.ColumnSpan="2" Style="{StaticResource AzzsSectionTitleTextStyle}" />
                     <TextBlock x:Uid="HardwareCpuLabel" Grid.Row="1" Style="{StaticResource AzzsMetadataTextStyle}" />
                     <TextBlock x:Name="CpuValue" Grid.Row="1" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareCpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareGpuLabel" Grid.Row="2" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="GpuValue" Grid.Row="2" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareMotherboardLabel" Grid.Row="3" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="MotherboardValue" Grid.Row="3" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareMemoryLabel" Grid.Row="4" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="MemoryValue" Grid.Row="4" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMemory" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareMotherboardLabel" Grid.Row="2" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="MotherboardValue" Grid.Row="2" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareMemoryLabel" Grid.Row="3" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="MemoryValue" Grid.Row="3" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareMemory" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Uid="HardwareGpuLabel" Grid.Row="4" Style="{StaticResource AzzsMetadataTextStyle}" />
+                    <TextBlock x:Name="GpuValue" Grid.Row="4" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                     <TextBlock x:Uid="HardwareDisplayLabel" Grid.Row="5" Style="{StaticResource AzzsMetadataTextStyle}" />
                     <TextBlock x:Name="DisplayValue" Grid.Row="5" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareDisplay" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                     <TextBlock x:Uid="HardwareStorageLabel" Grid.Row="6" Style="{StaticResource AzzsMetadataTextStyle}" />
@@ -99,12 +130,10 @@
                     <TextBlock x:Name="AudioValue" Grid.Row="8" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareAudio" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                     <TextBlock x:Uid="HardwareNetworkLabel" Grid.Row="9" Style="{StaticResource AzzsMetadataTextStyle}" />
                     <TextBlock x:Name="NetworkValue" Grid.Row="9" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                    <TextBlock x:Uid="HardwareOemLabel" Grid.Row="10" Style="{StaticResource AzzsMetadataTextStyle}" />
-                    <TextBlock x:Name="OemValue" Grid.Row="10" Grid.Column="1" AutomationProperties.AutomationId="AzzsHardwareOem" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
                 </Grid>
             </Border>
             <Border
-                Grid.Row="3"
+                Grid.Row="4"
                 x:Name="DriverHandoffSurface"
                 AutomationProperties.AutomationId="AzzsDriverHandoffState"
                 Style="{StaticResource AzzsSectionSurfaceStyle}"
@@ -148,14 +177,14 @@
             </Border>
             <InfoBar
                 x:Name="DriverRecommendation"
-                Grid.Row="4"
+                Grid.Row="5"
                 AutomationProperties.AutomationId="AzzsDriverRecommendation"
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"
                 IsOpen="False"
                 Style="{StaticResource AzzsStatusBandStyle}" />
             <Border
-                Grid.Row="5"
+                Grid.Row="6"
                 AutomationProperties.AutomationId="AzzsDriverAssistant"
                 Style="{StaticResource AzzsSectionSurfaceStyle}">
                 <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
@@ -172,7 +201,7 @@
                 </StackPanel>
             </Border>
             <Border
-                Grid.Row="6"
+                Grid.Row="7"
                 AutomationProperties.AutomationId="AzzsFixedDriverEntrypoints"
                 Style="{StaticResource AzzsSectionSurfaceStyle}">
                 <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
@@ -199,7 +228,7 @@
                 </StackPanel>
             </Border>
             <Border
-                Grid.Row="7"
+                Grid.Row="8"
                 AutomationProperties.AutomationId="AzzsFixedRescueToolFolders"
                 Style="{StaticResource AzzsSectionSurfaceStyle}">
                 <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
