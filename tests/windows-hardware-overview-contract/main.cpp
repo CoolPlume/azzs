@@ -350,6 +350,92 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                 "missing processor and motherboard PNP ids, optional HostingBoard, and generic monitor rows must use concrete OEM WMI fallbacks");
 }
 
+[[nodiscard]] bool real_machine_wmi_field_shapes_are_projected() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[0].result.rows = {
+      {"Intel(R) Core(TM) Ultra 9 275HX", "GenuineIntel", "", "OK", "",
+       "24", "24"}};
+  raw_executor->expected[2].result.rows = {
+      {"HP", "8D41", "True", "", "OK", ""}};
+  raw_executor->expected[3].result.rows = {
+      {"Realtek Gaming 2.5GbE Family Controller", "Realtek",
+       "以太网 802.3", "True",
+       "PCI\\VEN_10EC&DEV_8125&SUBSYS_8D41103C&REV_05\\01000000684CE00000",
+       "", "0", "rt25cx21", "2"},
+      {"Intel(R) Wi-Fi 7 BE200 320MHz", "Intel Corporation", "以太网 802.3",
+       "True", "PCI\\VEN_8086&DEV_272B&SUBSYS_00F48086&REV_1A\\4&2354814&0&0031",
+       "", "0", "Netwaw18", "7"}};
+  raw_executor->expected[5].result.rows = {
+      {"Micron Technology", "25769803776", "5600", "CT24G56C46S5.M8B1   ",
+       "Bottom-Slot 1(left)", "Physical Memory 0", "34", "5600"},
+      {"Micron Technology", "25769803776", "5600", "CT24G56C46S5.M8B1   ",
+       "Bottom-Slot 2(right)", "Physical Memory 1", "34", "5600"}};
+  raw_executor->expected[6].result.rows = {
+      {"默认监视器", "", "OK", "", "", ""},
+      {"通用即插即用监视器", "DISPLAY\\LHC907D\\5&18F24B9&0&UID8449", "OK",
+       "0", "", ""},
+      {"通用即插即用监视器", "DISPLAY\\BOE0CD1\\4&1739F381&1&UID8388688", "OK",
+       "0", "2560", "1600"}};
+  raw_executor->expected[7].result.rows = {
+      {"Samsung SSD 990 PRO 2TB", "(标准磁盘驱动器)", "2000396321280",
+       "SCSI\\DISK&VEN_NVME&PROD_SAMSUNG_SSD_990\\5&211D8CE7&0&000000", "OK",
+       "0", "SCSI", "Fixed hard disk media"},
+      {"SK hynix PCB01 HFS001TFM9X187N", "(标准磁盘驱动器)", "1024203640320",
+       "SCSI\\DISK&VEN_NVME&PROD_SK_HYNIX_PCB01_H\\5&24C09446&0&000000", "OK",
+       "0", "SCSI", "Fixed hard disk media"}};
+  raw_executor->expected[9].result.rows = {
+      {"Integrated Monitor", "(标准监视器类型)",
+       "DISPLAY\\BOE0CD1\\4&1739F381&1&UID8388688", "OK", "0", "Monitor"},
+      {"Generic Monitor (P275MV PLUS)", "(标准监视器类型)",
+       "DISPLAY\\LHC907D\\5&18F24B9&0&UID8449", "OK", "0", "Monitor"}};
+
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  auto const& observation = result.observation;
+  return expect(result.succeeded() && observation.has_value() &&
+                    !raw_executor->mismatch && raw_executor->calls == 11,
+                "real WMI field shapes must satisfy the approved query contract") &&
+         expect(observation->cpu == "Intel(R) Core(TM) Ultra 9 275HX (24C/24T)" &&
+                    observation->motherboard == "HP 8D41" &&
+                    observation->wired_network_adapter ==
+                        "Realtek Gaming 2.5GbE Family Controller" &&
+                    observation->wireless_network_adapter ==
+                        "Intel(R) Wi-Fi 7 BE200 320MHz",
+                "empty CPU/board PNP ids and localized network adapter types must retain concrete physical models") &&
+         expect(observation->memory ==
+                    "Micron Technology DDR5 48GB 5600MHz (24GB + 24GB)",
+                "matching physical DIMMs must be aggregated by part number") &&
+         expect(observation->display.find("BOE0CD1") != std::string::npos &&
+                    observation->display.find("P275MV PLUS") != std::string::npos &&
+                    observation->display.find("默认监视器") == std::string::npos,
+                "EDID PNP tokens and parenthetical monitor models must replace generic monitor names") &&
+         expect(observation->solid_state_storage.find("Samsung SSD 990 PRO 2TB") !=
+                        std::string::npos &&
+                    observation->solid_state_storage.find("SK hynix PCB01") !=
+                        std::string::npos &&
+                    observation->hard_disk_storage.empty() &&
+                    observation->storage.find("标准磁盘驱动器") == std::string::npos,
+                "SCSI NVMe PNP ids must classify SSDs without exposing localized disk-class prefixes");
+}
+
+[[nodiscard]] bool memory_quantity_rendering_scales_past_two_modules() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[5].result.rows.push_back(
+      {"Micron", "25769803776", "5600", "MTC20C2085S1EC48BA1", "DIMM2",
+       "Physical Memory 2", "34", "5600"});
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->memory.find(
+                        "Micron DDR5 72GB 5600MHz (24GB + 24GB + 24GB)") !=
+                        std::string::npos,
+                "memory summaries must render every matching module instead of two hard-coded entries");
+}
+
 [[nodiscard]] bool permission_denial_and_cancellation_are_terminal() {
   auto denied_executor = std::make_unique<FakeQueryExecutor>();
   auto* denied_raw = denied_executor.get();
@@ -410,6 +496,8 @@ int main() {
   passed &= virtual_software_vpn_loopback_and_unknown_rows_are_filtered();
   passed &= partial_failure_preserves_usable_model_facts();
   passed &= oem_firmware_fallbacks_keep_concrete_models();
+  passed &= real_machine_wmi_field_shapes_are_projected();
+  passed &= memory_quantity_rendering_scales_past_two_modules();
   passed &= permission_denial_and_cancellation_are_terminal();
   passed &= model_change_probe_requires_complete_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
