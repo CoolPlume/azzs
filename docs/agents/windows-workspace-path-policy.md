@@ -21,18 +21,18 @@ Git linked worktree 共享同一个 Git 对象库和引用数据库；每个 wor
 ```powershell
 git fetch origin --prune
 git status --short --branch
-git rev-parse origin/codex/v1-integration
+git rev-parse origin/<current-version>
 ```
 
-主工作树必须没有需要保护的未提交或未跟踪内容。然后从精确的远端 integration 基线创建独立 worktree：
+主工作树必须没有需要保护的未提交或未跟踪内容。然后从精确的当前裸版本分支创建独立 worktree：
 
 ```powershell
-git worktree add -b codex/<feature-slug> D:\azzs-codex\worktrees\<feature-slug> origin/codex/v1-integration
+git worktree add -b feature/<feature-slug> D:\azzs-codex\worktrees\<feature-slug> origin/<current-version>
 git -C D:\azzs-codex\worktrees\<feature-slug> status --short --branch
 git -C D:\azzs-codex\worktrees\<feature-slug> rev-parse HEAD
 ```
 
-`<feature-slug>` 应同时用于目录和分支的可识别部分，例如目录 `workspace-path-policy` 对应分支 `codex/chore-workspace-path-policy`。一个分支只能绑定一个 worktree；一个执行会话不能与另一个会话共用工作树或同时修改同一组文件。
+`<feature-slug>` 应同时用于目录和分支的可识别部分，例如目录 `workspace-path-policy` 对应分支 `docs/workspace-path-policy`。短期分支使用 `feature/`、`fix/`、`docs/` 等语义前缀，不使用执行工具、自动化平台或人员身份作为前缀。一个分支只能绑定一个 worktree；一个执行会话不能与另一个会话共用工作树或同时修改同一组文件。
 
 接管已有工作时，先检查 `git worktree list --porcelain`、目标 worktree 的 `status`、分支 HEAD、远端分支和 PR head，再决定恢复、继续或新建 worktree。既有用户拥有的路径不得因接管而移动、删除、重新实现或覆盖。
 
@@ -50,12 +50,13 @@ git -C D:\azzs-codex\worktrees\<feature-slug> rev-parse HEAD
 
    ```powershell
    git commit -m "docs: document Windows worktree path policy"
-   git push -u origin codex/<feature-slug>
+   git push -u origin feature/<feature-slug>
    ```
 
-2. 先创建以 `codex/v1-integration` 为 base 的 Draft PR。确认 head、变更范围、必要 CI 和风险复核准确后，再将 PR 转为 Ready。
-3. 多功能集成时，在 feature worktree 中使用普通 `git merge origin/codex/v1-integration`，解决冲突并验证新的 feature head；禁止 rebase、force push 和历史改写。
-4. 默认只把 PR 普通合入 `codex/v1-integration`。未经维护者明确授权，不合入 `main`，不创建 tag 或 GitHub Release，不上传发行制品，也不接受 WiX 条款。
-5. 已推送提交不使用 `--amend`；修复用新的提交保持远端 SHA 和 PR 证据可追溯。完成后报告 feature head SHA、PR/CI 状态和 integration merge SHA。
+2. 先创建以当前裸版本分支（例如 `0.1.1`）为 base 的 Draft PR。确认 head、变更范围、必要 CI 和风险复核准确后，再将 PR 转为 Ready。
+3. 多功能集成时，在短期分支 worktree 中使用普通 `git merge origin/<current-version>`，解决冲突并验证新的 head；禁止 rebase、force push 和历史改写。
+4. 默认只把 PR 普通合入当前裸版本分支。未经维护者明确授权，不合入 `main`，不创建 tag 或 GitHub Release，不上传发行制品，也不接受 WiX 条款。
+5. 已推送提交不使用 `--amend`；修复用新的提交保持远端 SHA 和 PR 证据可追溯。完成后报告短期分支 head SHA、PR/CI 状态和版本分支 merge SHA。
+6. GitHub Release 完成后，只在逐项确认“已合并、无开放 PR、无独有提交、worktree 干净”后删除短期远端分支并使用 `git worktree remove` 注销对应工作树。不得直接递归删除 linked worktree；发布制品、证据、共享缓存和未完成工作继续保留。
 
 路径边界不会改变 Git 操作的安全性：安全性由分支、精确 SHA、工作树隔离和证据链决定；代理路径始终使用 `D:\azzs` 与 `D:\azzs-codex` 的完整路径。

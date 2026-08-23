@@ -81,17 +81,18 @@ OpenAI 的 prompt caching 资料说明缓存按请求起始前缀匹配，因此
 ## 6. Git 与 GitHub 节奏
 
 - 一个内聚工作单元完成并通过最小门禁后就提交；达到可共享、可恢复的进度时推送远端，不把所有工作积到最后。
-- 功能分支及时创建 Draft PR。达到准确 head、必要 CI 和风险复核后再转 Ready，并按既定依赖顺序集成。
-- 多功能集成使用普通 merge 把最新 integration 带入 feature 分支，解决冲突并验证新的 feature head；禁止 rebase、force push 和历史改写。
-- 默认集成目标是 `codex/v1-integration`。未经维护者明确要求，不合入 `main`，不创建 tag 或 GitHub Release，不接受 WiX 条款。
+- 短期分支及时创建 Draft PR。分支按用途使用 `feature/<slug>`、`fix/<slug>` 或 `docs/<slug>` 等语义名称，不使用执行工具、自动化平台或人员身份作为前缀。达到准确 head、必要 CI 和风险复核后再转 Ready，并按既定依赖顺序集成。
+- 多功能集成使用普通 merge 把当前裸版本分支带入短期分支，解决冲突并验证新的 head；禁止 rebase、force push 和历史改写。
+- 默认集成目标是当前唯一的裸版本分支，例如 `0.1.1`、`0.2.0`。未经维护者明确要求，不合入 `main`，不创建 tag 或 GitHub Release，不接受 WiX 条款。
 - 保护维护者的未提交和未跟踪内容。不得删除、重置或顺带提交无关文件；主工作树不适合写入时使用独立 worktree。
 - 提交和 PR 证据绑定精确 SHA、CI run 和实际执行环境；事项 Markdown 在相应实现已集成且证据成立后收口。
+- 每次 GitHub Release 后执行清理：只删除已合并、无开放 PR、无独有提交且对应 worktree 干净的短期分支和临时目录；发布制品、验证证据、共享缓存以及含未提交或未发布提交的工作必须保留。长期分支继续遵守“一个版本一条裸版本分支”。
 
 ## 7. Windows 原生主执行环境
 
 - Windows 工作区路径、代理产物、创建/迁移/清理和证据边界必须遵循 `docs/agents/windows-workspace-path-policy.md`；该文档对 `D:\azzs`、`D:\azzs-codex`、根目录禁写、盘符映射禁用和既有用户路径保护具有约束力。
 - 从 2026-08-13 起，新的总调度和后续执行默认在维护者的 Windows 11 25H2 原生环境进行；GitHub 是跨会话状态的权威中转，不再把 macOS 或虚拟机作为日常执行端。
-- Windows 总调度从 `origin/codex/v1-integration` 克隆或更新，先阅读 `docs/agents/windows-native-takeover.md`，再使用独立 worktree 分发任务。执行会话直接完成实现、x64 最小验证、提交、推送、PR 和集成，不把普通操作交回维护者。
+- Windows 总调度从当前裸版本分支（例如 `origin/0.1.1`）克隆或更新，先阅读 `docs/agents/windows-native-takeover.md`，再使用独立 worktree 分发任务。执行会话直接完成实现、x64 最小验证、提交、推送、PR 和集成，不把普通操作交回维护者。
 - 减少人工 UI 验收。只有结果会改变 x64 发布决策且无法由无界面合同或自动化替代时才请求维护者操作；相邻 UAC、Explorer、安装器和 UIA 场景集中到同一个接近发行候选的验收批次。
 - 旧 macOS/虚拟机观察只按已记录的证据等级保留，不重复采集，不外推为 Windows 原生通过。未形成可信证据的场景保持未验证，先推进依赖链上的产品实现。
 - 主执行环境变化不扩大发布权限：仍不得未经明确授权合入 `main`、创建 tag/GitHub Release 或接受 WiX 条款。
