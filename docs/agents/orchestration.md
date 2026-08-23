@@ -83,7 +83,7 @@ OpenAI 的 prompt caching 资料说明缓存按请求起始前缀匹配，因此
 - 一个内聚工作单元完成并通过最小门禁后就提交；达到可共享、可恢复的进度时推送远端，不把所有工作积到最后。
 - 功能分支及时创建 Draft PR。达到准确 head、必要 CI 和风险复核后再转 Ready，并按既定依赖顺序集成。
 - 多功能集成使用普通 merge 把最新 integration 带入 feature 分支，解决冲突并验证新的 feature head；禁止 rebase、force push 和历史改写。
-- 默认集成目标是 `codex/v1-integration`。未经维护者明确要求，不合入 `main`，不创建 tag 或 GitHub Release，不接受 WiX 条款。
+- 默认集成目标是当前唯一的裸版本分支，例如 `0.1.1`、`0.2.0`。beta/预览版本可以只保留在版本分支并发布为 prerelease；非 beta 的正式版本在创建 tag 或 GitHub Release 前，必须把该裸版本分支通过普通 merge 合入 `main`，并确认发布提交可从 `main` 到达。未经维护者明确要求，不创建 tag 或 GitHub Release，不接受 WiX 条款。
 - 保护维护者的未提交和未跟踪内容。不得删除、重置或顺带提交无关文件；主工作树不适合写入时使用独立 worktree。
 - 提交和 PR 证据绑定精确 SHA、CI run 和实际执行环境；事项 Markdown 在相应实现已集成且证据成立后收口。
 
@@ -94,7 +94,7 @@ OpenAI 的 prompt caching 资料说明缓存按请求起始前缀匹配，因此
 - Windows 总调度从 `origin/codex/v1-integration` 克隆或更新，先阅读 `docs/agents/windows-native-takeover.md`，再使用独立 worktree 分发任务。执行会话直接完成实现、x64 最小验证、提交、推送、PR 和集成，不把普通操作交回维护者。
 - 减少人工 UI 验收。只有结果会改变 x64 发布决策且无法由无界面合同或自动化替代时才请求维护者操作；相邻 UAC、Explorer、安装器和 UIA 场景集中到同一个接近发行候选的验收批次。
 - 旧 macOS/虚拟机观察只按已记录的证据等级保留，不重复采集，不外推为 Windows 原生通过。未形成可信证据的场景保持未验证，先推进依赖链上的产品实现。
-- 主执行环境变化不扩大发布权限：仍不得未经明确授权合入 `main`、创建 tag/GitHub Release 或接受 WiX 条款。
+- 主执行环境变化不扩大发布权限：稳定版合入 `main` 是发布治理前置，但仍须维护者明确授权；不得擅自创建 tag/GitHub Release 或接受 WiX 条款。
 
 ## 8. 分发模板
 
