@@ -113,6 +113,16 @@ void set_settings_operation_open(InfoBar const& info_bar, bool open) {
   info_bar.Visibility(Visibility::Collapsed);
 }
 
+void set_update_status_open(InfoBar const& info_bar, bool open) {
+  if (open) {
+    info_bar.Visibility(Visibility::Visible);
+    info_bar.IsOpen(true);
+    return;
+  }
+  info_bar.IsOpen(false);
+  info_bar.Visibility(Visibility::Collapsed);
+}
+
 void replace_token(std::wstring& value, std::wstring_view token,
                    std::wstring_view replacement) {
   auto position = value.find(token);
@@ -853,6 +863,8 @@ void ApplicationSettingsPage::project_update(
   ApplicationUpdateStatus().Message(winrt::hstring{message});
   ApplicationUpdateStatus().Severity(severity);
   AutomationProperties::SetName(ApplicationUpdateStatus(), title);
+  set_update_status_open(ApplicationUpdateStatus(),
+                         snapshot.state != UpdateState::idle);
 }
 
 void ApplicationSettingsPage::project_action(
