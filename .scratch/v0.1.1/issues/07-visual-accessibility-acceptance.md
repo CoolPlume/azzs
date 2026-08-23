@@ -42,3 +42,4 @@ Evidence freshness: 绑定最终 0.1.1 候选提交、Windows/SDK、显示器/DP
 - 2026-08-23（最终代码验证基线）：视觉/无障碍待验收的代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`d8a4367adc1e322351126e8ab3676d30584475d5` 为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`，真实 WinUI、无障碍、DPI、ARM64 和安装生命周期边界未改变。
 - 待执行证据包括 Windows 11 x64 宽/窄窗口、100%/高 DPI、键盘/触摸、Narrator、减少动画/透明度、高对比度、重复导航和设置异常恢复；需绑定最终候选 SHA、构建目录、截图/日志及实际环境。
 - 未验证边界：ARM64 实机、DPI/多显示器专项、安装/卸载/升级生命周期、真实硬件样本、触摸和屏幕阅读器均未执行；任何自动合同或 macOS/CI 结果都不能替代真实 Windows 视觉验收。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 和 `Blocked by: 01, 02, 03, 04, 05, 06` 均保持不变；真实 WinUI/无障碍、DPI、触摸、ARM64、硬件样本和安装生命周期仍未验证。
