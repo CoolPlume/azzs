@@ -1163,17 +1163,18 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "driver recommendations must fail closed while fixed official entrypoints remain visible",
     )
     for label, automation_id in (
-        ("HardwareOperatingSystemLabel", "AzzsHardwareOperatingSystem"),
+        ("HardwareModelSummaryTitle", "AzzsHardwareModel"),
+        ("HardwareSystemSummaryTitle", "AzzsHardwareSystem"),
+        ("HardwareDetailsTitle", "AzzsHardwareDetails"),
         ("HardwareCpuLabel", "AzzsHardwareCpu"),
-        ("HardwareGpuLabel", "AzzsHardwareGpu"),
         ("HardwareMotherboardLabel", "AzzsHardwareMotherboard"),
         ("HardwareMemoryLabel", "AzzsHardwareMemory"),
+        ("HardwareGpuLabel", "AzzsHardwareGpu"),
         ("HardwareDisplayLabel", "AzzsHardwareDisplay"),
         ("HardwareStorageLabel", "AzzsHardwareStorage"),
         ("HardwareNpuLabel", "AzzsHardwareNpu"),
         ("HardwareAudioLabel", "AzzsHardwareAudio"),
         ("HardwareNetworkLabel", "AzzsHardwareNetwork"),
-        ("HardwareOemLabel", "AzzsHardwareOem"),
     ):
         require(
             f'x:Uid="{label}"' in drivers_xaml and

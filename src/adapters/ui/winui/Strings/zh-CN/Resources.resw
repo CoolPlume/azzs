@@ -72,6 +72,9 @@
   <data name="HardwareUnrecognizedValue" xml:space="preserve"><value>未识别</value></data>
   <data name="HardwareStatusTitle" xml:space="preserve"><value>硬件未识别</value></data>
   <data name="HardwareStatusMessage" xml:space="preserve"><value>本次硬件检测没有生成可用概览。</value></data>
+  <data name="HardwareModelSummaryTitle" xml:space="preserve"><value>型号信息</value></data>
+  <data name="HardwareSystemSummaryTitle" xml:space="preserve"><value>系统信息</value></data>
+  <data name="HardwareDetailsTitle" xml:space="preserve"><value>详细信息</value></data>
   <data name="HardwareCpuLabel.Text" xml:space="preserve"><value>CPU</value></data>
   <data name="HardwareGpuLabel.Text" xml:space="preserve"><value>显卡</value></data>
   <data name="HardwareMotherboardLabel.Text" xml:space="preserve"><value>主板</value></data>
