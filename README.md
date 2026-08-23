@@ -2,13 +2,15 @@
 
 Windows 初装工作台：帮助新装 Windows 完成驱动准备、系统优化、常用软件安装和软件优化。`azzs` 是仓库标识。
 
-> 当前处于初始实现阶段。仓库已经包含应用与页面骨架，并已建立 x64/ARM64 构建检查；首版功能、完整实机兼容和发行验证尚未完成，也没有可供下载的安装包或 GitHub Release；具体状态以事项和验证证据为准。
+> 最新公开版本为 [0.1.1](https://github.com/CoolPlume/azzs/releases/tag/v0.1.1)，提供 Windows x64 便携版。当前仍未覆盖 ARM64 实机、安装生命周期和完整无障碍/DPI 验收；具体边界以 Release 更新日志和验证证据为准。
+
+本项目在实现与工程验证过程中使用了 AI 辅助；版本范围、代码审查、验证证据与发布决定由维护者负责。
 
 ## 目标范围
 
-- 计划中的首个应用版本面向 Windows 10 22H2 与 Windows 11 普通个人设备。
+- 当前应用版本面向 Windows 10 22H2 与 Windows 11 普通个人设备。
 - Windows 10 22H2 是最低目标版本，不是经过完整兼容性测试的保证。
-- 首版计划使用 WinUI 3、C++/WinRT、XAML 与可移植的 C++ 核心。
+- 应用使用 WinUI 3、C++/WinRT、XAML 与可移植的 C++ 核心。
 - macOS 只保留未来迁移边界，不属于首版发行或测试范围。
 - 计划提供默认关闭的调试模式：它生成极详细、写入前脱敏且仅保存在本机的日志，可导出为单个自包含诊断文件；同一模式还提供使用核心目录模型与校验的图形化软件目录编辑器。
 
@@ -56,11 +58,11 @@ pwsh ./eng/package-installer.ps1 -Architecture x64 -SkipBuild -AcceptWixEula
 
 ## English summary
 
-Windows Initial Setup Workbench is a Windows desktop workbench that helps users prepare a freshly installed PC; `azzs` is the repository identifier. The repository now contains the initial application skeleton and x64/ARM64 build checks, while first-release functionality, broad compatibility, installers, and releases remain incomplete. Chinese is the primary project language, while Issues and Pull Requests in English are welcome.
+Windows Initial Setup Workbench is a Windows desktop workbench that helps users prepare a freshly installed PC; `azzs` is the repository identifier. Version 0.1.1 is available as an unsigned x64 portable release. ARM64 hardware, installer lifecycle, and broad accessibility/DPI coverage remain unverified. Chinese is the primary project language, while Issues and Pull Requests in English are welcome.
 
 ## 支持范围
 
-当前没有公开 Release，因此暂无可支持的应用版本。首个公开 Release 后，项目只支持最新应用正式稳定发行；应用测试发行和更早正式稳定发行不在公开支持范围。
+项目只支持最新公开稳定版本；当前支持版本为 `0.1.1`。应用测试发行和更早正式稳定发行不在公开支持范围。
 
 ## 许可证
 
