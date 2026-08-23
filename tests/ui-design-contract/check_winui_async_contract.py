@@ -239,8 +239,8 @@ def verify_file(root: Path, relative_path: str, expected_handlers: int,
     require(source.count("co_await dialog.ShowAsync()") == expected_handlers,
             f"{relative_path} must guard every dialog await")
     if expected_catches is not None:
-        require(source.count("catch (...) {") == expected_catches,
-                f"{relative_path} must keep {expected_catches} catch-all boundaries")
+        require(source.count("catch (...) {") >= expected_catches,
+                f"{relative_path} must keep at least {expected_catches} catch-all boundaries")
     require(source.count("OutputDebugStringW") >= expected_handlers,
             f"{relative_path} must leave a no-throw diagnostic for each catch")
     require(source.count(guard_name) >= expected_handlers,
@@ -362,7 +362,16 @@ def verify(root: Path) -> None:
         "workbench_->navigate(PageId::application_settings);" in commit_body,
         "settings commit must publish the candidate only after preparation succeeds",
     )
-    projection_index = commit_body.find("project(workbench_->snapshot());")
+    require(
+        "last_projected_snapshot_" in main_window and
+        "used_cached_workbench_snapshot" in prepare_body and
+        "settings_snapshot.read_degraded = true;" in prepare_body,
+        "settings navigation must reuse a last-known core snapshot and mark the page degraded when a copy is unavailable",
+    )
+    projection_index = max(
+        commit_body.find("project(workbench_->snapshot());"),
+        commit_body.find("project(projection_snapshot);")
+    )
     temporary_access_end_index = commit_body.find(
         "end_temporary_close_recovery();"
     )

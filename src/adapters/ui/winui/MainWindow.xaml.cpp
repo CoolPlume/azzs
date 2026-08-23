@@ -530,13 +530,29 @@ MainWindow::prepare_application_settings_page() {
   auto& settings = services->application_settings();
   azzs::application::WorkbenchSnapshot workbench_snapshot;
   azzs::application::ApplicationSettingsSnapshot settings_snapshot;
+  bool used_cached_workbench_snapshot = false;
   try {
     workbench_snapshot = workbench_->snapshot();
   } catch (...) {
-    throw SettingsNavigationPreparationError{
-        .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
-            snapshot_read,
-        .detail = "workbench snapshot read failed"};
+    // A copy of the immutable Workbench snapshot can fail independently of
+    // the live services. Reuse the last projected value for presentation so
+    // settings remains reachable; the page exposes the degraded read state
+    // and no cached value is persisted.
+    if (!last_projected_snapshot_.has_value()) {
+      throw SettingsNavigationPreparationError{
+          .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+              snapshot_read,
+          .detail = "workbench snapshot read failed"};
+    }
+    try {
+      workbench_snapshot = *last_projected_snapshot_;
+      used_cached_workbench_snapshot = true;
+    } catch (...) {
+      throw SettingsNavigationPreparationError{
+          .stage = azzs::ui::presentation::SettingsNavigationFailureStage::
+              snapshot_read,
+          .detail = "workbench snapshot read failed"};
+    }
   }
   try {
     settings_snapshot = settings.snapshot();
@@ -544,6 +560,9 @@ MainWindow::prepare_application_settings_page() {
     // Keep navigation usable even if a legacy owner still throws instead of
     // returning its degraded field. Default values are rendered as unavailable
     // by the page; no persisted value is manufactured or written back.
+    settings_snapshot.read_degraded = true;
+  }
+  if (used_cached_workbench_snapshot) {
     settings_snapshot.read_degraded = true;
   }
 
@@ -616,7 +635,20 @@ void MainWindow::commit_application_settings_page(
   // path; swallowing it would report navigation success with a partial shell.
   // Keep the catalog editor's temporary access until projection succeeds so a
   // failed projection can restore the exact prior core state.
-  project(workbench_->snapshot());
+  // Projection remains inside the transaction. If the live snapshot copy is
+  // transiently unavailable, use the same last-known presentation value that
+  // allowed preparation to complete; any actual projection exception still
+  // escapes to the bridge's single recovery boundary.
+  azzs::application::WorkbenchSnapshot projection_snapshot;
+  try {
+    projection_snapshot = workbench_->snapshot();
+  } catch (...) {
+    if (!last_projected_snapshot_.has_value()) {
+      throw;
+    }
+    projection_snapshot = *last_projected_snapshot_;
+  }
+  project(projection_snapshot);
   if (previous_page == PageId::software_catalog_editor) {
     if (auto const services = workbench_->services()) {
       services->debug_mode_catalog_editor().end_temporary_close_recovery();
@@ -1077,6 +1109,12 @@ void MainWindow::project_drivers_page(
 
 void MainWindow::project(
     azzs::application::WorkbenchSnapshot const& snapshot) {
+  try {
+    last_projected_snapshot_ = snapshot;
+  } catch (...) {
+    // The cache is an availability aid only. A failed cache copy must never
+    // change the current projection result or become a user-visible error.
+  }
   using azzs::domain::MinimumVersionRisk;
   using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;

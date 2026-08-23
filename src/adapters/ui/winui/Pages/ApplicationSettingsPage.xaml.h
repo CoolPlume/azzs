@@ -78,6 +78,7 @@ struct ApplicationSettingsPage
   void project(azzs::application::ApplicationSettingsSnapshot const& snapshot);
   void project_update(azzs::application::UpdateSnapshot const& snapshot);
   void project_action(azzs::application::ApplicationSettingsActionResult const& result);
+  void show_operation_failure() noexcept;
   void project_recovery_selection();
   [[nodiscard]] std::optional<std::uint64_t> selected_recovery_record();
   [[nodiscard]] static bool recovery_record_is_protected(
