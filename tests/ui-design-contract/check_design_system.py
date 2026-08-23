@@ -1086,7 +1086,7 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         'ArchitecturePromptItem().Content' in settings_cpp and
         'ArchitectureAutoFallbackItem().Content' in settings_cpp and
         'ArchitecturePreferX64Item().Content' in settings_cpp,
-        "application settings must keep all package architecture choices visible and localized",
+        "application settings must keep all package architecture choices localized",
     )
     require(
         all(
@@ -1099,6 +1099,31 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             )
         ),
         "package architecture choices must expose stable accessibility ids",
+    )
+    architecture_section = re.search(
+        r'<Border\s+x:Name="ArchitecturePreferenceSection"\s+'
+        r'Visibility="Collapsed"\s+'
+        r'Style="\{StaticResource AzzsSectionSurfaceStyle\}">',
+        settings_xaml,
+    )
+    settings_projection = settings_cpp[settings_cpp.index(
+        "void ApplicationSettingsPage::project("
+    ):]
+    require(
+        architecture_section is not None and
+        re.search(
+            r"\[\[nodiscard\]\]\s+constexpr\s+bool\s+current_package_is_x64\(\)\s+noexcept\s*"
+            r"\{\s*#if\s+defined\(_M_X64\)\s*return true;\s*#else\s*return false;\s*#endif\s*\}",
+            settings_cpp,
+        ) is not None and
+        "auto const architecture_preferences_visible = !current_package_is_x64();" in settings_projection and
+        "ArchitecturePreferenceSection().Visibility(" in settings_projection and
+        "architecture_preferences_visible ? Visibility::Visible" in settings_projection and
+        "if (architecture_preferences_visible) {" in settings_projection and
+        settings_projection.index("ArchitecturePreferenceSection().Visibility(") <
+        settings_projection.index("ArchitecturePreferenceComboBox().SelectedIndex(") and
+        "if (projecting_ || current_package_is_x64() || settings_ == nullptr" in settings_cpp,
+        "x64 packages must collapse the architecture section while non-x64 packages project it without persisting hidden or initialization selections",
     )
     for automation_id in (
         "AzzsApplicationSettingsPage",
