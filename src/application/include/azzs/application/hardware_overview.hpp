@@ -112,6 +112,11 @@ struct HardwareDeviceRecord final {
   std::uint32_t efficiency_core_count{0};
   HardwareDisplayConnection display_connection{
       HardwareDisplayConnection::unknown};
+  std::uint32_t display_width{0};
+  std::uint32_t display_height{0};
+  // Zero means the raw monitor capability data did not provide a trustworthy
+  // physical vertical-field-rate upper bound.
+  std::uint32_t physical_refresh_rate_limit_hz{0};
   std::string storage_interface;
   std::string pcie_generation;
   std::string nand_type;
