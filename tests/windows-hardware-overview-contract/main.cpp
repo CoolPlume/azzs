@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -20,6 +21,7 @@ using azzs::adapters::windows::WindowsHardwareQueryCode;
 using azzs::adapters::windows::WindowsHardwareQueryExecutor;
 using azzs::adapters::windows::WindowsHardwareQueryResult;
 using azzs::adapters::windows::WindowsCpuTopology;
+using azzs::adapters::windows::WindowsDisplayEdid;
 using azzs::adapters::windows::WindowsGpuMemory;
 using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareDisplayConnection;
@@ -45,6 +47,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   std::vector<ExpectedQuery> expected;
   std::optional<WindowsCpuTopology> topology;
   std::vector<WindowsGpuMemory> dxgi_adapters;
+  std::vector<WindowsDisplayEdid> edids;
+  std::vector<std::string> requested_display_pnp_ids;
+  bool throw_display_edids{false};
   std::size_t calls{0};
   bool mismatch{false};
 
@@ -86,7 +91,45 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       std::stop_token) override {
     return dxgi_adapters;
   }
+
+  [[nodiscard]] std::vector<WindowsDisplayEdid> display_edids(
+      std::span<std::string const> pnp_device_ids,
+      std::stop_token) override {
+    if (throw_display_edids) {
+      throw std::runtime_error{"display EDID unavailable"};
+    }
+    requested_display_pnp_ids.assign(pnp_device_ids.begin(),
+                                     pnp_device_ids.end());
+    return edids;
+  }
 };
+
+[[nodiscard]] std::vector<std::uint8_t> range_limit_edid(
+    std::uint8_t minimum_vertical_hz, std::uint8_t maximum_vertical_hz,
+    std::uint8_t range_offset_flags = 0) {
+  std::vector<std::uint8_t> edid(128, 0);
+  std::uint8_t const header[]{0x00, 0xff, 0xff, 0xff,
+                             0xff, 0xff, 0xff, 0x00};
+  std::ranges::copy(header, edid.begin());
+  edid[18] = 1;
+  edid[19] = 4;
+  constexpr std::size_t descriptor = 54;
+  edid[descriptor + 3] = 0xfd;
+  edid[descriptor + 4] = range_offset_flags;
+  edid[descriptor + 5] = minimum_vertical_hz;
+  edid[descriptor + 6] = maximum_vertical_hz;
+  std::uint32_t checksum = 0;
+  for (std::size_t index = 0; index < 127; ++index) {
+    checksum += edid[index];
+  }
+  edid[127] = static_cast<std::uint8_t>((256 - checksum % 256) % 256);
+  return edid;
+}
+
+[[nodiscard]] bool line_separated(std::string const& value) {
+  return value.find('\n') != std::string::npos &&
+         value.find("; ") == std::string::npos;
+}
 
 [[nodiscard]] std::vector<ExpectedQuery> full_queries() {
   return {
@@ -107,10 +150,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                  {"AMD Radeon", "AMD", "PCI\\VEN_1002&DEV_0002", "OK",
                   "0", "Radeon", "4294967296"}}}},
       {"Win32_BaseBoard",
-       {"Manufacturer", "Product", "HostingBoard", "PNPDeviceID",
-        "Status", "ConfigManagerErrorCode"},
+       {"Manufacturer", "Product", "HostingBoard", "Status"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"ASUS", "PRIME B650", "TRUE", "ACPI\\ASUS0001", "OK", "0"}}}},
+         .rows = {{"ASUS", "PRIME B650", "TRUE", "OK"}}}},
       {"Win32_NetworkAdapter",
        {"Name", "Manufacturer", "AdapterType", "PhysicalAdapter",
         "PNPDeviceID", "Status", "ConfigManagerErrorCode", "ServiceName",
@@ -214,8 +256,11 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                          std::string::npos &&
                      result.observation->display.find("类型未确认") !=
                          std::string::npos &&
-                     result.observation->display.find("2560 × 1600") !=
-                         std::string::npos &&
+                      result.observation->display.find("2560 × 1600") !=
+                          std::string::npos &&
+                      result.observation->display.find(
+                          "物理刷新率上限（EDID）：未读取") !=
+                          std::string::npos &&
                      result.observation->storage.find("PC801 SK 海力士") !=
                          std::string::npos &&
                      result.observation->storage.find("三星 Samsung SSD 990 PRO") !=
@@ -240,8 +285,13 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                          std::string::npos &&
                      result.observation->audio.find("瑞昱 Realtek") !=
                          std::string::npos &&
-                     result.observation->npu.find("英特尔 Intel") !=
-                         std::string::npos &&
+                      result.observation->npu.find("英特尔 Intel") !=
+                          std::string::npos &&
+                      line_separated(result.observation->gpu) &&
+                      line_separated(result.observation->solid_state_storage) &&
+                      line_separated(result.observation->audio) &&
+                      result.observation->motherboard.find('\n') ==
+                          std::string::npos &&
                      result.observation->operating_system.find("24H2") !=
                          std::string::npos &&
                      result.observation->operating_system.find("版本 10.0.26100") !=
@@ -268,7 +318,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"Microsoft Basic Display Adapter", "Microsoft",
        "PCI\\VEN_1234&DEV_0001", "Error", "28", ""}};
   raw_executor->expected[2].result.rows = {
-      {"ASUS", "PRIME B650", "TRUE", "ACPI\\ASUS0001", "Disabled", "22"}};
+      {"ASUS", "PRIME B650", "TRUE", "Disabled"}};
   raw_executor->expected[3].result.rows = {
       {"Intel Ethernet", "Intel", "Ethernet 802.3", "TRUE",
        "PCI\\VEN_8086&DEV_0003", "Error", "10", "e1iexpress", "2"}};
@@ -318,7 +368,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"VMware SVGA", "VMware", "PCI\\VEN_15AD&DEV_0405", "OK", "0",
        ""}};
   raw_executor->expected[2].result.rows = {
-      {"Microsoft", "Virtual Machine", "TRUE", "ROOT\\VIRTUALBOARD", "OK", "0"}};
+      {"Microsoft", "Virtual Machine", "TRUE", "OK"}};
   raw_executor->expected[3].result.rows = {
       {"TAP-Windows Adapter V9", "OpenVPN", "VPN", "FALSE",
        "ROOT\\TAP0901", "OK", "0", "tap0901", "2"},
@@ -377,7 +427,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   raw_executor->expected[0].result.rows = {
       {"Intel(R) Core(TM) Ultra 9", "GenuineIntel", "", "OK", "0", "24", "24"}};
   raw_executor->expected[2].result.rows = {
-      {"HP", "8A43", "", "", "OK", "0"}};
+      {"HP", "8A43", "true", "OK"}};
   raw_executor->expected[6].result.rows = {
       {"Generic PnP Monitor", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"}};
   raw_executor->expected[9].result.rows = {
@@ -401,7 +451,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                                  device.status == HardwareDeviceStatus::disabled;
                         }) &&
                     !raw_executor->mismatch && raw_executor->calls == 11,
-                "missing processor and motherboard PNP ids, optional HostingBoard, and generic monitor rows must use concrete OEM WMI fallbacks");
+                "missing processor PNP ids, a concrete hosted board, and generic monitor rows must use concrete OEM WMI fallbacks");
 }
 
 [[nodiscard]] bool incomplete_board_rows_fail_closed() {
@@ -409,8 +459,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   auto* raw_executor = executor.get();
   raw_executor->expected = full_queries();
   raw_executor->expected[2].result.rows = {
-      {"HP", "", "True", "", "OK", "0"},
-      {"", "8D41", "True", "", "OK", "0"},
+      {"HP", "", "true", "OK"},
+      {"", "8D41", "true", "OK"},
   };
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
@@ -434,7 +484,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"Intel(R) Core(TM) Ultra 9 275HX", "GenuineIntel", "", "OK", "",
        "24", "24"}};
   raw_executor->expected[2].result.rows = {
-      {"HP", "8D41", "True", "", "OK", ""}};
+      {"HP", "8D41", "-1", "OK"}};
   raw_executor->expected[3].result.rows = {
       {"Realtek Gaming 2.5GbE Family Controller", "Realtek",
        "以太网 802.3", "True",
@@ -451,7 +501,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   raw_executor->expected[6].result.rows = {
       {"默认监视器", "", "OK", "", "", ""},
       {"通用即插即用监视器", "DISPLAY\\LHC907D\\5&18F24B9&0&UID8449", "OK",
-       "0", "", ""},
+       "0", "3840", "2160"},
       {"通用即插即用监视器", "DISPLAY\\BOE0CD1\\4&1739F381&1&UID8388688", "OK",
        "0", "2560", "1600"}};
   raw_executor->expected[7].result.rows = {
@@ -460,6 +510,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
        "0", "SCSI", "Fixed hard disk media"},
       {"SK hynix PCB01 HFS001TFM9X187N", "(标准磁盘驱动器)", "1024203640320",
        "SCSI\\DISK&VEN_NVME&PROD_SK_HYNIX_PCB01_H\\5&24C09446&0&000000", "OK",
+       "0", "SCSI", "Fixed hard disk media"},
+      {"SK hynix PCB01 HFS999TFM9X187N", "(标准磁盘驱动器)", "1024203640320",
+       "SCSI\\DISK&VEN_NVME&PROD_SK_HYNIX_PCB01_X\\5&24C09446&0&000001", "OK",
        "0", "SCSI", "Fixed hard disk media"}};
   raw_executor->expected[9].result.rows = {
       {"Integrated Monitor", "(标准监视器类型)",
@@ -474,10 +527,26 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       .logical_processors = 24,
       .split_known = true,
   };
+  raw_executor->edids = {
+      {.model_key = "boe0cd1", .bytes = range_limit_edid(60, 240, 0x0c)},
+      {.model_key = "lhc907d", .bytes = range_limit_edid(48, 160)},
+  };
 
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
   auto const& observation = result.observation;
+  auto refresh_fingerprint_changed = false;
+  if (observation.has_value()) {
+    auto changed = *observation;
+    for (auto& device : changed.devices) {
+      if (device.kind == HardwareDeviceKind::display) {
+        ++device.physical_refresh_rate_limit_hz;
+        refresh_fingerprint_changed =
+            changed.model_fingerprint() != observation->model_fingerprint();
+        break;
+      }
+    }
+  }
   return expect(result.succeeded() && observation.has_value() &&
                     !raw_executor->mismatch && raw_executor->calls == 11,
                 "real WMI field shapes must satisfy the approved query contract") &&
@@ -492,28 +561,50 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                          std::string::npos &&
                      observation->operating_system.find("版本 10.0.26200") !=
                          std::string::npos,
-                "empty CPU/board PNP ids and localized network adapter types must retain concrete physical models") &&
+                "an empty CPU PNP id, concrete hosted board, and localized network types must retain physical models") &&
          expect(observation->memory.find(
                      "美光 Micron Technology DDR5 48GB 5600MHz (24GB + 24GB)") !=
                      std::string::npos,
                 "matching physical DIMMs must be aggregated by part number") &&
          expect(observation->display.find("京东方 BOE0CD1（内建") !=
+                          std::string::npos &&
+                     observation->display.find(
+                         "物理刷新率上限（EDID）：240 Hz") !=
                          std::string::npos &&
-                     observation->display.find("泰坦军团 TITAN ARMY P275MV PLUS（外接）") !=
+                     observation->display.find("泰坦军团 TITAN ARMY P275MV PLUS（外接；") !=
+                          std::string::npos &&
+                     observation->display.find("3840 × 2160") !=
                          std::string::npos &&
-                    observation->display.find("默认监视器") == std::string::npos,
-                "EDID PNP tokens and parenthetical monitor models must replace generic monitor names") &&
+                     observation->display.find(
+                         "物理刷新率上限（EDID）：160 Hz") !=
+                         std::string::npos &&
+                     line_separated(observation->display) &&
+                     observation->display.find("默认监视器") == std::string::npos,
+                "validated raw EDID range limits must enrich physical monitor names without using desktop modes") &&
          expect(observation->solid_state_storage.find("Samsung SSD 990 PRO 2TB") !=
-                        std::string::npos &&
-                     observation->solid_state_storage.find("SK 海力士 PCB01") !=
                          std::string::npos &&
-                    observation->solid_state_storage.find("PCIe 代际：未读取") !=
-                        std::string::npos &&
+                     observation->solid_state_storage.find(
+                         "SK 海力士 PCB01 HFS001TFM9X187N") !=
+                          std::string::npos &&
+                     observation->solid_state_storage.find(
+                         "PCIe 代际：PCIe 5.0 x4") != std::string::npos &&
+                     observation->solid_state_storage.find(
+                         "NAND 颗粒：238 层 4D TLC（资料识别；SLC 缓存：支持）") !=
+                         std::string::npos &&
+                     observation->solid_state_storage.find(
+                         "SK 海力士 PCB01 HFS999TFM9X187N 954GB（接口：NVMe；PCIe 代际：未读取；NAND 颗粒：未读取）") !=
+                         std::string::npos &&
+                     observation->solid_state_storage.find("PCIe 代际：未读取") !=
+                         std::string::npos &&
                     observation->solid_state_storage.find("NAND 颗粒：未读取") !=
                         std::string::npos &&
-                    observation->hard_disk_storage.empty() &&
-                    observation->storage.find("标准磁盘驱动器") == std::string::npos,
-                    "SCSI NVMe PNP ids must classify SSDs without exposing localized disk-class prefixes");
+                     observation->hard_disk_storage.empty() &&
+                     observation->storage.find("标准磁盘驱动器") ==
+                         std::string::npos &&
+                     line_separated(observation->solid_state_storage) &&
+                     raw_executor->requested_display_pnp_ids.size() == 2 &&
+                     refresh_fingerprint_changed,
+                    "only the exact PCB01 product and validated raw EDID model keys may receive model-specific facts");
 }
 
 [[nodiscard]] bool topology_and_dxgi_enrich_only_verified_models() {
@@ -541,6 +632,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
        .dedicated_video_memory = 128ull * 1024ull * 1024ull,
        .shared_system_memory = 32175ull * 1024ull * 1024ull},
   };
+  raw_executor->throw_display_edids = true;
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
   return expect(result.succeeded() && result.observation.has_value(),
@@ -562,6 +654,41 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                                  device.efficiency_core_count == 16;
                         }),
                 "CPU P/E and GPU memory must use the platform facts, never the truncated WMI AdapterRAM value");
+}
+
+[[nodiscard]] bool invalid_or_conflicting_edid_fails_closed() {
+  auto render = [](std::vector<WindowsDisplayEdid> edids) {
+    auto executor = std::make_unique<FakeQueryExecutor>();
+    executor->expected = full_queries();
+    executor->edids = std::move(edids);
+    WindowsHardwareObserver observer{std::move(executor)};
+    auto const result = observer.observe({});
+    return result.observation.has_value() ? result.observation->display
+                                          : std::string{};
+  };
+
+  auto invalid_checksum = range_limit_edid(60, 144);
+  invalid_checksum[20] ^= 0x01;
+  auto const missing = render({});
+  auto const invalid = render({
+      {.model_key = "boe1234", .bytes = std::move(invalid_checksum)},
+  });
+  auto const reserved = render({
+      {.model_key = "boe1234", .bytes = range_limit_edid(60, 144, 0x80)},
+  });
+  auto const conflicting = render({
+      {.model_key = "boe1234", .bytes = range_limit_edid(60, 120)},
+      {.model_key = "boe1234", .bytes = range_limit_edid(60, 144)},
+  });
+  auto const failed_closed = [](std::string const& value) {
+    return value.find("物理刷新率上限（EDID）：未读取") !=
+               std::string::npos &&
+           value.find("物理刷新率上限（EDID）：144 Hz") ==
+               std::string::npos;
+  };
+  return expect(failed_closed(missing) && failed_closed(invalid) &&
+                    failed_closed(reserved) && failed_closed(conflicting),
+                "missing, invalid, reserved, or conflicting raw EDID must remain unread");
 }
 
 [[nodiscard]] bool unclassified_physical_storage_remains_visible() {
@@ -662,6 +789,7 @@ int main() {
   passed &= incomplete_board_rows_fail_closed();
   passed &= real_machine_wmi_field_shapes_are_projected();
   passed &= topology_and_dxgi_enrich_only_verified_models();
+  passed &= invalid_or_conflicting_edid_fails_closed();
   passed &= unclassified_physical_storage_remains_visible();
   passed &= memory_quantity_rendering_scales_past_two_modules();
   passed &= permission_denial_and_cancellation_are_terminal();
