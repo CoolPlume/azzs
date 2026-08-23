@@ -1,7 +1,9 @@
 #include <algorithm>
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -125,12 +127,12 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
        {"Model", "Manufacturer", "Size", "PNPDeviceID", "Status",
         "ConfigManagerErrorCode", "InterfaceType", "MediaType"},
        {.code = WindowsHardwareQueryCode::succeeded,
-        .rows = {{"PC801 NVMe SK hynix", "SK hynix", "1099511627776",
-                  "PCI\\VEN_1C5C&DEV_174A", "OK", "0", "NVMe", "SSD"},
-                 {"Samsung SSD 990 PRO", "Samsung", "2199023255552",
-                  "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe", "SSD"},
-                 {"Seagate BarraCuda HDD", "Seagate", "1099511627776",
-                  "SCSI\\DISK_SEAGATE", "OK", "0", "SCSI", "Fixed hard disk media"}}}},
+         .rows = {{"(标准磁盘驱动器) PC801 NVMe SK hynix", "SK hynix", "1099511627776",
+                   "PCI\\VEN_1C5C&DEV_174A", "OK", "0", "NVMe", "SSD"},
+                  {"(Standard disk drive) Samsung SSD 990 PRO", "Samsung", "2199023255552",
+                   "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe", "SSD"},
+                  {"(标准磁盘驱动器) Seagate BarraCuda HDD", "Seagate", "1099511627776",
+                   "SCSI\\DISK_SEAGATE", "OK", "0", "SCSI", "Fixed hard disk media"}}}},
       {"Win32_SoundDevice",
        {"Name", "Manufacturer", "PNPDeviceID", "Status",
         "ConfigManagerErrorCode"},
@@ -182,6 +184,10 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     result.observation->storage.find("PC801 NVMe SK hynix") !=
                         std::string::npos &&
                     result.observation->storage.find("Samsung SSD 990 PRO") !=
+                        std::string::npos &&
+                    result.observation->storage.find("标准磁盘驱动器") ==
+                        std::string::npos &&
+                    result.observation->storage.find("Standard disk drive") ==
                         std::string::npos &&
                     result.observation->solid_state_storage.find("Samsung SSD 990 PRO") !=
                         std::string::npos &&
@@ -320,7 +326,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   raw_executor->expected[6].result.rows = {
       {"Generic PnP Monitor", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"}};
   raw_executor->expected[9].result.rows = {
-      {"BOE NE160QDM-NY4", "BOE", "DISPLAY\\BOE1234\\1", "OK", "0", "Monitor"},
+      {"BOE NE160QDM-NY4", "BOE", "DISPLAY\\BOE1234\\1", "Disabled", "22", "Monitor"},
       {"Intel(R) AI Boost", "Intel", "PCI\\VEN_8086&DEV_7D1D", "OK", "0",
        "ComputeAccelerator"},
   };
@@ -329,7 +335,13 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return expect(result.succeeded() && result.observation.has_value() &&
                     result.observation->cpu == "Intel(R) Core(TM) Ultra 9 (24C/24T)" &&
                     result.observation->motherboard == "HP 8A43" &&
-                    result.observation->display == "BOE NE160QDM-NY4" &&
+                    result.observation->display ==
+                        "BOE NE160QDM-NY4 (2560x1600)" &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::display &&
+                                 device.status == HardwareDeviceStatus::disabled;
+                        }) &&
                     !raw_executor->mismatch && raw_executor->calls == 11,
                 "missing processor PNP ids, optional HostingBoard, and generic monitor rows must use concrete OEM WMI fallbacks");
 }
