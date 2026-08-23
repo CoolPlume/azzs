@@ -394,7 +394,7 @@ def verify(root: Path) -> None:
     require(
         "MainWindowSettingsNavigationFailed.Title" in failure_body and
         "MainWindowSettingsNavigationFailed.Message" in failure_body and
-        "SettingsNavigationFailureInfoBar().IsOpen(true)" in failure_body and
+        "set_shell_status_open(SettingsNavigationFailureInfoBar(), true)" in failure_body and
         "PrimaryNavigation().SelectedItem" not in failure_body,
         "settings failures must project a localized, discoverable InfoBar after state restore",
     )

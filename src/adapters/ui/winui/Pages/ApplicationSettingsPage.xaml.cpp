@@ -25,6 +25,7 @@ using azzs::domain::offline_package_cache::CacheLocationKind;
 using azzs::domain::offline_package_cache::CacheRetentionPolicy;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialog;
 using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
+using winrt::Microsoft::UI::Xaml::Controls::InfoBar;
 using winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity;
 using winrt::Microsoft::UI::Xaml::Visibility;
 using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
@@ -51,6 +52,21 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   }
   if (name.find(L"ApplicationSettingsCache") == 0) {
     return L"\u7F13\u5B58\u4FE1\u606F\u6682\u65F6\u4E0D\u53EF\u7528";
+  }
+  if (name == L"ApplicationSettingsArchitectureTitle.Text") {
+    return L"\u8F6F\u4EF6\u5305\u67B6\u6784";
+  }
+  if (name == L"ApplicationSettingsArchitecturePreference.Header") {
+    return L"\u8F6F\u4EF6\u5305\u67B6\u504F\u597D";
+  }
+  if (name == L"ApplicationSettingsArchitecturePrompt.Content") {
+    return L"\u4F18\u5148 ARM64\uFF0Cx64 \u56DE\u9000\u524D\u8BE2\u95EE";
+  }
+  if (name == L"ApplicationSettingsArchitectureAutoFallback.Content") {
+    return L"\u4F18\u5148 ARM64\uFF0C\u81EA\u52A8\u56DE\u9000 x64";
+  }
+  if (name == L"ApplicationSettingsArchitecturePreferX64.Content") {
+    return L"\u4F18\u5148 x64 \u517C\u5BB9\u5305";
   }
   if (name.find(L"ApplicationSettingsArchitecture") == 0) {
     return L"\u8F6F\u4EF6\u5305\u67B6\u6784";
@@ -83,8 +99,18 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   } catch (...) {
     // Resource lookup is presentation-only. A missing PRI must not prevent
     // the already constructed settings page from being displayed.
-    return winrt::hstring{L"\u8BBE\u7F6E\u8D44\u6E90\u6682\u65F6\u4E0D\u53EF\u7528"};
+    return winrt::hstring{resource_fallback(key)};
   }
+}
+
+void set_settings_operation_open(InfoBar const& info_bar, bool open) {
+  if (open) {
+    info_bar.Visibility(Visibility::Visible);
+    info_bar.IsOpen(true);
+    return;
+  }
+  info_bar.IsOpen(false);
+  info_bar.Visibility(Visibility::Collapsed);
 }
 
 void replace_token(std::wstring& value, std::wstring_view token,
@@ -212,6 +238,15 @@ ApplicationSettingsPage::ApplicationSettingsPage() {
       winrt::box_value(resource_string(L"ApplicationUpdateManualButton")));
   ApplicationUpdateDiagnosticButton().Content(
       winrt::box_value(resource_string(L"ApplicationUpdateDiagnosticButton")));
+  ArchitecturePromptItem().Content(winrt::box_value(
+      resource_string(L"ApplicationSettingsArchitecturePrompt.Content")));
+  ArchitectureAutoFallbackItem().Content(winrt::box_value(
+      resource_string(L"ApplicationSettingsArchitectureAutoFallback.Content")));
+  ArchitecturePreferX64Item().Content(winrt::box_value(
+      resource_string(L"ApplicationSettingsArchitecturePreferX64.Content")));
+  ArchitecturePromptItem().Visibility(Visibility::Visible);
+  ArchitectureAutoFallbackItem().Visibility(Visibility::Visible);
+  ArchitecturePreferX64Item().Visibility(Visibility::Visible);
 }
 
 void ApplicationSettingsPage::bind(
@@ -634,9 +669,9 @@ void ApplicationSettingsPage::project(
     SettingsOperationStatus().Message(
         resource_string(L"ApplicationSettingsActionFailed"));
     SettingsOperationStatus().Severity(InfoBarSeverity::Error);
-    SettingsOperationStatus().IsOpen(true);
+    set_settings_operation_open(SettingsOperationStatus(), true);
   } else {
-    SettingsOperationStatus().IsOpen(false);
+    set_settings_operation_open(SettingsOperationStatus(), false);
   }
   AdvancedViewToggle().IsOn(advanced_view_);
   AdvancedSettingsPanel().Visibility(advanced_view_ ? Visibility::Visible
@@ -828,7 +863,7 @@ void ApplicationSettingsPage::project_action(
         resource_string(L"ApplicationSettingsOperationTitle"));
     SettingsOperationStatus().Message(action_message(result.code));
     SettingsOperationStatus().Severity(action_severity(result.code));
-    SettingsOperationStatus().IsOpen(true);
+    set_settings_operation_open(SettingsOperationStatus(), true);
   } catch (...) {
     show_operation_failure();
   }
@@ -841,7 +876,7 @@ void ApplicationSettingsPage::show_operation_failure() noexcept {
     SettingsOperationStatus().Message(
         resource_string(L"ApplicationSettingsActionFailed"));
     SettingsOperationStatus().Severity(InfoBarSeverity::Error);
-    SettingsOperationStatus().IsOpen(true);
+    set_settings_operation_open(SettingsOperationStatus(), true);
   } catch (...) {
     ::OutputDebugStringW(L"WinUI application-settings operation status failed.\n");
   }
