@@ -551,6 +551,14 @@ struct DebugModeCatalogEditorFixture final {
                        runtime.catalog->software.size() == 7 &&
                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
+  auto const qq_runtime = std::ranges::find_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id == "qq";
+      });
+  passed &= expect(qq_runtime != runtime.catalog->software.end() &&
+                       qq_runtime->availability ==
+                           catalog::ItemAvailability::install_profile_unavailable,
+                   "the declaration-only QQ profile must remain unavailable to execution");
   auto const sogou_runtime = std::ranges::find_if(
       runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
         return item.definition.id == "sogou-input";
@@ -635,8 +643,8 @@ struct DebugModeCatalogEditorFixture final {
 
   auto const profiles = catalog::initial_controlled_install_profiles();
   auto const facts = catalog::initial_software_install_facts();
-  passed &= expect(profiles.size() == 1 && facts.size() == 11,
-                   "initial declarations must cover one controlled profile and eleven software facts");
+  passed &= expect(profiles.size() == 2 && facts.size() == 11,
+                   "initial declarations must cover two controlled profiles and eleven software facts");
   passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
                        catalog::validate_software_install_facts(facts).accepted(),
                    "initial declaration registries must satisfy their value contracts");
@@ -734,6 +742,29 @@ struct DebugModeCatalogEditorFixture final {
                                                    inconsistent_completion_semantics),
         "restart completion semantics must not be inferred from process exit or mismatched facts");
   }
+  auto const qq_profile_iterator = std::ranges::find(
+      profiles, "qq-windows-defaults-v1", &catalog::ControlledInstallProfile::id);
+  auto const* qq_profile = qq_profile_iterator == profiles.end()
+                               ? nullptr
+                               : &*qq_profile_iterator;
+  passed &= expect(
+      qq_profile != nullptr && qq_profile->software_id == "qq" &&
+          qq_profile->execution_kind ==
+              catalog::ControlledWindowsExecutionKind::project_owned_windows_executor &&
+          qq_profile->execution ==
+              catalog::WindowsExecutionReadiness::declaration_only &&
+          qq_profile->completion_boundary ==
+              catalog::InstallationCompletionBoundary::
+                  post_install_then_result_detection &&
+          qq_profile->post_install_behavior == catalog::PostInstallBehavior::none &&
+          qq_profile->restart_verification ==
+              catalog::RestartVerification::not_required &&
+          qq_profile->result_detection ==
+              catalog::ResultDetectionStrategy::user_confirmation_only &&
+          qq_profile->interaction_scope ==
+              catalog::InstallerInteractionScope::official_identity_required &&
+          qq_profile->baselines.empty() && qq_profile->preferences.empty(),
+      "QQ must remain a declaration-only handoff profile without frozen installer details");
 
   std::vector<std::string> required = policy.required_release_software;
   std::ranges::sort(required);
@@ -753,12 +784,31 @@ struct DebugModeCatalogEditorFixture final {
   auto const* sogou_profile = find_by_id(
       policy.install_profiles, "sogou-input-defaults-v1",
       &catalog::InstallProfileSupport::id);
-  passed &= expect(sogou_profile != nullptr &&
-                       sogou_profile->runtime_status ==
-                           catalog::InstallProfileRuntimeStatus::missing &&
-                       !sogou_profile->release_ready &&
-                       policy.required_install_profiles.size() == 1,
-                   "the Sogou profile must remain declaration-only and release-incomplete");
+  auto const* qq_profile_support = find_by_id(
+      policy.install_profiles, "qq-windows-defaults-v1",
+      &catalog::InstallProfileSupport::id);
+  auto const required_sogou_profile = std::ranges::find_if(
+      policy.required_install_profiles, [](auto const& requirement) {
+        return requirement.software_id == "sogou-input" &&
+               requirement.profile_id == "sogou-input-defaults-v1";
+      });
+  auto const required_qq_profile = std::ranges::find_if(
+      policy.required_install_profiles, [](auto const& requirement) {
+        return requirement.software_id == "qq" &&
+               requirement.profile_id == "qq-windows-defaults-v1";
+      });
+  passed &= expect(
+      sogou_profile != nullptr &&
+          sogou_profile->runtime_status ==
+              catalog::InstallProfileRuntimeStatus::missing &&
+          !sogou_profile->release_ready && qq_profile_support != nullptr &&
+          qq_profile_support->runtime_status ==
+              catalog::InstallProfileRuntimeStatus::missing &&
+          !qq_profile_support->release_ready &&
+          policy.required_install_profiles.size() == 2 &&
+          required_sogou_profile != policy.required_install_profiles.end() &&
+          required_qq_profile != policy.required_install_profiles.end(),
+      "QQ and Sogou profiles must remain required and release-incomplete");
 
   auto released = codec.decode(replace_once(
       file.bytes, "release_state = \"draft\"", "release_state = \"release\""));
