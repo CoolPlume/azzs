@@ -80,7 +80,7 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
       return value;
     }
     return winrt::hstring{resource_fallback(key)};
-  } catch (std::exception const&) {
+  } catch (...) {
     // Resource lookup is presentation-only. A missing PRI must not prevent
     // the already constructed settings page from being displayed.
     return winrt::hstring{L"\u8BBE\u7F6E\u8D44\u6E90\u6682\u65F6\u4E0D\u53EF\u7528"};
