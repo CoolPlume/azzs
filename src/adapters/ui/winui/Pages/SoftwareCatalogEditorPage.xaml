@@ -76,27 +76,28 @@
             <CommandBar
                 Grid.Row="5"
                 AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCommands"
-                DefaultLabelPosition="Right">
-                <AppBarButton x:Name="AddSoftwareButton" x:Uid="SoftwareCatalogEditorAdd" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAdd" Click="OnAddSoftware">
+                DefaultLabelPosition="Right"
+                Style="{StaticResource AzzsCommandBarStyle}">
+                <AppBarButton x:Name="AddSoftwareButton" x:Uid="SoftwareCatalogEditorAdd" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAdd" Click="OnAddSoftware" Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="DuplicateSoftwareButton" x:Uid="SoftwareCatalogEditorDuplicate" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDuplicate" Click="OnDuplicateSoftware">
+                <AppBarButton x:Name="DuplicateSoftwareButton" x:Uid="SoftwareCatalogEditorDuplicate" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDuplicate" Click="OnDuplicateSoftware" Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Copy" /></AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="DeleteSoftwareButton" x:Uid="SoftwareCatalogEditorDelete" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDelete" Click="OnDeleteSoftware">
+                <AppBarButton x:Name="DeleteSoftwareButton" x:Uid="SoftwareCatalogEditorDelete" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDelete" Click="OnDeleteSoftware" Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarSeparator />
-                <AppBarButton x:Name="SaveDraftButton" x:Uid="SoftwareCatalogEditorSaveDraft" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSaveDraft" Click="OnSaveDraft">
+                <AppBarButton x:Name="SaveDraftButton" x:Uid="SoftwareCatalogEditorSaveDraft" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSaveDraft" Click="OnSaveDraft" Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Save" /></AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="DeleteSavedDraftButton" x:Uid="SoftwareCatalogEditorDeleteSavedDraft" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteSavedDraft" Click="OnDeleteSavedDraft">
+                <AppBarButton x:Name="DeleteSavedDraftButton" x:Uid="SoftwareCatalogEditorDeleteSavedDraft" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteSavedDraft" Click="OnDeleteSavedDraft" Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="ApplySavedDraftButton" x:Uid="SoftwareCatalogEditorApply" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorApply" Click="OnApplySavedDraft">
+                <AppBarButton x:Name="ApplySavedDraftButton" x:Uid="SoftwareCatalogEditorApply" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorApply" Click="OnApplySavedDraft" Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Upload" /></AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="DiscardUnsavedButton" x:Uid="SoftwareCatalogEditorDiscard" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDiscard" Click="OnDiscardUnsaved">
+                <AppBarButton x:Name="DiscardUnsavedButton" x:Uid="SoftwareCatalogEditorDiscard" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDiscard" Click="OnDiscardUnsaved" Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Cancel" /></AppBarButton.Icon>
                 </AppBarButton>
             </CommandBar>
@@ -111,18 +112,20 @@
                     x:Name="SearchTextBox"
                     x:Uid="SoftwareCatalogEditorSearch"
                     AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSearch"
-                    TextChanged="OnSearchChanged" />
+                    TextChanged="OnSearchChanged"
+                    Style="{StaticResource AzzsTextBoxStyle}" />
                 <StackPanel Grid.Row="1" Spacing="{StaticResource AzzsSpaceSmall}">
                     <TextBox
                         x:Name="ImportPathTextBox"
                         x:Uid="SoftwareCatalogEditorImportPath"
                         AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorImportPath"
-                        TextChanged="OnImportPathChanged" />
+                        TextChanged="OnImportPathChanged"
+                        Style="{StaticResource AzzsTextBoxStyle}" />
                     <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
-                        <Button x:Name="PreviewImportButton" x:Uid="SoftwareCatalogEditorPreviewImport" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorPreviewImport" Click="OnPreviewImport">
+                        <Button x:Name="PreviewImportButton" x:Uid="SoftwareCatalogEditorPreviewImport" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorPreviewImport" Click="OnPreviewImport" Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
                             <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Folder" /><TextBlock x:Uid="SoftwareCatalogEditorPreviewImportLabel" /></StackPanel></Button.Content>
                         </Button>
-                        <Button x:Name="ApplyImportButton" x:Uid="SoftwareCatalogEditorApplyImport" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorApplyImport" Click="OnApplyImport">
+                        <Button x:Name="ApplyImportButton" x:Uid="SoftwareCatalogEditorApplyImport" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorApplyImport" Click="OnApplyImport" Style="{StaticResource AzzsPrimaryCommandButtonStyle}">
                             <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Upload" /><TextBlock x:Uid="SoftwareCatalogEditorApplyImportLabel" /></StackPanel></Button.Content>
                         </Button>
                     </StackPanel>
@@ -147,74 +150,76 @@
                         x:Name="SoftwareList"
                         AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorList"
                         MinHeight="{StaticResource AzzsTouchTargetMinHeight}"
-                        SelectionChanged="OnSoftwareSelectionChanged" />
+                        SelectionChanged="OnSoftwareSelectionChanged"
+                        Style="{StaticResource AzzsListViewStyle}" />
                     <TextBlock x:Uid="SoftwareCatalogEditorCategoryListTitle" AutomationProperties.HeadingLevel="Level2" Style="{StaticResource AzzsSectionTitleTextStyle}" TextWrapping="Wrap" />
-                    <AppBarButton x:Name="AddCategoryButton" x:Uid="SoftwareCatalogEditorAddCategory" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddCategory" Click="OnAddCategory">
+                    <AppBarButton x:Name="AddCategoryButton" x:Uid="SoftwareCatalogEditorAddCategory" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddCategory" Click="OnAddCategory" Style="{StaticResource AzzsAppBarButtonStyle}">
                         <AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon>
                     </AppBarButton>
                     <ListView
                         x:Name="CategoryList"
                         AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryList"
                         MaxHeight="144"
-                        SelectionChanged="OnCategorySelectionChanged" />
-                    <TextBox x:Name="CategoryIdTextBox" x:Uid="SoftwareCatalogEditorCategoryId" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryId" LostFocus="OnCategoryFieldLostFocus" />
-                    <TextBox x:Name="CategoryNameTextBox" x:Uid="SoftwareCatalogEditorCategoryName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryName" LostFocus="OnCategoryFieldLostFocus" />
+                        SelectionChanged="OnCategorySelectionChanged"
+                        Style="{StaticResource AzzsListViewStyle}" />
+                    <TextBox x:Name="CategoryIdTextBox" x:Uid="SoftwareCatalogEditorCategoryId" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryId" LostFocus="OnCategoryFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                    <TextBox x:Name="CategoryNameTextBox" x:Uid="SoftwareCatalogEditorCategoryName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryName" LostFocus="OnCategoryFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
                     <TextBlock x:Uid="SoftwareCatalogEditorCategoryLocalizationListTitle" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource AzzsSectionTitleTextStyle}" TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
-                        <AppBarButton x:Name="AddCategoryLocalizationButton" x:Uid="SoftwareCatalogEditorAddCategoryLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddCategoryLocalization" Click="OnAddCategoryLocalization"><AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon></AppBarButton>
-                        <AppBarButton x:Name="DeleteCategoryLocalizationButton" x:Uid="SoftwareCatalogEditorDeleteCategoryLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteCategoryLocalization" Click="OnDeleteCategoryLocalization"><AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon></AppBarButton>
+                            <AppBarButton x:Name="AddCategoryLocalizationButton" x:Uid="SoftwareCatalogEditorAddCategoryLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddCategoryLocalization" Click="OnAddCategoryLocalization" Style="{StaticResource AzzsAppBarButtonStyle}"><AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon></AppBarButton>
+                            <AppBarButton x:Name="DeleteCategoryLocalizationButton" x:Uid="SoftwareCatalogEditorDeleteCategoryLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteCategoryLocalization" Click="OnDeleteCategoryLocalization" Style="{StaticResource AzzsAppBarButtonStyle}"><AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon></AppBarButton>
                     </StackPanel>
-                    <ListView x:Name="CategoryLocalizationList" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryLocalizationList" MaxHeight="144" SelectionChanged="OnCategoryLocalizationSelectionChanged" />
-                    <TextBox x:Name="CategoryLocalizationLocaleTextBox" x:Uid="SoftwareCatalogEditorCategoryLocalizationLocale" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryLocalizationLocale" LostFocus="OnCategoryLocalizationFieldLostFocus" />
-                    <TextBox x:Name="CategoryLocalizationNameTextBox" x:Uid="SoftwareCatalogEditorCategoryLocalizationName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryLocalizationName" LostFocus="OnCategoryLocalizationFieldLostFocus" />
+                        <ListView x:Name="CategoryLocalizationList" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryLocalizationList" MaxHeight="144" SelectionChanged="OnCategoryLocalizationSelectionChanged" Style="{StaticResource AzzsListViewStyle}" />
+                        <TextBox x:Name="CategoryLocalizationLocaleTextBox" x:Uid="SoftwareCatalogEditorCategoryLocalizationLocale" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryLocalizationLocale" LostFocus="OnCategoryLocalizationFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="CategoryLocalizationNameTextBox" x:Uid="SoftwareCatalogEditorCategoryLocalizationName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategoryLocalizationName" LostFocus="OnCategoryLocalizationFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
                 </StackPanel>
                 <Border Grid.Column="1" Style="{StaticResource AzzsDetailSurfaceStyle}">
                     <StackPanel Spacing="{StaticResource AzzsSpaceSmall}">
                         <TextBlock x:Uid="SoftwareCatalogEditorDetailTitle" AutomationProperties.HeadingLevel="Level2" Style="{StaticResource AzzsSectionTitleTextStyle}" TextWrapping="Wrap" />
-                        <TextBox x:Name="SoftwareIdTextBox" x:Uid="SoftwareCatalogEditorId" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorId" LostFocus="OnSoftwareFieldLostFocus" />
-                        <TextBox x:Name="SoftwareNameTextBox" x:Uid="SoftwareCatalogEditorName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorName" LostFocus="OnSoftwareFieldLostFocus" />
-                        <TextBox x:Name="SoftwareBranchTextBox" x:Uid="SoftwareCatalogEditorBranch" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorBranch" LostFocus="OnSoftwareFieldLostFocus" />
-                        <ComboBox x:Name="SoftwareCategoryComboBox" x:Uid="SoftwareCatalogEditorCategory" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategory" SelectionChanged="OnSoftwareFieldSelectionChanged" />
-                        <ComboBox x:Name="SoftwareTierComboBox" x:Uid="SoftwareCatalogEditorTier" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorTier" SelectionChanged="OnSoftwareFieldSelectionChanged">
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorTierBasic" />
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorTierNormal" />
+                        <TextBox x:Name="SoftwareIdTextBox" x:Uid="SoftwareCatalogEditorId" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorId" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="SoftwareNameTextBox" x:Uid="SoftwareCatalogEditorName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorName" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="SoftwareBranchTextBox" x:Uid="SoftwareCatalogEditorBranch" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorBranch" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <ComboBox x:Name="SoftwareCategoryComboBox" x:Uid="SoftwareCatalogEditorCategory" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorCategory" SelectionChanged="OnSoftwareFieldSelectionChanged" Style="{StaticResource AzzsComboBoxStyle}" />
+                        <ComboBox x:Name="SoftwareTierComboBox" x:Uid="SoftwareCatalogEditorTier" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorTier" SelectionChanged="OnSoftwareFieldSelectionChanged" Style="{StaticResource AzzsComboBoxStyle}">
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorTierBasic" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorTierNormal" Style="{StaticResource AzzsComboBoxItemStyle}" />
                         </ComboBox>
-                        <ComboBox x:Name="SoftwareVersionPolicyComboBox" x:Uid="SoftwareCatalogEditorVersionPolicy" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorVersionPolicy" SelectionChanged="OnSoftwareFieldSelectionChanged">
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionLatestStable" />
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionLatestStableWithHistory" />
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionFixed" />
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionMaintainerProvided" />
+                        <ComboBox x:Name="SoftwareVersionPolicyComboBox" x:Uid="SoftwareCatalogEditorVersionPolicy" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorVersionPolicy" SelectionChanged="OnSoftwareFieldSelectionChanged" Style="{StaticResource AzzsComboBoxStyle}">
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionLatestStable" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionLatestStableWithHistory" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionFixed" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorVersionMaintainerProvided" Style="{StaticResource AzzsComboBoxItemStyle}" />
                         </ComboBox>
-                        <TextBox x:Name="SoftwareFixedVersionTextBox" x:Uid="SoftwareCatalogEditorFixedVersion" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorFixedVersion" LostFocus="OnSoftwareFieldLostFocus" />
-                        <TextBox x:Name="SoftwareInstallProfileTextBox" x:Uid="SoftwareCatalogEditorInstallProfile" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorInstallProfile" LostFocus="OnSoftwareFieldLostFocus" />
-                        <TextBox x:Name="SoftwareDependenciesTextBox" x:Uid="SoftwareCatalogEditorDependencies" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDependencies" LostFocus="OnSoftwareFieldLostFocus" />
-                        <TextBox x:Name="SoftwareBundledEditionsTextBox" x:Uid="SoftwareCatalogEditorBundledEditions" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorBundledEditions" LostFocus="OnSoftwareFieldLostFocus" />
-                        <TextBox x:Name="SoftwareNoticeTextBox" x:Uid="SoftwareCatalogEditorNotice" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorNotice" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnSoftwareFieldLostFocus" />
-                        <ToggleSwitch x:Name="SoftwareEnabledToggle" x:Uid="SoftwareCatalogEditorEnabled" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorEnabled" Toggled="OnSoftwareEnabledToggled" />
+                        <TextBox x:Name="SoftwareFixedVersionTextBox" x:Uid="SoftwareCatalogEditorFixedVersion" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorFixedVersion" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="SoftwareInstallProfileTextBox" x:Uid="SoftwareCatalogEditorInstallProfile" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorInstallProfile" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="SoftwareDependenciesTextBox" x:Uid="SoftwareCatalogEditorDependencies" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDependencies" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="SoftwareBundledEditionsTextBox" x:Uid="SoftwareCatalogEditorBundledEditions" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorBundledEditions" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="SoftwareNoticeTextBox" x:Uid="SoftwareCatalogEditorNotice" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorNotice" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnSoftwareFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <ToggleSwitch x:Name="SoftwareEnabledToggle" x:Uid="SoftwareCatalogEditorEnabled" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorEnabled" Toggled="OnSoftwareEnabledToggled" Style="{StaticResource AzzsToggleSwitchStyle}" />
                         <TextBlock x:Uid="SoftwareCatalogEditorSourceListTitle" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource AzzsSectionTitleTextStyle}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
-                            <AppBarButton x:Name="AddSourceButton" x:Uid="SoftwareCatalogEditorAddSource" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddSource" Click="OnAddSource"><AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon></AppBarButton>
-                            <AppBarButton x:Name="DeleteSourceButton" x:Uid="SoftwareCatalogEditorDeleteSource" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteSource" Click="OnDeleteSource"><AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon></AppBarButton>
+                            <AppBarButton x:Name="AddSourceButton" x:Uid="SoftwareCatalogEditorAddSource" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddSource" Click="OnAddSource" Style="{StaticResource AzzsAppBarButtonStyle}"><AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon></AppBarButton>
+                            <AppBarButton x:Name="DeleteSourceButton" x:Uid="SoftwareCatalogEditorDeleteSource" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteSource" Click="OnDeleteSource" Style="{StaticResource AzzsAppBarButtonStyle}"><AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon></AppBarButton>
                         </StackPanel>
-                        <ListView x:Name="SourceList" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourceList" MaxHeight="144" SelectionChanged="OnSourceSelectionChanged" />
-                        <ComboBox x:Name="SourcePurposeComboBox" x:Uid="SoftwareCatalogEditorSourcePurpose" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourcePurpose" SelectionChanged="OnSourceFieldSelectionChanged">
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorSourcePrimary" />
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorSourceAlternative" />
-                            <ComboBoxItem x:Uid="SoftwareCatalogEditorSourceProjectBackup" />
+                        <ListView x:Name="SourceList" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourceList" MaxHeight="144" SelectionChanged="OnSourceSelectionChanged" Style="{StaticResource AzzsListViewStyle}" />
+                        <ComboBox x:Name="SourcePurposeComboBox" x:Uid="SoftwareCatalogEditorSourcePurpose" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourcePurpose" SelectionChanged="OnSourceFieldSelectionChanged" Style="{StaticResource AzzsComboBoxStyle}">
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorSourcePrimary" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorSourceAlternative" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="SoftwareCatalogEditorSourceProjectBackup" Style="{StaticResource AzzsComboBoxItemStyle}" />
                         </ComboBox>
-                        <TextBox x:Name="SourceAddressTextBox" x:Uid="SoftwareCatalogEditorSourceAddress" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourceAddress" LostFocus="OnSourceFieldLostFocus" />
-                        <TextBox x:Name="SourceVersionTextBox" x:Uid="SoftwareCatalogEditorSourceVersion" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourceVersion" LostFocus="OnSourceFieldLostFocus" />
+                        <TextBox x:Name="SourceAddressTextBox" x:Uid="SoftwareCatalogEditorSourceAddress" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourceAddress" LostFocus="OnSourceFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="SourceVersionTextBox" x:Uid="SoftwareCatalogEditorSourceVersion" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorSourceVersion" LostFocus="OnSourceFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
                         <TextBlock x:Uid="SoftwareCatalogEditorLocalizationListTitle" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource AzzsSectionTitleTextStyle}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
-                            <AppBarButton x:Name="AddLocalizationButton" x:Uid="SoftwareCatalogEditorAddLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddLocalization" Click="OnAddLocalization"><AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon></AppBarButton>
-                            <AppBarButton x:Name="DeleteLocalizationButton" x:Uid="SoftwareCatalogEditorDeleteLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteLocalization" Click="OnDeleteLocalization"><AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon></AppBarButton>
+                            <AppBarButton x:Name="AddLocalizationButton" x:Uid="SoftwareCatalogEditorAddLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorAddLocalization" Click="OnAddLocalization" Style="{StaticResource AzzsAppBarButtonStyle}"><AppBarButton.Icon><SymbolIcon Symbol="Add" /></AppBarButton.Icon></AppBarButton>
+                            <AppBarButton x:Name="DeleteLocalizationButton" x:Uid="SoftwareCatalogEditorDeleteLocalization" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDeleteLocalization" Click="OnDeleteLocalization" Style="{StaticResource AzzsAppBarButtonStyle}"><AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon></AppBarButton>
                         </StackPanel>
-                        <ListView x:Name="LocalizationList" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationList" MaxHeight="144" SelectionChanged="OnLocalizationSelectionChanged" />
-                        <TextBox x:Name="LocalizationLocaleTextBox" x:Uid="SoftwareCatalogEditorLocalizationLocale" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationLocale" LostFocus="OnLocalizationFieldLostFocus" />
-                        <TextBox x:Name="LocalizationNameTextBox" x:Uid="SoftwareCatalogEditorLocalizationName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationName" LostFocus="OnLocalizationFieldLostFocus" />
-                        <TextBox x:Name="LocalizationNoticeTextBox" x:Uid="SoftwareCatalogEditorLocalizationNotice" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationNotice" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnLocalizationFieldLostFocus" />
-                        <TextBox x:Name="LocalizationOptimizationNoteTextBox" x:Uid="SoftwareCatalogEditorLocalizationOptimizationNote" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationOptimizationNote" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnLocalizationFieldLostFocus" />
-                        <TextBox x:Name="LocalizationEducationDescriptionTextBox" x:Uid="SoftwareCatalogEditorLocalizationEducationDescription" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationEducationDescription" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnLocalizationFieldLostFocus" />
+                        <ListView x:Name="LocalizationList" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationList" MaxHeight="144" SelectionChanged="OnLocalizationSelectionChanged" Style="{StaticResource AzzsListViewStyle}" />
+                        <TextBox x:Name="LocalizationLocaleTextBox" x:Uid="SoftwareCatalogEditorLocalizationLocale" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationLocale" LostFocus="OnLocalizationFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="LocalizationNameTextBox" x:Uid="SoftwareCatalogEditorLocalizationName" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationName" LostFocus="OnLocalizationFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="LocalizationNoticeTextBox" x:Uid="SoftwareCatalogEditorLocalizationNotice" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationNotice" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnLocalizationFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="LocalizationOptimizationNoteTextBox" x:Uid="SoftwareCatalogEditorLocalizationOptimizationNote" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationOptimizationNote" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnLocalizationFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
+                        <TextBox x:Name="LocalizationEducationDescriptionTextBox" x:Uid="SoftwareCatalogEditorLocalizationEducationDescription" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorLocalizationEducationDescription" AcceptsReturn="True" TextWrapping="Wrap" LostFocus="OnLocalizationFieldLostFocus" Style="{StaticResource AzzsTextBoxStyle}" />
                         <TextBlock x:Name="DraftStateText" AutomationProperties.AutomationId="AzzsSoftwareCatalogEditorDraftState" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>

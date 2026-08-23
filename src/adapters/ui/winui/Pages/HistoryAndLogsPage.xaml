@@ -41,30 +41,35 @@
                 Grid.Row="1"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsStatus"
                 IsClosable="False"
-                IsOpen="False" />
+                IsOpen="False"
+                Style="{StaticResource AzzsStatusBandStyle}" />
             <CommandBar
                 Grid.Row="2"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsCommands"
-                DefaultLabelPosition="Right">
+                DefaultLabelPosition="Right"
+                Style="{StaticResource AzzsCommandBarStyle}">
                 <AppBarButton
                     x:Name="RefreshButton"
                     x:Uid="HistoryAndLogsRefreshButton"
                     AutomationProperties.AutomationId="AzzsHistoryAndLogsRefresh"
-                    Click="OnRefresh">
+                    Click="OnRefresh"
+                    Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Refresh" /></AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton
                     x:Name="ExportDiagnosticButton"
                     x:Uid="HistoryAndLogsExportDiagnosticButton"
                     AutomationProperties.AutomationId="AzzsHistoryAndLogsExportDiagnostic"
-                    Click="OnExportDiagnostic">
+                    Click="OnExportDiagnostic"
+                    Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Save" /></AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton
                     x:Name="ClearLogsButton"
                     x:Uid="HistoryAndLogsClearLogsButton"
                     AutomationProperties.AutomationId="AzzsHistoryAndLogsClear"
-                    Click="OnClearLogs">
+                    Click="OnClearLogs"
+                    Style="{StaticResource AzzsAppBarButtonStyle}">
                     <AppBarButton.Icon><SymbolIcon Symbol="Delete" /></AppBarButton.Icon>
                 </AppBarButton>
             </CommandBar>
@@ -78,7 +83,8 @@
                 x:Uid="HistoryAndLogsFilter"
                 Grid.Row="4"
                 AutomationProperties.AutomationId="AzzsHistoryAndLogsFilter"
-                TextChanged="OnFilterChanged" />
+                TextChanged="OnFilterChanged"
+                Style="{StaticResource AzzsTextBoxStyle}" />
             <StackPanel
                 Grid.Row="5"
                 AutomationProperties.AutomationId="AzzsHistoryRecords"

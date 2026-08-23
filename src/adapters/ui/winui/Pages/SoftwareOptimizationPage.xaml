@@ -40,7 +40,8 @@
                 Grid.Row="1"
                 AutomationProperties.AutomationId="AzzsSoftwareOptimizationStatus"
                 IsOpen="False"
-                IsClosable="False" />
+                IsClosable="False"
+                Style="{StaticResource AzzsStatusBandStyle}" />
             <StackPanel
                 Grid.Row="2"
                 Orientation="Horizontal"
@@ -49,12 +50,14 @@
                     x:Name="RefreshButton"
                     x:Uid="SoftwareOptimizationRefreshButton"
                     AutomationProperties.AutomationId="AzzsSoftwareOptimizationRefresh"
-                    Click="OnRefresh" />
+                    Click="OnRefresh"
+                    Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
                 <Button
                     x:Name="PrepareSelectedButton"
                     x:Uid="SoftwareOptimizationPrepareSelectedButton"
                     AutomationProperties.AutomationId="AzzsSoftwareOptimizationPrepareSelected"
-                    Click="OnPrepareSelected" />
+                    Click="OnPrepareSelected"
+                    Style="{StaticResource AzzsPrimaryCommandButtonStyle}" />
             </StackPanel>
             <StackPanel
                 x:Name="CanOptimizeGroup"
@@ -92,7 +95,8 @@
                     x:Name="NoAvailableOptimizationExpander"
                     x:Uid="SoftwareOptimizationNoAvailableExpander"
                     Margin="{StaticResource AzzsTopMarginLarge}"
-                    AutomationProperties.AutomationId="AzzsSoftwareOptimizationNoAvailable">
+                    AutomationProperties.AutomationId="AzzsSoftwareOptimizationNoAvailable"
+                    Style="{StaticResource AzzsExpanderStyle}">
                     <StackPanel x:Name="NoAvailableItems" Spacing="{StaticResource AzzsSpaceSmall}" />
                 </Expander>
             </StackPanel>

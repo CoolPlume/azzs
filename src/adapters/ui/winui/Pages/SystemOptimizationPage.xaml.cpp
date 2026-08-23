@@ -272,6 +272,15 @@ void SystemOptimizationPage::project(
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
   auto const resources = ResourceLoader{};
+  auto const secondary_command_style = Application::Current().Resources().Lookup(
+      winrt::box_value(L"AzzsSecondaryCommandButtonStyle"))
+                                          .as<winrt::Microsoft::UI::Xaml::Style>();
+  auto const danger_command_style = Application::Current().Resources().Lookup(
+      winrt::box_value(L"AzzsDangerCommandButtonStyle"))
+                                      .as<winrt::Microsoft::UI::Xaml::Style>();
+  auto const check_box_style = Application::Current().Resources().Lookup(
+      winrt::box_value(L"AzzsCheckBoxStyle"))
+                                   .as<winrt::Microsoft::UI::Xaml::Style>();
   auto const metadata_style = Application::Current().Resources().Lookup(
       winrt::box_value(L"AzzsMetadataTextStyle"))
                                   .as<winrt::Microsoft::UI::Xaml::Style>();
@@ -332,6 +341,7 @@ void SystemOptimizationPage::project(
       actions.Orientation(winrt::Microsoft::UI::Xaml::Controls::Orientation::Horizontal);
       actions.Spacing(8);
       auto undo = Button{};
+      undo.Style(secondary_command_style);
       undo.Content(winrt::box_value(
           resources.GetString(L"SystemSettingsUndoButtonText")));
       undo.Tag(winrt::box_value(winrt::to_hstring(record.setting_id.value)));
@@ -339,6 +349,7 @@ void SystemOptimizationPage::project(
                      record.status == RecoveryRecordStatus::restore_failed);
       undo.Click({this, &SystemOptimizationPage::OnUndoRecoveryRecord});
       auto erase = Button{};
+      erase.Style(danger_command_style);
       auto const confirm_delete = pending_recovery_record_deletion_.has_value() &&
                                   *pending_recovery_record_deletion_ ==
                                       record.record_id;
@@ -395,6 +406,7 @@ void SystemOptimizationPage::project(
     auto row = winrt::Microsoft::UI::Xaml::Controls::StackPanel{};
     row.Spacing(4);
     auto check_box = winrt::Microsoft::UI::Xaml::Controls::CheckBox{};
+    check_box.Style(check_box_style);
     check_box.Content(winrt::box_value(winrt::to_hstring(item.display_name)));
     check_box.IsChecked(item.selected);
     check_box.IsEnabled(item.applicable);
@@ -475,8 +487,9 @@ void SystemOptimizationPage::project(
       force_attempt.Click({this, &SystemOptimizationPage::OnForceAttempt});
       row.Children().Append(force_attempt);
     }
-    auto restore_default = winrt::Microsoft::UI::Xaml::Controls::Button{};
-    restore_default.Content(winrt::box_value(
+      auto restore_default = winrt::Microsoft::UI::Xaml::Controls::Button{};
+      restore_default.Style(secondary_command_style);
+      restore_default.Content(winrt::box_value(
         resources.GetString(L"SystemSettingsRestoreWindows11DefaultButtonText")));
     restore_default.Tag(winrt::box_value(winrt::to_hstring(item.id.value)));
     restore_default.IsEnabled(item.applicable && item.recovery_available);
