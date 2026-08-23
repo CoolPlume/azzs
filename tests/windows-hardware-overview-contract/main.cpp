@@ -181,7 +181,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                         "Micron DDR5 48GB 5600MHz (24GB + 24GB)" &&
                     result.observation->display ==
                         "BOE Display (2560x1600) x2" &&
-                    result.observation->storage.find("PC801 NVMe SK hynix") !=
+                    result.observation->storage.find("PC801 SK hynix") !=
                         std::string::npos &&
                     result.observation->storage.find("Samsung SSD 990 PRO") !=
                         std::string::npos &&
