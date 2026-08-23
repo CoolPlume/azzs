@@ -219,8 +219,10 @@ void SoftwareOptimizationPage::project(
     }
     for (auto const& scheme : target.schemes) {
       auto card = Border{};
+      card.Style(Application::Current().Resources().Lookup(
+          winrt::box_value(L"AzzsListRowSurfaceStyle"))
+                     .as<winrt::Microsoft::UI::Xaml::Style>());
       card.BorderThickness({1, 1, 1, 1});
-      card.CornerRadius({4, 4, 4, 4});
       card.Padding({12, 12, 12, 12});
       auto content = StackPanel{};
       content.Spacing(6);
@@ -259,6 +261,9 @@ void SoftwareOptimizationPage::project(
       }
       for (auto const& option : scheme.options) {
         auto check_box = CheckBox{};
+        check_box.Style(Application::Current().Resources().Lookup(
+            winrt::box_value(L"AzzsCheckBoxStyle"))
+                            .as<winrt::Microsoft::UI::Xaml::Style>());
         auto label = winrt::to_hstring(option.option.impact);
         if (option.option.required) {
           label = label + resource_string(L"SoftwareOptimizationRequiredSuffix");

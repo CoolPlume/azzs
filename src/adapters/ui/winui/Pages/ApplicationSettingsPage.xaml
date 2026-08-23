@@ -47,7 +47,8 @@
                             x:Name="AdvancedViewToggle"
                             x:Uid="ApplicationAdvancedViewToggle"
                             AutomationProperties.AutomationId="AzzsApplicationAdvancedView"
-                            Toggled="OnAdvancedViewToggled" />
+                            Toggled="OnAdvancedViewToggled"
+                            Style="{StaticResource AzzsToggleSwitchStyle}" />
                     </StackPanel>
                 </Border>
 
@@ -100,11 +101,12 @@
                             x:Name="CacheRetentionComboBox"
                             x:Uid="ApplicationSettingsCacheRetention"
                             AutomationProperties.AutomationId="AzzsApplicationCacheRetention"
-                            SelectionChanged="OnCacheRetentionSelectionChanged">
-                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionImmediate" />
-                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionSevenDays" />
-                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionThirtyDays" />
-                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionIndefinitely" />
+                            SelectionChanged="OnCacheRetentionSelectionChanged"
+                            Style="{StaticResource AzzsComboBoxStyle}">
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionImmediate" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionSevenDays" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionThirtyDays" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsCacheRetentionIndefinitely" Style="{StaticResource AzzsComboBoxItemStyle}" />
                         </ComboBox>
                         <TextBlock
                             x:Name="CacheLocationText"
@@ -126,10 +128,11 @@
                             x:Name="ArchitecturePreferenceComboBox"
                             x:Uid="ApplicationSettingsArchitecturePreference"
                             AutomationProperties.AutomationId="AzzsApplicationArchitecturePreference"
-                            SelectionChanged="OnArchitecturePreferenceSelectionChanged">
-                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePrompt" />
-                            <ComboBoxItem x:Uid="ApplicationSettingsArchitectureAutoFallback" />
-                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePreferX64" />
+                            SelectionChanged="OnArchitecturePreferenceSelectionChanged"
+                            Style="{StaticResource AzzsComboBoxStyle}">
+                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePrompt" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsArchitectureAutoFallback" Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem x:Uid="ApplicationSettingsArchitecturePreferX64" Style="{StaticResource AzzsComboBoxItemStyle}" />
                         </ComboBox>
                     </StackPanel>
                 </Border>
@@ -227,7 +230,8 @@
                             <ComboBox
                                 x:Name="RecoveryRecordComboBox"
                                 AutomationProperties.AutomationId="AzzsApplicationRecoveryRecord"
-                                SelectionChanged="OnRecoveryRecordSelectionChanged" />
+                                SelectionChanged="OnRecoveryRecordSelectionChanged"
+                                Style="{StaticResource AzzsComboBoxStyle}" />
                             <TextBlock x:Name="RecoveryRecordDetailsText" Style="{StaticResource AzzsMetadataTextStyle}" />
                             <Button
                                 x:Name="DeleteRecoveryRecordButton"
@@ -247,7 +251,8 @@
                             x:Name="DebugModeToggle"
                             x:Uid="ApplicationSettingsDebugToggle"
                             AutomationProperties.AutomationId="AzzsApplicationDebugMode"
-                            Toggled="OnDebugModeToggled" />
+                            Toggled="OnDebugModeToggled"
+                            Style="{StaticResource AzzsToggleSwitchStyle}" />
                         <TextBlock x:Name="DebugModeStatusText" Style="{StaticResource AzzsDisabledReasonTextStyle}" />
                         <Button
                             x:Name="OpenCatalogEditorButton"
@@ -255,7 +260,8 @@
                             AutomationProperties.AutomationId="AzzsApplicationOpenCatalogEditor"
                             Click="OnOpenCatalogEditorClick"
                             HorizontalAlignment="Left"
-                            Visibility="Collapsed">
+                            Visibility="Collapsed"
+                            Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
                             <Button.Content><StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}"><SymbolIcon Symbol="Edit" /><TextBlock x:Uid="ApplicationSettingsOpenCatalogEditorLabel" /></StackPanel></Button.Content>
                         </Button>
                     </StackPanel>
