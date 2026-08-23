@@ -61,7 +61,8 @@
                             AutomationProperties.AutomationId="AzzsApplicationUpdateStatus"
                             AutomationProperties.LiveSetting="Polite"
                             IsClosable="False"
-                            IsOpen="True"
+                            IsOpen="False"
+                            Visibility="Collapsed"
                             Style="{StaticResource AzzsStatusBandStyle}" />
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
                             <Button
