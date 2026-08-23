@@ -127,8 +127,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
        {"Model", "Manufacturer", "Size", "PNPDeviceID", "Status",
         "ConfigManagerErrorCode", "InterfaceType", "MediaType"},
        {.code = WindowsHardwareQueryCode::succeeded,
-         .rows = {{"(标准磁盘驱动器) PC801 NVMe SK hynix", "SK hynix", "1099511627776",
-                   "PCI\\VEN_1C5C&DEV_174A", "OK", "0", "NVMe", "SSD"},
+         .rows = {{"(标准磁盘驱动器) PC801 SK hynix", "SK hynix", "1099511627776",
+                   "SCSI\\DISK&VEN_NVME&PROD_PC801", "OK", "0", "SCSI", "Fixed hard disk media"},
                   {"(Standard disk drive) Samsung SSD 990 PRO", "Samsung", "2199023255552",
                    "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe", "SSD"},
                   {"(标准磁盘驱动器) Seagate BarraCuda HDD", "Seagate", "1099511627776",
@@ -190,6 +190,10 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     result.observation->storage.find("Standard disk drive") ==
                         std::string::npos &&
                     result.observation->solid_state_storage.find("Samsung SSD 990 PRO") !=
+                        std::string::npos &&
+                    result.observation->solid_state_storage.find("PC801 SK hynix") !=
+                        std::string::npos &&
+                    result.observation->hard_disk_storage.find("PC801 SK hynix") ==
                         std::string::npos &&
                     result.observation->hard_disk_storage.find("Seagate BarraCuda HDD") !=
                         std::string::npos &&
