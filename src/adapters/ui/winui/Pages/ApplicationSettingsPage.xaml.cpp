@@ -28,8 +28,65 @@ using winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity;
 using winrt::Microsoft::UI::Xaml::Visibility;
 using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
-[[nodiscard]] winrt::hstring resource_string(wchar_t const* key) {
-  return ResourceLoader{}.GetString(key);
+[[nodiscard]] wchar_t const* resource_fallback(wchar_t const* key) noexcept {
+  std::wstring_view const name{key == nullptr ? L"" : key};
+  if (name == L"ApplicationUpdateCheckButton") {
+    return L"\u68C0\u67E5\u66F4\u65B0";
+  }
+  if (name == L"ApplicationUpdateManualButton") {
+    return L"\u6253\u5F00 GitHub \u4E0B\u8F7D";
+  }
+  if (name == L"ApplicationUpdateDiagnosticButton") {
+    return L"\u5BFC\u51FA\u8BCA\u65AD\u8D44\u6599";
+  }
+  if (name == L"ApplicationUpdateTitle.Text") {
+    return L"\u5E94\u7528\u66F4\u65B0";
+  }
+  if (name.find(L"ApplicationSettingsAction") == 0) {
+    return L"\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1B\u73B0\u6709\u72B6\u6001\u5DF2\u4FDD\u7559\u3002";
+  }
+  if (name == L"ApplicationSettingsOperationTitle") {
+    return L"\u8BBE\u7F6E\u64CD\u4F5C";
+  }
+  if (name.find(L"ApplicationSettingsCache") == 0) {
+    return L"\u7F13\u5B58\u4FE1\u606F\u6682\u65F6\u4E0D\u53EF\u7528";
+  }
+  if (name.find(L"ApplicationSettingsArchitecture") == 0) {
+    return L"\u8F6F\u4EF6\u5305\u67B6\u6784";
+  }
+  if (name.find(L"ApplicationSettingsCatalog") == 0) {
+    return L"\u76EE\u5F55\u4FE1\u606F\u6682\u65F6\u4E0D\u53EF\u7528";
+  }
+  if (name.find(L"ApplicationSettingsLogs") == 0) {
+    return L"\u65E5\u5FD7\u4E0E\u8BCA\u65AD";
+  }
+  if (name.find(L"ApplicationSettingsRecovery") == 0) {
+    return L"\u6062\u590D\u8BB0\u5F55";
+  }
+  if (name.find(L"ApplicationSettingsDebug") == 0) {
+    return L"\u8C03\u8BD5\u5DE5\u5177";
+  }
+  if (name.find(L"ApplicationUpdate") == 0) {
+    return L"\u5E94\u7528\u66F4\u65B0\u4FE1\u606F\u6682\u65F6\u4E0D\u53EF\u7528";
+  }
+  return L"\u8BBE\u7F6E\u8D44\u6E90\u6682\u65F6\u4E0D\u53EF\u7528";
+}
+
+[[nodiscard]] winrt::hstring resource_string(wchar_t const* key) noexcept {
+  try {
+    auto const value = ResourceLoader{}.GetString(key);
+    if (!value.empty()) {
+      return value;
+    }
+  } catch (...) {
+    // Resource lookup is presentation-only. A missing PRI must not prevent
+    // the already constructed settings page from being displayed.
+  }
+  try {
+    return winrt::hstring{resource_fallback(key)};
+  } catch (...) {
+    return winrt::hstring{L"\u8BBE\u7F6E\u8D44\u6E90\u6682\u65F6\u4E0D\u53EF\u7528"};
+  }
 }
 
 void replace_token(std::wstring& value, std::wstring_view token,
@@ -512,6 +569,20 @@ void ApplicationSettingsPage::OnApplicationUpdateDiagnosticClick(
 void ApplicationSettingsPage::project(
     azzs::application::ApplicationSettingsSnapshot const& snapshot) {
   projecting_ = true;
+  if (snapshot.read_degraded) {
+    // A partial read is recoverable: keep the page interactive and make the
+    // unavailable state explicit instead of sending the user back to the
+    // previous page. The existing localized action text gives a safe Chinese
+    // fallback without exposing an internal persistence error string.
+    SettingsOperationStatus().Title(
+        resource_string(L"ApplicationSettingsOperationTitle"));
+    SettingsOperationStatus().Message(
+        resource_string(L"ApplicationSettingsActionFailed"));
+    SettingsOperationStatus().Severity(InfoBarSeverity::Error);
+    SettingsOperationStatus().IsOpen(true);
+  } else {
+    SettingsOperationStatus().IsOpen(false);
+  }
   AdvancedViewToggle().IsOn(advanced_view_);
   AdvancedSettingsPanel().Visibility(advanced_view_ ? Visibility::Visible
                                                      : Visibility::Collapsed);
