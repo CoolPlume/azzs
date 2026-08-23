@@ -11,15 +11,15 @@
           "id": "software-catalog",
           "relativePath": "catalog/software-catalog.toml",
           "packagePath": "catalog/software-catalog.toml",
-          "bytes": 9487,
-          "sha256": "425ffa864d194e5b16b20e37e27af7aa684fb4c1ddf71d1c303dbcf5be5aba9b"
+          "bytes": 9194,
+          "sha256": "e2884298ecda1d8e9c8d85513246e2bac7c9305181230694b5603fcfb26bbdc2"
         },
         {
           "id": "software-optimization-catalog",
           "relativePath": "catalog/software-optimization-catalog.toml",
           "packagePath": "catalog/software-optimization-catalog.toml",
-          "bytes": 18010,
-          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+          "bytes": 17515,
+          "sha256": "d062a7b2de04c9ad49eaff8b216e1037eeb5a1a8c9a9700cf6cb8b975cf16498"
         }
       ],
       "inputs": []
@@ -34,15 +34,15 @@
           "id": "software-catalog",
           "relativePath": "catalog/software-catalog.toml",
           "packagePath": "catalog/software-catalog.toml",
-          "bytes": 9487,
-          "sha256": "425ffa864d194e5b16b20e37e27af7aa684fb4c1ddf71d1c303dbcf5be5aba9b"
+          "bytes": 9194,
+          "sha256": "e2884298ecda1d8e9c8d85513246e2bac7c9305181230694b5603fcfb26bbdc2"
         },
         {
           "id": "software-optimization-catalog",
           "relativePath": "catalog/software-optimization-catalog.toml",
           "packagePath": "catalog/software-optimization-catalog.toml",
-          "bytes": 18010,
-          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+          "bytes": 17515,
+          "sha256": "d062a7b2de04c9ad49eaff8b216e1037eeb5a1a8c9a9700cf6cb8b975cf16498"
         }
       ],
       "inputs": [],
@@ -62,15 +62,15 @@
           "id": "software-catalog",
           "relativePath": "catalog/software-catalog.toml",
           "packagePath": "catalog/software-catalog.toml",
-          "bytes": 9487,
-          "sha256": "425ffa864d194e5b16b20e37e27af7aa684fb4c1ddf71d1c303dbcf5be5aba9b"
+          "bytes": 9194,
+          "sha256": "e2884298ecda1d8e9c8d85513246e2bac7c9305181230694b5603fcfb26bbdc2"
         },
         {
           "id": "software-optimization-catalog",
           "relativePath": "catalog/software-optimization-catalog.toml",
           "packagePath": "catalog/software-optimization-catalog.toml",
-          "bytes": 18010,
-          "sha256": "591bc926971a3905b67b67c3212d1ead8bf75a8e4d282b3cb8bdcf263ca71437"
+          "bytes": 17515,
+          "sha256": "d062a7b2de04c9ad49eaff8b216e1037eeb5a1a8c9a9700cf6cb8b975cf16498"
         }
       ],
       "inputs": [],

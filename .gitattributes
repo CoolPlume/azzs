@@ -1,2 +1,7 @@
 # Markdown may use two trailing spaces for intentional hard line breaks.
 *.md whitespace=-blank-at-eol
+
+# Bundled catalog bytes are release inputs; keep their checked-out bytes stable
+# across Windows clients so the locked SHA-256 remains reproducible.
+catalog/software-catalog.toml text eol=lf
+catalog/software-optimization-catalog.toml text eol=lf
