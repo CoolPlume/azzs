@@ -39,7 +39,7 @@ std::array<SoftwareInstallFacts, 11> const k_initial_facts{{
      }},
 }};
 
-std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
+std::array<ControlledInstallProfile, 2> const k_initial_profiles{{
     {
         .id = "sogou-input-defaults-v1",
         .software_id = "sogou-input",
@@ -74,6 +74,19 @@ std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
         .result_detection = ResultDetectionStrategy::project_owned_presence_probe,
         .interaction_scope =
             InstallerInteractionScope::non_identity_preferences_only,
+    },
+    {
+        .id = "qq-windows-defaults-v1",
+        .software_id = "qq",
+        .execution_kind =
+            ControlledWindowsExecutionKind::project_owned_windows_executor,
+        .execution = WindowsExecutionReadiness::declaration_only,
+        .completion_boundary =
+            InstallationCompletionBoundary::post_install_then_result_detection,
+        .post_install_behavior = PostInstallBehavior::none,
+        .restart_verification = RestartVerification::not_required,
+        .result_detection = ResultDetectionStrategy::user_confirmation_only,
+        .interaction_scope = InstallerInteractionScope::official_identity_required,
     },
 }};
 
@@ -431,7 +444,7 @@ SoftwareCatalogPolicy initial_software_catalog_policy() {
         .runtime_status = InstallProfileRuntimeStatus::missing,
         .release_ready = false,
     });
-    if (profile.software_id == "sogou-input") {
+    if (profile.software_id == "sogou-input" || profile.software_id == "qq") {
       policy.required_install_profiles.push_back({
           .software_id = profile.software_id,
           .profile_id = profile.id,

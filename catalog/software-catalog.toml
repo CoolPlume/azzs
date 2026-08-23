@@ -54,8 +54,9 @@ category_id = "communication"
 branch = "Windows 个人版"
 version_policy = "latest_stable"
 dependencies = []
-bundled_editions = ["large_offline"]
-notice = ""
+bundled_editions = []
+notice = "当前仅交接 QQ 官方 Windows 页面；受控安装证据尚未冻结。"
+install_profile = "qq-windows-defaults-v1"
 
 [[software.sources]]
 purpose = "primary"
