@@ -36,6 +36,6 @@ Evidence freshness: 绑定资源文件、presentation contract、页面文本生
 - 当前候选头的 `check_design_system.py` 与 `check_winui_async_contract.py` 均通过。完整全局文案扫描、资源缺失运行时回退、窄窗/大文本/屏幕阅读器和真实 Windows 页面仍未完成；品牌、型号、版本及必要原始系统/WMI 错误原文仍按规格保留。
 
 - 2026-08-23（集成证据核对）：共享页头/资源接缝来自 `96c80e63e1059017f810d7fed2a460b6a39b1d17`，已由普通合并 `da12eb5ea087cf0d9645148c30d0a7a706a837c7` 集成；驱动状态文案来自 `02c52d62b21d2797d87ea13a891878d63f8cfa8d`，经 `ec80d9ed68bf547481adb38c15d0fbfcd4407693` 集成。当前本地候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`，资源仍有后续中文化工作，事项保持 open。
-- 2026-08-23（最终远端复核）：当前 `origin/codex/v1-integration` 为 `2d74fde89999dfe63bbc7f934a0862f1497cb5c`，`origin/0.1.1` 为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`；`d8a4367adc1e322351126e8ab3676d30584475d5` 仅为两分支的历史 merge-base，旧候选头记录不再代表当前远端事实。事项仍保持 `Resolution: open`。
+- 2026-08-23（最终代码验证基线）：中文化代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`origin/0.1.1` 为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`，`d8a4367adc1e322351126e8ab3676d30584475d5` 仅为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`。
 - 当前审查发现概览 guided-initialization 动态 presentation 仍有英文默认标题、阶段和状态文本，需在 UI 适配器通过资源构造 `GuidedInitializationPresentationText` 后再结票。`draft` 作为协议/测试字段可保留，用户可见的“内置 draft 目录”须使用简体中文上下文。
 - 未验证边界：动态概览中文化后的资源回退、完整全局可见文案扫描、窄窗/大文本/屏幕阅读器呈现、ARM64、DPI 和真实 Windows UI 均未验证；品牌、型号、版本及必要原始系统/WMI 错误才可保留原文。
