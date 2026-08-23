@@ -33,6 +33,7 @@ using winrt::Microsoft::UI::Xaml::Controls::ContentDialogResult;
 using winrt::Microsoft::UI::Xaml::Controls::InfoBarSeverity;
 using winrt::Microsoft::UI::Xaml::Controls::StackPanel;
 using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
+using winrt::Microsoft::UI::Xaml::Application;
 using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
 [[nodiscard]] winrt::hstring resource_string(wchar_t const* key) {

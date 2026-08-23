@@ -234,41 +234,54 @@ void ApplicationSettingsPage::bind(
 void ApplicationSettingsPage::OnAdvancedViewToggled(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (projecting_) {
-    return;
+  try {
+    if (projecting_) {
+      return;
+    }
+    if (advanced_view_changed_) {
+      advanced_view_ = advanced_view_changed_(AdvancedViewToggle().IsOn());
+    } else {
+      advanced_view_ = AdvancedViewToggle().IsOn();
+    }
+    projecting_ = true;
+    AdvancedViewToggle().IsOn(advanced_view_);
+    AdvancedSettingsPanel().Visibility(
+        advanced_view_ ? Visibility::Visible : Visibility::Collapsed);
+    projecting_ = false;
+  } catch (...) {
+    projecting_ = false;
+    show_operation_failure();
   }
-  if (advanced_view_changed_) {
-    advanced_view_ = advanced_view_changed_(AdvancedViewToggle().IsOn());
-  } else {
-    advanced_view_ = AdvancedViewToggle().IsOn();
-  }
-  projecting_ = true;
-  AdvancedViewToggle().IsOn(advanced_view_);
-  AdvancedSettingsPanel().Visibility(advanced_view_ ? Visibility::Visible
-                                                     : Visibility::Collapsed);
-  projecting_ = false;
 }
 
 void ApplicationSettingsPage::OnCacheRetentionSelectionChanged(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&) {
-  if (projecting_ || settings_ == nullptr ||
-      CacheRetentionComboBox().SelectedIndex() < 0) {
-    return;
+  try {
+    if (projecting_ || settings_ == nullptr ||
+        CacheRetentionComboBox().SelectedIndex() < 0) {
+      return;
+    }
+    project_action(settings_->set_cache_retention(
+        retention_for_index(CacheRetentionComboBox().SelectedIndex())));
+  } catch (...) {
+    show_operation_failure();
   }
-  project_action(settings_->set_cache_retention(
-      retention_for_index(CacheRetentionComboBox().SelectedIndex())));
 }
 
 void ApplicationSettingsPage::OnArchitecturePreferenceSelectionChanged(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&) {
-  if (projecting_ || settings_ == nullptr ||
-      ArchitecturePreferenceComboBox().SelectedIndex() < 0) {
-    return;
+  try {
+    if (projecting_ || settings_ == nullptr ||
+        ArchitecturePreferenceComboBox().SelectedIndex() < 0) {
+      return;
+    }
+    project_action(settings_->set_architecture_preference(
+        architecture_for_index(ArchitecturePreferenceComboBox().SelectedIndex())));
+  } catch (...) {
+    show_operation_failure();
   }
-  project_action(settings_->set_architecture_preference(
-      architecture_for_index(ArchitecturePreferenceComboBox().SelectedIndex())));
 }
 
 winrt::fire_and_forget ApplicationSettingsPage::OnClearCacheClick(
@@ -303,6 +316,7 @@ winrt::fire_and_forget ApplicationSettingsPage::OnClearCacheClick(
     }
   } catch (...) {
     confirmation_dialog_open_ = false;
+    show_operation_failure();
     ::OutputDebugStringW(L"WinUI clear-cache dialog failed.\n");
   }
 }
@@ -339,6 +353,7 @@ winrt::fire_and_forget ApplicationSettingsPage::OnClearLogsClick(
     }
   } catch (...) {
     confirmation_dialog_open_ = false;
+    show_operation_failure();
     ::OutputDebugStringW(L"WinUI clear-logs dialog failed.\n");
   }
 }
@@ -346,16 +361,24 @@ winrt::fire_and_forget ApplicationSettingsPage::OnClearLogsClick(
 void ApplicationSettingsPage::OnExportDiagnosticClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (settings_ != nullptr) {
-    project_action(settings_->export_diagnostic());
+  try {
+    if (settings_ != nullptr) {
+      project_action(settings_->export_diagnostic());
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
 void ApplicationSettingsPage::OnRecoveryRecordSelectionChanged(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&) {
-  if (!projecting_) {
-    project_recovery_selection();
+  try {
+    if (!projecting_) {
+      project_recovery_selection();
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
@@ -395,6 +418,7 @@ winrt::fire_and_forget ApplicationSettingsPage::OnDeleteRecoveryRecordClick(
     }
   } catch (...) {
     confirmation_dialog_open_ = false;
+    show_operation_failure();
     ::OutputDebugStringW(L"WinUI recovery-record dialog failed.\n");
   }
 }
@@ -461,6 +485,7 @@ winrt::fire_and_forget ApplicationSettingsPage::OnCatalogActionClick(
     }
   } catch (...) {
     confirmation_dialog_open_ = false;
+    show_operation_failure();
     ::OutputDebugStringW(L"WinUI catalog action dialog failed.\n");
   }
 }
@@ -468,8 +493,12 @@ winrt::fire_and_forget ApplicationSettingsPage::OnCatalogActionClick(
 void ApplicationSettingsPage::OnDebugModeToggled(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (!projecting_ && settings_ != nullptr) {
-    project_action(settings_->set_debug_enabled(DebugModeToggle().IsOn()));
+  try {
+    if (!projecting_ && settings_ != nullptr) {
+      project_action(settings_->set_debug_enabled(DebugModeToggle().IsOn()));
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
@@ -490,83 +519,111 @@ void ApplicationSettingsPage::OnDebugModeToggled(
 void ApplicationSettingsPage::OnOpenCatalogEditorClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (catalog_editor_requested_) {
-    catalog_editor_requested_();
+  try {
+    if (catalog_editor_requested_) {
+      catalog_editor_requested_();
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateCommandClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (!workbench_) {
-    return;
+  try {
+    if (!workbench_) {
+      return;
+    }
+    auto const current = workbench_->snapshot().update.state;
+    auto intent = azzs::application::UpdateUserIntent::check_for_update;
+    switch (current) {
+      case azzs::application::UpdateState::awaiting_user_confirmation:
+        intent = azzs::application::UpdateUserIntent::confirm_update;
+        break;
+      case azzs::application::UpdateState::update_failed_restored:
+      case azzs::application::UpdateState::candidate_pending_start_health:
+      case azzs::application::UpdateState::previous_pending_start_health:
+        intent = azzs::application::UpdateUserIntent::confirm_started_healthy;
+        break;
+      case azzs::application::UpdateState::update_available:
+      case azzs::application::UpdateState::stable_switch_available:
+        intent = azzs::application::UpdateUserIntent::request_update;
+        break;
+      default:
+        break;
+    }
+    project_update(workbench_->handle_update(intent).snapshot);
+  } catch (...) {
+    show_operation_failure();
   }
-  auto const current = workbench_->snapshot().update.state;
-  auto intent = azzs::application::UpdateUserIntent::check_for_update;
-  switch (current) {
-    case azzs::application::UpdateState::awaiting_user_confirmation:
-      intent = azzs::application::UpdateUserIntent::confirm_update;
-      break;
-    case azzs::application::UpdateState::update_failed_restored:
-    case azzs::application::UpdateState::candidate_pending_start_health:
-    case azzs::application::UpdateState::previous_pending_start_health:
-      intent = azzs::application::UpdateUserIntent::confirm_started_healthy;
-      break;
-    case azzs::application::UpdateState::update_available:
-    case azzs::application::UpdateState::stable_switch_available:
-      intent = azzs::application::UpdateUserIntent::request_update;
-      break;
-    default:
-      break;
-  }
-  project_update(workbench_->handle_update(intent).snapshot);
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateRetryClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (workbench_) {
-    project_update(workbench_->handle_update(
-                             azzs::application::UpdateUserIntent::retry_new_version)
-                        .snapshot);
+  try {
+    if (workbench_) {
+      project_update(workbench_->handle_update(
+                               azzs::application::UpdateUserIntent::retry_new_version)
+                          .snapshot);
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateRestoreClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (workbench_) {
-    project_update(workbench_->handle_update(
-                             azzs::application::UpdateUserIntent::
-                                 restore_previous_version)
-                        .snapshot);
+  try {
+    if (workbench_) {
+      project_update(workbench_->handle_update(
+                               azzs::application::UpdateUserIntent::
+                                   restore_previous_version)
+                          .snapshot);
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateManualClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (workbench_) {
-    project_update(workbench_->handle_update(
-                             azzs::application::UpdateUserIntent::
-                                 open_all_github_releases)
-                        .snapshot);
+  try {
+    if (workbench_) {
+      project_update(workbench_->handle_update(
+                               azzs::application::UpdateUserIntent::
+                                   open_all_github_releases)
+                          .snapshot);
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
 void ApplicationSettingsPage::OnApplicationUpdateDiagnosticClick(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (workbench_) {
-    project_update(workbench_->handle_update(
-                             azzs::application::UpdateUserIntent::export_diagnostic)
-                        .snapshot);
+  try {
+    if (workbench_) {
+      project_update(workbench_->handle_update(
+                               azzs::application::UpdateUserIntent::export_diagnostic)
+                          .snapshot);
+    }
+  } catch (...) {
+    show_operation_failure();
   }
 }
 
 void ApplicationSettingsPage::project(
     azzs::application::ApplicationSettingsSnapshot const& snapshot) {
   projecting_ = true;
+  struct ProjectionGuard final {
+    bool& projecting;
+    ~ProjectionGuard() { projecting = false; }
+  } guard{projecting_};
   if (snapshot.read_degraded) {
     // A partial read is recoverable: keep the page interactive and make the
     // unavailable state explicit instead of sending the user back to the
@@ -653,7 +710,6 @@ void ApplicationSettingsPage::project(
       snapshot.debug.catalog_editor_available ? Visibility::Visible
                                                : Visibility::Collapsed);
   OpenCatalogEditorButton().IsEnabled(snapshot.debug.catalog_editor_available);
-  projecting_ = false;
 }
 
 void ApplicationSettingsPage::project_update(
@@ -766,12 +822,29 @@ void ApplicationSettingsPage::project_update(
 
 void ApplicationSettingsPage::project_action(
     azzs::application::ApplicationSettingsActionResult const& result) {
-  project(result.snapshot);
-  SettingsOperationStatus().Title(
-      resource_string(L"ApplicationSettingsOperationTitle"));
-  SettingsOperationStatus().Message(action_message(result.code));
-  SettingsOperationStatus().Severity(action_severity(result.code));
-  SettingsOperationStatus().IsOpen(true);
+  try {
+    project(result.snapshot);
+    SettingsOperationStatus().Title(
+        resource_string(L"ApplicationSettingsOperationTitle"));
+    SettingsOperationStatus().Message(action_message(result.code));
+    SettingsOperationStatus().Severity(action_severity(result.code));
+    SettingsOperationStatus().IsOpen(true);
+  } catch (...) {
+    show_operation_failure();
+  }
+}
+
+void ApplicationSettingsPage::show_operation_failure() noexcept {
+  try {
+    SettingsOperationStatus().Title(
+        resource_string(L"ApplicationSettingsOperationTitle"));
+    SettingsOperationStatus().Message(
+        resource_string(L"ApplicationSettingsActionFailed"));
+    SettingsOperationStatus().Severity(InfoBarSeverity::Error);
+    SettingsOperationStatus().IsOpen(true);
+  } catch (...) {
+    ::OutputDebugStringW(L"WinUI application-settings operation status failed.\n");
+  }
 }
 
 void ApplicationSettingsPage::project_recovery_selection() {
