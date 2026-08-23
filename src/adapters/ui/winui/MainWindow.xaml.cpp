@@ -4,6 +4,7 @@
 #include "native_resource_fallback.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -434,9 +435,12 @@ bool MainWindow::navigate_and_commit(PageId page) {
                 auto const previous_page = displayed_page_;
                 auto previous_core_page =
                     previous_page.value_or(PageId::overview);
+                auto previous_core_page_available = previous_page.has_value();
                 Windows::Foundation::IInspectable previous_content{nullptr};
+                bool previous_content_available = false;
                 try {
                   previous_content = ContentFrame().Content();
+                  previous_content_available = true;
                 } catch (...) {
                   ::OutputDebugStringW(
                       L"WinUI application-settings previous content snapshot failed.\n");
@@ -444,24 +448,61 @@ bool MainWindow::navigate_and_commit(PageId page) {
                 try {
                   if (workbench_) {
                     previous_core_page = workbench_->snapshot().current_page;
+                    previous_core_page_available = true;
                   }
                 } catch (...) {
                   ::OutputDebugStringW(
                       L"WinUI application-settings core page snapshot failed.\n");
+                  // The page that is actually displayed is a valid recovery
+                  // source when the live core snapshot is temporarily
+                  // unavailable. Startup may instead reuse the last stable
+                  // projection. Do not manufacture a core page when neither
+                  // source exists.
+                  if (last_projected_snapshot_.has_value()) {
+                    previous_core_page = last_projected_snapshot_->current_page;
+                    previous_core_page_available = true;
+                  }
                 }
+                auto const content_replaced = std::make_shared<bool>(false);
+                auto const core_navigation_started =
+                    std::make_shared<bool>(false);
                 auto recover =
                     [this, previous_page, previous_core_page,
-                     previous_content]() noexcept {
+                     previous_content, content_replaced,
+                     core_navigation_started]() noexcept {
                       restore_settings_navigation_state(
-                          previous_page, previous_core_page, previous_content);
+                          previous_page, previous_core_page, previous_content,
+                          *content_replaced, *core_navigation_started);
                     };
+                // A failed read of the current visual or core state must not
+                // publish a candidate page: after a later commit failure the
+                // shell would have no truthful state to restore. This is an
+                // actionable, retryable error; ordinary persisted settings
+                // reads are still degraded by ApplicationSettingsService and
+                // do not take this branch.
+                if (!previous_content_available ||
+                    !previous_core_page_available) {
+                  return azzs::ui::presentation::
+                      SettingsNavigationPreparation{
+                          .failure = azzs::ui::presentation::
+                              SettingsNavigationFailure{
+                                  .stage = azzs::ui::presentation::
+                                      SettingsNavigationFailureStage::snapshot_read,
+                                  .detail =
+                                      "settings navigation recovery snapshot failed"},
+                          .recover = std::move(recover)};
+                }
                 try {
                   auto const prepared = prepare_application_settings_page();
                   return azzs::ui::presentation::
                       SettingsNavigationPreparation{
-                          .commit = [this, prepared, previous_page] {
+                          .commit = [this, prepared, previous_page,
+                                     content_replaced,
+                                     core_navigation_started] {
                             commit_application_settings_page(prepared,
-                                                             previous_page);
+                                                             previous_page,
+                                                             *content_replaced,
+                                                             *core_navigation_started);
                           },
                           .recover = std::move(recover)};
                 } catch (SettingsNavigationPreparationError const& error) {
@@ -618,7 +659,8 @@ MainWindow::prepare_application_settings_page() {
 
 void MainWindow::commit_application_settings_page(
     Windows::Foundation::IInspectable const& page,
-    std::optional<PageId> const previous_page) {
+    std::optional<PageId> const previous_page, bool& content_replaced,
+    bool& core_navigation_started) {
   auto const prepared = page.try_as<Pages::ApplicationSettingsPage>();
   if (!prepared || !workbench_) {
     throw winrt::hresult_error(E_FAIL);
@@ -639,7 +681,11 @@ void MainWindow::commit_application_settings_page(
   restoring_navigation_selection_ = false;
 
   ContentFrame().Content(prepared);
+  content_replaced = true;
   displayed_page_ = PageId::application_settings;
+  // Set this before invoking the core so a partially completed core
+  // navigation is still restored by the transaction's single recovery path.
+  core_navigation_started = true;
   workbench_->navigate(PageId::application_settings);
 
   // A post-commit projection is part of the transaction boundary. Let any
@@ -670,17 +716,22 @@ void MainWindow::commit_application_settings_page(
 
 void MainWindow::restore_settings_navigation_state(
     std::optional<PageId> previous_page, PageId previous_core_page,
-    Windows::Foundation::IInspectable const& previous_content) noexcept {
+    Windows::Foundation::IInspectable const& previous_content,
+    bool restore_content, bool restore_core) noexcept {
   restoring_navigation_selection_ = false;
-  try {
-    ContentFrame().Content(previous_content);
-  } catch (...) {
-    ::OutputDebugStringW(
-        L"WinUI application-settings previous content restore failed.\n");
+  if (restore_content) {
+    try {
+      ContentFrame().Content(previous_content);
+    } catch (...) {
+      ::OutputDebugStringW(
+          L"WinUI application-settings previous content restore failed.\n");
+    }
   }
 
-  displayed_page_ = previous_page;
-  if (workbench_) {
+  if (restore_content || restore_core) {
+    displayed_page_ = previous_page;
+  }
+  if (restore_core && workbench_) {
     try {
       workbench_->navigate(previous_core_page);
     } catch (...) {

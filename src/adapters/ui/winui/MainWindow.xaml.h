@@ -85,11 +85,13 @@ struct MainWindow : MainWindowT<MainWindow> {
   prepare_application_settings_page();
   void commit_application_settings_page(
       Windows::Foundation::IInspectable const& page,
-      std::optional<azzs::application::PageId> previous_page);
+      std::optional<azzs::application::PageId> previous_page,
+      bool& content_replaced, bool& core_navigation_started);
   void restore_settings_navigation_state(
       std::optional<azzs::application::PageId> previous_page,
       azzs::application::PageId previous_core_page,
-      Windows::Foundation::IInspectable const& previous_content) noexcept;
+      Windows::Foundation::IInspectable const& previous_content,
+      bool restore_content, bool restore_core) noexcept;
   void record_settings_navigation_failure(
       azzs::ui::presentation::SettingsNavigationFailure const& failure) noexcept;
   void handle_settings_navigation_failure() noexcept;
