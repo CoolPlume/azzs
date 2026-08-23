@@ -2,6 +2,8 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "Pages/DriversPage.g.h"
 #include "azzs/application/driver_acquisition.hpp"
@@ -34,6 +36,9 @@ struct DriversPage : DriversPageT<DriversPage> {
                azzs::application::driver_acquisition::DriverAcquisitionSnapshot
                    const& driver_snapshot);
   void OnRefreshClicked(
+      winrt::Windows::Foundation::IInspectable const&,
+      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnCopyHardwareClicked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnDriverAssistantClicked(
@@ -86,6 +91,7 @@ struct DriversPage : DriversPageT<DriversPage> {
   RescueHandoffHandler rescue_handoff_handler_;
   ReturnedHandler returned_handler_;
   DecisionHandler decision_handler_;
+  std::vector<std::pair<winrt::hstring, winrt::hstring>> hardware_copy_rows_;
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation

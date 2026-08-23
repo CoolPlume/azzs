@@ -350,45 +350,16 @@ constexpr std::array<LocalizedBrand, 15> kLocalizedBrands{
   switch (connection) {
     case application::HardwareDisplayConnection::internal: return "内建";
     case application::HardwareDisplayConnection::external: return "外接";
-    case application::HardwareDisplayConnection::unknown: return "类型未确认";
+    case application::HardwareDisplayConnection::unknown: return {};
   }
-  return "类型未确认";
+  return {};
 }
 
 [[nodiscard]] std::string presented_display_name(
     std::string_view name, std::string_view manufacturer,
-    std::string_view pnp_id,
-    application::HardwareDisplayConnection connection) {
-  auto result = localized_brand_model(
-      format_display_name(name, pnp_id, false), manufacturer);
-  if (result.empty()) {
-    return {};
-  }
-  result += "（";
-  result += display_connection_label(connection);
-  result += "）";
-  return result;
-}
-
-void append_display_resolution(std::string& value, std::uint32_t width,
-                               std::uint32_t height) {
-  if (width == 0 || height == 0) {
-    return;
-  }
-  auto const closing = value.rfind("）");
-  auto const resolution = "；" + std::to_string(width) + " × " +
-                          std::to_string(height);
-  if (closing == std::string::npos) {
-    value += "（";
-    value += resolution.substr(std::string_view{"；"}.size());
-    value += "）";
-    return;
-  }
-  value.insert(closing, resolution);
-}
-
-[[nodiscard]] bool has_display_resolution(std::string_view value) noexcept {
-  return value.find(" × ") != std::string_view::npos;
+    std::string_view pnp_id) {
+  return localized_brand_model(format_display_name(name, pnp_id, false),
+                               manufacturer);
 }
 
 [[nodiscard]] std::optional<std::uint32_t>
@@ -456,25 +427,6 @@ physical_refresh_rate_limit_from_edid(
     limit = candidate;
   }
   return limit;
-}
-
-void append_display_refresh_rate_limit(
-    std::string& value, std::optional<std::uint32_t> limit) {
-  std::string detail{"；物理刷新率上限（EDID）："};
-  if (limit.has_value()) {
-    detail += std::to_string(*limit);
-    detail += " Hz";
-  } else {
-    detail += "未读取";
-  }
-  auto const closing = value.rfind("）");
-  if (closing == std::string::npos) {
-    value += "（";
-    value += detail.substr(std::string_view{"；"}.size());
-    value += "）";
-    return;
-  }
-  value.insert(closing, detail);
 }
 
 [[nodiscard]] std::string row_value(std::vector<std::string> const& row,
@@ -1005,8 +957,7 @@ void append_display_refresh_rate_limit(
     return std::nullopt;
   }
   auto const connection = display_connection_from(name, pnp_id);
-  auto display_name =
-      presented_display_name(name, manufacturer, pnp_id, connection);
+  auto display_name = presented_display_name(name, manufacturer, pnp_id);
   if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
   }
@@ -1016,8 +967,9 @@ void append_display_refresh_rate_limit(
     auto const width_valid = parse_integer(row_value(row, 4), width) && width > 0;
     auto const height_valid =
         parse_integer(row_value(row, 5), height) && height > 0;
-    if (width_valid && height_valid) {
-      append_display_resolution(display_name, width, height);
+    if (!width_valid || !height_valid) {
+      width = 0;
+      height = 0;
     }
   }
   return application::HardwareDeviceRecord{
@@ -1055,8 +1007,7 @@ classify_display_pnp(std::vector<std::string> const& row,
     return std::nullopt;
   }
   auto const connection = display_connection_from(name, pnp_id);
-  auto const display_name =
-      presented_display_name(name, manufacturer, pnp_id, connection);
+  auto const display_name = presented_display_name(name, manufacturer, pnp_id);
   if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
   }
@@ -1093,143 +1044,6 @@ classify_display_pnp(std::vector<std::string> const& row,
     return application::HardwareStorageMedia::hard_disk;
   }
   return application::HardwareStorageMedia::unknown;
-}
-
-[[nodiscard]] std::string storage_interface_from_text(
-    std::string_view model, std::string_view interface_type,
-    std::string_view pnp_id) {
-  std::string source{model};
-  source += " ";
-  source += interface_type;
-  source += " ";
-  source += pnp_id;
-  if (contains_ascii(source, "nvme")) {
-    return "NVMe";
-  }
-  if (contains_ascii(source, "sata")) {
-    return "SATA";
-  }
-  if (contains_ascii(source, "usb")) {
-    return "USB";
-  }
-  if (contains_ascii(source, "sas")) {
-    return "SAS";
-  }
-  if (contains_ascii(source, "scsi")) {
-    return "SCSI";
-  }
-  if (contains_ascii(source, "ide") || contains_ascii(source, "ata")) {
-    return "IDE/ATA";
-  }
-  return {};
-}
-
-[[nodiscard]] bool exact_pcb01_product(std::string_view model) noexcept {
-  return lower_ascii(trim_ascii(model)) ==
-         "sk hynix pcb01 hfs001tfm9x187n";
-}
-
-[[nodiscard]] std::string pcie_generation_from_text(
-    std::string_view model, std::string_view manufacturer,
-    std::string_view interface_type, std::string_view pnp_id) {
-  // SK hynix identifies PCB01 as its PCIe Gen5 AI-PC SSD with SLC caching:
-  // https://news.skhynix.com/en/sk-hynix-develops-pcb01-for-artificial-intelligence-pcs/
-  // Keep the match product-specific; this fact must never leak to PC801 or a
-  // similarly named but unverified PCB01 device.
-  if (exact_pcb01_product(model)) {
-    return "5.0 x4";
-  }
-  std::string source{model};
-  source += " ";
-  source += manufacturer;
-  source += " ";
-  source += interface_type;
-  source += " ";
-  source += pnp_id;
-  for (int generation = 5; generation >= 3; --generation) {
-    auto const number = std::to_string(generation);
-    if (contains_ascii(source, "pcie " + number) ||
-        contains_ascii(source, "pcie" + number) ||
-        contains_ascii(source, "pcie gen " + number) ||
-        contains_ascii(source, "pcie gen" + number) ||
-        contains_ascii(source, "pci express " + number)) {
-      return number + ".0";
-    }
-  }
-
-  // These two model-specific facts are documented by the respective OEMs.
-  // They are deliberately exact: nearby model families, including PCB01, do
-  // not inherit PC801's metadata.
-  if (contains_ascii(model, "samsung ssd 990 pro")) {
-    return "4.0";
-  }
-  if (contains_ascii(model, "pc801") &&
-      (contains_ascii(model, "hynix") ||
-       contains_ascii(manufacturer, "hynix"))) {
-    return "4.0";
-  }
-  return {};
-}
-
-[[nodiscard]] std::string nand_type_from_text(
-    std::string_view model, std::string_view manufacturer,
-    std::string_view media_type, std::string_view pnp_id) {
-  // The 238-layer 4D TLC detail is cross-checked against model-specific
-  // HFS001TFM9X187N/PCB01 1 TB identification and PCB01/P51 family data:
-  // https://www.storagereview.com/review/hp-elitebook-x-g2i-review
-  // https://www.storagereview.com/review/sk-hynix-platinum-p51-review-balanced-performance-for-demanding-workloads
-  // https://www.techpowerup.com/ssd-specs/sk-hynix-pcb01-2-tb.d2057
-  // These sources cross-check the NAND family only; no 2 TB capacity-specific
-  // value is applied to this 1 TB model. SLC describes cache, not cell type.
-  if (exact_pcb01_product(model)) {
-    return "238 层 4D TLC（资料识别；SLC 缓存：支持）";
-  }
-  std::string source{model};
-  source += " ";
-  source += manufacturer;
-  source += " ";
-  source += media_type;
-  source += " ";
-  source += pnp_id;
-  if (contains_ascii(source, "qlc")) {
-    return "QLC";
-  }
-  if (contains_ascii(source, "tlc")) {
-    return "TLC";
-  }
-  if (contains_ascii(source, "mlc")) {
-    return "MLC";
-  }
-  if (contains_ascii(source, "slc")) {
-    return "SLC";
-  }
-  if (contains_ascii(model, "samsung ssd 990 pro")) {
-    return "TLC";
-  }
-  if (contains_ascii(model, "pc801") &&
-      (contains_ascii(model, "hynix") ||
-       contains_ascii(manufacturer, "hynix"))) {
-    return "V7 176 层 4D NAND（单元类型未读取）";
-  }
-  return {};
-}
-
-[[nodiscard]] std::string storage_metadata_text(
-    std::string_view storage_interface, std::string_view pcie_generation,
-    std::string_view nand_type) {
-  std::string result{"（接口："};
-  result += (storage_interface.empty() ? "未读取" : storage_interface);
-  result += "；PCIe 代际：";
-  if (pcie_generation.empty()) {
-    result += "未读取";
-  } else {
-    result += "PCIe ";
-    result += pcie_generation;
-  }
-  result += "；NAND 颗粒：";
-  result += (nand_type.empty() ? "未读取" : nand_type);
-  result += "）";
-  return result;
 }
 
 [[nodiscard]] std::string windows_release_name(std::string_view build) {
@@ -1324,16 +1138,9 @@ classify_display_pnp(std::vector<std::string> const& row,
       !physical_storage_bus(pnp_id)) {
     return std::nullopt;
   }
-  auto const storage_interface =
-      storage_interface_from_text(model, interface_type, pnp_id);
-  auto const pcie_generation = pcie_generation_from_text(
-      model, manufacturer, interface_type, pnp_id);
-  auto const nand_type =
-      nand_type_from_text(model, manufacturer, media_type, pnp_id);
   std::string name = localized_brand_model(model, manufacturer);
   name += " ";
   name += decimal_gigabytes(size);
-  name += storage_metadata_text(storage_interface, pcie_generation, nand_type);
   auto const media = storage_media_from_text(model, manufacturer, interface_type,
                                              media_type, pnp_id);
   return application::HardwareDeviceRecord{
@@ -1346,10 +1153,8 @@ classify_display_pnp(std::vector<std::string> const& row,
       .vendor = vendor_from_text(manufacturer.empty() ? model : manufacturer),
       .physically_present = true,
       .filter_reason = "physical storage PNP id with a positive capacity",
+      .capacity_bytes = size,
       .storage_media = media,
-      .storage_interface = storage_interface,
-      .pcie_generation = pcie_generation,
-      .nand_type = nand_type,
   };
 }
 
@@ -1437,8 +1242,8 @@ void append_grouped_device(
     }
   }
   // DesktopMonitor and PnPEntity project one panel through different WMI
-  // classes.  Use the stable EDID/PNP model key and resolution helpers, not
-  // punctuation in the localized presentation string, to collapse them.
+  // classes. Use the stable EDID/PNP model key and structured resolution to
+  // collapse them without inspecting presentation text.
   if (record.kind == application::HardwareDeviceKind::display) {
     for (auto& existing : devices) {
       if (existing.kind == record.kind &&
@@ -1448,10 +1253,8 @@ void append_grouped_device(
             existing.name == record.name)) &&
           existing.storage_media == record.storage_media &&
           existing.display_connection == record.display_connection) {
-        if (!has_display_resolution(existing.name) &&
-            has_display_resolution(record.name)) {
-          append_display_resolution(existing.name, record.display_width,
-                                    record.display_height);
+        if ((existing.display_width == 0 || existing.display_height == 0) &&
+            record.display_width != 0 && record.display_height != 0) {
           existing.display_width = record.display_width;
           existing.display_height = record.display_height;
         }
@@ -1465,6 +1268,34 @@ void append_grouped_device(
 
 [[nodiscard]] std::string grouped_name(
     application::HardwareDeviceRecord const& record) {
+  if (record.kind == application::HardwareDeviceKind::display) {
+    auto result = record.name;
+    std::string detail;
+    auto append_detail = [&detail](std::string_view value) {
+      if (value.empty()) {
+        return;
+      }
+      if (!detail.empty()) {
+        detail += "；";
+      }
+      detail += value;
+    };
+    if (record.display_width != 0 && record.display_height != 0) {
+      append_detail(std::to_string(record.display_width) + " × " +
+                    std::to_string(record.display_height));
+    }
+    if (record.physical_refresh_rate_limit_hz != 0) {
+      append_detail(std::to_string(record.physical_refresh_rate_limit_hz) +
+                    " Hz");
+    }
+    append_detail(display_connection_label(record.display_connection));
+    if (!detail.empty()) {
+      result += "（";
+      result += detail;
+      result += "）";
+    }
+    return result;
+  }
   auto result = record.name;
   if (record.kind == application::HardwareDeviceKind::memory &&
       record.quantity > 1 && record.capacity_bytes != 0) {
@@ -1751,10 +1582,8 @@ struct CollectedObservation final {
               existing.model_detail != desktop_key) {
             continue;
           }
-          if (!has_display_resolution(existing.name) &&
-              has_display_resolution(record->name)) {
-            append_display_resolution(existing.name, record->display_width,
-                                      record->display_height);
+          if ((existing.display_width == 0 || existing.display_height == 0) &&
+              record->display_width != 0 && record->display_height != 0) {
             existing.display_width = record->display_width;
             existing.display_height = record->display_height;
           }
@@ -1774,7 +1603,6 @@ struct CollectedObservation final {
     auto const limit = physical_refresh_rate_limit_for(
         display_edids, device.model_detail);
     device.physical_refresh_rate_limit_hz = limit.value_or(0);
-    append_display_refresh_rate_limit(device.name, limit);
   }
   for (auto const& row : rows_by_spec[7]) {
     if (auto record = classify_storage(row, virtual_host)) {
@@ -1825,10 +1653,6 @@ struct CollectedObservation final {
                   collected.observation.devices,
                   application::HardwareDeviceKind::storage, std::nullopt,
                   application::HardwareStorageMedia::hard_disk);
-  rebuild_summary(collected.observation.unclassified_storage,
-                  collected.observation.devices,
-                  application::HardwareDeviceKind::storage, std::nullopt,
-                  application::HardwareStorageMedia::unknown);
   rebuild_summary(collected.observation.audio, collected.observation.devices,
                   application::HardwareDeviceKind::audio);
   rebuild_summary(collected.observation.npu, collected.observation.devices,

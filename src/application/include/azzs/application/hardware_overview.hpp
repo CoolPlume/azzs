@@ -103,9 +103,9 @@ struct HardwareDeviceRecord final {
   HardwareNetworkLink network_link{HardwareNetworkLink::unknown};
   HardwareStorageMedia storage_media{HardwareStorageMedia::unknown};
   std::uint32_t quantity{1};
-  // Optional topology and media facts are kept structured so UI consumers can
-  // present them without parsing display strings. Zero/empty means the
-  // Windows source did not expose that fact.
+  // Optional topology and display facts are kept structured so UI consumers
+  // can present them without parsing display strings. Zero means the Windows
+  // source did not expose that fact.
   std::uint32_t core_count{0};
   std::uint32_t thread_count{0};
   std::uint32_t performance_core_count{0};
@@ -117,9 +117,6 @@ struct HardwareDeviceRecord final {
   // Zero means the raw monitor capability data did not provide a trustworthy
   // physical vertical-field-rate upper bound.
   std::uint32_t physical_refresh_rate_limit_hz{0};
-  std::string storage_interface;
-  std::string pcie_generation;
-  std::string nand_type;
 
   [[nodiscard]] bool confirmed_physical() const noexcept {
     return physically_present &&
@@ -145,7 +142,6 @@ struct HardwareObservation final {
   std::string storage;
   std::string solid_state_storage;
   std::string hard_disk_storage;
-  std::string unclassified_storage;
   std::string npu;
   std::string audio;
   std::string operating_system;

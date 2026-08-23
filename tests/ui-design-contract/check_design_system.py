@@ -1202,7 +1202,6 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         ("HardwareDisplayLabel", "AzzsHardwareDisplay"),
         ("HardwareSolidStateStorageLabel", "AzzsHardwareSolidStateStorage"),
         ("HardwareHardDiskStorageLabel", "AzzsHardwareHardDiskStorage"),
-        ("HardwareUnclassifiedStorageLabel", "AzzsHardwareUnclassifiedStorage"),
         ("HardwareNpuLabel", "AzzsHardwareNpu"),
         ("HardwareAudioLabel", "AzzsHardwareAudio"),
         ("HardwareWiredNetworkLabel", "AzzsHardwareWiredNetwork"),
@@ -1214,12 +1213,16 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             f"drivers page is missing hardware detail surface {label}",
         )
     require(
+        resource_values.get("HardwareModelSummaryTitle") == "机型" and
+        resource_values.get("HardwareSystemSummaryTitle") == "Windows 版本" and
+        resource_values.get("HardwareTableItemHeader.Text") == "项目" and
+        resource_values.get("HardwareTableInformationHeader.Text") == "信息" and
+        resource_values.get("HardwareCopySection.Text") == "复制本节" and
         resource_values.get("HardwareSolidStateStorageLabel.Text") == "固态硬盘" and
         resource_values.get("HardwareHardDiskStorageLabel.Text") == "机械硬盘" and
-        resource_values.get("HardwareUnclassifiedStorageLabel.Text") == "未分类物理磁盘" and
         resource_values.get("HardwareWiredNetworkLabel.Text") == "有线网卡" and
         resource_values.get("HardwareWirelessNetworkLabel.Text") == "无线网卡",
-        "storage media and network link labels must remain explicit Simplified Chinese",
+        "hardware table headings and category labels must remain explicit Simplified Chinese",
     )
     obsolete_hardware_groups = (
         "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",
@@ -1291,35 +1294,47 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             detail_columns[1].attrib.get(X_NAME) == "HardwareDetailsSecondColumn" and
             detail_columns[1].attrib.get("Width") == "*",
             "drivers hardware rows need a stable Chinese type column and a filling value column")
-    hardware_rows = (
+    fixed_hardware_rows = (
         ("HardwareModelSummaryTitle", "ModelValue", "AzzsHardwareModel"),
         ("HardwareSystemSummaryTitle", "SystemValue", "AzzsHardwareSystem"),
         ("HardwareCpuLabel", "CpuValue", "AzzsHardwareCpu"),
         ("HardwareMotherboardLabel", "MotherboardValue", "AzzsHardwareMotherboard"),
         ("HardwareMemoryLabel", "MemoryValue", "AzzsHardwareMemory"),
         ("HardwareGpuLabel", "GpuValue", "AzzsHardwareGpu"),
-        ("HardwareDisplayLabel", "DisplayValue", "AzzsHardwareDisplay"),
-        ("HardwareNpuLabel", "NpuValue", "AzzsHardwareNpu"),
-        ("HardwareSolidStateStorageLabel", "SolidStateStorageValue", "AzzsHardwareSolidStateStorage"),
-        ("HardwareHardDiskStorageLabel", "HardDiskStorageValue", "AzzsHardwareHardDiskStorage"),
-        ("HardwareUnclassifiedStorageLabel", "UnclassifiedStorageValue", "AzzsHardwareUnclassifiedStorage"),
-        ("HardwareWiredNetworkLabel", "WiredNetworkValue", "AzzsHardwareWiredNetwork"),
-        ("HardwareWirelessNetworkLabel", "WirelessNetworkValue", "AzzsHardwareWirelessNetwork"),
-        ("HardwareAudioLabel", "AudioValue", "AzzsHardwareAudio"),
+    )
+    optional_hardware_rows = (
+        ("HardwareDisplayLabel", "DisplayLabel", "DisplayValue", "DisplayDivider", "AzzsHardwareDisplay"),
+        ("HardwareSolidStateStorageLabel", "SolidStateStorageLabel", "SolidStateStorageValue", "SolidStateStorageDivider", "AzzsHardwareSolidStateStorage"),
+        ("HardwareHardDiskStorageLabel", "HardDiskStorageLabel", "HardDiskStorageValue", "HardDiskStorageDivider", "AzzsHardwareHardDiskStorage"),
+        ("HardwareWiredNetworkLabel", "WiredNetworkLabel", "WiredNetworkValue", "WiredNetworkDivider", "AzzsHardwareWiredNetwork"),
+        ("HardwareWirelessNetworkLabel", "WirelessNetworkLabel", "WirelessNetworkValue", "WirelessNetworkDivider", "AzzsHardwareWirelessNetwork"),
+        ("HardwareAudioLabel", "AudioLabel", "AudioValue", "AudioDivider", "AzzsHardwareAudio"),
+        ("HardwareNpuLabel", "NpuLabel", "NpuValue", "NpuDivider", "AzzsHardwareNpu"),
     )
     detail_rows = [
         element for element in details_grid.iter()
         if local_name(element.tag) == "RowDefinition"
     ]
-    require(len(detail_rows) == len(hardware_rows) and
+    require(len(detail_rows) == 1 + len(fixed_hardware_rows) + len(optional_hardware_rows) and
             all(row.attrib.get("Height") == "Auto" for row in detail_rows),
-            "every hardware fact needs its own content-sized row")
+            "the hardware table must retain one header, six fixed facts, and seven optional content-sized rows")
+    table_headers = [
+        element for element in details_grid.iter()
+        if element.attrib.get(f"{{{X_NS}}}Uid") in
+        ("HardwareTableItemHeader", "HardwareTableInformationHeader")
+    ]
+    require(len(table_headers) == 2 and
+            {header.attrib.get("Grid.Column") for header in table_headers} == {"0", "1"} and
+            all(header.attrib.get("Grid.Row") == "0" and
+                header.attrib.get("IsTextSelectionEnabled") == "True"
+                for header in table_headers),
+            "hardware table headings must occupy the selectable first row")
     require(
         'AutomationProperties.AutomationId="AzzsHardwareModelSummary"' in drivers_xaml and
         'AutomationProperties.AutomationId="AzzsHardwareSystemSummary"' in drivers_xaml,
         "merged model and system rows must preserve their automation identities",
     )
-    for row_index, (label_uid, value_name, automation_id) in enumerate(hardware_rows):
+    for row_index, (label_uid, value_name, automation_id) in enumerate(fixed_hardware_rows, start=1):
         labels = [
             element for element in details_grid.iter()
             if element.attrib.get(f"{{{X_NS}}}Uid") == label_uid
@@ -1342,28 +1357,96 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
                 values[0].attrib.get("Margin") ==
                 "{StaticResource AzzsHardwareRowTextMargin}" and
                 values[0].attrib.get("TextWrapping") == "Wrap" and
+                values[0].attrib.get("IsTextSelectionEnabled") == "True" and
                 "MaxLines" not in values[0].attrib and
                 "TextTrimming" not in values[0].attrib,
                 f"{value_name} must fill the value column and preserve wrapped multi-device lines")
+    for row_index, (label_uid, label_name, value_name, divider_name, automation_id) in enumerate(
+            optional_hardware_rows, start=1 + len(fixed_hardware_rows)):
+        labels = [
+            element for element in details_grid.iter()
+            if element.attrib.get(f"{{{X_NS}}}Uid") == label_uid and
+            element.attrib.get(X_NAME) == label_name
+        ]
+        values = [
+            element for element in details_grid.iter()
+            if element.attrib.get(X_NAME) == value_name
+        ]
+        dividers = [
+            element for element in details_grid.iter()
+            if element.attrib.get(X_NAME) == divider_name
+        ]
+        require(len(labels) == 1 and
+                labels[0].attrib.get("Grid.Row") == str(row_index) and
+                labels[0].attrib.get("Grid.Column") == "0" and
+                labels[0].attrib.get("Visibility") == "Collapsed" and
+                labels[0].attrib.get("IsTextSelectionEnabled") == "True",
+                f"{label_name} must begin collapsed until its fact is available")
+        require(len(values) == 1 and
+                values[0].attrib.get("Grid.Row") == str(row_index) and
+                values[0].attrib.get("Grid.Column") == "1" and
+                values[0].attrib.get("AutomationProperties.AutomationId") == automation_id and
+                values[0].attrib.get("Visibility") == "Collapsed" and
+                values[0].attrib.get("IsTextSelectionEnabled") == "True" and
+                values[0].attrib.get("TextWrapping") == "Wrap" and
+                "MaxLines" not in values[0].attrib and
+                "TextTrimming" not in values[0].attrib,
+                f"{value_name} must begin collapsed until its fact is available")
+        require(len(dividers) == 1 and
+                dividers[0].attrib.get("Grid.Row") == str(row_index) and
+                dividers[0].attrib.get("Grid.ColumnSpan") == "2" and
+                dividers[0].attrib.get("Visibility") == "Collapsed" and
+                dividers[0].attrib.get("BorderBrush") ==
+                "{ThemeResource AzzsSurfaceBorderBrush}",
+                f"{divider_name} must track the optional fact row")
+    detail_text_blocks = [
+        element for element in details_grid.iter()
+        if local_name(element.tag) == "TextBlock"
+    ]
+    require(len(detail_text_blocks) == 2 + 2 * (len(fixed_hardware_rows) + len(optional_hardware_rows)) and
+            all(element.attrib.get("IsTextSelectionEnabled") == "True"
+                for element in detail_text_blocks),
+            "every hardware table label and value must remain selectable")
     row_dividers = [
         element for element in details_grid.iter()
         if local_name(element.tag) == "Border" and
         element.attrib.get("BorderThickness") == "0,0,0,1"
     ]
-    require(len(row_dividers) == len(hardware_rows) - 1 and
+    require(len(row_dividers) == 1 + len(fixed_hardware_rows) + len(optional_hardware_rows) and
             all(divider.attrib.get("BorderBrush") ==
                 "{ThemeResource AzzsSurfaceBorderBrush}"
                 for divider in row_dividers),
-            "hardware rows need one subtle high-contrast-aware divider between adjacent facts")
+            "hardware table rows need a subtle high-contrast-aware divider")
     for field in (
         "facts.operating_system", "facts.cpu", "facts.gpu", "facts.motherboard",
         "facts.memory", "facts.display", "facts.solid_state_storage",
-        "facts.hard_disk_storage", "facts.unclassified_storage", "facts.npu", "facts.audio",
+        "facts.hard_disk_storage", "facts.npu", "facts.audio",
         "facts.wired_network_adapter", "facts.wireless_network_adapter",
         "facts.oem_model",
     ):
         require(field in drivers_cpp,
                 f"drivers page must project hardware detail field {field}")
+    require(
+        "HardwareUnclassifiedStorage" not in drivers_xaml and
+        "unclassified_storage" not in drivers_cpp and
+        "HardwareUnclassifiedStorageLabel.Text" not in resource_values,
+        "unknown storage media must remain a structured device fact, not a rendered category",
+    )
+    copy_buttons = [
+        element for element in drivers_root.iter()
+        if local_name(element.tag) == "Button" and
+        element.attrib.get("AutomationProperties.AutomationId") == "AzzsHardwareCopySection"
+    ]
+    require(len(copy_buttons) == 1 and
+            copy_buttons[0].attrib.get("Click") == "OnCopyHardwareClicked" and
+            "Symbol=\"Copy\"" in drivers_xaml and
+            'x:Uid="HardwareCopySection"' in drivers_xaml,
+            "hardware facts must expose a localized copy command with a familiar copy icon")
+    require(
+        "void DriversPage::OnCopyHardwareClicked" in drivers_cpp and
+        "hardware_copy_rows_" in drivers_cpp and
+        "Clipboard::SetContent(package)" in drivers_cpp,
+        "copying hardware facts must use the projected rows and the platform clipboard")
     require(
         resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
         "通用网卡驱动救援工具" and
