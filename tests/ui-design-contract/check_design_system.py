@@ -1162,6 +1162,31 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "AzzsFixedDriverEntrypoints" in drivers_xaml,
         "driver recommendations must fail closed while fixed official entrypoints remain visible",
     )
+    for label, automation_id in (
+        ("HardwareOperatingSystemLabel", "AzzsHardwareOperatingSystem"),
+        ("HardwareCpuLabel", "AzzsHardwareCpu"),
+        ("HardwareGpuLabel", "AzzsHardwareGpu"),
+        ("HardwareMotherboardLabel", "AzzsHardwareMotherboard"),
+        ("HardwareMemoryLabel", "AzzsHardwareMemory"),
+        ("HardwareDisplayLabel", "AzzsHardwareDisplay"),
+        ("HardwareStorageLabel", "AzzsHardwareStorage"),
+        ("HardwareNpuLabel", "AzzsHardwareNpu"),
+        ("HardwareAudioLabel", "AzzsHardwareAudio"),
+        ("HardwareNetworkLabel", "AzzsHardwareNetwork"),
+        ("HardwareOemLabel", "AzzsHardwareOem"),
+    ):
+        require(
+            f'x:Uid="{label}"' in drivers_xaml and
+            f'AutomationProperties.AutomationId="{automation_id}"' in drivers_xaml,
+            f"drivers page is missing hardware detail surface {label}",
+        )
+    for field in (
+        "facts.operating_system", "facts.cpu", "facts.gpu", "facts.motherboard",
+        "facts.memory", "facts.display", "facts.storage", "facts.npu",
+        "facts.audio", "facts.network_adapter", "facts.oem_model",
+    ):
+        require(field in drivers_cpp,
+                f"drivers page must project hardware detail field {field}")
     require(
         resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
         "通用网卡驱动救援工具" and
