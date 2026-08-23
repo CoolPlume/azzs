@@ -1389,6 +1389,15 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "set_settings_operation_open(SettingsOperationStatus(), false)" in settings_cpp,
         "closed settings operation status must not reserve page layout",
     )
+    require(
+        'x:Name="ApplicationUpdateStatus"' in settings_xaml and
+        'IsOpen="False"' in settings_xaml and
+        'Visibility="Collapsed"' in settings_xaml and
+        "void set_update_status_open(InfoBar const& info_bar, bool open)" in settings_cpp and
+        "set_update_status_open(ApplicationUpdateStatus()," in settings_cpp and
+        "snapshot.state != UpdateState::idle" in settings_cpp,
+        "idle update status must collapse instead of reserving a blank settings-page band",
+    )
     require("TextChanged=\"OnImportPathChanged\"" in catalog_editor_xaml and
             "AzzsSoftwareCatalogEditorImportPreview" in catalog_editor_xaml and
             "clear_import_preview()" in catalog_editor_cpp and
