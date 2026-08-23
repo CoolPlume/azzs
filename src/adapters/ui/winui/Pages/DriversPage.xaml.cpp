@@ -141,11 +141,26 @@ void DriversPage::project(
 
   auto const facts = snapshot.observation.value_or(
       azzs::application::HardwareObservation{});
+  ModelValue().Text(display_value(facts.oem_model, unrecognized_value));
+  SystemValue().Text(
+      display_value(facts.operating_system, unrecognized_value));
   CpuValue().Text(display_value(facts.cpu, unrecognized_value));
   GpuValue().Text(display_value(facts.gpu, unrecognized_value));
   MotherboardValue().Text(display_value(facts.motherboard, unrecognized_value));
-  NetworkValue().Text(display_value(facts.network_adapter, unrecognized_value));
-  OemValue().Text(display_value(facts.oem_model, unrecognized_value));
+  MemoryValue().Text(display_value(facts.memory, unrecognized_value));
+  DisplayValue().Text(display_value(facts.display, unrecognized_value));
+  SolidStateStorageValue().Text(
+      display_value(facts.solid_state_storage, unrecognized_value));
+  HardDiskStorageValue().Text(
+      display_value(facts.hard_disk_storage, unrecognized_value));
+  UnclassifiedStorageValue().Text(
+      display_value(facts.unclassified_storage, unrecognized_value));
+  NpuValue().Text(display_value(facts.npu, unrecognized_value));
+  AudioValue().Text(display_value(facts.audio, unrecognized_value));
+  WiredNetworkValue().Text(
+      display_value(facts.wired_network_adapter, unrecognized_value));
+  WirelessNetworkValue().Text(
+      display_value(facts.wireless_network_adapter, unrecognized_value));
 
   auto const can_start =
       driver_snapshot.writable &&

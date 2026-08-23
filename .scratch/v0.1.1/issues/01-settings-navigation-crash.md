@@ -33,7 +33,13 @@ Evidence freshness: 绑定设置服务、页面绑定、组合根或资源版本
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：设置实现源提交 `21033240161617161a4175018506250a851cb0b4`，其事务恢复提交经普通合并 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c` 进入集成链；后续资源/操作性回退经普通合并 `f76b075e5181e582f0ddc533170d2a2a76929513` 和 `d8a4367adc1e322351126e8ab3676d30584475d5` 收口。当前远端 `codex/v1-integration` 候选头为 `d8a4367adc1e322351126e8ab3676d30584475d5`，事项仍保持 `Resolution: open`。
+- 当前候选头执行 `python tests/ui-design-contract/check_winui_async_contract.py .` 和 `python tests/ui-design-contract/check_design_system.py .` 均通过；这只证明静态合同，不等同于真实点击。x64 Release 构建曾在独立 D: 集成树被 `MSB3501`（缺少 `azzs_software_optimization_batch_runner_application.lastbuildstate`）阻断。
+- 未验证边界保持：真实异常快照/绑定/持久化点击、进程存活与焦点回退、Narrator、触摸、ARM64、DPI/窄窗及安装生命周期均未完成；不得以合同结果结票。
+
 - 2026-08-23（集成证据核对）：实现提交 `defd9a1bb8ffd898a38eef6c2f507147b32b384d` 已通过普通合并 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c` 进入当前本地 `codex/v011-integration`，当前候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`。改动包含设置导航事务/快照、绑定和持久化异常接缝及 UI 合同夹具；尚未据此结票。
 - 已知静态验证：`python tests/ui-design-contract/check_winui_async_contract.py .` 在设置链审查中通过；仍需在当前候选头重新执行受影响合同和 Windows 11 x64 UI 自动化，确认单一恢复责任、进程存活、当前页/焦点保留、中文错误以及重试/返回行为。未做真实点击验收。
 - 未验证边界：ARM64、DPI/窄窗、多触摸、Narrator/屏幕阅读器、真实异常快照/绑定/持久化故障和安装生命周期均未验证；不得以静态合同或其他主机结果替代。
 - 2026-08-23 07:20:51 +08:00（最终候选证据）：`d8a4367adc1e322351126e8ab3676d30584475d5` 为远端集成头，已通过普通合并以版本分支提交 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b` 推送到 `0.1.1`。设置导航/异步边界合同通过；真实 Windows 点击“应用设置”及注入的快照、绑定、持久化故障仍未执行。保留 P2 风险：post-commit shell projection 异常当前可能被记录后吞掉，不能把合同通过写成全部异常已闭合。
+- 2026-08-23（最终代码验证基线）：设置恢复修复后的集成代码基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`d8a4367adc1e322351126e8ab3676d30584475d5` 是历史 merge-base，`origin/0.1.1` 当前为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 保持不变；本条只更新可复核 Git 关系，真实 WinUI/无障碍、ARM64、DPI 和安装生命周期仍未验证。

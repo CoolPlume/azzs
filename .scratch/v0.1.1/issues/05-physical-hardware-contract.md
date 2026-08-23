@@ -33,5 +33,10 @@ Windows 硬件适配器负责取得原始观测并在单一过滤接缝确认物
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：确认物理硬件源提交 `0b9fa245e45b2a09e1e56e49d8770cff4c72f2bc` 与数值变体修复 `3941b75635ab19e59159b477030d5f9c3d651dbf` 经普通合并 `67810a87014b50c28847b580c9bb35e8d1b8dba9` 进入候选链；当前远端头为 `d8a4367adc1e322351126e8ab3676d30584475d5`。定向硬件/日志/驱动合同包含在 CTest 10/10 通过结果中；未知物理性仍按 fail-closed，未做代表性真实设备人工验收。
+- 未验证边界：ARM64、真实设备矩阵、权限不足/SetupAPI 实机故障、DPI 和安装生命周期均未完成，事项保持 `Resolution: open`。
+
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md` 与 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 均已核实；这些记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
 - 2026-08-23 07:20:51 +08:00（最终候选证据）：硬件概览/物理过滤合同在 `d8a4367adc1e322351126e8ab3676d30584475d5` 上通过，并已普通合并到 `0.1.1` 提交 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b`。Windows 设备数据合同受宿主 `CreateSymbolicLinkW` 权限限制，真实设备观察、ARM64 和 UI 投影仍未验证；未知物理性继续 fail-closed。
+- 2026-08-23（最终代码验证基线）：物理硬件代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`origin/0.1.1` 为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`，旧 `d8a4367adc1e322351126e8ab3676d30584475d5` 为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`，未知物理性和真实设备验收边界未改变。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 保持不变；真实设备矩阵、SetupAPI 权限故障、ARM64、DPI 和安装生命周期仍未验证。

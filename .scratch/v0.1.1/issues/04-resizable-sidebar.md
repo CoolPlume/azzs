@@ -33,5 +33,10 @@ Evidence freshness: 绑定 NavigationView 模板、偏好服务、设置键、�
 
 ## Comments
 
+- 2026-08-23 07:14:10 +08:00（最终候选证据）：侧栏源提交 `11dfde5b9acb5e62b72e743f16d2b3a503f89d06` 及根字典修复 `65e7e591c0a9df043d1ce284df88663bd7c5a772` 经普通合并 `80713109b1cd71be19689f0c4fbbc4775d413797` 进入候选链；当前远端头为 `d8a4367adc1e322351126e8ab3676d30584475d5`。受影响侧栏合同包含在定向 CTest 10/10 通过结果中，但未完成真实拖拽/键盘/重启 UI 验收。
+- 未验证边界：持久化故障回退、窄窗 compact 状态保留、DPI、触摸、屏幕阅读器和 ARM64 均未完成，事项保持 `Resolution: open`。
+
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/18-application-settings.md` 的 `Resolution: completed` 已核实；该记录仅作历史参考，不构成当前 0.1.1 阻塞。当前 `Blocked by` 仅保留同 effort 的事项 03。
 - 2026-08-23 07:20:51 +08:00（最终候选证据）：侧栏宽度合同在 `d8a4367adc1e322351126e8ab3676d30584475d5` 上通过，并随 `7478fa364fea4fc2b4ae5336b1d92e3904b68f5b` 进入 `0.1.1`。真实拖拽、键盘/触摸、窄窗 compact、重启持久化和 DPI 行为仍未执行，事项保持 open。
+- 2026-08-23（最终代码验证基线）：侧栏代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`origin/0.1.1` 为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`，旧 `d8a4367adc1e322351126e8ab3676d30584475d5` 为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`，`Blocked by: 03` 未变。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 和 `Blocked by: 03` 均保持不变；真实拖拽/键盘/触摸、DPI、屏幕阅读器和 ARM64 仍未验证。

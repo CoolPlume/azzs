@@ -118,6 +118,7 @@
     <x:Double x:Key="AzzsSpaceExtraLarge">32</x:Double>
     <x:Double x:Key="AzzsTouchTargetMinHeight">44</x:Double>
     <x:Double x:Key="AzzsStageMinimumWidth">144</x:Double>
+    <GridLength x:Key="AzzsHardwareTypeColumnWidth">128</GridLength>
     <x:Double x:Key="AzzsWideLayoutMinWidth">960</x:Double>
     <x:Double x:Key="AzzsPageHeaderWideLayoutMinWidth">720</x:Double>
     <x:Double x:Key="AzzsContentMaxWidth">1280</x:Double>
@@ -126,6 +127,7 @@
     <Thickness x:Key="AzzsPagePaddingNarrow">16,16,16,24</Thickness>
     <Thickness x:Key="AzzsSectionPadding">16</Thickness>
     <Thickness x:Key="AzzsListRowPadding">12,10</Thickness>
+    <Thickness x:Key="AzzsHardwareRowTextMargin">0,12</Thickness>
     <Thickness x:Key="AzzsCommandPadding">16,8</Thickness>
     <Thickness x:Key="AzzsShellStatusMargin">24,16,24,0</Thickness>
     <Thickness x:Key="AzzsSidebarResizeThumbInitialMargin">244,0,0,0</Thickness>
@@ -226,12 +228,18 @@
         <Setter Property="IsSettingsVisible" Value="False" />
         <Setter Property="PaneDisplayMode" Value="Auto" />
         <Setter Property="Background" Value="{ThemeResource AzzsMaterialRootFallbackBrush}" />
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsNavigationItemStyle" TargetType="NavigationViewItem">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>
 
     <Style x:Key="AzzsSidebarResizeThumbStyle" TargetType="primitives:Thumb">
         <Setter Property="Width" Value="8" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Opacity" Value="0.85" />
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>
 
     <Style x:Key="AzzsSectionSurfaceStyle" TargetType="Border">
@@ -257,6 +265,7 @@
         <Setter Property="IsClosable" Value="False" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="MinHeight" Value="{StaticResource AzzsTouchTargetMinHeight}" />
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>
 
     <Style x:Key="AzzsInformationStatusBandStyle" TargetType="InfoBar" BasedOn="{StaticResource AzzsStatusBandStyle}">
@@ -286,6 +295,7 @@
     <Style x:Key="AzzsProgressStyle" TargetType="ProgressBar">
         <Setter Property="MinHeight" Value="4" />
         <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>
 
     <Style x:Key="AzzsCommandButtonStyle" TargetType="Button">
@@ -293,6 +303,7 @@
         <Setter Property="CharacterSpacing" Value="0" />
         <Setter Property="MinHeight" Value="{StaticResource AzzsTouchTargetMinHeight}" />
         <Setter Property="Padding" Value="{StaticResource AzzsCommandPadding}" />
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>
 
     <Style x:Key="AzzsPrimaryCommandButtonStyle" TargetType="Button" BasedOn="{StaticResource AzzsCommandButtonStyle}">
@@ -312,9 +323,50 @@
 
     <Style x:Key="AzzsResultLocatorButtonStyle" TargetType="Button" BasedOn="{StaticResource AzzsSecondaryCommandButtonStyle}" />
 
-    <Style x:Key="AzzsReadOnlyListStyle" TargetType="ListView">
+    <Style x:Key="AzzsTextBoxStyle" TargetType="TextBox">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsComboBoxStyle" TargetType="ComboBox">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsComboBoxItemStyle" TargetType="ComboBoxItem">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsListViewStyle" TargetType="ListView">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsListViewItemStyle" TargetType="ListViewItem">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsExpanderStyle" TargetType="Expander">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsCommandBarStyle" TargetType="CommandBar">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsAppBarButtonStyle" TargetType="AppBarButton">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsToggleSwitchStyle" TargetType="ToggleSwitch">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsCheckBoxStyle" TargetType="CheckBox">
+        <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
+    </Style>
+
+    <Style x:Key="AzzsReadOnlyListStyle" TargetType="ListView" BasedOn="{StaticResource AzzsListViewStyle}">
         <Setter Property="SelectionMode" Value="None" />
         <Setter Property="IsItemClickEnabled" Value="False" />
         <Setter Property="IsTabStop" Value="False" />
     </Style>
+
 </ResourceDictionary>

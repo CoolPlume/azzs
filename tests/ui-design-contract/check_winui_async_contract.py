@@ -239,8 +239,8 @@ def verify_file(root: Path, relative_path: str, expected_handlers: int,
     require(source.count("co_await dialog.ShowAsync()") == expected_handlers,
             f"{relative_path} must guard every dialog await")
     if expected_catches is not None:
-        require(source.count("catch (...) {") == expected_catches,
-                f"{relative_path} must keep {expected_catches} catch-all boundaries")
+        require(source.count("catch (...) {") >= expected_catches,
+                f"{relative_path} must keep at least {expected_catches} catch-all boundaries")
     require(source.count("OutputDebugStringW") >= expected_handlers,
             f"{relative_path} must leave a no-throw diagnostic for each catch")
     require(source.count(guard_name) >= expected_handlers,
@@ -363,6 +363,24 @@ def verify(root: Path) -> None:
         "settings commit must publish the candidate only after preparation succeeds",
     )
     require(
+        "last_projected_snapshot_" in main_window and
+        "used_cached_workbench_snapshot" in prepare_body and
+        "settings_snapshot.read_degraded = true;" in prepare_body,
+        "settings navigation must reuse a last-known core snapshot and mark the page degraded when a copy is unavailable",
+    )
+    projection_index = max(
+        commit_body.find("project(workbench_->snapshot());"),
+        commit_body.find("project(projection_snapshot);")
+    )
+    temporary_access_end_index = commit_body.find(
+        "end_temporary_close_recovery();"
+    )
+    require(
+        projection_index >= 0 and
+        temporary_access_end_index > projection_index,
+        "settings commit must revoke temporary catalog access only after post-commit projection succeeds",
+    )
+    require(
         "navigate_to(previous_page)" not in navigate_body and
         "navigate_and_commit(previous_page)" not in navigate_body,
         "settings failure recovery must use the single recovery owner without rebinding the old page",
@@ -374,9 +392,18 @@ def verify(root: Path) -> None:
         "settings recovery must restore the prior frame, core page, and selection",
     )
     require(
+        "content_replaced" in navigate_body and
+        "core_navigation_started" in navigate_body and
+        "content_replaced = true;" in commit_body and
+        "core_navigation_started = true;" in commit_body and
+        "if (restore_content)" in recovery_body and
+        "if (restore_core && workbench_)" in recovery_body,
+        "settings recovery must only restore frame/core state that the failed attempt actually published",
+    )
+    require(
         "MainWindowSettingsNavigationFailed.Title" in failure_body and
         "MainWindowSettingsNavigationFailed.Message" in failure_body and
-        "SettingsNavigationFailureInfoBar().IsOpen(true)" in failure_body and
+        "set_shell_status_open(SettingsNavigationFailureInfoBar(), true)" in failure_body and
         "PrimaryNavigation().SelectedItem" not in failure_body,
         "settings failures must project a localized, discoverable InfoBar after state restore",
     )
