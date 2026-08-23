@@ -39,6 +39,6 @@ Evidence freshness: 绑定最终 0.1.1 候选提交、Windows/SDK、显示器/DP
 - 未验证边界：ARM64、DPI/多显示器、触摸、Narrator/屏幕阅读器、真实硬件样本、安装/卸载/升级生命周期及 WiX/MSI 均未执行；事项仍 `ready-for-human/open`。
 
 - 2026-08-23（集成证据核对）：当前本地候选头为 `80713109b1cd71be19689f0c4fbbc4775d413797`，其普通合并链依次包含共享页头 `da12eb5ea087cf0d9645148c30d0a7a706a837c7`、物理硬件 `67810a87014b50c28847b580c9bb35e8d1b8dba9`、驱动 `ec80d9ed68bf547481adb38c15d0fbfcd4407693`、设置恢复 `d2a5ed3aee676efc54b23bd4c9f7f670daa7757c` 和侧栏 `80713109b1cd71be19689f0c4fbbc4775d413797`。事项 07 仍为 ready-for-human/open，未以静态合同结票。
-- 2026-08-23（最终远端复核）：最终远端候选头为 `2d74fde89999dfe63bbc7f934a0862f1497cb5c`；`d8a4367adc1e322351126e8ab3676d30584475d5` 是其父链中的历史 merge-base，不是当前头。事项仍保持 `Resolution: open`，真实 WinUI、无障碍、DPI、ARM64 和安装生命周期边界未改变。
+- 2026-08-23（最终代码验证基线）：视觉/无障碍待验收的代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`d8a4367adc1e322351126e8ab3676d30584475d5` 为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`，真实 WinUI、无障碍、DPI、ARM64 和安装生命周期边界未改变。
 - 待执行证据包括 Windows 11 x64 宽/窄窗口、100%/高 DPI、键盘/触摸、Narrator、减少动画/透明度、高对比度、重复导航和设置异常恢复；需绑定最终候选 SHA、构建目录、截图/日志及实际环境。
 - 未验证边界：ARM64 实机、DPI/多显示器专项、安装/卸载/升级生命周期、真实硬件样本、触摸和屏幕阅读器均未执行；任何自动合同或 macOS/CI 结果都不能替代真实 Windows 视觉验收。
