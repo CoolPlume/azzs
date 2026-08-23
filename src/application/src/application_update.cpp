@@ -1,5 +1,6 @@
 #include "azzs/application/application_update.hpp"
 
+#include <chrono>
 #include <utility>
 #include <vector>
 
@@ -40,9 +41,20 @@ namespace {
 ApplicationUpdateLifecycle::ApplicationUpdateLifecycle(
     ApplicationUpdatePlatform& platform, InitializationOperationActivity& activity,
     ExecutionLog& log, Clock const& clock)
-    : platform_(platform), activity_(activity), log_(log), clock_(clock) {
+    : ApplicationUpdateLifecycle(platform, activity, log, clock, nullptr) {}
+
+ApplicationUpdateLifecycle::ApplicationUpdateLifecycle(
+    ApplicationUpdatePlatform& platform, InitializationOperationActivity& activity,
+    ExecutionLog& log, Clock const& clock,
+    ApplicationUpdateCheckStorage* check_storage)
+    : platform_(platform),
+      activity_(activity),
+      log_(log),
+      clock_(clock),
+      check_storage_(check_storage) {
   refresh_current();
   initialize_from_health_record();
+  initialize_from_check_state();
 }
 
 UpdateSnapshot ApplicationUpdateLifecycle::snapshot() const {
@@ -89,6 +101,144 @@ UpdateCommandResult ApplicationUpdateLifecycle::handle(UpdateUserIntent intent) 
       return export_diagnostic();
   }
   return rejected("unknown application update intent");
+}
+
+UpdateCommandResult ApplicationUpdateLifecycle::set_check_schedule(
+    ApplicationUpdateCheckSchedule schedule) {
+  auto const encoded = static_cast<unsigned>(schedule);
+  if (encoded > static_cast<unsigned>(ApplicationUpdateCheckSchedule::weekly)) {
+    return rejected("unknown application update check schedule");
+  }
+  auto const previous_schedule = snapshot_.check_schedule;
+  auto const previous_last_check_detail = snapshot_.last_check_detail;
+  auto const previous_startup_check_attempted = startup_check_attempted_;
+  snapshot_.check_schedule = schedule;
+  startup_check_attempted_ = false;
+  snapshot_.last_check_detail = "application update check schedule changed";
+  if (!persist_check_state()) {
+    snapshot_.check_schedule = previous_schedule;
+    snapshot_.last_check_detail = previous_last_check_detail;
+    startup_check_attempted_ = previous_startup_check_attempted;
+    return rejected("application update check schedule could not be saved");
+  }
+  log_event("set-check-schedule", ExecutionResult::succeeded,
+            snapshot_.last_check_detail);
+  return {.code = UpdateCommandCode::accepted, .snapshot = snapshot_};
+}
+
+bool ApplicationUpdateLifecycle::automatic_check_due() const {
+  if (snapshot_.check_schedule == ApplicationUpdateCheckSchedule::disabled) {
+    return false;
+  }
+  // A deferred check is an observed attempt, not a completed periodic check.
+  // Keep it due across daily/weekly schedules so the next idle opportunity
+  // compensates immediately, including after a process restart.
+  if (snapshot_.last_check_outcome == ApplicationUpdateCheckOutcome::deferred) {
+    return true;
+  }
+  if (!snapshot_.last_checked_at.has_value()) {
+    return true;
+  }
+  if (snapshot_.check_schedule == ApplicationUpdateCheckSchedule::startup) {
+    return !startup_check_attempted_;
+  }
+  auto const elapsed = clock_.now() - *snapshot_.last_checked_at;
+  auto const interval = snapshot_.check_schedule ==
+                                ApplicationUpdateCheckSchedule::weekly
+                            ? std::chrono::hours{24 * 7}
+                            : std::chrono::hours{24};
+  return elapsed >= interval;
+}
+
+UpdateCommandResult ApplicationUpdateLifecycle::check_if_due() {
+  if (snapshot_.check_schedule == ApplicationUpdateCheckSchedule::disabled) {
+    snapshot_.last_check_detail = "automatic application update checks are disabled";
+    return {.code = UpdateCommandCode::accepted, .snapshot = snapshot_};
+  }
+  if (!automatic_check_due()) {
+    return {.code = UpdateCommandCode::accepted, .snapshot = snapshot_};
+  }
+  if (snapshot_.check_schedule == ApplicationUpdateCheckSchedule::startup) {
+    startup_check_attempted_ = true;
+  }
+  if (snapshot_.health.has_value()) {
+    return record_deferred_check(
+        "application update health recovery is active; automatic check deferred");
+  }
+  return check_for_update(true);
+}
+
+void ApplicationUpdateLifecycle::initialize_from_check_state() {
+  if (check_storage_ == nullptr) {
+    return;
+  }
+  auto read = check_storage_->read();
+  if (read.code != UpdatePlatformResultCode::succeeded) {
+    snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::unavailable;
+    snapshot_.last_check_detail = read.detail.empty()
+                                      ? "application update check state is unavailable"
+                                      : std::move(read.detail);
+    log_event("read-check-state", execution_result(read.code),
+              snapshot_.last_check_detail);
+    return;
+  }
+  if (!read.state.has_value()) {
+    return;
+  }
+  auto const& state = *read.state;
+  if (static_cast<unsigned>(state.schedule) >
+      static_cast<unsigned>(ApplicationUpdateCheckSchedule::weekly) ||
+      static_cast<unsigned>(state.outcome) >
+          static_cast<unsigned>(ApplicationUpdateCheckOutcome::deferred)) {
+    snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::unavailable;
+    snapshot_.last_check_detail = "application update check state is invalid";
+    log_event("read-check-state", ExecutionResult::failed,
+              snapshot_.last_check_detail);
+    return;
+  }
+  snapshot_.check_schedule = state.schedule;
+  snapshot_.last_checked_at = state.last_checked_at;
+  snapshot_.last_check_outcome = state.outcome;
+  snapshot_.candidate = state.candidate;
+  snapshot_.last_check_detail = state.detail;
+}
+
+bool ApplicationUpdateLifecycle::persist_check_state() {
+  if (check_storage_ == nullptr) {
+    return true;
+  }
+  auto const result = check_storage_->write(ApplicationUpdateCheckState{
+      .schedule = snapshot_.check_schedule,
+      .last_checked_at = snapshot_.last_checked_at,
+      .outcome = snapshot_.last_check_outcome,
+      .candidate = snapshot_.candidate,
+      .detail = snapshot_.last_check_detail,
+  });
+  if (result.code == UpdatePlatformResultCode::succeeded) {
+    return true;
+  }
+  log_event("write-check-state", execution_result(result.code),
+            result.detail.empty() ? "application update check state could not be saved"
+                                   : result.detail);
+  return false;
+}
+
+UpdateCommandResult ApplicationUpdateLifecycle::record_deferred_check(
+    std::string detail) {
+  // A deferred attempt is still an observed check. Persist its timestamp, but
+  // leave startup eligible so the same process can compensate after the
+  // blocking operation finishes.
+  snapshot_.last_checked_at = clock_.now();
+  startup_check_attempted_ = false;
+  snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::deferred;
+  snapshot_.last_check_detail = detail;
+  snapshot_.detail = std::move(detail);
+  static_cast<void>(persist_check_state());
+  snapshot_.state = UpdateState::deferred_initialization_operation;
+  snapshot_.return_to_current_task_available = true;
+  log_event("defer-automatic-check", ExecutionResult::cancelled,
+            snapshot_.last_check_detail);
+  return {.code = UpdateCommandCode::deferred, .snapshot = snapshot_};
 }
 
 void ApplicationUpdateLifecycle::initialize_from_health_record() {
@@ -183,9 +333,15 @@ UpdateCommandResult ApplicationUpdateLifecycle::rejected(std::string detail) {
           .detail = std::move(detail)};
 }
 
-UpdateCommandResult ApplicationUpdateLifecycle::check_for_update() {
+UpdateCommandResult ApplicationUpdateLifecycle::check_for_update(bool automatic) {
   refresh_current();
   if (snapshot_.read_only) {
+    if (automatic) {
+      snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::unavailable;
+      snapshot_.last_checked_at = clock_.now();
+      snapshot_.last_check_detail = "application update recovery is read-only";
+      static_cast<void>(persist_check_state());
+    }
     return rejected("application update recovery is read-only");
   }
   auto const activity = activity_.observe();
@@ -195,6 +351,9 @@ UpdateCommandResult ApplicationUpdateLifecycle::check_for_update() {
     snapshot_.detail = activity.detail.empty()
                            ? "an initialization operation must finish before update"
                            : std::move(activity.detail);
+    if (automatic) {
+      return record_deferred_check(snapshot_.detail);
+    }
     log_event("defer-for-initialization-operation", ExecutionResult::cancelled,
               snapshot_.detail);
     return {.code = UpdateCommandCode::deferred, .snapshot = snapshot_};
@@ -208,7 +367,20 @@ UpdateCommandResult ApplicationUpdateLifecycle::check_for_update() {
     snapshot_.detail = queried.detail.empty()
                            ? "GitHub release information is unavailable"
                            : std::move(queried.detail);
-    log_event("query-releases", ExecutionResult::failed, snapshot_.detail);
+    snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::unavailable;
+    snapshot_.last_checked_at = clock_.now();
+    snapshot_.last_check_detail = snapshot_.detail;
+    static_cast<void>(persist_check_state());
+    log_event("query-releases", execution_result(
+                                   queried.code == GithubReleaseQueryResultCode::unavailable
+                                       ? UpdatePlatformResultCode::unavailable
+                                       : UpdatePlatformResultCode::failed),
+              snapshot_.detail);
+    if (automatic) {
+      return {.code = UpdateCommandCode::rejected,
+              .snapshot = snapshot_,
+              .detail = snapshot_.detail};
+    }
     return {.code = UpdateCommandCode::rejected,
             .snapshot = snapshot_,
             .detail = snapshot_.detail};
@@ -222,6 +394,10 @@ UpdateCommandResult ApplicationUpdateLifecycle::check_for_update() {
       snapshot_.state = UpdateState::update_unavailable;
       snapshot_.detail =
           "current application identity cannot safely select an automatic update";
+      snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::unavailable;
+      snapshot_.last_checked_at = clock_.now();
+      snapshot_.last_check_detail = snapshot_.detail;
+      static_cast<void>(persist_check_state());
       log_event("select-candidate", ExecutionResult::failed, snapshot_.detail);
       return {.code = UpdateCommandCode::rejected,
               .snapshot = snapshot_,
@@ -232,6 +408,13 @@ UpdateCommandResult ApplicationUpdateLifecycle::check_for_update() {
             snapshot_.current, queried.releases)
             ? UpdateState::latest_stable
             : UpdateState::no_matching_stable_asset;
+    snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::succeeded_no_update;
+    snapshot_.last_checked_at = clock_.now();
+    snapshot_.last_check_detail =
+        snapshot_.state == UpdateState::latest_stable
+            ? "no newer matching formal stable asset"
+            : "no formal stable asset matches the current form";
+    static_cast<void>(persist_check_state());
     log_event("select-candidate", ExecutionResult::succeeded,
               snapshot_.state == UpdateState::latest_stable
                   ? "no newer matching formal stable asset"
@@ -243,6 +426,10 @@ UpdateCommandResult ApplicationUpdateLifecycle::check_for_update() {
       snapshot_.current.channel == ApplicationReleaseChannel::prerelease
           ? UpdateState::stable_switch_available
           : UpdateState::update_available;
+  snapshot_.last_check_outcome = ApplicationUpdateCheckOutcome::update_available;
+  snapshot_.last_checked_at = clock_.now();
+  snapshot_.last_check_detail = "matching formal stable candidate selected";
+  static_cast<void>(persist_check_state());
   log_event("select-candidate", ExecutionResult::succeeded,
             "matching formal stable candidate selected");
   return {.code = UpdateCommandCode::accepted, .snapshot = snapshot_};

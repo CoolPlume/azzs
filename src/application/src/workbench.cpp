@@ -73,6 +73,33 @@ UpdateCommandResult Workbench::handle_update(UpdateUserIntent intent) {
   return result;
 }
 
+UpdateCommandResult Workbench::set_update_check_schedule(
+    ApplicationUpdateCheckSchedule schedule) {
+  if (!services_) {
+    snapshot_.update.detail =
+        "application update service is not available in this host";
+    return {.code = UpdateCommandCode::rejected,
+            .snapshot = snapshot_.update,
+            .detail = snapshot_.update.detail};
+  }
+  auto result = services_->application_updates().set_check_schedule(schedule);
+  snapshot_.update = result.snapshot;
+  return result;
+}
+
+UpdateCommandResult Workbench::check_application_update_if_due() {
+  if (!services_) {
+    snapshot_.update.detail =
+        "application update service is not available in this host";
+    return {.code = UpdateCommandCode::rejected,
+            .snapshot = snapshot_.update,
+            .detail = snapshot_.update.detail};
+  }
+  auto result = services_->application_updates().check_if_due();
+  snapshot_.update = result.snapshot;
+  return result;
+}
+
 HardwareOverviewSnapshot Workbench::observe_hardware(
     HardwareOverviewTrigger trigger, std::stop_token cancellation) {
   if (!services_) {

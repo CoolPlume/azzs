@@ -313,6 +313,25 @@
   <data name="VersionRiskUnavailableMessage" xml:space="preserve"><value>无法读取当前 Windows 版本。部分功能可能无法正常工作，你仍可继续使用。</value></data>
   <data name="ApplicationUpdateTitle.Text" xml:space="preserve"><value>应用更新</value></data>
   <data name="ApplicationUpdateReadyMessage" xml:space="preserve"><value>当前版本可以主动检查 GitHub 正式稳定发行。</value></data>
+  <data name="ApplicationUpdateSchedule.Header" xml:space="preserve"><value>自动检查计划</value></data>
+  <data name="ApplicationUpdateScheduleDisabled.Content" xml:space="preserve"><value>关闭</value></data>
+  <data name="ApplicationUpdateScheduleStartup.Content" xml:space="preserve"><value>启动时</value></data>
+  <data name="ApplicationUpdateScheduleDaily.Content" xml:space="preserve"><value>每日</value></data>
+  <data name="ApplicationUpdateScheduleWeekly.Content" xml:space="preserve"><value>每周</value></data>
+  <data name="ApplicationUpdateLastCheckNever" xml:space="preserve"><value>从未检查</value></data>
+  <data name="ApplicationUpdateLastCheckValue" xml:space="preserve"><value>上次检查：{time}（UTC 毫秒）</value></data>
+  <data name="ApplicationUpdateCheckResultValue" xml:space="preserve"><value>检查结果：{result}</value></data>
+  <data name="ApplicationUpdateCheckDetailValue" xml:space="preserve"><value>事实说明：{detail}</value></data>
+  <data name="ApplicationUpdateCheckResultNever" xml:space="preserve"><value>尚未检查</value></data>
+  <data name="ApplicationUpdateCheckResultNoUpdate" xml:space="preserve"><value>没有更新</value></data>
+  <data name="ApplicationUpdateCheckResultAvailable" xml:space="preserve"><value>发现更新</value></data>
+  <data name="ApplicationUpdateCheckResultUnavailable" xml:space="preserve"><value>暂不可用</value></data>
+  <data name="ApplicationUpdateCheckResultDeferred" xml:space="preserve"><value>已延后</value></data>
+  <data name="ApplicationUpdateCandidateVersionValue" xml:space="preserve"><value>候选版本：{version}（{tag}）</value></data>
+  <data name="ApplicationUpdateCandidateDateValue" xml:space="preserve"><value>发布日期：{date}</value></data>
+  <data name="ApplicationUpdateCandidateSummaryValue" xml:space="preserve"><value>摘要：{summary}</value></data>
+  <data name="ApplicationUpdateCandidateReleaseValue" xml:space="preserve"><value>Release 地址：{url}</value></data>
+  <data name="ApplicationUpdateCandidateButton.Content" xml:space="preserve"><value>打开候选 Release</value></data>
   <data name="ApplicationUpdateCheckButton" xml:space="preserve"><value>检查更新</value></data>
   <data name="ApplicationUpdateLatestMessage" xml:space="preserve"><value>当前已是可确认的最新正式稳定版。</value></data>
   <data name="ApplicationUpdateAvailableMessage" xml:space="preserve"><value>发现匹配的正式稳定版。更新不会后台下载或自动替换。</value></data>

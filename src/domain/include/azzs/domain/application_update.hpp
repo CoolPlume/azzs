@@ -39,6 +39,10 @@ struct BuildIdentity final {
 struct GithubApplicationAsset final {
   std::string asset_id;
   BuildIdentity target;
+  // These fields are retained only to present a controlled download entry.
+  // They are never treated as executable instructions or arbitrary paths.
+  std::string name;
+  std::string download_url;
 
   [[nodiscard]] bool valid() const noexcept;
   friend bool operator==(GithubApplicationAsset const&,
@@ -52,6 +56,9 @@ struct GithubApplicationRelease final {
   bool draft{false};
   bool prerelease{false};
   std::vector<GithubApplicationAsset> assets;
+  std::string html_url;
+  std::string published_at;
+  std::string body;
 
   [[nodiscard]] bool valid() const noexcept;
   friend bool operator==(GithubApplicationRelease const&,
@@ -63,6 +70,10 @@ struct Candidate final {
   std::string release_tag;
   std::string asset_id;
   BuildIdentity target;
+  std::string release_title;
+  std::string release_url;
+  std::string published_at;
+  std::string summary;
 
   friend bool operator==(Candidate const&, Candidate const&) = default;
 };
