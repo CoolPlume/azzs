@@ -39,3 +39,4 @@ Evidence freshness: 绑定资源文件、presentation contract、页面文本生
 - 2026-08-23（最终代码验证基线）：中文化代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`origin/0.1.1` 为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`，`d8a4367adc1e322351126e8ab3676d30584475d5` 仅为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`。
 - 当前审查发现概览 guided-initialization 动态 presentation 仍有英文默认标题、阶段和状态文本，需在 UI 适配器通过资源构造 `GuidedInitializationPresentationText` 后再结票。`draft` 作为协议/测试字段可保留，用户可见的“内置 draft 目录”须使用简体中文上下文。
 - 未验证边界：动态概览中文化后的资源回退、完整全局可见文案扫描、窄窗/大文本/屏幕阅读器呈现、ARM64、DPI 和真实 Windows UI 均未验证；品牌、型号、版本及必要原始系统/WMI 错误才可保留原文。
+- 2026-08-23（当前远端事实）：远端 `codex/v1-integration`=`1224b865114ec47b2708fc859eae73d483d2ac6e`，远端 `0.1.1`=`744683fef78b6ac2ddaa8f80c585012e3dd20550`；merge-base=`d8a4367adc1e322351126e8ab3676d30584475d5`。`git rev-list --left-right --count origin/0.1.1...origin/codex/v1-integration` 为 `2/8`（2 behind、8 ahead）。`Resolution: open` 保持不变；本条不把静态资源/合同结果写成真实视觉验收，ARM64、DPI、屏幕阅读器和真实 Windows 页面仍未验证。
