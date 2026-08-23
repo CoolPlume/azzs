@@ -1083,6 +1083,13 @@ void MainWindow::OnSidebarResizeDragCompleted(
   apply_sidebar_width(sidebar_drag_width_dip_, true);
 }
 
+void MainWindow::OnSidebarResizeDoubleTapped(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args) {
+  args.Handled(true);
+  apply_sidebar_width(azzs::application::kSidebarWidthDefaultDip, true);
+}
+
 void MainWindow::OnSidebarResizeKeyDown(
     Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args) {

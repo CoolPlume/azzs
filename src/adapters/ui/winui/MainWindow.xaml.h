@@ -70,6 +70,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   void OnSidebarResizeDragCompleted(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs const&);
+  void OnSidebarResizeDoubleTapped(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const&);
   void OnSidebarResizeKeyDown(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const&);
