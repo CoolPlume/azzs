@@ -729,11 +729,13 @@ classify_display_pnp(std::vector<std::string> const& row,
 
 [[nodiscard]] application::HardwareStorageMedia storage_media_from_text(
     std::string_view model, std::string_view manufacturer,
-    std::string_view interface_type, std::string_view media_type) noexcept {
+    std::string_view interface_type, std::string_view media_type,
+    std::string_view pnp_id) noexcept {
   if (contains_ascii(model, "nvme") || contains_ascii(model, "ssd") ||
       contains_ascii(model, "solid state") || contains_ascii(model, "flash") ||
       contains_ascii(interface_type, "nvme") ||
-      contains_ascii(interface_type, "solid state")) {
+      contains_ascii(interface_type, "solid state") ||
+      contains_ascii(pnp_id, "nvme")) {
     return application::HardwareStorageMedia::solid_state;
   }
   if (contains_ascii(model, "hdd") || contains_ascii(model, "hard disk") ||
@@ -763,7 +765,7 @@ classify_display_pnp(std::vector<std::string> const& row,
   name += " ";
   name += decimal_gigabytes(size);
   auto const media = storage_media_from_text(model, manufacturer, interface_type,
-                                             media_type);
+                                             media_type, pnp_id);
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::storage,
       .name = std::move(name),
