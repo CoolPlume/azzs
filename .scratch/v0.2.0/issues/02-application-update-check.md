@@ -1,7 +1,7 @@
 # 事项 02：接通 GitHub 更新查询与自动检查
 
 Type: task
-Status: needs-triage
+Status: ready-for-human
 Resolution: open
 Owner: issue-02
 Consumers: 06
@@ -33,3 +33,4 @@ Evidence freshness: 绑定实现提交、GitHub Release 查询时间、当前版
 ## Comments
 
 - 现有 ADR-0006 继续有效；自动检查只新增“查询和提示”语义。
+- 实现交接（2026-08-24）：`2ca95478946fb97c0dc4fc37932c29f76a56adfc` 已集成到 `445641f1613bea5d22e05332eac2994fce5cf1ee`；应用更新合同通过，自动路径不调用下载/替换。真实 GitHub 网络查询、四种计划、离线/限流和非打断提示仍待维护者验收。

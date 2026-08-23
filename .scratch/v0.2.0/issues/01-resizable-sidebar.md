@@ -1,7 +1,7 @@
 # 事项 01：实现可调整侧栏
 
 Type: task
-Status: needs-triage
+Status: ready-for-human
 Resolution: open
 Owner: issue-01
 Consumers: 06
@@ -32,3 +32,4 @@ Evidence freshness: 绑定实现提交、`D:\azzs-codex\worktrees` 中的构建�
 ## Comments
 
 - 基线事实：当前 `codex/v1-integration` 没有宽度实现；ADR-0050 已先行。
+- 实现交接（2026-08-24）：`5c2c93d1a5cea2c2abbd25343e64e0b6b62715e2` 已集成到 `445641f1613bea5d22e05332eac2994fce5cf1ee`；偏好/侧栏合同与 x64 Release 构建已通过。真实拖拽、键盘、compact、DPI、无障碍及跨重启仍待维护者在 `D:\azzs-codex\worktrees\v020-release-final` 验收。

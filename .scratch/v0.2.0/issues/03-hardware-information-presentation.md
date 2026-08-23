@@ -1,7 +1,7 @@
 # 事项 03：收敛硬件信息表与可复制展示
 
 Type: task
-Status: needs-triage
+Status: ready-for-human
 Resolution: open
 Owner: issue-03
 Consumers: 06
@@ -29,3 +29,4 @@ Evidence freshness: 绑定实现提交、硬件观测提交、设备模型/EDID/
 ## Comments
 
 - 用户实测制品为 `f2f1998`；0.2.0 实现起点是正式 0.1.1 基线 `04eeb5a`，执行前需核对两者硬件展示差异。
+- 实现交接（2026-08-24）：`e01623790e9c7104cf97e993c03cb213ab330ed9` 已集成到 `445641f1613bea5d22e05332eac2994fce5cf1ee`；硬件概览/展示合同通过。真实设备字段、显示器摘要、剪贴板复制、物理盘过滤、DPI 和多实例场景仍待维护者验收。

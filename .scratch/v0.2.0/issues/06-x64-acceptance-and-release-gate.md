@@ -1,7 +1,7 @@
 # 事项 06：x64 集成验收与 0.2.0 放行门槛
 
 Type: task
-Status: needs-triage
+Status: ready-for-human
 Resolution: open
 Owner: issue-06
 Consumers: none
@@ -28,3 +28,4 @@ Evidence freshness: 绑定最终集成 SHA、构建命令和产物路径、Windo
 ## Comments
 
 - 本事项是版本放行门槛，不应在前置事项未完成时提前宣称 0.2.0 可用。
+- 集成交接（2026-08-24）：当前实现基线 `445641f1613bea5d22e05332eac2994fce5cf1ee` 已在独立 Release 工作树生成 x64 EXE；自动合同与 40/44 CTest 结果已记录在 `D:\azzs-codex\evidence\v020\integration-final-445641f.md`。4 项 CTest 受 ACL/符号链接权限阻塞，WinUI、GitHub 网络、硬件复制和 QQ/QQ 音乐真实安装仍待维护者验收；`Resolution: open` 保持不变。

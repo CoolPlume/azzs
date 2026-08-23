@@ -1,7 +1,7 @@
 # 事项 05：接入 QQ 音乐受控安装
 
 Type: task
-Status: needs-triage
+Status: ready-for-human
 Resolution: open
 Owner: issue-05
 Consumers: 06
@@ -27,3 +27,4 @@ Evidence freshness: 绑定实现提交、目录修订、QQ 音乐官方来源/�
 ## Comments
 
 - 只有事项 04 的共享安装能力和目录门禁完成后才解除阻塞。
+- 实现交接（2026-08-24）：`5b03b44c685e779cfb1d116941cf9102ecedd728` 已集成到 `445641f1613bea5d22e05332eac2994fce5cf1ee`，QQ 音乐目录和官方来源声明已补齐；复用的 Windows 受控安装适配器仍为 declaration-only/fail-closed。官方来源、安装器身份、x64 实测和结果检测未验证，不能承诺 0.2.0 可用安装。

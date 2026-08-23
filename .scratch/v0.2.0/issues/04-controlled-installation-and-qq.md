@@ -1,7 +1,7 @@
 # 事项 04：建立受控安装能力并接入 QQ
 
 Type: task
-Status: needs-triage
+Status: ready-for-human
 Resolution: open
 Owner: issue-04
 Consumers: 05, 06
@@ -27,3 +27,4 @@ QQ 目录项已经存在，但没有闭合的受控安装档案、生产 Windows
 ## Comments
 
 - 适用 ADR-0010、ADR-0039、ADR-0040 和新增 ADR-0054。
+- 实现交接（2026-08-24）：`bf17591712577225bab4286b19d985f79c07de8f` 已集成到 `445641f1613bea5d22e05332eac2994fce5cf1ee`，QQ 目录和受控档案已声明；当前 Windows 适配器对 `declaration_only` fail-closed，尚无生产安装器启动器、UI Automation 处理器或结果验证器。不得把 QQ 目录可选或安装器退出码写成可安装；真实官方来源/安装器验收前保持延期/待确认。
