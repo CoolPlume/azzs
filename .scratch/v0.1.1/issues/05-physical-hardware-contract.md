@@ -37,4 +37,4 @@ Windows 硬件适配器负责取得原始观测并在单一过滤接缝确认物
 - 未验证边界：ARM64、真实设备矩阵、权限不足/SetupAPI 实机故障、DPI 和安装生命周期均未完成，事项保持 `Resolution: open`。
 
 - 2026-08-23（依赖图收口）：旧 effort 事项 `.scratch/windows-initial-setup-workbench/issues/13-hardware-overview.md` 与 `.scratch/windows-initial-setup-workbench/issues/24-winui3-design-system.md` 的 `Resolution: completed` 均已核实；这些记录仅作历史参考，不构成当前 0.1.1 阻塞。当前跨 effort 前置已机械收口为 `Blocked by: none`。
-- 2026-08-23（最终远端复核）：当前 `origin/codex/v1-integration` 为 `2d74fde89999dfe63bbc7f934a0862f1497cb5c`，`origin/0.1.1` 为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`；旧记录中的 `d8a4367adc1e322351126e8ab3676d30584475d5` 是历史 merge-base。事项仍保持 `Resolution: open`，未知物理性和真实设备验收边界未改变。
+- 2026-08-23（最终代码验证基线）：物理硬件代码验证基线为 `f2748c93a7da18607f4f35bd2d70896630f551f7`；`origin/0.1.1` 为 `744683fef78b6ac2ddaa8f80c585012e3dd20550`，旧 `d8a4367adc1e322351126e8ab3676d30584475d5` 为历史 merge-base。本记录随后通过普通文档合并进入 integration，事项仍保持 `Resolution: open`，未知物理性和真实设备验收边界未改变。
