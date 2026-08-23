@@ -139,6 +139,106 @@ class ComApartment final {
          lowered.compare(0, lowered_prefix.size(), lowered_prefix) == 0;
 }
 
+[[nodiscard]] std::string trim_ascii(std::string_view value) {
+  auto first = std::size_t{0};
+  while (first < value.size() &&
+         std::isspace(static_cast<unsigned char>(value[first])) != 0) {
+    ++first;
+  }
+  auto last = value.size();
+  while (last > first &&
+         std::isspace(static_cast<unsigned char>(value[last - 1])) != 0) {
+    --last;
+  }
+  return std::string{value.substr(first, last - first)};
+}
+
+// Win32_DiskDrive can prefix a model with a localized device-class label,
+// for example "(标准磁盘驱动器) Samsung SSD 990 PRO".  That label is not part
+// of the hardware model and must not leak into the compact overview summary.
+[[nodiscard]] std::string strip_storage_class_prefix(std::string_view model) {
+  auto value = trim_ascii(model);
+  if (value.size() >= 2 && value.front() == '(') {
+    auto const close = value.find(')');
+    if (close != std::string::npos && close + 1 < value.size()) {
+      value = trim_ascii(value.substr(close + 1));
+    }
+  }
+  return value;
+}
+
+// DISPLAY PNP ids contain an instance suffix after the second '\\'.  The
+// first model token is stable across Win32_DesktopMonitor and Win32_PnPEntity
+// projections and is sufficient for in-session de-duplication.
+[[nodiscard]] std::string display_model_token(std::string_view pnp_id) {
+  auto const first_separator = pnp_id.find('\\');
+  if (first_separator == std::string_view::npos) {
+    return {};
+  }
+  auto const token_begin = first_separator + 1;
+  auto const second_separator = pnp_id.find('\\', token_begin);
+  auto const token_end = second_separator == std::string_view::npos
+                             ? pnp_id.size()
+                             : second_separator;
+  return trim_ascii(pnp_id.substr(token_begin, token_end - token_begin));
+}
+
+[[nodiscard]] std::string display_model_key(std::string_view pnp_id) {
+  return lower_ascii(display_model_token(pnp_id));
+}
+
+[[nodiscard]] bool generic_display_name(std::string_view name) {
+  return contains_ascii(name, "generic pnp monitor") ||
+         contains_ascii(name, "generic monitor") ||
+         contains_ascii(name, "generic plug and play monitor") ||
+         contains_ascii(name, "integrated monitor") ||
+         name.find("\xE9\x80\x9A\xE7\x94\xA8\xE5\x8D\xB3\xE6\x8F\x92\xE5\x8D\xB3\xE7\x94\xA8\xE7\x9B\x91\xE8\xA7\x86\xE5\x99\xA8") !=
+             std::string_view::npos ||
+         name.find("\xE9\xBB\x98\xE8\xAE\xA4\xE7\x9B\x91\xE8\xA7\x86\xE5\x99\xA8") !=
+             std::string_view::npos ||
+         name.find("\xE9\x9B\x86\xE6\x88\x90\xE7\x9B\x91\xE8\xA7\x86\xE5\x99\xA8") !=
+             std::string_view::npos;
+}
+
+[[nodiscard]] std::string parenthetical_display_model(
+    std::string_view name) {
+  auto const open = name.rfind('(');
+  auto const close = name.rfind(')');
+  if (open == std::string_view::npos || close == std::string_view::npos ||
+      close <= open + 1) {
+    return {};
+  }
+  auto const candidate = trim_ascii(name.substr(open + 1, close - open - 1));
+  if (candidate.empty() || contains_ascii(candidate, "monitor")) {
+    return {};
+  }
+  return candidate;
+}
+
+[[nodiscard]] std::string format_display_name(std::string_view name,
+                                              std::string_view pnp_id,
+                                              bool include_model_token) {
+  auto const generic_name = generic_display_name(name);
+  auto model = parenthetical_display_model(name);
+  if (model.empty() && !generic_name) {
+    model = trim_ascii(name);
+  }
+  auto const model_token = display_model_token(pnp_id);
+  if (model.empty()) {
+    model = model_token;
+  }
+  if (model.empty()) {
+    model = trim_ascii(name);
+  }
+  if (include_model_token && generic_name && !model_token.empty() &&
+      lower_ascii(model).find(lower_ascii(model_token)) == std::string::npos) {
+    model += " [";
+    model += model_token;
+    model += "]";
+  }
+  return model;
+}
+
 [[nodiscard]] std::string row_value(std::vector<std::string> const& row,
                                     std::size_t index) {
   return index < row.size() ? row[index] : std::string{};
@@ -496,7 +596,7 @@ class ComApartment final {
   auto const manufacturer = row_value(row, 0);
   auto const capacity_text = row_value(row, 1);
   auto const speed_text = row_value(row, 2);
-  auto const part_number = row_value(row, 3);
+  auto const part_number = trim_ascii(row_value(row, 3));
   auto const locator = row_value(row, 4);
   auto const tag = row_value(row, 5);
   auto const memory_type = row_value(row, 6);
@@ -530,10 +630,6 @@ class ComApartment final {
     name += std::to_string(speed);
     name += "MHz";
   }
-  if (!part_number.empty()) {
-    // Keep the part number as structured detail so identical dual-channel
-    // modules can be grouped even when firmware reports slot-specific text.
-  }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::memory,
       .name = std::move(name),
@@ -560,13 +656,13 @@ class ComApartment final {
       !starts_with_ascii(pnp_id, "display\\") ||
       (pnp_entity_row && !contains_ascii(pnp_class, "monitor")) ||
       contains_ascii(name, "remote display") ||
-      contains_ascii(name, "virtual") ||
-      contains_ascii(name, "generic pnp monitor") ||
-      contains_ascii(name, "generic monitor") ||
-      contains_ascii(name, "generic plug and play monitor")) {
+      contains_ascii(name, "virtual")) {
     return std::nullopt;
   }
-  auto display_name = name;
+  auto display_name = format_display_name(name, pnp_id, false);
+  if (display_name.empty() || generic_display_name(display_name)) {
+    return std::nullopt;
+  }
   if (!pnp_entity_row) {
     std::uint32_t width{};
     std::uint32_t height{};
@@ -592,6 +688,7 @@ class ComApartment final {
       .vendor = vendor_from_text(name),
       .physically_present = true,
       .filter_reason = "DISPLAY PNP id on a non-virtual host",
+      .model_detail = display_model_key(pnp_id),
   };
 }
 
@@ -611,14 +708,13 @@ classify_display_pnp(std::vector<std::string> const& row,
       contains_ascii(name, "virtual")) {
     return std::nullopt;
   }
-  if (contains_ascii(name, "generic pnp monitor") ||
-      contains_ascii(name, "generic monitor") ||
-      contains_ascii(name, "generic plug and play monitor")) {
+  auto const display_name = format_display_name(name, pnp_id, true);
+  if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
   }
   return application::HardwareDeviceRecord{
       .kind = application::HardwareDeviceKind::display,
-      .name = name,
+      .name = display_name,
       .physicality = application::HardwareDevicePhysicality::confirmed_physical,
       .source = application::HardwareObservationSource::wmi,
       .confidence = application::HardwareObservationConfidence::confirmed,
@@ -626,6 +722,7 @@ classify_display_pnp(std::vector<std::string> const& row,
       .vendor = vendor_from_text(manufacturer.empty() ? name : manufacturer),
       .physically_present = true,
       .filter_reason = "Win32_PnPEntity monitor with DISPLAY PNP id",
+      .model_detail = display_model_key(pnp_id),
   };
 }
 
@@ -649,7 +746,7 @@ classify_display_pnp(std::vector<std::string> const& row,
 
 [[nodiscard]] std::optional<application::HardwareDeviceRecord> classify_storage(
     std::vector<std::string> const& row, bool virtual_host) {
-  auto const model = row_value(row, 0);
+  auto const model = strip_storage_class_prefix(row_value(row, 0));
   auto const manufacturer = row_value(row, 1);
   auto const size_text = row_value(row, 2);
   auto const pnp_id = row_value(row, 3);
@@ -756,21 +853,22 @@ void append_grouped_device(
         auto const marker = value.find(" (");
         return marker == std::string::npos ? value : value.substr(0, marker);
       };
-      if (existing.kind == record.kind &&
+      auto const same_memory_model =
+          existing.kind == application::HardwareDeviceKind::memory &&
           comparable_name(existing.name) == comparable_name(record.name) &&
+          ((existing.model_detail.empty() && record.model_detail.empty()) ||
+           (!existing.model_detail.empty() &&
+            existing.model_detail == record.model_detail));
+      auto const same_display_model =
+          existing.kind == application::HardwareDeviceKind::display &&
+          !existing.model_detail.empty() &&
+          existing.model_detail == record.model_detail;
+      if (existing.kind == record.kind &&
+          (same_memory_model || same_display_model ||
+           (record.kind != application::HardwareDeviceKind::memory &&
+            comparable_name(existing.name) == comparable_name(record.name))) &&
           existing.network_link == record.network_link &&
           existing.storage_media == record.storage_media) {
-        if (existing.kind == application::HardwareDeviceKind::memory &&
-            !record.model_detail.empty() &&
-            existing.model_detail != record.model_detail) {
-          auto const separator = existing.model_detail.find(';');
-          auto const first_detail = existing.model_detail.substr(
-              0, separator == std::string::npos ? existing.model_detail.size()
-                                                  : separator);
-          // Keep a single representative module part number in the compact
-          // summary; quantity carries the dual-channel multiplicity.
-          existing.model_detail = first_detail;
-        }
         if (existing.kind == application::HardwareDeviceKind::display &&
             existing.name.find(" (") == std::string::npos &&
             record.name.find(" (") != std::string::npos) {
@@ -1008,9 +1106,44 @@ struct CollectedObservation final {
       append_grouped_device(collected.observation.devices, std::move(*record));
     }
   }
-  for (auto const& row : rows_by_spec[6]) {
-    if (auto record = classify_display(row, virtual_host)) {
+  // Prefer the EDID-derived Win32_PnPEntity projection. DesktopMonitor often
+  // exposes the same physical panel as a generic name, so remember its model
+  // token and skip that duplicate projection below.
+  std::vector<std::string> pnp_display_keys;
+  for (auto const& row : rows_by_spec[9]) {
+    if (auto record = classify_display_pnp(row, virtual_host)) {
+      pnp_display_keys.push_back(display_model_key(row_value(row, 2)));
       append_grouped_device(collected.observation.devices, std::move(*record));
+    }
+  }
+  for (auto const& row : rows_by_spec[6]) {
+    auto const desktop_key = display_model_key(row_value(row, 1));
+    if (auto record = classify_display(row, virtual_host)) {
+      bool enriched_pnp_projection = false;
+      if (!desktop_key.empty() &&
+          std::ranges::any_of(pnp_display_keys, [&](auto const& pnp_key) {
+            return pnp_key == desktop_key;
+          })) {
+        // Keep the concrete PnP model but borrow the resolution that is only
+        // exposed by DesktopMonitor.  Repeated DesktopMonitor rows therefore
+        // remain a single display record.
+        for (auto& existing : collected.observation.devices) {
+          if (existing.kind != application::HardwareDeviceKind::display ||
+              existing.model_detail != desktop_key) {
+            continue;
+          }
+          auto const marker = record->name.find(" (");
+          if (marker != std::string::npos &&
+              existing.name.find(" (") == std::string::npos) {
+            existing.name.append(record->name.substr(marker));
+          }
+          enriched_pnp_projection = true;
+          break;
+        }
+      }
+      if (!enriched_pnp_projection) {
+        append_grouped_device(collected.observation.devices, std::move(*record));
+      }
     }
   }
   for (auto const& row : rows_by_spec[7]) {
@@ -1024,9 +1157,6 @@ struct CollectedObservation final {
     }
   }
   for (auto const& row : rows_by_spec[9]) {
-    if (auto record = classify_display_pnp(row, virtual_host)) {
-      append_grouped_device(collected.observation.devices, std::move(*record));
-    }
     if (auto record = classify_npu(row, virtual_host)) {
       append_grouped_device(collected.observation.devices, std::move(*record));
     }
