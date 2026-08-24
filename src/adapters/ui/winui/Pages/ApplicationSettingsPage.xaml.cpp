@@ -2,6 +2,9 @@
 
 #include "ApplicationSettingsPage.xaml.h"
 
+#include "../DesignSystem/relative_time.hpp"
+
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <string>
@@ -66,7 +69,7 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
     return L"\u4ECE\u672A\u68C0\u67E5";
   }
   if (name == L"ApplicationUpdateLastCheckValue") {
-    return L"\u4E0A\u6B21\u68C0\u67E5\uFF1A{time}\uFF08UTC \u6BEB\u79D2\uFF09";
+    return L"\u4E0A\u6B21\u68C0\u67E5\uFF1A{time}";
   }
   if (name == L"ApplicationUpdateCheckResultValue") {
     return L"\u68C0\u67E5\u7ED3\u679C\uFF1A{result}";
@@ -946,8 +949,12 @@ void ApplicationSettingsPage::project_update(
           ? resource_string(L"ApplicationUpdateLastCheckValue")
           : resource_string(L"ApplicationUpdateLastCheckNever")};
   if (snapshot.last_checked_at.has_value()) {
+    auto const now = azzs::application::WallClockTime{
+        std::chrono::floor<std::chrono::milliseconds>(
+            std::chrono::system_clock::now())};
     replace_token(last_check, L"{time}",
-                  std::to_wstring(snapshot.last_checked_at->time_since_epoch().count()));
+                  azzs::ui::presentation::format_relative_time(
+                      *snapshot.last_checked_at, now));
   }
   ApplicationUpdateLastCheckText().Text(winrt::hstring{last_check});
 

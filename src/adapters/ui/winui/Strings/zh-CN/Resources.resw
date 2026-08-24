@@ -322,7 +322,7 @@
   <data name="ApplicationUpdateScheduleDaily.Content" xml:space="preserve"><value>每日</value></data>
   <data name="ApplicationUpdateScheduleWeekly.Content" xml:space="preserve"><value>每周</value></data>
   <data name="ApplicationUpdateLastCheckNever" xml:space="preserve"><value>从未检查</value></data>
-  <data name="ApplicationUpdateLastCheckValue" xml:space="preserve"><value>上次检查：{time}（UTC 毫秒）</value></data>
+  <data name="ApplicationUpdateLastCheckValue" xml:space="preserve"><value>上次检查：{time}</value></data>
   <data name="ApplicationUpdateCheckResultValue" xml:space="preserve"><value>检查结果：{result}</value></data>
   <data name="ApplicationUpdateCheckDetailValue" xml:space="preserve"><value>事实说明：{detail}</value></data>
   <data name="ApplicationUpdateCheckResultNever" xml:space="preserve"><value>尚未检查</value></data>

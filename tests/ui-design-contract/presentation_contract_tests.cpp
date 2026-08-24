@@ -12,6 +12,7 @@
 #include "motion_contract.hpp"
 #include "presentation_contract.hpp"
 #include "guided_initialization_presentation.hpp"
+#include "relative_time.hpp"
 #include "software_selection_presentation.hpp"
 #include "Fixtures/design_system_fixture.hpp"
 #include "azzs/application/advanced_view_preferences.hpp"
@@ -62,6 +63,47 @@ class InMemoryAdvancedViewPreferenceStore final
     std::cerr << "UI presentation contract failed: " << message << '\n';
   }
   return condition;
+}
+
+[[nodiscard]] bool verify_relative_time_contract() {
+  using azzs::application::WallClockTime;
+  using azzs::ui::presentation::format_relative_time;
+
+  bool passed = true;
+  auto const now = WallClockTime{1'787'000'000'000ms};
+  passed &= expect(format_relative_time(now - 30s, now) == L"刚刚",
+                   "sub-minute update checks must read as just now");
+  passed &= expect(format_relative_time(now - 59s, now) == L"刚刚",
+                   "the last second before one minute must read as just now");
+  passed &= expect(format_relative_time(now - 1min, now) == L"1分钟前",
+                   "one minute must switch to the minute label");
+  passed &= expect(format_relative_time(now - 5min, now) == L"5分钟前",
+                   "sub-hour update checks must read in minutes");
+  passed &= expect(format_relative_time(now - 59min, now) == L"59分钟前",
+                   "the last minute before one hour must use minutes");
+  passed &= expect(format_relative_time(now - 1h, now) == L"1小时前",
+                   "one hour must switch to the hour label");
+  passed &= expect(format_relative_time(now - 2h, now) == L"2小时前",
+                   "sub-day update checks must read in hours");
+  passed &= expect(format_relative_time(now - 23h - 59min, now) == L"23小时前",
+                   "the last hour before one day must use hours");
+  auto const date_at_boundary = format_relative_time(now - 24h, now);
+  passed &= expect(date_at_boundary.find(L"月") != std::wstring::npos &&
+                       date_at_boundary.find(L"日") != std::wstring::npos &&
+                       date_at_boundary.find(L"时") != std::wstring::npos,
+                   "one day must switch to the calendar label");
+  passed &= expect(format_relative_time(now + 5min, now) == L"刚刚",
+                   "future update check timestamps must fail soft to just now");
+
+  auto const date_text = format_relative_time(now - 25h, now);
+  passed &= expect(date_text.find(L"月") != std::wstring::npos &&
+                       date_text.find(L"日") != std::wstring::npos &&
+                       date_text.find(L"时") != std::wstring::npos,
+                   "older update checks must expose local month, day, and hour");
+  passed &= expect(date_text.find(L"分钟前") == std::wstring::npos &&
+                       date_text.find(L"小时前") == std::wstring::npos,
+                   "older update checks must not use a relative hour label");
+  return passed;
 }
 
 [[nodiscard]] bool verify_motion_contract() {
@@ -733,6 +775,7 @@ int main() {
   passed &= verify_software_selection_empty_catalog_projection();
   passed &= verify_guided_initialization_projection();
   passed &= verify_advanced_view_preference_fallback();
+  passed &= verify_relative_time_contract();
   if (!passed) {
     return EXIT_FAILURE;
   }

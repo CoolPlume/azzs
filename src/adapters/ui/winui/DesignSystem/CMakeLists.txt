@@ -2,6 +2,7 @@ add_library(azzs_ui_presentation_contract STATIC
   Fixtures/design_system_fixture.cpp
   guided_initialization_presentation.cpp
   presentation_contract.cpp
+  relative_time.cpp
   software_selection_presentation.cpp
 )
 
