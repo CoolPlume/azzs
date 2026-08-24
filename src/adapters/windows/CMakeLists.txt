@@ -130,5 +130,6 @@ azzs_project_target(
     user32
     wbemuuid
     winhttp
+    windowsapp
     wtsapi32
 )

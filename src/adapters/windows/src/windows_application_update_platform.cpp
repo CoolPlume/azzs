@@ -32,6 +32,8 @@ namespace {
 
 constexpr std::string_view kManualGithubReleases{
     "https://github.com/CoolPlume/azzs/releases"};
+constexpr std::string_view kGithubAccept{"application/vnd.github+json"};
+constexpr std::string_view kGithubUserAgent{"azzs-update-check"};
 
 #ifndef AZZS_APPLICATION_UPDATE_ENDPOINT
 #define AZZS_APPLICATION_UPDATE_ENDPOINT ""
@@ -168,124 +170,140 @@ struct ParsedHttpsEndpoint final {
           .detail = std::move(detail)};
 }
 
+[[nodiscard]] ApplicationUpdateReleaseDocument document_unavailable(
+    std::string detail) {
+  return {.code = application::GithubReleaseQueryResultCode::unavailable,
+          .detail = std::move(detail)};
+}
+
+[[nodiscard]] ApplicationUpdateReleaseDocument document_failed(
+    std::string detail) {
+  return {.code = application::GithubReleaseQueryResultCode::failed,
+          .detail = std::move(detail)};
+}
+
 [[nodiscard]] std::string winhttp_error(std::string_view operation, DWORD code) {
   return "winhttp:" + std::string{operation} + " failed (" +
          std::to_string(code) + ")";
 }
 
-[[nodiscard]] std::optional<std::string> read_github_document(
-    std::string& failure, bool& unavailable) {
-  unavailable = false;
-  auto endpoint = parse_https_endpoint(AZZS_APPLICATION_UPDATE_ENDPOINT);
-  if (!endpoint.has_value()) {
-    failure = "GitHub release endpoint is not a valid fixed HTTPS endpoint";
-    return std::nullopt;
-  }
-  UniqueWinHttpHandle session{::WinHttpOpen(
-      L"azzs-update-check/0.2", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0)};
-  if (!session) {
-    failure = winhttp_error("WinHttpOpen", ::GetLastError());
-    unavailable = true;
-    return std::nullopt;
-  }
-  constexpr int kTimeoutMilliseconds = 10'000;
-  if (!::WinHttpSetTimeouts(session.get(), kTimeoutMilliseconds,
-                            kTimeoutMilliseconds, kTimeoutMilliseconds,
-                            kTimeoutMilliseconds)) {
-    failure = winhttp_error("WinHttpSetTimeouts", ::GetLastError());
-    unavailable = true;
-    return std::nullopt;
-  }
-  UniqueWinHttpHandle connection{::WinHttpConnect(
-      session.get(), endpoint->host.c_str(), endpoint->port, 0)};
-  if (!connection) {
-    failure = winhttp_error("WinHttpConnect", ::GetLastError());
-    unavailable = true;
-    return std::nullopt;
-  }
-  UniqueWinHttpHandle request{::WinHttpOpenRequest(
-      connection.get(), L"GET", endpoint->object_name.c_str(), nullptr,
-      WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)};
-  if (!request) {
-    failure = winhttp_error("WinHttpOpenRequest", ::GetLastError());
-    unavailable = true;
-    return std::nullopt;
-  }
-  DWORD disabled_features = WINHTTP_DISABLE_REDIRECTS;
-  if (!::WinHttpSetOption(request.get(), WINHTTP_OPTION_DISABLE_FEATURE,
-                          &disabled_features, sizeof(disabled_features))) {
-    failure = winhttp_error("WinHttpSetOption", ::GetLastError());
-    unavailable = true;
-    return std::nullopt;
-  }
-  constexpr wchar_t kHeaders[] =
-      L"Accept: application/vnd.github+json\r\n"
-      L"User-Agent: azzs-update-check\r\n";
-  if (!::WinHttpSendRequest(request.get(), kHeaders, static_cast<DWORD>(-1),
-                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
-      !::WinHttpReceiveResponse(request.get(), nullptr)) {
-    failure = winhttp_error("WinHttpReceiveResponse", ::GetLastError());
-    unavailable = true;
-    return std::nullopt;
-  }
-  DWORD status_code{};
-  DWORD status_size = sizeof(status_code);
-  if (!::WinHttpQueryHeaders(
-          request.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-          WINHTTP_HEADER_NAME_BY_INDEX, &status_code, &status_size,
-          WINHTTP_NO_HEADER_INDEX)) {
-    failure = winhttp_error("WinHttpQueryHeaders", ::GetLastError());
-    unavailable = true;
-    return std::nullopt;
-  }
-  if (status_code == 429U || status_code >= 500U || status_code == 408U) {
-    failure = "GitHub release query temporarily unavailable (HTTP " +
-              std::to_string(status_code) + ")";
-    unavailable = true;
-    return std::nullopt;
-  }
-  if (status_code != 200U) {
-    failure = "GitHub release query returned HTTP status " +
-              std::to_string(status_code);
-    return std::nullopt;
-  }
+class WinHttpApplicationUpdateReleaseRequestExecutor final
+    : public ApplicationUpdateReleaseRequestExecutor {
+ public:
+  [[nodiscard]] ApplicationUpdateReleaseDocument execute(
+      ApplicationUpdateReleaseRequest const& request) override {
+    if (request.method != ApplicationUpdateReleaseRequestMethod::get ||
+        request.endpoint != AZZS_APPLICATION_UPDATE_ENDPOINT ||
+        request.accept != kGithubAccept || request.user_agent != kGithubUserAgent ||
+        request.timeout.count() <= 0 ||
+        request.timeout.count() > std::numeric_limits<int>::max() ||
+        request.maximum_response_bytes == 0) {
+      return document_failed("invalid GitHub release request");
+    }
 
-  constexpr std::size_t kMaximumResponseBytes = 4U * 1024U * 1024U;
-  constexpr std::size_t kReadChunkBytes = 16U * 1024U;
-  std::array<char, kReadChunkBytes> buffer{};
-  std::string document;
-  while (true) {
-    DWORD available{};
-    if (!::WinHttpQueryDataAvailable(request.get(), &available)) {
-      failure = winhttp_error("WinHttpQueryDataAvailable", ::GetLastError());
-      unavailable = true;
-      return std::nullopt;
+    auto endpoint = parse_https_endpoint(request.endpoint);
+    if (!endpoint.has_value()) {
+      return document_failed(
+          "GitHub release endpoint is not a valid fixed HTTPS endpoint");
     }
-    if (available == 0) break;
-    if (document.size() >= kMaximumResponseBytes ||
-        static_cast<std::size_t>(available) >
-            kMaximumResponseBytes - document.size()) {
-      failure = "GitHub release response exceeds 4 MiB";
-      return std::nullopt;
+    UniqueWinHttpHandle session{::WinHttpOpen(
+        L"azzs-update-check/0.2", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0)};
+    if (!session) {
+      return document_unavailable(
+          winhttp_error("WinHttpOpen", ::GetLastError()));
     }
-    auto const to_read = static_cast<DWORD>(std::min(
-        {static_cast<std::size_t>(available), buffer.size(),
-         kMaximumResponseBytes - document.size()}));
-    DWORD read{};
-    if (!::WinHttpReadData(request.get(), buffer.data(), to_read, &read)) {
-      failure = winhttp_error("WinHttpReadData", ::GetLastError());
-      unavailable = true;
-      return std::nullopt;
+    auto const timeout = static_cast<int>(request.timeout.count());
+    if (!::WinHttpSetTimeouts(session.get(), timeout, timeout, timeout,
+                              timeout)) {
+      return document_unavailable(
+          winhttp_error("WinHttpSetTimeouts", ::GetLastError()));
     }
-    if (read == 0) {
-      failure = "GitHub release response ended unexpectedly";
-      return std::nullopt;
+    UniqueWinHttpHandle connection{::WinHttpConnect(
+        session.get(), endpoint->host.c_str(), endpoint->port, 0)};
+    if (!connection) {
+      return document_unavailable(
+          winhttp_error("WinHttpConnect", ::GetLastError()));
     }
-    document.append(buffer.data(), read);
+    UniqueWinHttpHandle http_request{::WinHttpOpenRequest(
+        connection.get(), L"GET", endpoint->object_name.c_str(), nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)};
+    if (!http_request) {
+      return document_unavailable(
+          winhttp_error("WinHttpOpenRequest", ::GetLastError()));
+    }
+    DWORD disabled_features = WINHTTP_DISABLE_REDIRECTS;
+    if (!::WinHttpSetOption(http_request.get(), WINHTTP_OPTION_DISABLE_FEATURE,
+                            &disabled_features, sizeof(disabled_features))) {
+      return document_unavailable(
+          winhttp_error("WinHttpSetOption", ::GetLastError()));
+    }
+
+    auto const headers = wide_ascii(
+        "Accept: " + std::string{request.accept} + "\r\n" +
+        "User-Agent: " + std::string{request.user_agent} + "\r\n");
+    if (!::WinHttpSendRequest(http_request.get(), headers.c_str(),
+                              static_cast<DWORD>(headers.size()),
+                              WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+        !::WinHttpReceiveResponse(http_request.get(), nullptr)) {
+      return document_unavailable(
+          winhttp_error("WinHttpReceiveResponse", ::GetLastError()));
+    }
+    DWORD status_code{};
+    DWORD status_size = sizeof(status_code);
+    if (!::WinHttpQueryHeaders(
+            http_request.get(),
+            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &status_code, &status_size,
+            WINHTTP_NO_HEADER_INDEX)) {
+      return document_unavailable(
+          winhttp_error("WinHttpQueryHeaders", ::GetLastError()));
+    }
+    if (status_code == 429U || status_code >= 500U || status_code == 408U) {
+      return document_unavailable(
+          "GitHub release query temporarily unavailable (HTTP " +
+          std::to_string(status_code) + ")");
+    }
+    if (status_code != 200U) {
+      return document_failed("GitHub release query returned HTTP status " +
+                             std::to_string(status_code));
+    }
+
+    constexpr std::size_t kReadChunkBytes{16U * 1024U};
+    std::array<char, kReadChunkBytes> buffer{};
+    std::string document;
+    while (true) {
+      DWORD available{};
+      if (!::WinHttpQueryDataAvailable(http_request.get(), &available)) {
+        return document_unavailable(
+            winhttp_error("WinHttpQueryDataAvailable", ::GetLastError()));
+      }
+      if (available == 0) {
+        break;
+      }
+      if (document.size() >= request.maximum_response_bytes ||
+          static_cast<std::size_t>(available) >
+              request.maximum_response_bytes - document.size()) {
+        return document_failed("GitHub release response exceeds 4 MiB");
+      }
+      auto const bytes_to_read = static_cast<DWORD>(std::min(
+          {static_cast<std::size_t>(available), buffer.size(),
+           request.maximum_response_bytes - document.size()}));
+      DWORD read{};
+      if (!::WinHttpReadData(http_request.get(), buffer.data(), bytes_to_read,
+                             &read)) {
+        return document_unavailable(
+            winhttp_error("WinHttpReadData", ::GetLastError()));
+      }
+      if (read == 0) {
+        return document_failed("GitHub release response ended unexpectedly");
+      }
+      document.append(buffer.data(), read);
+    }
+    return {.code = application::GithubReleaseQueryResultCode::succeeded,
+            .document = std::move(document)};
   }
-  return document;
-}
+};
 
 [[nodiscard]] std::optional<std::string> json_string(
     winrt::Windows::Data::Json::JsonObject const& object,
@@ -473,8 +491,28 @@ struct ParsedHttpsEndpoint final {
 
 WindowsApplicationUpdatePlatform::WindowsApplicationUpdatePlatform(
     application::PlatformInfo const& platform,
-    application::ApplicationUpdateHealthStorage& health_storage) noexcept
-    : platform_(platform), health_storage_(health_storage) {}
+    application::ApplicationUpdateHealthStorage& health_storage)
+    : platform_(platform), health_storage_(health_storage),
+      owned_executor_(
+          std::make_unique<WinHttpApplicationUpdateReleaseRequestExecutor>()),
+      request_executor_(owned_executor_.get()) {}
+
+WindowsApplicationUpdatePlatform::~WindowsApplicationUpdatePlatform() = default;
+
+WindowsApplicationUpdatePlatform::WindowsApplicationUpdatePlatform(
+    application::PlatformInfo const& platform,
+    application::ApplicationUpdateHealthStorage& health_storage,
+    ApplicationUpdateReleaseRequestExecutor& request_executor) noexcept
+    : platform_(platform), health_storage_(health_storage),
+      request_executor_(&request_executor) {}
+
+WindowsApplicationUpdatePlatform WindowsApplicationUpdatePlatform::for_testing(
+    application::PlatformInfo const& platform,
+    application::ApplicationUpdateHealthStorage& health_storage,
+    ApplicationUpdateReleaseRequestExecutor& request_executor) {
+  return WindowsApplicationUpdatePlatform{platform, health_storage,
+                                          request_executor};
+}
 
 application::ApplicationBuildIdentity
 WindowsApplicationUpdatePlatform::current_build() const noexcept {
@@ -493,14 +531,24 @@ WindowsApplicationUpdatePlatform::query_releases() {
       "https://api.github.com/repos/CoolPlume/azzs/releases?per_page=100") {
     return query_failed("GitHub release endpoint is not the controlled project endpoint");
   }
-  std::string failure;
-  bool unavailable = false;
-  auto document = read_github_document(failure, unavailable);
-  if (!document.has_value()) {
-    return unavailable ? query_unavailable(std::move(failure))
-                        : query_failed(std::move(failure));
+  if (request_executor_ == nullptr) {
+    return query_failed("GitHub release request executor is unavailable");
   }
-  return parse_releases(std::move(*document));
+  auto document = request_executor_->execute({
+      .method = ApplicationUpdateReleaseRequestMethod::get,
+      .endpoint = AZZS_APPLICATION_UPDATE_ENDPOINT,
+      .accept = kGithubAccept,
+      .user_agent = kGithubUserAgent,
+      .timeout = kRequestTimeout,
+      .maximum_response_bytes = kMaximumResponseBytes,
+  });
+  if (document.code != application::GithubReleaseQueryResultCode::succeeded) {
+    return {.code = document.code, .detail = std::move(document.detail)};
+  }
+  if (document.document.size() > kMaximumResponseBytes) {
+    return query_failed("GitHub release response exceeds 4 MiB");
+  }
+  return parse_releases(std::move(document.document));
 }
 
 application::ApplicationUpdateEffect
