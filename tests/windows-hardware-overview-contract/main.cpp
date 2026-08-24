@@ -22,6 +22,7 @@ using azzs::adapters::windows::WindowsHardwareQueryExecutor;
 using azzs::adapters::windows::WindowsHardwareQueryResult;
 using azzs::adapters::windows::WindowsCpuTopology;
 using azzs::adapters::windows::WindowsDisplayEdid;
+using azzs::adapters::windows::WindowsDisplayConnection;
 using azzs::adapters::windows::WindowsGpuMemory;
 using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareDisplayConnection;
@@ -49,6 +50,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   std::optional<WindowsCpuTopology> topology;
   std::vector<WindowsGpuMemory> dxgi_adapters;
   std::vector<WindowsDisplayEdid> edids;
+  std::vector<WindowsDisplayConnection> connections;
   std::vector<std::string> requested_display_pnp_ids;
   bool throw_display_edids{false};
   std::size_t calls{0};
@@ -102,6 +104,11 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
     requested_display_pnp_ids.assign(pnp_device_ids.begin(),
                                      pnp_device_ids.end());
     return edids;
+  }
+
+  [[nodiscard]] std::vector<WindowsDisplayConnection> display_connections(
+      std::span<std::string const>, std::stop_token) override {
+    return connections;
   }
 };
 
@@ -253,18 +260,15 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                          std::string::npos &&
                      result.observation->memory.find("48GB 5600MHz (24GB + 24GB)") !=
                          std::string::npos &&
-                     result.observation->display.find("京东方 BOE") !=
-                         std::string::npos &&
-                     result.observation->display.find("类型未确认") ==
-                         std::string::npos &&
-                     result.observation->display.find("2560 × 1600") !=
-                         std::string::npos &&
-                     result.observation->display.find(" EDID") ==
-                         std::string::npos &&
-                     result.observation->display.find("刷新率") ==
-                         std::string::npos &&
-                     result.observation->display.find(" Hz") ==
-                         std::string::npos &&
+                      result.observation->display.find("京东方 BOE") !=
+                          std::string::npos &&
+                      result.observation->display.find(
+                          "京东方 BOE Display（2560 × 1600；未知；未知）") !=
+                          std::string::npos &&
+                      result.observation->display.find(" EDID") ==
+                          std::string::npos &&
+                      result.observation->display.find("刷新率") ==
+                          std::string::npos &&
                      result.observation->storage.find("PC801 SK 海力士") !=
                          std::string::npos &&
                      result.observation->storage.find("三星 Samsung SSD 990 PRO") !=
@@ -537,6 +541,18 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {.model_key = "boe0cd1", .bytes = range_limit_edid(60, 240, 0x0c)},
       {.model_key = "lhc907d", .bytes = range_limit_edid(48, 160)},
   };
+  raw_executor->connections = {
+      {.model_key = "boe0cd1",
+       .connection = HardwareDisplayConnection::internal,
+       .width = 2560,
+       .height = 1600,
+       .refresh_rate_hz = 240},
+      {.model_key = "lhc907d",
+       .connection = HardwareDisplayConnection::external,
+       .width = 3840,
+       .height = 2160,
+       .refresh_rate_hz = 160},
+  };
 
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
@@ -582,7 +598,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                      observation->display.find("刷新率") == std::string::npos &&
                      line_separated(observation->display) &&
                      observation->display.find("默认监视器") == std::string::npos,
-                "validated raw EDID range limits must enrich physical monitor names without labels or desktop modes") &&
+                "active DisplayConfig facts must enrich physical monitor names without labels or desktop modes") &&
          expect(observation->solid_state_storage.find("Samsung SSD 990 PRO 2TB") !=
                          std::string::npos &&
                      observation->solid_state_storage.find(
@@ -606,6 +622,81 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                      raw_executor->requested_display_pnp_ids.size() == 2 &&
                      refresh_fingerprint_changed,
                     "only the exact PCB01 product and validated raw EDID model keys may receive model-specific facts");
+}
+
+[[nodiscard]] bool displayconfig_facts_are_authoritative_and_fail_closed() {
+  auto render = [](std::vector<WindowsDisplayConnection> connections,
+                   std::vector<WindowsDisplayEdid> edids,
+                   bool wmi_dimensions_known) {
+    auto executor = std::make_unique<FakeQueryExecutor>();
+    executor->expected = full_queries();
+    executor->expected[6].result.rows = {
+        {"Generic PnP Monitor", "DISPLAY\\BOE0CD1\\1", "OK", "0",
+         wmi_dimensions_known ? "2560" : "", wmi_dimensions_known ? "1600" : ""}};
+    executor->expected[9].result.rows = {
+        {"Integrated Monitor", "(标准监视器类型)", "DISPLAY\\BOE0CD1\\1", "OK",
+         "0", "Monitor"}};
+    executor->connections = std::move(connections);
+    executor->edids = std::move(edids);
+    WindowsHardwareObserver observer{std::move(executor)};
+    auto const result = observer.observe({});
+    return result.observation;
+  };
+
+  auto const no_mapping = render({}, {}, false);
+  auto const active_overrides_edid = render(
+      {{.model_key = "boe0cd1",
+        .connection = HardwareDisplayConnection::internal,
+        .width = 2560,
+        .height = 1600,
+        .refresh_rate_hz = 144}},
+      {{.model_key = "boe0cd1", .bytes = range_limit_edid(60, 240)}}, false);
+  auto const conflicting_paths = render(
+      {{.model_key = "boe0cd1",
+        .connection = HardwareDisplayConnection::internal,
+        .width = 2560,
+        .height = 1600,
+        .refresh_rate_hz = 144},
+       {.model_key = "boe0cd1",
+        .connection = HardwareDisplayConnection::external,
+        .width = 2560,
+        .height = 1600,
+        .refresh_rate_hz = 144}},
+      {}, false);
+
+  auto const find_display = [](std::optional<azzs::application::HardwareObservation> const& observation) {
+    if (!observation.has_value()) {
+      return static_cast<azzs::application::HardwareDeviceRecord const*>(nullptr);
+    }
+    for (auto const& device : observation->devices) {
+      if (device.kind == HardwareDeviceKind::display) {
+        return &device;
+      }
+    }
+    return static_cast<azzs::application::HardwareDeviceRecord const*>(nullptr);
+  };
+  auto const* active_device = find_display(active_overrides_edid);
+  auto const* conflicting_device = find_display(conflicting_paths);
+
+  return expect(no_mapping.has_value() &&
+                    no_mapping->display.find(
+                        "京东方 BOE0CD1（未知；未知；未知）") != std::string::npos,
+                "without an active DisplayConfig mapping, all display slots must remain explicitly unknown") &&
+         expect(active_overrides_edid.has_value() && active_device != nullptr &&
+                    active_overrides_edid->display.find(
+                        "京东方 BOE0CD1（2560 × 1600；144 Hz；内建）") != std::string::npos &&
+                    active_overrides_edid->display.find("240 Hz") == std::string::npos &&
+                    active_device->display_width == 2560 &&
+                    active_device->display_height == 1600 &&
+                    active_device->display_refresh_rate_hz == 144 &&
+                    active_device->physical_refresh_rate_limit_hz == 240,
+                "active DisplayConfig refresh must override the EDID capability limit and fill missing WMI dimensions") &&
+         expect(conflicting_paths.has_value() && conflicting_device != nullptr &&
+                    conflicting_paths->display.find(
+                        "京东方 BOE0CD1（2560 × 1600；144 Hz；未知）") != std::string::npos &&
+                    conflicting_device->display_connection ==
+                        HardwareDisplayConnection::unknown,
+                "conflicting DisplayConfig paths must keep connection type unknown instead of using display text");
 }
 
 [[nodiscard]] bool topology_and_dxgi_enrich_only_verified_models() {
@@ -797,6 +888,7 @@ int main() {
   passed &= oem_firmware_fallbacks_keep_concrete_models();
   passed &= incomplete_board_rows_fail_closed();
   passed &= real_machine_wmi_field_shapes_are_projected();
+  passed &= displayconfig_facts_are_authoritative_and_fail_closed();
   passed &= topology_and_dxgi_enrich_only_verified_models();
   passed &= invalid_or_conflicting_edid_fails_closed();
   passed &= unknown_media_physical_storage_stays_device_only();
