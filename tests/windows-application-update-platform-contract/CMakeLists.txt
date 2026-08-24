@@ -13,3 +13,25 @@ azzs_register_test(
     --repository-root
     "${PROJECT_SOURCE_DIR}"
 )
+
+add_executable(azzs_windows_application_update_platform_contract
+  main.cpp
+)
+
+target_compile_definitions(azzs_windows_application_update_platform_contract
+  PRIVATE
+    AZZS_APPLICATION_UPDATE_EXPECTED_ENDPOINT="${AZZS_APPLICATION_UPDATE_ENDPOINT}"
+)
+
+azzs_project_target(
+  TARGET azzs_windows_application_update_platform_contract
+  ROLE test
+  PRIVATE_LINKS
+    azzs::windows_adapter
+)
+
+azzs_register_test(
+  NAME windows-application-update-platform-runtime.contract
+  TARGET azzs_windows_application_update_platform_contract
+  LABELS headless contract
+)
