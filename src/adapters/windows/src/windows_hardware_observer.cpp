@@ -759,7 +759,8 @@ physical_refresh_rate_limit_from_edid(
 [[nodiscard]] std::optional<std::uint32_t> physical_refresh_rate_limit_for(
     std::span<WindowsDisplayEdid const> edids,
     std::string_view model_key,
-    std::uint32_t instance_ordinal) noexcept {
+    std::uint32_t instance_ordinal,
+    std::size_t model_instance_count) noexcept {
   std::optional<std::uint32_t> limit;
   auto const normalized_key = lower_ascii(trim_ascii(model_key));
   bool has_exact = false;
@@ -771,6 +772,10 @@ physical_refresh_rate_limit_from_edid(
       has_exact = true;
       break;
     }
+  }
+  if (!has_exact && model_instance_count != 1) {
+    // A model-scoped EDID cannot identify one of several identical monitors.
+    return std::nullopt;
   }
   bool found = false;
   for (auto const& edid : edids) {
@@ -831,7 +836,8 @@ physical_refresh_rate_limit_from_edid(
 [[nodiscard]] std::optional<std::uint32_t> display_size_tenths_for(
     std::span<WindowsDisplayEdid const> edids,
     std::string_view model_key,
-    std::uint32_t instance_ordinal) noexcept {
+    std::uint32_t instance_ordinal,
+    std::size_t model_instance_count) noexcept {
   std::optional<std::uint32_t> size;
   auto const normalized_key = lower_ascii(trim_ascii(model_key));
   bool has_exact = false;
@@ -843,6 +849,10 @@ physical_refresh_rate_limit_from_edid(
       has_exact = true;
       break;
     }
+  }
+  if (!has_exact && model_instance_count != 1) {
+    // A model-scoped EDID cannot identify one of several identical monitors.
+    return std::nullopt;
   }
   bool found = false;
   for (auto const& edid : edids) {
@@ -2591,10 +2601,12 @@ struct CollectedObservation final {
       record.display_refresh_rate_hz = connection->refresh_rate_hz;
     }
     auto const limit = physical_refresh_rate_limit_for(
-        display_edids, record.model_detail, instance_ordinal);
+        display_edids, record.model_detail, instance_ordinal,
+        model_instance_count);
     record.physical_refresh_rate_limit_hz = limit.value_or(0);
     auto size = display_size_tenths_for(
-        display_edids, record.model_detail, instance_ordinal);
+        display_edids, record.model_detail, instance_ordinal,
+        model_instance_count);
     if (!size.has_value()) {
       size = display_size_tenths_for(
           std::span<WindowsDisplayPhysicalSize const>{display_physical_sizes},
