@@ -1263,6 +1263,28 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         resource_values.get("HardwareWirelessNetworkLabel.Text") == "无线网卡",
         "hardware table headings and category labels must remain explicit Simplified Chinese",
     )
+    hardware_copy_label_resources = (
+        "HardwareModelSummaryTitle",
+        "HardwareSystemSummaryTitle",
+        "HardwareCpuLabel",
+        "HardwareMotherboardLabel",
+        "HardwareMemoryLabel",
+        "HardwareGpuLabel",
+        "HardwareDisplayLabel",
+        "HardwareSolidStateStorageLabel",
+        "HardwareHardDiskStorageLabel",
+        "HardwareWiredNetworkLabel",
+        "HardwareWirelessNetworkLabel",
+        "HardwareAudioLabel",
+        "HardwareNpuLabel",
+    )
+    require(
+        all(f'L"{key}.Text"' in drivers_cpp
+            for key in hardware_copy_label_resources) and
+        not any(f'L"{key}"' in drivers_cpp
+                for key in hardware_copy_label_resources),
+        "hardware copy rows must use TextBlock .Text resource keys, never bare x:Uid keys",
+    )
     obsolete_hardware_groups = (
         "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",
         "HardwareConnectivityGroup", "HardwareCoreGroupTitle",
