@@ -65,6 +65,7 @@ std::string HardwareObservation::model_fingerprint() const {
     append_field(to_string(device.display_connection));
     append_field(std::to_string(device.display_width));
     append_field(std::to_string(device.display_height));
+    append_field(std::to_string(device.display_refresh_rate_hz));
     append_field(std::to_string(device.physical_refresh_rate_limit_hz));
     append_field(std::to_string(device.core_count));
     append_field(std::to_string(device.thread_count));

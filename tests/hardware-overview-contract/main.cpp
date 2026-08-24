@@ -248,21 +248,26 @@ class FakeHardwareObserver final : public HardwareObserver {
           azzs::application::HardwareDisplayConnection::internal,
       .display_width = 2560,
       .display_height = 1600,
+      .display_refresh_rate_hz = 120,
       .physical_refresh_rate_limit_hz = 120,
   });
   auto const unchanged = first;
-  auto refresh_changed = first;
-  refresh_changed.devices.back().physical_refresh_rate_limit_hz = 144;
+  auto capability_changed = first;
+  capability_changed.devices.back().physical_refresh_rate_limit_hz = 144;
+  auto active_refresh_changed = first;
+  active_refresh_changed.devices.back().display_refresh_rate_hz = 144;
   auto connection_changed = first;
   connection_changed.devices.back().display_connection =
       azzs::application::HardwareDisplayConnection::external;
 
   return expect(first.model_fingerprint() == unchanged.model_fingerprint() &&
                     first.model_fingerprint() !=
-                        refresh_changed.model_fingerprint() &&
+                        capability_changed.model_fingerprint() &&
+                    first.model_fingerprint() !=
+                        active_refresh_changed.model_fingerprint() &&
                     first.model_fingerprint() !=
                         connection_changed.model_fingerprint(),
-                "the cache key must retain structured display facts without parsing presentation text");
+                "the cache key must retain active and capability display facts without parsing presentation text");
 }
 
 }  // namespace

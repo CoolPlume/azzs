@@ -114,6 +114,9 @@ struct HardwareDeviceRecord final {
       HardwareDisplayConnection::unknown};
   std::uint32_t display_width{0};
   std::uint32_t display_height{0};
+  // Zero means the active display mode did not expose a trustworthy refresh
+  // rate. This is distinct from the EDID capability upper bound below.
+  std::uint32_t display_refresh_rate_hz{0};
   // Zero means the raw monitor capability data did not provide a trustworthy
   // physical vertical-field-rate upper bound.
   std::uint32_t physical_refresh_rate_limit_hz{0};
