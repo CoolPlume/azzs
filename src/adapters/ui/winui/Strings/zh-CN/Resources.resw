@@ -72,9 +72,9 @@
   <data name="HardwareUnrecognizedValue" xml:space="preserve"><value>未识别</value></data>
   <data name="HardwareStatusTitle" xml:space="preserve"><value>硬件未识别</value></data>
   <data name="HardwareStatusMessage" xml:space="preserve"><value>本次硬件检测没有生成可用概览。</value></data>
-  <data name="HardwareModelSummaryTitle" xml:space="preserve"><value>机型</value></data>
-  <data name="HardwareSystemSummaryTitle" xml:space="preserve"><value>Windows 版本</value></data>
-  <data name="HardwareDetailsTitle" xml:space="preserve"><value>详细信息</value></data>
+  <data name="HardwareModelSummaryTitle.Text" xml:space="preserve"><value>机型</value></data>
+  <data name="HardwareSystemSummaryTitle.Text" xml:space="preserve"><value>Windows 版本</value></data>
+  <data name="HardwareDetailsTitle.Text" xml:space="preserve"><value>详细信息</value></data>
   <data name="HardwareTableItemHeader.Text" xml:space="preserve"><value>项目</value></data>
   <data name="HardwareTableInformationHeader.Text" xml:space="preserve"><value>信息</value></data>
   <data name="HardwareCopySection.Text" xml:space="preserve"><value>复制本节</value></data>

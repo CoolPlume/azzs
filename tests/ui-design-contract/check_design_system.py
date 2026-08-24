@@ -1212,9 +1212,22 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
             f'AutomationProperties.AutomationId="{automation_id}"' in drivers_xaml,
             f"drivers page is missing hardware detail surface {label}",
         )
+    hardware_text_uids = (
+        "HardwareModelSummaryTitle",
+        "HardwareSystemSummaryTitle",
+        "HardwareDetailsTitle",
+    )
     require(
-        resource_values.get("HardwareModelSummaryTitle") == "机型" and
-        resource_values.get("HardwareSystemSummaryTitle") == "Windows 版本" and
+        all(f"{uid}.Text" in resource_names for uid in hardware_text_uids) and
+        not any(uid in resource_names for uid in hardware_text_uids),
+        "drivers TextBlock x:Uid resources must use .Text property keys",
+    )
+    require(
+        resource_values.get("HardwareModelSummaryTitle.Text") == "机型" and
+        resource_values.get("HardwareSystemSummaryTitle.Text") == "Windows 版本" and
+        resource_values.get("HardwareDetailsTitle.Text") == "详细信息" and
+        'append_copy_row(L"HardwareModelSummaryTitle.Text"' in drivers_cpp and
+        'append_copy_row(L"HardwareSystemSummaryTitle.Text"' in drivers_cpp and
         resource_values.get("HardwareTableItemHeader.Text") == "项目" and
         resource_values.get("HardwareTableInformationHeader.Text") == "信息" and
         resource_values.get("HardwareCopySection.Text") == "复制本节" and
