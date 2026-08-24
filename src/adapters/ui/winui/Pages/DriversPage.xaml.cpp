@@ -198,8 +198,8 @@ void DriversPage::project(
                                                    winrt::hstring const& value) {
     hardware_copy_rows_.emplace_back(resources.GetString(resource_key), value);
   };
-  append_copy_row(L"HardwareModelSummaryTitle", model_value);
-  append_copy_row(L"HardwareSystemSummaryTitle", system_value);
+  append_copy_row(L"HardwareModelSummaryTitle.Text", model_value);
+  append_copy_row(L"HardwareSystemSummaryTitle.Text", system_value);
   append_copy_row(L"HardwareCpuLabel", cpu_value);
   append_copy_row(L"HardwareMotherboardLabel", motherboard_value);
   append_copy_row(L"HardwareMemoryLabel", memory_value);
