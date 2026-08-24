@@ -1252,8 +1252,8 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         resource_values.get("HardwareModelSummaryTitle.Text") == "机型" and
         resource_values.get("HardwareSystemSummaryTitle.Text") == "Windows 版本" and
         resource_values.get("HardwareDetailsTitle.Text") == "详细信息" and
-        'append_copy_row(L"HardwareModelSummaryTitle.Text"' in drivers_cpp and
-        'append_copy_row(L"HardwareSystemSummaryTitle.Text"' in drivers_cpp and
+        'append_copy_row(L"HardwareModelSummaryTitle/Text"' in drivers_cpp and
+        'append_copy_row(L"HardwareSystemSummaryTitle/Text"' in drivers_cpp and
         resource_values.get("HardwareTableItemHeader.Text") == "项目" and
         resource_values.get("HardwareTableInformationHeader.Text") == "信息" and
         resource_values.get("HardwareCopySection.Text") == "复制本节" and
@@ -1279,11 +1279,11 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "HardwareNpuLabel",
     )
     require(
-        all(f'L"{key}.Text"' in drivers_cpp
+        all(f'L"{key}/Text"' in drivers_cpp
             for key in hardware_copy_label_resources) and
         not any(f'L"{key}"' in drivers_cpp
                 for key in hardware_copy_label_resources),
-        "hardware copy rows must use TextBlock .Text resource keys, never bare x:Uid keys",
+        "hardware copy rows must use MRT /Text resource paths, never bare x:Uid keys",
     )
     obsolete_hardware_groups = (
         "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",
