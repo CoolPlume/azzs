@@ -861,6 +861,30 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                 "Intel, AMD and unknown GPU facts must remain tied to authoritative IDs or exact model text");
 }
 
+[[nodiscard]] bool amd_radeon_rx_model_does_not_fall_back_to_generic_processor() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[1].result.rows = {
+      {"AMD Radeon RX 7600", "AMD", "PCI\\VEN_1002&DEV_7480", "OK", "0",
+       "Radeon", "0"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+
+  auto const gpu = result.observation.has_value()
+                       ? std::ranges::find_if(
+                             result.observation->devices, [](auto const& device) {
+                               return device.kind == HardwareDeviceKind::gpu;
+                             })
+                       : std::vector<HardwareDeviceRecord>::const_iterator{};
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    gpu != result.observation->devices.end() &&
+                    gpu->name.find("AMD Radeon RX 7600") != std::string::npos &&
+                    gpu->gpu_type == HardwareGpuType::discrete,
+                "an exact AMD Radeon RX model must not be replaced by a generic VideoProcessor name");
+}
+
 [[nodiscard]] bool core_ultra_9_275hx_intel_graphics_requires_exact_identity() {
   auto observe = [](std::string cpu_name, std::string pnp_id) {
     auto executor = std::make_unique<FakeQueryExecutor>();
@@ -997,6 +1021,48 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     result.observation->display.find('\n') != std::string::npos &&
                     result.observation->display.find(" x2") == std::string::npos,
                 "same-model displays must use their request ordinals, not merge or exchange facts");
+}
+
+[[nodiscard]] bool model_scoped_displayconfig_facts_do_not_cross_same_model_instances() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[6].result.rows = {
+      {"BOE Display", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"},
+      {"BOE Display", "DISPLAY\\BOE1234\\2", "OK", "0", "2560", "1600"},
+  };
+  raw_executor->expected[9].result.rows = {
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\1", "OK", "0", "Monitor"},
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\2", "OK", "0", "Monitor"},
+  };
+  raw_executor->connections = {
+      {.model_key = "boe1234",
+       .connection = HardwareDisplayConnection::internal,
+       .width = 2560,
+       .height = 1600,
+       .refresh_rate_hz = 144},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  auto const no_shared_displayconfig_fact = [&] {
+    if (!result.observation.has_value()) {
+      return false;
+    }
+    std::size_t display_count = 0;
+    for (auto const& device : result.observation->devices) {
+      if (device.kind != HardwareDeviceKind::display) {
+        continue;
+      }
+      ++display_count;
+      if (device.display_connection != HardwareDisplayConnection::unknown ||
+          device.display_refresh_rate_hz != 0) {
+        return false;
+      }
+    }
+    return display_count == 2;
+  };
+  return expect(result.succeeded() && no_shared_displayconfig_fact(),
+                "a model-scoped DisplayConfig fact must not be projected to multiple same-model instances");
 }
 
 [[nodiscard]] bool cpu_core_classes_are_unrecognised_without_reliable_topology() {
@@ -1436,8 +1502,10 @@ int main() {
   passed &= displayconfig_facts_are_authoritative_and_fail_closed();
   passed &= topology_and_dxgi_enrich_only_verified_models();
   passed &= gpu_model_families_are_expanded_without_guessing();
+  passed &= amd_radeon_rx_model_does_not_fall_back_to_generic_processor();
   passed &= core_ultra_9_275hx_intel_graphics_requires_exact_identity();
   passed &= display_instances_are_not_merged_by_model_name();
+  passed &= model_scoped_displayconfig_facts_do_not_cross_same_model_instances();
   passed &= cpu_core_classes_are_unrecognised_without_reliable_topology();
   passed &= cpu_single_efficiency_class_marks_core_classes_unrecognised();
   passed &= cpu_core_classes_are_unrecognised_when_counts_conflict();

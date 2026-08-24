@@ -373,6 +373,18 @@ constexpr std::array<LocalizedBrand, 30> kLocalizedBrands{
   return 0;
 }
 
+[[nodiscard]] std::size_t display_model_instance_count(
+    std::span<std::string const> pnp_device_ids, std::string_view model_key) {
+  auto const normalized_key = lower_ascii(trim_ascii(model_key));
+  if (normalized_key.empty()) {
+    return 0;
+  }
+  return static_cast<std::size_t>(std::ranges::count_if(
+      pnp_device_ids, [&](std::string const& pnp_device_id) {
+        return display_model_key(pnp_device_id) == normalized_key;
+      }));
+}
+
 [[nodiscard]] std::string display_model_key_from_monitor_device_path(
     std::wstring_view device_path) {
   constexpr std::wstring_view kDisplayMarker = L"DISPLAY#";
@@ -602,7 +614,8 @@ dimensions_from_target_mode(DISPLAYCONFIG_PATH_INFO const& path,
 [[nodiscard]] std::optional<WindowsDisplayConnection>
 display_connection_for(std::span<WindowsDisplayConnection const> facts,
                         std::string_view model_key,
-                        std::uint32_t instance_ordinal) {
+                        std::uint32_t instance_ordinal,
+                        std::size_t model_instance_count) {
   auto const normalized_key = lower_ascii(trim_ascii(model_key));
   if (normalized_key.empty()) {
     return std::nullopt;
@@ -623,6 +636,10 @@ display_connection_for(std::span<WindowsDisplayConnection const> facts,
       has_exact = true;
       break;
     }
+  }
+  if (!has_exact && model_instance_count != 1) {
+    // A model-scoped path cannot identify one of several identical monitors.
+    return std::nullopt;
   }
 
   std::optional<application::HardwareDisplayConnection> connection;
@@ -1039,6 +1056,14 @@ physical_refresh_rate_limit_from_edid(
   return result;
 }
 
+[[nodiscard]] bool generic_gpu_model_name(std::string_view value) {
+  constexpr std::array<std::string_view, 4> kGenericGpuModelNames{
+      "amdradeon", "amdradeongraphics", "radeongraphics", "intelgraphics"};
+  auto const normalized = normalized_gpu_model_name(value);
+  return std::ranges::find(kGenericGpuModelNames, normalized) !=
+         kGenericGpuModelNames.end();
+}
+
 [[nodiscard]] std::string normalized_cpu_model_name(std::string_view value) {
   return lower_ascii(strip_trademark_markers(trim_ascii(value)));
 }
@@ -1192,9 +1217,7 @@ struct GpuPresentationFacts final {
   auto const normalized_video_processor =
       strip_trademark_markers(trim_ascii(video_processor));
   auto model_source = normalized_name;
-  auto const generic_name = contains_ascii(normalized_name, "intel graphics") ||
-                            contains_ascii(normalized_name, "amd radeon") ||
-                            contains_ascii(normalized_name, "radeon graphics");
+  auto const generic_name = generic_gpu_model_name(normalized_name);
   if (generic_name && !normalized_video_processor.empty() &&
       !contains_ascii(normalized_video_processor, "family")) {
     model_source = normalized_video_processor;
@@ -2551,9 +2574,11 @@ struct CollectedObservation final {
     auto const instance_ordinal = display_instance_ordinal_for(
         std::span<std::string const>{display_pnp_ids},
         device.stable_instance_key);
+    auto const model_instance_count = display_model_instance_count(
+        std::span<std::string const>{display_pnp_ids}, record.model_detail);
     if (auto const connection = display_connection_for(
             std::span<WindowsDisplayConnection const>{display_connections},
-            record.model_detail, instance_ordinal);
+            record.model_detail, instance_ordinal, model_instance_count);
         connection.has_value()) {
       // DisplayConfig is the active-mode source. It supersedes a stale or
       // absent DesktopMonitor projection, while an unavailable fact stays
@@ -3061,8 +3086,8 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
       } else {
         // DisplayConfig paths normally expose only a model token. Associate
         // that model with an instance only when it is unique in the request;
-        // otherwise leave the fact model-scoped and let the consumer apply
-        // common-value aggregation.
+        // otherwise retain an unscoped fact that the consumer rejects for
+        // same-model multi-monitor requests.
         instance_ordinal =
             unique_requested_instance_ordinal_for_model(model_key);
       }
