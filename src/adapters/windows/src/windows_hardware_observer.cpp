@@ -9,6 +9,8 @@
 
 #include <windows.h>
 
+#include <wingdi.h>
+
 #include <dxgi1_6.h>
 #include <oleauto.h>
 #include <wbemidl.h>
@@ -275,6 +277,43 @@ constexpr std::array<LocalizedBrand, 15> kLocalizedBrands{
   return lower_ascii(display_model_token(pnp_id));
 }
 
+[[nodiscard]] std::string display_model_key_from_monitor_device_path(
+    std::wstring_view device_path) {
+  constexpr std::wstring_view kDisplayMarker = L"DISPLAY#";
+  auto ascii_equal = [](wchar_t left, wchar_t right) noexcept {
+    if (left >= L'a' && left <= L'z') {
+      left = static_cast<wchar_t>(left - (L'a' - L'A'));
+    }
+    if (right >= L'a' && right <= L'z') {
+      right = static_cast<wchar_t>(right - (L'a' - L'A'));
+    }
+    return left == right;
+  };
+  for (std::size_t offset = 0;
+       offset + kDisplayMarker.size() <= device_path.size(); ++offset) {
+    bool matches = true;
+    for (std::size_t marker_index = 0; marker_index < kDisplayMarker.size();
+         ++marker_index) {
+      if (!ascii_equal(device_path[offset + marker_index],
+                       kDisplayMarker[marker_index])) {
+        matches = false;
+        break;
+      }
+    }
+    if (!matches) {
+      continue;
+    }
+    auto const token_begin = offset + kDisplayMarker.size();
+    auto const token_end = device_path.find(L'#', token_begin);
+    auto const token = device_path.substr(
+        token_begin, token_end == std::wstring_view::npos
+                        ? device_path.size() - token_begin
+                        : token_end - token_begin);
+    return lower_ascii(trim_ascii(utf8_from_wide(token)));
+  }
+  return {};
+}
+
 [[nodiscard]] bool generic_display_name(std::string_view name) {
   return contains_ascii(name, "generic pnp monitor") ||
          contains_ascii(name, "generic monitor") ||
@@ -327,22 +366,154 @@ constexpr std::array<LocalizedBrand, 15> kLocalizedBrands{
   return model;
 }
 
-[[nodiscard]] application::HardwareDisplayConnection display_connection_from(
-    std::string_view name, std::string_view pnp_id) noexcept {
-  auto const model_key = display_model_key(pnp_id);
-  // BOE0CD1 is the EDID model token observed for the built-in panel on the
-  // supported reference machine. Do not generalize this to other BOE panels.
-  if (model_key == "boe0cd1" || contains_ascii(name, "integrated monitor") ||
-      name.find("集成监视器") != std::string_view::npos ||
-      name.find("内建显示器") != std::string_view::npos) {
-    return application::HardwareDisplayConnection::internal;
+[[nodiscard]] application::HardwareDisplayConnection
+display_connection_from_technology(
+    DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY technology) noexcept {
+  using application::HardwareDisplayConnection;
+  switch (technology) {
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED:
+      return HardwareDisplayConnection::internal;
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HD15:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_SVIDEO:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_COMPOSITE_VIDEO:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_COMPONENT_VIDEO:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DVI:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_D_JPN:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_SDI:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EXTERNAL:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EXTERNAL:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_SDTVDONGLE:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_USB_TUNNEL:
+      return HardwareDisplayConnection::external;
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_OTHER:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_MIRACAST:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED:
+    case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_VIRTUAL:
+    default:
+      return HardwareDisplayConnection::unknown;
   }
-  // P275MV PLUS is a verified TITAN ARMY external-monitor model. Other
-  // generic PnP names remain unknown instead of being guessed as external.
-  if (contains_ascii(name, "p275mv")) {
-    return application::HardwareDisplayConnection::external;
+}
+
+[[nodiscard]] std::optional<std::uint32_t> refresh_rate_from_rational(
+    DISPLAYCONFIG_RATIONAL rational) noexcept {
+  if (rational.Numerator == 0 || rational.Denominator == 0) {
+    return std::nullopt;
   }
-  return application::HardwareDisplayConnection::unknown;
+  auto const rounded =
+      (static_cast<std::uint64_t>(rational.Numerator) +
+       static_cast<std::uint64_t>(rational.Denominator) / 2) /
+      static_cast<std::uint64_t>(rational.Denominator);
+  // A rational outside the range of a monitor mode is not a usable fact.
+  if (rounded == 0 || rounded > 1000) {
+    return std::nullopt;
+  }
+  return static_cast<std::uint32_t>(rounded);
+}
+
+[[nodiscard]] std::optional<std::pair<std::uint32_t, std::uint32_t>>
+dimensions_from_target_mode(DISPLAYCONFIG_PATH_INFO const& path,
+                            std::span<DISPLAYCONFIG_MODE_INFO const> modes) {
+  auto same_luid = [](LUID left, LUID right) noexcept {
+    return left.HighPart == right.HighPart && left.LowPart == right.LowPart;
+  };
+  auto inspect = [&](std::uint32_t index)
+      -> std::optional<std::pair<std::uint32_t, std::uint32_t>> {
+    if (index >= modes.size()) {
+      return std::nullopt;
+    }
+    auto const& mode = modes[index];
+    if (mode.infoType != DISPLAYCONFIG_MODE_INFO_TYPE_TARGET ||
+        !same_luid(mode.adapterId, path.targetInfo.adapterId)) {
+      return std::nullopt;
+    }
+    auto const width = mode.targetMode.targetVideoSignalInfo.activeSize.cx;
+    auto const height = mode.targetMode.targetVideoSignalInfo.activeSize.cy;
+    if (width == 0 || height == 0 || width > 65535 || height > 65535) {
+      return std::nullopt;
+    }
+    return std::pair<std::uint32_t, std::uint32_t>{width, height};
+  };
+
+  // QDC without QDC_VIRTUAL_MODE_AWARE returns a direct modeInfoIdx.  On
+  // systems that expose virtual modes, the target-mode half of the union is
+  // the useful fallback; both candidates are validated against the mode type
+  // and adapter LUID before being trusted.
+  if (auto dimensions = inspect(path.targetInfo.modeInfoIdx);
+      dimensions.has_value()) {
+    return dimensions;
+  }
+  auto const target_mode_index =
+      static_cast<std::uint32_t>(path.targetInfo.targetModeInfoIdx);
+  if (target_mode_index != DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID) {
+    return inspect(target_mode_index);
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::optional<WindowsDisplayConnection>
+display_connection_for(std::span<WindowsDisplayConnection const> facts,
+                        std::string_view model_key) {
+  auto const normalized_key = lower_ascii(model_key);
+  if (normalized_key.empty()) {
+    return std::nullopt;
+  }
+
+  std::optional<application::HardwareDisplayConnection> connection;
+  std::optional<std::pair<std::uint32_t, std::uint32_t>> dimensions;
+  std::optional<std::uint32_t> refresh_rate;
+  bool connection_ambiguous = false;
+  bool dimensions_ambiguous = false;
+  bool refresh_ambiguous = false;
+  bool found = false;
+  for (auto const& fact : facts) {
+    if (lower_ascii(fact.model_key) != normalized_key) {
+      continue;
+    }
+    found = true;
+    if (fact.connection == application::HardwareDisplayConnection::unknown) {
+      connection_ambiguous = true;
+    } else if (!connection.has_value()) {
+      connection = fact.connection;
+    } else if (*connection != fact.connection) {
+      connection_ambiguous = true;
+    }
+
+    if (fact.width == 0 || fact.height == 0) {
+      dimensions_ambiguous = true;
+    } else if (!dimensions.has_value()) {
+      dimensions = std::pair{fact.width, fact.height};
+    } else if (*dimensions != std::pair{fact.width, fact.height}) {
+      dimensions_ambiguous = true;
+    }
+
+    if (fact.refresh_rate_hz == 0) {
+      refresh_ambiguous = true;
+    } else if (!refresh_rate.has_value()) {
+      refresh_rate = fact.refresh_rate_hz;
+    } else if (*refresh_rate != fact.refresh_rate_hz) {
+      refresh_ambiguous = true;
+    }
+  }
+  if (!found) {
+    return std::nullopt;
+  }
+
+  WindowsDisplayConnection result{.model_key = normalized_key};
+  if (!connection_ambiguous && connection.has_value()) {
+    result.connection = *connection;
+  }
+  if (!dimensions_ambiguous && dimensions.has_value()) {
+    result.width = dimensions->first;
+    result.height = dimensions->second;
+  }
+  if (!refresh_ambiguous && refresh_rate.has_value()) {
+    result.refresh_rate_hz = *refresh_rate;
+  }
+  return result;
 }
 
 [[nodiscard]] std::string_view display_connection_label(
@@ -350,9 +521,9 @@ constexpr std::array<LocalizedBrand, 15> kLocalizedBrands{
   switch (connection) {
     case application::HardwareDisplayConnection::internal: return "内建";
     case application::HardwareDisplayConnection::external: return "外接";
-    case application::HardwareDisplayConnection::unknown: return {};
+    case application::HardwareDisplayConnection::unknown: return "未知";
   }
-  return {};
+  return "未知";
 }
 
 [[nodiscard]] std::string presented_display_name(
@@ -956,7 +1127,6 @@ physical_refresh_rate_limit_from_edid(
       contains_ascii(name, "virtual")) {
     return std::nullopt;
   }
-  auto const connection = display_connection_from(name, pnp_id);
   auto display_name = presented_display_name(name, manufacturer, pnp_id);
   if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
@@ -984,7 +1154,6 @@ physical_refresh_rate_limit_from_edid(
       .physically_present = true,
       .filter_reason = "DISPLAY PNP id on a non-virtual host",
       .model_detail = display_model_key(pnp_id),
-      .display_connection = connection,
       .display_width = width,
       .display_height = height,
   };
@@ -1006,7 +1175,6 @@ classify_display_pnp(std::vector<std::string> const& row,
       contains_ascii(name, "virtual")) {
     return std::nullopt;
   }
-  auto const connection = display_connection_from(name, pnp_id);
   auto const display_name = presented_display_name(name, manufacturer, pnp_id);
   if (display_name.empty() || generic_display_name(display_name)) {
     return std::nullopt;
@@ -1022,7 +1190,6 @@ classify_display_pnp(std::vector<std::string> const& row,
       .physically_present = true,
       .filter_reason = "Win32_PnPEntity monitor with DISPLAY PNP id",
       .model_detail = display_model_key(pnp_id),
-      .display_connection = connection,
   };
 }
 
@@ -1270,30 +1437,22 @@ void append_grouped_device(
     application::HardwareDeviceRecord const& record) {
   if (record.kind == application::HardwareDeviceKind::display) {
     auto result = record.name;
-    std::string detail;
-    auto append_detail = [&detail](std::string_view value) {
-      if (value.empty()) {
-        return;
-      }
-      if (!detail.empty()) {
-        detail += "；";
-      }
-      detail += value;
-    };
+    result += "（";
     if (record.display_width != 0 && record.display_height != 0) {
-      append_detail(std::to_string(record.display_width) + " × " +
-                    std::to_string(record.display_height));
+      result += std::to_string(record.display_width) + " × " +
+                std::to_string(record.display_height);
+    } else {
+      result += "未知";
     }
-    if (record.physical_refresh_rate_limit_hz != 0) {
-      append_detail(std::to_string(record.physical_refresh_rate_limit_hz) +
-                    " Hz");
+    result += "；";
+    if (record.display_refresh_rate_hz != 0) {
+      result += std::to_string(record.display_refresh_rate_hz) + " Hz";
+    } else {
+      result += "未知";
     }
-    append_detail(display_connection_label(record.display_connection));
-    if (!detail.empty()) {
-      result += "（";
-      result += detail;
-      result += "）";
-    }
+    result += "；";
+    result += display_connection_label(record.display_connection);
+    result += "）";
     return result;
   }
   auto result = record.name;
@@ -1488,6 +1647,7 @@ struct CollectedObservation final {
   std::optional<WindowsCpuTopology> cpu_topology;
   std::vector<WindowsGpuMemory> gpu_adapters;
   std::vector<WindowsDisplayEdid> display_edids;
+  std::vector<WindowsDisplayConnection> display_connections;
   // Optional capabilities are isolated: one unavailable platform source must
   // not erase facts already obtained from another source.
   try {
@@ -1522,6 +1682,12 @@ struct CollectedObservation final {
         std::span<std::string const>{display_pnp_ids}, cancellation);
   } catch (...) {
     display_edids.clear();
+  }
+  try {
+    display_connections = executor.display_connections(
+        std::span<std::string const>{display_pnp_ids}, cancellation);
+  } catch (...) {
+    display_connections.clear();
   }
   if (cancellation.stop_requested()) {
     collected.code = application::HardwareObservationCode::cancelled;
@@ -1599,6 +1765,20 @@ struct CollectedObservation final {
   for (auto& device : collected.observation.devices) {
     if (device.kind != application::HardwareDeviceKind::display) {
       continue;
+    }
+    if (auto const connection = display_connection_for(
+            std::span<WindowsDisplayConnection const>{display_connections},
+            device.model_detail);
+        connection.has_value()) {
+      // DisplayConfig is the active-mode source. It supersedes a stale or
+      // absent DesktopMonitor projection, while an unavailable fact stays
+      // explicitly unknown rather than being inferred from model text.
+      device.display_connection = connection->connection;
+      if (connection->width != 0 && connection->height != 0) {
+        device.display_width = connection->width;
+        device.display_height = connection->height;
+      }
+      device.display_refresh_rate_hz = connection->refresh_rate_hz;
     }
     auto const limit = physical_refresh_rate_limit_for(
         display_edids, device.model_detail);
@@ -1867,6 +2047,109 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
       bytes.resize(byte_count);
       result.push_back(
           {.model_key = model_key, .bytes = std::move(bytes)});
+    }
+    return result;
+  }
+
+  [[nodiscard]] std::vector<WindowsDisplayConnection> display_connections(
+      std::span<std::string const> pnp_device_ids,
+      std::stop_token cancellation) override {
+    std::vector<WindowsDisplayConnection> result;
+    if (cancellation.stop_requested()) {
+      return result;
+    }
+
+    std::vector<std::string> requested_model_keys;
+    requested_model_keys.reserve(pnp_device_ids.size());
+    for (auto const& pnp_device_id : pnp_device_ids) {
+      auto const model_key = display_model_key(pnp_device_id);
+      if (model_key.empty() ||
+          std::ranges::find(requested_model_keys, model_key) !=
+              requested_model_keys.end()) {
+        continue;
+      }
+      requested_model_keys.push_back(model_key);
+    }
+    if (requested_model_keys.empty()) {
+      return result;
+    }
+
+    UINT path_count = 0;
+    UINT mode_count = 0;
+    auto status = ::GetDisplayConfigBufferSizes(
+        QDC_ONLY_ACTIVE_PATHS, &path_count, &mode_count);
+    if (status != ERROR_SUCCESS || path_count == 0) {
+      return result;
+    }
+
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+    for (std::uint32_t attempt = 0; attempt < 3; ++attempt) {
+      paths.resize(path_count);
+      modes.resize(mode_count);
+      auto queried_path_count = path_count;
+      auto queried_mode_count = mode_count;
+      status = ::QueryDisplayConfig(
+          QDC_ONLY_ACTIVE_PATHS, &queried_path_count, paths.data(),
+          &queried_mode_count, modes.data(), nullptr);
+      if (status != ERROR_INSUFFICIENT_BUFFER) {
+        path_count = queried_path_count;
+        mode_count = queried_mode_count;
+        break;
+      }
+      status = ::GetDisplayConfigBufferSizes(
+          QDC_ONLY_ACTIVE_PATHS, &path_count, &mode_count);
+      if (status != ERROR_SUCCESS || path_count == 0) {
+        return {};
+      }
+    }
+    if (status != ERROR_SUCCESS || path_count == 0 ||
+        path_count > paths.size() || mode_count > modes.size()) {
+      return result;
+    }
+    paths.resize(path_count);
+    modes.resize(mode_count);
+
+    for (auto const& path : paths) {
+      if (cancellation.stop_requested()) {
+        return {};
+      }
+      if (!path.targetInfo.targetAvailable) {
+        continue;
+      }
+
+      DISPLAYCONFIG_TARGET_DEVICE_NAME target{};
+      target.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+      target.header.size = sizeof(target);
+      target.header.adapterId = path.targetInfo.adapterId;
+      target.header.id = path.targetInfo.id;
+      if (::DisplayConfigGetDeviceInfo(&target.header) != ERROR_SUCCESS) {
+        continue;
+      }
+      auto const model_key = display_model_key_from_monitor_device_path(
+          target.monitorDevicePath);
+      if (model_key.empty() ||
+          std::ranges::find(requested_model_keys, model_key) ==
+              requested_model_keys.end()) {
+        continue;
+      }
+
+      auto connection = display_connection_from_technology(
+          path.targetInfo.outputTechnology);
+      if (target.outputTechnology != path.targetInfo.outputTechnology) {
+        connection = application::HardwareDisplayConnection::unknown;
+      }
+      auto const dimensions = dimensions_from_target_mode(
+          path, std::span<DISPLAYCONFIG_MODE_INFO const>{modes});
+      auto const refresh_rate =
+          refresh_rate_from_rational(path.targetInfo.refreshRate);
+      result.push_back(WindowsDisplayConnection{
+          .model_key = model_key,
+          .connection = connection,
+          .width = dimensions.has_value() ? dimensions->first : 0,
+          .height = dimensions.has_value() ? dimensions->second : 0,
+          .refresh_rate_hz = refresh_rate.value_or(0),
+      });
     }
     return result;
   }

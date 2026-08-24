@@ -56,6 +56,18 @@ struct WindowsDisplayEdid final {
   std::vector<std::uint8_t> bytes;
 };
 
+// DisplayConfig facts are already associated with an active target path.  The
+// adapter exposes only the normalized model key and validated presentation
+// facts; Win32 handles, paths, and instance identifiers stay private.
+struct WindowsDisplayConnection final {
+  std::string model_key;
+  application::HardwareDisplayConnection connection{
+      application::HardwareDisplayConnection::unknown};
+  std::uint32_t width{0};
+  std::uint32_t height{0};
+  std::uint32_t refresh_rate_hz{0};
+};
+
 // The production implementation executes read-only WMI queries. Tests may
 // provide a deterministic implementation without touching a Windows host.
 class WindowsHardwareQueryExecutor {
@@ -79,6 +91,11 @@ class WindowsHardwareQueryExecutor {
 
   [[nodiscard]] virtual std::vector<WindowsDisplayEdid> display_edids(
       std::span<std::string const>, std::stop_token) {
+    return {};
+  }
+
+  [[nodiscard]] virtual std::vector<WindowsDisplayConnection>
+  display_connections(std::span<std::string const>, std::stop_token) {
     return {};
   }
 };
