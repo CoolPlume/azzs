@@ -142,6 +142,11 @@ class SoftwareSelectionLifecycle final {
 
   [[nodiscard]] SelectionActionResult on_catalog_replaced(
       CatalogSelectionProjection projection);
+  // Keeps a runtime-validated declaration visible while no effective catalog
+  // is active. This never changes selection state, active identity, or
+  // persistence; it is only a presentation projection.
+  [[nodiscard]] SelectionActionResult on_declared_catalog_preview(
+      catalog_domain::RuntimeSoftwareCatalog runtime);
   [[nodiscard]] SelectionActionResult select(std::string_view software_id,
                                               bool selected);
   [[nodiscard]] SelectionActionResult resolve_declared_source(
@@ -205,6 +210,7 @@ class SoftwareSelectionLifecycle final {
   std::vector<selection_domain::ResolvedSourceSnapshot> sources_;
   std::vector<selection_domain::ExternalHandoffRecord> handoffs_;
   std::optional<catalog_domain::RuntimeSoftwareCatalog> catalog_;
+  std::optional<catalog_domain::RuntimeSoftwareCatalog> declared_catalog_;
   std::optional<software_catalog::ActiveCatalogInfo> active_catalog_;
   software_catalog::CatalogSelectionImpact impact_;
   std::string error_;
