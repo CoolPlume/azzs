@@ -1065,6 +1065,44 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                 "a model-scoped DisplayConfig fact must not be projected to multiple same-model instances");
 }
 
+[[nodiscard]] bool model_scoped_edid_facts_do_not_cross_same_model_instances() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[6].result.rows = {
+      {"BOE Display", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"},
+      {"BOE Display", "DISPLAY\\BOE1234\\2", "OK", "0", "2560", "1600"},
+  };
+  raw_executor->expected[9].result.rows = {
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\1", "OK", "0", "Monitor"},
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\2", "OK", "0", "Monitor"},
+  };
+  raw_executor->edids = {
+      {.model_key = "boe1234", .bytes = range_limit_edid(60, 144, 0, 60, 34)},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  auto const no_shared_edid_fact = [&] {
+    if (!result.observation.has_value()) {
+      return false;
+    }
+    std::size_t display_count = 0;
+    for (auto const& device : result.observation->devices) {
+      if (device.kind != HardwareDeviceKind::display) {
+        continue;
+      }
+      ++display_count;
+      if (device.display_size_tenths_inch != 0 ||
+          device.physical_refresh_rate_limit_hz != 0) {
+        return false;
+      }
+    }
+    return display_count == 2;
+  };
+  return expect(result.succeeded() && no_shared_edid_fact(),
+                "a model-scoped EDID fact must not be projected to multiple same-model instances");
+}
+
 [[nodiscard]] bool cpu_core_classes_are_unrecognised_without_reliable_topology() {
   auto executor = std::make_unique<FakeQueryExecutor>();
   auto* raw_executor = executor.get();
@@ -1506,6 +1544,7 @@ int main() {
   passed &= core_ultra_9_275hx_intel_graphics_requires_exact_identity();
   passed &= display_instances_are_not_merged_by_model_name();
   passed &= model_scoped_displayconfig_facts_do_not_cross_same_model_instances();
+  passed &= model_scoped_edid_facts_do_not_cross_same_model_instances();
   passed &= cpu_core_classes_are_unrecognised_without_reliable_topology();
   passed &= cpu_single_efficiency_class_marks_core_classes_unrecognised();
   passed &= cpu_core_classes_are_unrecognised_when_counts_conflict();
