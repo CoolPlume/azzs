@@ -66,11 +66,17 @@ std::string HardwareObservation::model_fingerprint() const {
     append_field(std::to_string(device.display_width));
     append_field(std::to_string(device.display_height));
     append_field(std::to_string(device.display_refresh_rate_hz));
+    append_field(std::to_string(device.display_size_tenths_inch));
     append_field(std::to_string(device.physical_refresh_rate_limit_hz));
     append_field(std::to_string(device.core_count));
     append_field(std::to_string(device.thread_count));
     append_field(std::to_string(device.performance_core_count));
     append_field(std::to_string(device.efficiency_core_count));
+    append_field(std::to_string(device.low_power_efficiency_core_count));
+    append_field(to_string(device.gpu_type));
+    append_field(to_string(device.gpu_compute_unit));
+    append_field(std::to_string(device.gpu_compute_unit_count));
+    append_field(std::to_string(device.gpu_shared_memory_bytes));
     append_field(std::to_string(device.quantity));
   }
   return result;
@@ -162,6 +168,25 @@ char const* to_string(HardwareStorageMedia value) noexcept {
     case HardwareStorageMedia::unknown: return "unknown";
     case HardwareStorageMedia::solid_state: return "solid-state";
     case HardwareStorageMedia::hard_disk: return "hard-disk";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareGpuType value) noexcept {
+  switch (value) {
+    case HardwareGpuType::unknown: return "unknown";
+    case HardwareGpuType::integrated: return "integrated";
+    case HardwareGpuType::discrete: return "discrete";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareGpuComputeUnit value) noexcept {
+  switch (value) {
+    case HardwareGpuComputeUnit::unknown: return "unknown";
+    case HardwareGpuComputeUnit::cu: return "cu";
+    case HardwareGpuComputeUnit::eu: return "eu";
+    case HardwareGpuComputeUnit::xe: return "xe";
   }
   return "unknown";
 }

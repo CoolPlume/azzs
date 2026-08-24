@@ -23,12 +23,26 @@ using azzs::adapters::windows::WindowsHardwareQueryResult;
 using azzs::adapters::windows::WindowsCpuTopology;
 using azzs::adapters::windows::WindowsDisplayEdid;
 using azzs::adapters::windows::WindowsDisplayConnection;
+using azzs::adapters::windows::WindowsDisplayPhysicalSize;
 using azzs::adapters::windows::WindowsGpuMemory;
 using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareDisplayConnection;
+using azzs::application::HardwareDeviceRecord;
 using azzs::application::HardwareDeviceKind;
 using azzs::application::HardwareDeviceStatus;
 using azzs::application::HardwareStorageMedia;
+using azzs::application::HardwareGpuComputeUnit;
+using azzs::application::HardwareGpuType;
+
+template <typename T>
+concept exposes_stable_instance_key = requires(T record) {
+  record.stable_instance_key;
+};
+
+static_assert(!exposes_stable_instance_key<HardwareDeviceRecord>);
+static_assert(!exposes_stable_instance_key<WindowsDisplayEdid>);
+static_assert(!exposes_stable_instance_key<WindowsDisplayConnection>);
+static_assert(!exposes_stable_instance_key<WindowsDisplayPhysicalSize>);
 
 [[nodiscard]] bool expect(bool condition, char const* message) {
   if (!condition) {
@@ -51,6 +65,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   std::vector<WindowsGpuMemory> dxgi_adapters;
   std::vector<WindowsDisplayEdid> edids;
   std::vector<WindowsDisplayConnection> connections;
+  std::vector<WindowsDisplayPhysicalSize> physical_sizes;
   std::vector<std::string> requested_display_pnp_ids;
   bool throw_display_edids{false};
   std::size_t calls{0};
@@ -110,17 +125,25 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       std::span<std::string const>, std::stop_token) override {
     return connections;
   }
+
+  [[nodiscard]] std::vector<WindowsDisplayPhysicalSize> display_physical_sizes(
+      std::span<std::string const>, std::stop_token) override {
+    return physical_sizes;
+  }
 };
 
 [[nodiscard]] std::vector<std::uint8_t> range_limit_edid(
     std::uint8_t minimum_vertical_hz, std::uint8_t maximum_vertical_hz,
-    std::uint8_t range_offset_flags = 0) {
+    std::uint8_t range_offset_flags = 0, std::uint8_t horizontal_cm = 0,
+    std::uint8_t vertical_cm = 0) {
   std::vector<std::uint8_t> edid(128, 0);
   std::uint8_t const header[]{0x00, 0xff, 0xff, 0xff,
                              0xff, 0xff, 0xff, 0x00};
   std::ranges::copy(header, edid.begin());
   edid[18] = 1;
   edid[19] = 4;
+  edid[21] = horizontal_cm;
+  edid[22] = vertical_cm;
   constexpr std::size_t descriptor = 54;
   edid[descriptor + 3] = 0xfd;
   edid[descriptor + 4] = range_offset_flags;
@@ -240,7 +263,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
           expect(!raw_executor->mismatch && raw_executor->calls == 11,
                  "the adapter must use exactly the approved read-only "
                  "model queries") &&
-                 expect(result.observation->cpu.find("核心 8，线程 16") !=
+                 expect(result.observation->cpu.find("8核心16线程") !=
                              std::string::npos &&
                      result.observation->gpu.find("英伟达 NVIDIA") !=
                          std::string::npos &&
@@ -262,12 +285,12 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                          std::string::npos &&
                       result.observation->display.find("京东方 BOE") !=
                           std::string::npos &&
-                      result.observation->display.find(
-                          "京东方 BOE Display（2560 × 1600；未知；未知）") !=
-                          std::string::npos &&
+                       result.observation->display.find(
+                           "京东方 BOE Display（2560 × 1600；刷新率未识别；内建/外接未识别；英寸未识别）") !=
+                           std::string::npos &&
+                       result.observation->display.find("未知") ==
+                           std::string::npos &&
                       result.observation->display.find(" EDID") ==
-                          std::string::npos &&
-                      result.observation->display.find("刷新率") ==
                           std::string::npos &&
                      result.observation->storage.find("PC801 SK 海力士") !=
                          std::string::npos &&
@@ -313,7 +336,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                                   device.core_count == 8 &&
                                   device.thread_count == 16;
                          }) &&
-                     result.observation->devices.size() == 14 &&
+                      result.observation->devices.size() == 15 &&
                     result.observation->has_confirmed_physical_hardware(),
                 "CPU, GPU, board, network, and OEM model facts must map "
                 "without serial, MAC, IP, or computer-name fields and only "
@@ -423,7 +446,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return expect(result.code == HardwareObservationCode::partial &&
                     result.observation.has_value() &&
                     result.observation->gpu.empty() &&
-                    result.observation->cpu.find("核心 8，线程 16") !=
+                    result.observation->cpu.find("8核心16线程") !=
                         std::string::npos,
                 "a non-terminal probe failure must return usable partial facts") &&
           expect(!raw_executor->mismatch && raw_executor->calls == 11,
@@ -448,7 +471,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   WindowsHardwareObserver observer{std::move(executor)};
   auto const result = observer.observe({});
   return expect(result.succeeded() && result.observation.has_value() &&
-                    result.observation->cpu.find("核心 24，线程 24") !=
+                    result.observation->cpu.find("24核心24线程") !=
                         std::string::npos &&
                     result.observation->motherboard == "惠普 HP 8A43" &&
                     result.observation->display.find("京东方 BOE") !=
@@ -515,7 +538,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"通用即插即用监视器", "DISPLAY\\BOE0CD1\\4&1739F381&1&UID8388688", "OK",
        "0", "2560", "1600"}};
   raw_executor->expected[7].result.rows = {
-      {"Samsung SSD 990 PRO 2TB", "(标准磁盘驱动器)", "2000396321280",
+      {"Samsung SSD 990 PRO 2TB 1863GB", "(标准磁盘驱动器)", "2000396321280",
        "SCSI\\DISK&VEN_NVME&PROD_SAMSUNG_SSD_990\\5&211D8CE7&0&000000", "OK",
        "0", "SCSI", "Fixed hard disk media"},
       {"SK hynix PCB01 HFS001TFM9X187N", "(标准磁盘驱动器)", "1024203640320",
@@ -538,8 +561,10 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       .split_known = true,
   };
   raw_executor->edids = {
-      {.model_key = "boe0cd1", .bytes = range_limit_edid(60, 240, 0x0c)},
-      {.model_key = "lhc907d", .bytes = range_limit_edid(48, 160)},
+      {.model_key = "boe0cd1",
+       .bytes = range_limit_edid(60, 240, 0x0c, 34, 22)},
+      {.model_key = "lhc907d",
+       .bytes = range_limit_edid(48, 160, 0, 60, 34)},
   };
   raw_executor->connections = {
       {.model_key = "boe0cd1",
@@ -572,7 +597,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return expect(result.succeeded() && observation.has_value() &&
                     !raw_executor->mismatch && raw_executor->calls == 11,
                 "real WMI field shapes must satisfy the approved query contract") &&
-         expect(observation->cpu.find("核心 24，线程 24；P 核 8，E 核 16") !=
+         expect(observation->cpu.find(
+                    "24核心24线程；8性能核+16能效核+0低功耗能效核") !=
                          std::string::npos &&
                      observation->motherboard == "惠普 HP 8D41" &&
                      observation->wired_network_adapter.find("瑞昱 Realtek") !=
@@ -584,15 +610,15 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                      observation->operating_system.find("版本 10.0.26200") !=
                          std::string::npos,
                 "an empty CPU PNP id, concrete hosted board, and localized network types must retain physical models") &&
-         expect(observation->memory.find(
-                     "美光 Micron Technology DDR5 48GB 5600MHz (24GB + 24GB)") !=
+          expect(observation->memory.find(
+                      "英睿达 Crucial DDR5 48GB 5600MHz (24GB + 24GB)") !=
                      std::string::npos,
                 "matching physical DIMMs must be aggregated by part number") &&
          expect(observation->display.find(
-                         "京东方 BOE0CD1（2560 × 1600；240 Hz；内建）") !=
+                         "京东方 BOE0CD1（2560 × 1600；240 Hz；内建；15.9 英寸）") !=
                          std::string::npos &&
                      observation->display.find(
-                         "泰坦军团 TITAN ARMY P275MV PLUS（3840 × 2160；160 Hz；外接）") !=
+                         "泰坦军团 TITAN ARMY P275MV PLUS（3840 × 2160；160 Hz；外接；27.2 英寸）") !=
                          std::string::npos &&
                      observation->display.find("EDID") == std::string::npos &&
                      observation->display.find("刷新率") == std::string::npos &&
@@ -601,11 +627,13 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                 "active DisplayConfig facts must enrich physical monitor names without labels or desktop modes") &&
          expect(observation->solid_state_storage.find("Samsung SSD 990 PRO 2TB") !=
                          std::string::npos &&
+                     observation->solid_state_storage.find("1863GB") ==
+                         std::string::npos &&
                      observation->solid_state_storage.find(
                          "SK 海力士 PCB01 HFS001TFM9X187N") !=
                           std::string::npos &&
                      observation->solid_state_storage.find(
-                         "SK 海力士 PCB01 HFS999TFM9X187N 954GB") !=
+                         "SK 海力士 PCB01 HFS999TFM9X187N 1TB") !=
                          std::string::npos &&
                      observation->solid_state_storage.find(
                          "接口：") == std::string::npos &&
@@ -650,7 +678,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
         .width = 2560,
         .height = 1600,
         .refresh_rate_hz = 144}},
-      {{.model_key = "boe0cd1", .bytes = range_limit_edid(60, 240)}}, false);
+      {{.model_key = "boe0cd1",
+        .bytes = range_limit_edid(60, 240, 0, 60, 34)}}, false);
   auto const conflicting_paths = render(
       {{.model_key = "boe0cd1",
         .connection = HardwareDisplayConnection::internal,
@@ -663,6 +692,14 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
         .height = 1600,
         .refresh_rate_hz = 144}},
       {}, false);
+  auto const explicit_instance_mismatch = render(
+      {{.model_key = "boe0cd1",
+        .instance_ordinal = 2,
+        .connection = HardwareDisplayConnection::internal,
+        .width = 2560,
+        .height = 1600,
+        .refresh_rate_hz = 144}},
+      {}, true);
 
   auto const find_display = [](std::optional<azzs::application::HardwareObservation> const& observation) {
     if (!observation.has_value()) {
@@ -677,14 +714,16 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   };
   auto const* active_device = find_display(active_overrides_edid);
   auto const* conflicting_device = find_display(conflicting_paths);
+  auto const* mismatched_device = find_display(explicit_instance_mismatch);
 
   return expect(no_mapping.has_value() &&
                     no_mapping->display.find(
-                        "京东方 BOE0CD1（未知；未知；未知）") != std::string::npos,
-                "without an active DisplayConfig mapping, all display slots must remain explicitly unknown") &&
+                        "京东方 BOE0CD1（分辨率未识别；刷新率未识别；内建/外接未识别；英寸未识别）") !=
+                        std::string::npos,
+                "without an active DisplayConfig mapping, every display fact slot must stay explicitly unrecognised") &&
          expect(active_overrides_edid.has_value() && active_device != nullptr &&
-                    active_overrides_edid->display.find(
-                        "京东方 BOE0CD1（2560 × 1600；144 Hz；内建）") != std::string::npos &&
+                     active_overrides_edid->display.find(
+                        "京东方 BOE0CD1（2560 × 1600；144 Hz；内建；27.2 英寸）") != std::string::npos &&
                     active_overrides_edid->display.find("240 Hz") == std::string::npos &&
                     active_device->display_width == 2560 &&
                     active_device->display_height == 1600 &&
@@ -692,11 +731,21 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     active_device->physical_refresh_rate_limit_hz == 240,
                 "active DisplayConfig refresh must override the EDID capability limit and fill missing WMI dimensions") &&
          expect(conflicting_paths.has_value() && conflicting_device != nullptr &&
-                    conflicting_paths->display.find(
-                        "京东方 BOE0CD1（2560 × 1600；144 Hz；未知）") != std::string::npos &&
+                     conflicting_paths->display.find(
+                         "京东方 BOE0CD1（2560 × 1600；144 Hz；内建/外接未识别；英寸未识别）") !=
+                         std::string::npos &&
                     conflicting_device->display_connection ==
                         HardwareDisplayConnection::unknown,
-                "conflicting DisplayConfig paths must keep connection type unknown instead of using display text");
+                "conflicting DisplayConfig paths must mark only the unreliable display fields unrecognised") &&
+         expect(explicit_instance_mismatch.has_value() && mismatched_device != nullptr &&
+                    explicit_instance_mismatch->display.find(
+                        "京东方 BOE0CD1（2560 × 1600；刷新率未识别；内建/外接未识别；英寸未识别）") !=
+                        std::string::npos &&
+                    explicit_instance_mismatch->display.find("144 Hz") ==
+                        std::string::npos &&
+                    mismatched_device->display_connection ==
+                        HardwareDisplayConnection::unknown,
+                "an explicit DisplayConfig instance mismatch must not fall back to a same-model WMI record");
 }
 
 [[nodiscard]] bool topology_and_dxgi_enrich_only_verified_models() {
@@ -708,7 +757,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
        "24", "24"}};
   raw_executor->expected[1].result.rows = {
       {"NVIDIA GeForce RTX 5080 Laptop GPU", "NVIDIA",
-       "PCI\\VEN_10DE&DEV_1F00", "OK", "0", "", "4293918720"},
+       "PCI\\VEN_10DE&DEV_1F00&SUBSYS_12341043", "OK", "0", "",
+       "4293918720"},
       {"Intel Graphics", "Intel", "PCI\\VEN_8086&DEV_7D55", "OK", "0",
        "", "4293918720"}};
   raw_executor->topology = WindowsCpuTopology{
@@ -729,13 +779,21 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   auto const result = observer.observe({});
   return expect(result.succeeded() && result.observation.has_value(),
                 "verified DXGI and topology facts must enrich a complete observation") &&
-         expect(result.observation->cpu.find("P 核 8，E 核 16") !=
+         expect(result.observation->cpu.find(
+                    "8性能核+16能效核+0低功耗能效核") !=
                     std::string::npos &&
                     result.observation->gpu.find("专用显存 16 GB") !=
                         std::string::npos &&
-                    result.observation->gpu.find("专用显存 128 MB；共享内存 31.4 GB") !=
+                    result.observation->gpu.find(
+                        "核显；专用显存 128 MB；共享内存 31.4 GB") !=
                         std::string::npos &&
                     result.observation->gpu.find("专用显存 4 GB") ==
+                        std::string::npos &&
+                    result.observation->gpu.find("华硕 ASUS") !=
+                        std::string::npos &&
+                    result.observation->cpu.find("(R)") ==
+                        std::string::npos &&
+                    result.observation->cpu.find("(TM)") ==
                         std::string::npos &&
                     std::ranges::any_of(
                         result.observation->devices, [](auto const& device) {
@@ -743,9 +801,562 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                                  device.core_count == 24 &&
                                  device.thread_count == 24 &&
                                  device.performance_core_count == 8 &&
-                                 device.efficiency_core_count == 16;
+                                 device.efficiency_core_count == 16 &&
+                                 device.low_power_efficiency_core_count == 0;
+                        }) &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::gpu &&
+                                 device.gpu_type == HardwareGpuType::discrete &&
+                                 device.gpu_shared_memory_bytes == 0 &&
+                                 device.name.find("共享内存") == std::string::npos;
+                        }) &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::gpu &&
+                                 device.gpu_type == HardwareGpuType::integrated &&
+                                 device.gpu_compute_unit == HardwareGpuComputeUnit::xe &&
+                                 device.gpu_compute_unit_count == 8 &&
+                                 device.gpu_shared_memory_bytes != 0;
                         }),
                 "CPU P/E and GPU memory must use the platform facts, never the truncated WMI AdapterRAM value");
+}
+
+[[nodiscard]] bool gpu_model_families_are_expanded_without_guessing() {
+  auto render = [](std::string name, std::string compatibility,
+                   std::string video_processor, std::string pnp_id) {
+    auto executor = std::make_unique<FakeQueryExecutor>();
+    executor->expected = full_queries();
+    executor->expected[1].result.rows = {{std::move(name),
+                                          std::move(compatibility),
+                                          std::move(pnp_id), "OK", "0",
+                                          std::move(video_processor), "0"}};
+    executor->dxgi_adapters.clear();
+    WindowsHardwareObserver observer{std::move(executor)};
+    auto const result = observer.observe({});
+    return result.observation.has_value() ? result.observation->gpu
+                                           : std::string{};
+  };
+
+  auto const intel = render("Intel(R) Graphics", "Intel Corporation",
+                            "Intel(R) Graphics Family",
+                            "PCI\\VEN_8086&DEV_7D67");
+  auto const amd = render("AMD Radeon 780M Graphics", "Advanced Micro Devices",
+                          "AMD Radeon 780M Graphics",
+                          "PCI\\VEN_1002&DEV_164E");
+  auto const unknown = render("AMD Radeon Graphics", "AMD",
+                              "AMD Radeon Graphics",
+                              "PCI\\VEN_1002&DEV_FFFF");
+  auto low_end_discrete = render("AMD Radeon Graphics", "AMD",
+                                 "AMD Radeon Graphics",
+                                 "PCI\\VEN_1002&DEV_9999");
+  return expect(intel.find("英特尔 Intel Arc Graphics") == std::string::npos &&
+                    intel.find("4 Xe") == std::string::npos &&
+                    intel.find("核显") == std::string::npos &&
+                    intel.find("英特尔 Intel Graphics") != std::string::npos &&
+                    amd.find("AMD Radeon 780M Graphics") != std::string::npos &&
+                    amd.find("12 CU") != std::string::npos &&
+                    unknown.find("计算单元未读取") != std::string::npos &&
+                    low_end_discrete.find("核显") == std::string::npos,
+                "Intel, AMD and unknown GPU facts must remain tied to authoritative IDs or exact model text");
+}
+
+[[nodiscard]] bool amd_radeon_rx_model_does_not_fall_back_to_generic_processor() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[1].result.rows = {
+      {"AMD Radeon RX 7600", "AMD", "PCI\\VEN_1002&DEV_7480", "OK", "0",
+       "Radeon", "0"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+
+  auto const gpu = result.observation.has_value()
+                       ? std::ranges::find_if(
+                             result.observation->devices, [](auto const& device) {
+                               return device.kind == HardwareDeviceKind::gpu;
+                             })
+                       : std::vector<HardwareDeviceRecord>::const_iterator{};
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    gpu != result.observation->devices.end() &&
+                    gpu->name.find("AMD Radeon RX 7600") != std::string::npos &&
+                    gpu->gpu_type == HardwareGpuType::discrete,
+                "an exact AMD Radeon RX model must not be replaced by a generic VideoProcessor name");
+}
+
+[[nodiscard]] bool core_ultra_9_275hx_intel_graphics_requires_exact_identity() {
+  auto observe = [](std::string cpu_name, std::string pnp_id) {
+    auto executor = std::make_unique<FakeQueryExecutor>();
+    auto* raw_executor = executor.get();
+    raw_executor->expected = full_queries();
+    raw_executor->expected[0].result.rows = {
+        {std::move(cpu_name), "GenuineIntel", "", "OK", "0", "24", "24"}};
+    raw_executor->expected[1].result.rows = {
+        {"Intel(R) Graphics", "Intel", std::move(pnp_id), "OK", "0",
+         "Intel(R) Graphics Family", "0"}};
+    raw_executor->dxgi_adapters = {
+        {.model_name = "Intel Graphics",
+         .dedicated_video_memory = 128ull * 1024ull * 1024ull,
+         .shared_system_memory = 32175ull * 1024ull * 1024ull},
+    };
+    WindowsHardwareObserver observer{std::move(executor)};
+    return observer.observe({});
+  };
+  auto const find_gpu = [](auto const& result) -> HardwareDeviceRecord const* {
+    if (!result.observation.has_value()) {
+      return nullptr;
+    }
+    for (auto const& device : result.observation->devices) {
+      if (device.kind == HardwareDeviceKind::gpu) {
+        return &device;
+      }
+    }
+    return nullptr;
+  };
+
+  auto const exact = observe(
+      "Intel(R) Core(TM) Ultra 9 275HX",
+      "PCI\\VEN_8086&DEV_7D67&SUBSYS_8D41103C");
+  auto const bare_device = observe("Intel(R) Core(TM) Ultra 9 275HX",
+                                   "PCI\\VEN_8086&DEV_7D67");
+  auto const wrong_cpu = observe(
+      "Intel(R) Core(TM) Ultra 9 285H",
+      "PCI\\VEN_8086&DEV_7D67&SUBSYS_8D41103C");
+  auto const* exact_gpu = find_gpu(exact);
+  auto const* bare_device_gpu = find_gpu(bare_device);
+  auto const* wrong_cpu_gpu = find_gpu(wrong_cpu);
+
+  return expect(exact.succeeded() && exact_gpu != nullptr &&
+                    exact.observation->gpu.find("英特尔 Intel Graphics（核显；") !=
+                        std::string::npos &&
+                    exact.observation->gpu.find("4 Xe 核") != std::string::npos &&
+                    exact.observation->gpu.find("共享内存 31.4 GB") !=
+                        std::string::npos &&
+                    exact.observation->gpu.find("Arc") == std::string::npos &&
+                    exact.observation->gpu.find("UHD") == std::string::npos &&
+                    exact.observation->gpu.find("惠普 HP") == std::string::npos &&
+                    exact_gpu->gpu_type == HardwareGpuType::integrated &&
+                    exact_gpu->gpu_compute_unit == HardwareGpuComputeUnit::xe &&
+                    exact_gpu->gpu_compute_unit_count == 4 &&
+                    exact_gpu->gpu_shared_memory_bytes != 0,
+                "the verified 275HX and HP PCI identity must project Intel Graphics with four Xe cores") &&
+         expect(bare_device.succeeded() && bare_device_gpu != nullptr &&
+                    bare_device_gpu->gpu_type == HardwareGpuType::unknown &&
+                    bare_device.observation->gpu.find("4 Xe") == std::string::npos &&
+                    bare_device.observation->gpu.find("核显") == std::string::npos,
+                "a bare 7d67 device id must not inherit the verified Intel Graphics mapping") &&
+         expect(wrong_cpu.succeeded() && wrong_cpu_gpu != nullptr &&
+                    wrong_cpu_gpu->gpu_type == HardwareGpuType::unknown &&
+                    wrong_cpu.observation->gpu.find("4 Xe") == std::string::npos &&
+                    wrong_cpu.observation->gpu.find("核显") == std::string::npos,
+                "the 7d67 subsystem also requires the exact verified CPU model");
+}
+
+[[nodiscard]] bool display_instances_are_not_merged_by_model_name() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[6].result.rows = {
+      {"BOE Display", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"},
+      {"BOE Display", "DISPLAY\\BOE1234\\2", "OK", "0", "2560", "1600"},
+  };
+  raw_executor->expected[9].result.rows = {
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\1", "OK", "0", "Monitor"},
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\2", "OK", "0", "Monitor"},
+  };
+  raw_executor->connections = {
+      {.model_key = "boe1234",
+       .instance_ordinal = 1,
+       .connection = HardwareDisplayConnection::internal,
+       .width = 2560,
+       .height = 1600,
+       .refresh_rate_hz = 144},
+      {.model_key = "boe1234",
+       .instance_ordinal = 2,
+       .connection = HardwareDisplayConnection::external,
+       .width = 3840,
+       .height = 2160,
+       .refresh_rate_hz = 60},
+  };
+  raw_executor->edids = {
+      {.model_key = "boe1234",
+       .instance_ordinal = 1,
+       .bytes = range_limit_edid(60, 144, 0, 60, 34)},
+      {.model_key = "boe1234",
+       .instance_ordinal = 2,
+       .bytes = range_limit_edid(60, 60, 0, 34, 22)},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  if (!expect(result.succeeded() && result.observation.has_value(),
+              "two concrete display instances must remain observable")) {
+    return false;
+  }
+  std::size_t display_count = 0;
+  bool saw_internal_panel = false;
+  bool saw_external_panel = false;
+  bool all_singleton = true;
+  for (auto const& device : result.observation->devices) {
+    if (device.kind != HardwareDeviceKind::display) {
+      continue;
+    }
+    ++display_count;
+    all_singleton &= device.quantity == 1;
+    saw_internal_panel |= device.display_connection ==
+                              HardwareDisplayConnection::internal &&
+                          device.display_width == 2560 &&
+                          device.display_height == 1600 &&
+                          device.display_refresh_rate_hz == 144 &&
+                          device.display_size_tenths_inch == 272;
+    saw_external_panel |= device.display_connection ==
+                              HardwareDisplayConnection::external &&
+                          device.display_width == 3840 &&
+                          device.display_height == 2160 &&
+                          device.display_refresh_rate_hz == 60 &&
+                          device.display_size_tenths_inch == 159;
+  }
+  return expect(display_count == 2 && saw_internal_panel &&
+                    saw_external_panel && all_singleton &&
+                    result.observation->display.find('\n') != std::string::npos &&
+                    result.observation->display.find(" x2") == std::string::npos,
+                "same-model displays must use their request ordinals, not merge or exchange facts");
+}
+
+[[nodiscard]] bool model_scoped_displayconfig_facts_do_not_cross_same_model_instances() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[6].result.rows = {
+      {"BOE Display", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"},
+      {"BOE Display", "DISPLAY\\BOE1234\\2", "OK", "0", "2560", "1600"},
+  };
+  raw_executor->expected[9].result.rows = {
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\1", "OK", "0", "Monitor"},
+      {"BOE Display", "BOE", "DISPLAY\\BOE1234\\2", "OK", "0", "Monitor"},
+  };
+  raw_executor->connections = {
+      {.model_key = "boe1234",
+       .connection = HardwareDisplayConnection::internal,
+       .width = 2560,
+       .height = 1600,
+       .refresh_rate_hz = 144},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  auto const no_shared_displayconfig_fact = [&] {
+    if (!result.observation.has_value()) {
+      return false;
+    }
+    std::size_t display_count = 0;
+    for (auto const& device : result.observation->devices) {
+      if (device.kind != HardwareDeviceKind::display) {
+        continue;
+      }
+      ++display_count;
+      if (device.display_connection != HardwareDisplayConnection::unknown ||
+          device.display_refresh_rate_hz != 0) {
+        return false;
+      }
+    }
+    return display_count == 2;
+  };
+  return expect(result.succeeded() && no_shared_displayconfig_fact(),
+                "a model-scoped DisplayConfig fact must not be projected to multiple same-model instances");
+}
+
+[[nodiscard]] bool cpu_core_classes_are_unrecognised_without_reliable_topology() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->topology.reset();
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->cpu.find("8核心16线程") != std::string::npos &&
+                    result.observation->cpu.find(
+                        "性能核未识别+能效核未识别+低功耗能效核未识别") !=
+                        std::string::npos &&
+                    result.observation->cpu.find("0性能核") == std::string::npos &&
+                    result.observation->cpu.find("0能效核") == std::string::npos &&
+                    result.observation->cpu.find("0低功耗能效核") ==
+                        std::string::npos &&
+                    std::ranges::none_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::cpu &&
+                                 (device.performance_core_count != 0 ||
+                                  device.efficiency_core_count != 0 ||
+                                  device.low_power_efficiency_core_count != 0);
+                        }),
+                "CPU class labels must stay unrecognised when Windows does not provide a reliable topology");
+}
+
+[[nodiscard]] bool cpu_single_efficiency_class_marks_core_classes_unrecognised() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  // The Windows adapter represents one EfficiencyClass as an available
+  // homogeneous topology with no reliable P/E split.
+  raw_executor->topology = WindowsCpuTopology{
+      .logical_processors = 16,
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->cpu.find("8核心16线程") != std::string::npos &&
+                    result.observation->cpu.find(
+                        "性能核未识别+能效核未识别+低功耗能效核未识别") !=
+                        std::string::npos &&
+                    result.observation->cpu.find("0性能核") == std::string::npos &&
+                    result.observation->cpu.find("0能效核") == std::string::npos &&
+                    result.observation->cpu.find("0低功耗能效核") ==
+                        std::string::npos &&
+                    std::ranges::none_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::cpu &&
+                                 (device.performance_core_count != 0 ||
+                                  device.efficiency_core_count != 0 ||
+                                  device.low_power_efficiency_core_count != 0);
+                        }),
+                "a single Windows EfficiencyClass must leave every CPU class unrecognised");
+}
+
+[[nodiscard]] bool cpu_core_classes_are_unrecognised_when_counts_conflict() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->topology = WindowsCpuTopology{
+      .performance_cores = 8,
+      .efficiency_cores = 8,
+      .logical_processors = 16,
+      .split_known = true,
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->cpu.find("8核心16线程") != std::string::npos &&
+                    result.observation->cpu.find(
+                        "性能核未识别+能效核未识别+低功耗能效核未识别") !=
+                        std::string::npos &&
+                    result.observation->cpu.find("8性能核+8能效核") ==
+                        std::string::npos &&
+                    std::ranges::none_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::cpu &&
+                                 (device.performance_core_count != 0 ||
+                                  device.efficiency_core_count != 0 ||
+                                  device.low_power_efficiency_core_count != 0);
+                        }),
+                "a topology whose core total conflicts with WMI must not claim numeric CPU classes");
+}
+
+[[nodiscard]] bool cpu_three_core_classes_are_projected_when_consistent() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[0].result.rows = {
+      {"Intel Core Ultra", "GenuineIntel", "", "OK", "0", "24", "24"}};
+  raw_executor->topology = WindowsCpuTopology{
+      .performance_cores = 8,
+      .efficiency_cores = 12,
+      .low_power_efficiency_cores = 4,
+      .logical_processors = 24,
+      .split_known = true,
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->cpu.find(
+                        "8性能核+12能效核+4低功耗能效核") !=
+                        std::string::npos &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::cpu &&
+                                 device.performance_core_count == 8 &&
+                                 device.efficiency_core_count == 12 &&
+                                 device.low_power_efficiency_core_count == 4;
+                        }),
+                "a consistent three-class Windows topology must retain every reported core class");
+}
+
+[[nodiscard]] bool cpu_two_core_classes_keep_a_real_zero_low_power_count() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[0].result.rows = {
+      {"Intel Core Ultra", "GenuineIntel", "", "OK", "0", "16", "16"}};
+  raw_executor->topology = WindowsCpuTopology{
+      .performance_cores = 8,
+      .efficiency_cores = 8,
+      .low_power_efficiency_cores = 0,
+      .logical_processors = 16,
+      .split_known = true,
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  return expect(result.succeeded() && result.observation.has_value() &&
+                    result.observation->cpu.find(
+                        "8性能核+8能效核+0低功耗能效核") !=
+                        std::string::npos &&
+                    std::ranges::any_of(
+                        result.observation->devices, [](auto const& device) {
+                          return device.kind == HardwareDeviceKind::cpu &&
+                                 device.performance_core_count == 8 &&
+                                 device.efficiency_core_count == 8 &&
+                                 device.low_power_efficiency_core_count == 0;
+                        }),
+                "a consistent two-class topology must retain zero as the real absent low-power class");
+}
+
+[[nodiscard]] bool storage_duplicates_require_stable_instance_identity() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[7].result.rows = {
+      {"Samsung SSD 990 PRO", "Samsung", "2199023255552",
+       "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe", "SSD"},
+      {"Samsung SSD 990 PRO", "Samsung", "2199023255552",
+       "PCI\\VEN_144D&DEV_A80A", "OK", "0", "NVMe", "SSD"},
+      {"Samsung SSD 990 PRO", "Samsung", "2199023255552",
+       "PCI\\VEN_144D&DEV_A80B", "OK", "0", "NVMe", "SSD"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  if (!expect(result.succeeded() && result.observation.has_value(),
+              "storage rows with stable PNP ids must remain observable")) {
+    return false;
+  }
+  std::size_t storage_count = 0;
+  bool all_singleton = true;
+  for (auto const& device : result.observation->devices) {
+    if (device.kind != HardwareDeviceKind::storage) {
+      continue;
+    }
+    ++storage_count;
+    all_singleton &= device.quantity == 1;
+  }
+  return expect(storage_count == 2 && all_singleton &&
+                    result.observation->storage.find('\n') != std::string::npos &&
+                    result.observation->storage.find(" x2") == std::string::npos,
+                "only an exact stable storage instance may de-duplicate repeated rows");
+}
+
+[[nodiscard]] bool crucial_memory_brand_requires_confirmed_identity() {
+  auto micron_executor = std::make_unique<FakeQueryExecutor>();
+  auto* micron_raw = micron_executor.get();
+  micron_raw->expected = full_queries();
+  micron_raw->expected[5].result.rows = {
+      {"Micron", "17179869184", "5600", "MTC16C2085S1EC48BA1", "DIMM0",
+       "Physical Memory 0", "34", "5600"},
+  };
+  WindowsHardwareObserver micron_observer{std::move(micron_executor)};
+  auto const micron = micron_observer.observe({});
+
+  auto micron_crucial_executor = std::make_unique<FakeQueryExecutor>();
+  auto* micron_crucial_raw = micron_crucial_executor.get();
+  micron_crucial_raw->expected = full_queries();
+  micron_crucial_raw->expected[5].result.rows = {
+      {"Micron Technology", "25769803776", "5600", "CT24G56C46S5.M8B1",
+       "Bottom-Slot 1(left)", "Physical Memory 0", "34", "5600"},
+      {"Micron Technology", "25769803776", "5600", "CT24G56C46S5.M8B1",
+       "Bottom-Slot 2(right)", "Physical Memory 1", "34", "5600"},
+  };
+  WindowsHardwareObserver micron_crucial_observer{
+      std::move(micron_crucial_executor)};
+  auto const micron_crucial = micron_crucial_observer.observe({});
+
+  auto crucial_executor = std::make_unique<FakeQueryExecutor>();
+  auto* crucial_raw = crucial_executor.get();
+  crucial_raw->expected = full_queries();
+  crucial_raw->expected[5].result.rows = {
+      {"Crucial", "17179869184", "5600", "MTC16C2085S1EC48BA1", "DIMM0",
+       "Physical Memory 0", "34", "5600"},
+  };
+  WindowsHardwareObserver crucial_observer{std::move(crucial_executor)};
+  auto const crucial = crucial_observer.observe({});
+
+  return expect(micron.observation.has_value() &&
+                    micron.observation->memory.find("美光 Micron") !=
+                        std::string::npos &&
+                    micron.observation->memory.find("英睿达 Crucial") ==
+                        std::string::npos &&
+                    micron_crucial.observation.has_value() &&
+                    micron_crucial.observation->memory.find(
+                        "英睿达 Crucial DDR5 48GB 5600MHz (24GB + 24GB)") !=
+                        std::string::npos &&
+                    micron_crucial.observation->memory.find("美光 Micron") ==
+                        std::string::npos &&
+                    crucial.observation.has_value() &&
+                    crucial.observation->memory.find("英睿达 Crucial") !=
+                        std::string::npos,
+                "Crucial requires an explicit manufacturer or a Micron CT part number");
+}
+
+[[nodiscard]] bool display_physical_size_wmi_fallback_is_exact_and_edid_preferred() {
+  auto render = [](std::vector<WindowsDisplayEdid> edids,
+                   std::vector<WindowsDisplayPhysicalSize> physical_sizes) {
+    auto executor = std::make_unique<FakeQueryExecutor>();
+    auto* raw_executor = executor.get();
+    raw_executor->expected = full_queries();
+    raw_executor->expected[6].result.rows = {
+        {"BOE Display", "DISPLAY\\BOE1234\\1", "OK", "0", "2560", "1600"},
+        {"BOE Display", "DISPLAY\\BOE1234\\2", "OK", "0", "2560", "1600"},
+    };
+    raw_executor->expected[9].result.rows = {
+        {"BOE Display", "BOE", "DISPLAY\\BOE1234\\1", "OK", "0", "Monitor"},
+        {"BOE Display", "BOE", "DISPLAY\\BOE1234\\2", "OK", "0", "Monitor"},
+    };
+    raw_executor->edids = std::move(edids);
+    raw_executor->physical_sizes = std::move(physical_sizes);
+    WindowsHardwareObserver observer{std::move(executor)};
+    auto const result = observer.observe({});
+    return result.observation.has_value() ? result.observation->display
+                                          : std::string{};
+  };
+
+  auto invalid_checksum = range_limit_edid(60, 144, 0, 60, 34);
+  invalid_checksum[20] ^= 0x01;
+  auto const edid_preferred = render(
+      {{.model_key = "boe1234",
+        .instance_ordinal = 1,
+        .bytes = range_limit_edid(60, 144, 0, 60, 34)}},
+      {{.model_key = "boe1234",
+        .instance_ordinal = 1,
+        .horizontal_centimeters = 34,
+        .vertical_centimeters = 22},
+       {.model_key = "boe1234",
+        .instance_ordinal = 2,
+        .horizontal_centimeters = 60,
+        .vertical_centimeters = 34}});
+  auto const missing_edid = render(
+      {}, {{.model_key = "boe1234",
+            .instance_ordinal = 1,
+            .horizontal_centimeters = 34,
+            .vertical_centimeters = 22}});
+  auto const invalid_edid = render(
+      {{.model_key = "boe1234", .instance_ordinal = 1,
+        .bytes = std::move(invalid_checksum)}},
+      {{.model_key = "boe1234",
+        .instance_ordinal = 1,
+        .horizontal_centimeters = 34,
+        .vertical_centimeters = 22}});
+  auto const model_scoped_wmi = render(
+      {}, {{.model_key = "boe1234",
+            .instance_ordinal = 0,
+            .horizontal_centimeters = 60,
+            .vertical_centimeters = 34}});
+
+  return expect(edid_preferred.find("27.2 英寸") != std::string::npos &&
+                    edid_preferred.find("15.9 英寸") == std::string::npos,
+                "a valid EDID physical size must take precedence over WMI") &&
+         expect(missing_edid.find("15.9 英寸") != std::string::npos &&
+                    missing_edid.find("英寸未识别") != std::string::npos,
+                "a WMI physical size must fill only the exact same-model instance when EDID is absent") &&
+         expect(invalid_edid.find("15.9 英寸") != std::string::npos,
+                "a WMI physical size must recover from invalid EDID dimensions") &&
+         expect(model_scoped_wmi.find("英寸未识别") != std::string::npos &&
+                    model_scoped_wmi.find("27.2 英寸") == std::string::npos,
+                "a model-scoped WMI physical size must not be assigned to any display instance");
 }
 
 [[nodiscard]] bool invalid_or_conflicting_edid_fails_closed() {
@@ -775,11 +1386,11 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   auto const failed_closed = [](std::string const& value) {
     return value.find(" Hz") == std::string::npos &&
            value.find("EDID") == std::string::npos &&
-           value.find("刷新率") == std::string::npos;
+           value.find("刷新率未识别") != std::string::npos;
   };
   return expect(failed_closed(missing) && failed_closed(invalid) &&
                     failed_closed(reserved) && failed_closed(conflicting),
-                "missing, invalid, reserved, or conflicting raw EDID must not produce a refresh-rate claim");
+                "missing, invalid, reserved, or conflicting raw EDID must not produce a refresh-rate claim but must retain the display slot");
 }
 
 [[nodiscard]] bool unknown_media_physical_storage_stays_device_only() {
@@ -890,6 +1501,19 @@ int main() {
   passed &= real_machine_wmi_field_shapes_are_projected();
   passed &= displayconfig_facts_are_authoritative_and_fail_closed();
   passed &= topology_and_dxgi_enrich_only_verified_models();
+  passed &= gpu_model_families_are_expanded_without_guessing();
+  passed &= amd_radeon_rx_model_does_not_fall_back_to_generic_processor();
+  passed &= core_ultra_9_275hx_intel_graphics_requires_exact_identity();
+  passed &= display_instances_are_not_merged_by_model_name();
+  passed &= model_scoped_displayconfig_facts_do_not_cross_same_model_instances();
+  passed &= cpu_core_classes_are_unrecognised_without_reliable_topology();
+  passed &= cpu_single_efficiency_class_marks_core_classes_unrecognised();
+  passed &= cpu_core_classes_are_unrecognised_when_counts_conflict();
+  passed &= cpu_three_core_classes_are_projected_when_consistent();
+  passed &= cpu_two_core_classes_keep_a_real_zero_low_power_count();
+  passed &= storage_duplicates_require_stable_instance_identity();
+  passed &= crucial_memory_brand_requires_confirmed_identity();
+  passed &= display_physical_size_wmi_fallback_is_exact_and_edid_preferred();
   passed &= invalid_or_conflicting_edid_fails_closed();
   passed &= unknown_media_physical_storage_stays_device_only();
   passed &= memory_quantity_rendering_scales_past_two_modules();
