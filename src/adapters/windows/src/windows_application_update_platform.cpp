@@ -399,8 +399,7 @@ struct ParsedHttpsEndpoint final {
     std::vector<application::GithubApplicationRelease> releases;
     releases.reserve(root.Size());
     for (std::uint32_t index = 0; index < root.Size(); ++index) {
-      auto const object = root.GetAt(index).as<
-          winrt::Windows::Data::Json::JsonObject>();
+      auto const object = root.GetObjectAt(index);
       auto release_id = json_number_string(object, L"id");
       auto tag = json_string(object, L"tag_name", 128);
       if (!release_id.has_value() || !tag.has_value() ||
@@ -425,8 +424,7 @@ struct ParsedHttpsEndpoint final {
       std::vector<application::GithubApplicationAsset> parsed_assets;
       for (std::uint32_t asset_index = 0; asset_index < assets.Size();
            ++asset_index) {
-        auto const asset_object = assets.GetAt(asset_index).as<
-            winrt::Windows::Data::Json::JsonObject>();
+        auto const asset_object = assets.GetObjectAt(asset_index);
         auto asset_id = json_number_string(asset_object, L"id");
         auto asset_name = json_string(asset_object, L"name", 256);
         auto download_url = json_string(asset_object, L"browser_download_url",
