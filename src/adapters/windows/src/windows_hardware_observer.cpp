@@ -1174,9 +1174,10 @@ constexpr std::array<PciGpuIdentity, 8> kPciGpuIdentities{
     PciGpuIdentity{"8086", "64a0", "Intel Arc Graphics",
                    application::HardwareGpuType::integrated,
                    application::HardwareGpuComputeUnit::xe, 8},
-    // Intel documents this exact CPU and HP subsystem combination as Intel
-    // Graphics with four Xe cores. Do not generalize the 7d67 device ID.
-    PciGpuIdentity{"8086", "7d67", "Intel Graphics",
+    // Intel documents this exact CPU and HP subsystem combination as the
+    // Core Ultra 9 275HX integrated GPU with four Xe cores. Do not generalize
+    // the 7d67 device ID.
+    PciGpuIdentity{"8086", "7d67", "Intel Core Ultra 9 275HX 集成显卡",
                    application::HardwareGpuType::integrated,
                    application::HardwareGpuComputeUnit::xe, 4,
                    "8d41103c", "intel core ultra 9 275hx"},

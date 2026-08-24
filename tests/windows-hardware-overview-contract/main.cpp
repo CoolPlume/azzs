@@ -928,24 +928,27 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   auto const* wrong_cpu_gpu = find_gpu(wrong_cpu);
 
   return expect(exact.succeeded() && exact_gpu != nullptr &&
-                    exact.observation->gpu.find("英特尔 Intel Graphics（核显；") !=
+                    exact.observation->gpu.find(
+                        "英特尔 Intel Core Ultra 9 275HX 集成显卡（核显；") !=
                         std::string::npos &&
                     exact.observation->gpu.find("4 Xe 核") != std::string::npos &&
                     exact.observation->gpu.find("共享内存 31.4 GB") !=
                         std::string::npos &&
                     exact.observation->gpu.find("Arc") == std::string::npos &&
                     exact.observation->gpu.find("UHD") == std::string::npos &&
+                    exact.observation->gpu.find("英特尔 Intel Graphics（") ==
+                        std::string::npos &&
                     exact.observation->gpu.find("惠普 HP") == std::string::npos &&
                     exact_gpu->gpu_type == HardwareGpuType::integrated &&
                     exact_gpu->gpu_compute_unit == HardwareGpuComputeUnit::xe &&
                     exact_gpu->gpu_compute_unit_count == 4 &&
                     exact_gpu->gpu_shared_memory_bytes != 0,
-                "the verified 275HX and HP PCI identity must project Intel Graphics with four Xe cores") &&
+                "the verified 275HX and HP PCI identity must project its exact integrated GPU name with four Xe cores") &&
          expect(bare_device.succeeded() && bare_device_gpu != nullptr &&
                     bare_device_gpu->gpu_type == HardwareGpuType::unknown &&
                     bare_device.observation->gpu.find("4 Xe") == std::string::npos &&
                     bare_device.observation->gpu.find("核显") == std::string::npos,
-                "a bare 7d67 device id must not inherit the verified Intel Graphics mapping") &&
+                "a bare 7d67 device id must not inherit the verified Core Ultra graphics mapping") &&
          expect(wrong_cpu.succeeded() && wrong_cpu_gpu != nullptr &&
                     wrong_cpu_gpu->gpu_type == HardwareGpuType::unknown &&
                     wrong_cpu.observation->gpu.find("4 Xe") == std::string::npos &&
