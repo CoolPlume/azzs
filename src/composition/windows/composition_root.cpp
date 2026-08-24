@@ -1028,15 +1028,24 @@ class WindowsWorkbenchServices final
  private:
   void synchronize_catalog_selection_projection() {
     auto const catalog = software_catalog_.snapshot();
-    if (catalog.mode != application::software_catalog::CatalogLifecycleMode::ready ||
-        !catalog.current.has_value() || !catalog.current_catalog.has_value()) {
+    if (catalog.mode == application::software_catalog::CatalogLifecycleMode::ready &&
+        catalog.current.has_value() && catalog.current_catalog.has_value()) {
+      static_cast<void>(software_selection_.on_catalog_replaced({
+          .runtime = *catalog.current_catalog,
+          .active = *catalog.current,
+          .impact = {},
+      }));
       return;
     }
-    static_cast<void>(software_selection_.on_catalog_replaced({
-        .runtime = *catalog.current_catalog,
-        .active = *catalog.current,
-        .impact = {},
-    }));
+    if (catalog.mode != application::software_catalog::CatalogLifecycleMode::ready ||
+        catalog.current.has_value()) {
+      return;
+    }
+    auto const preview = software_catalog_.preview_built_in();
+    if (preview.runtime.accepted() && preview.runtime.catalog.has_value()) {
+      static_cast<void>(software_selection_.on_declared_catalog_preview(
+          *preview.runtime.catalog));
+    }
   }
 
   void synchronize_live_offline_package_cache() {

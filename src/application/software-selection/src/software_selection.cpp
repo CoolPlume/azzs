@@ -848,16 +848,33 @@ SoftwareSelectionSnapshot SoftwareSelectionLifecycle::snapshot() const {
       disabled = impact_.disabled;
     }
   }
+  auto items = std::vector<selection_domain::SelectionItem>{};
+  if (catalog_.has_value()) {
+    items = selection_domain::project_selection(*catalog_, selection_, removed,
+                                                changed, disabled);
+  } else if (declared_catalog_.has_value()) {
+    // A declaration preview is intentionally not an effective catalog. Use an
+    // empty state so restored selections cannot appear selected or be acted on.
+    items = selection_domain::project_selection(
+        *declared_catalog_, selection_domain::SelectionState{});
+    for (auto& item : items) {
+      item.selected = false;
+      item.available = false;
+      item.requires_reselection = false;
+      item.blocker = selection_domain::SelectionBlocker::
+          unavailable_in_current_catalog;
+      if (item.reason.empty()) {
+        item.reason = "no current effective software catalog is loaded";
+      }
+    }
+  }
   return {
       .mode = mode_,
       .has_current_catalog = catalog_.has_value(),
       .subject_writable = subject_writable_,
       .machine_writable = machine_writable_,
       .selection = selection_,
-      .items = catalog_.has_value()
-                   ? selection_domain::project_selection(*catalog_, selection_,
-                                                          removed, changed, disabled)
-                   : std::vector<selection_domain::SelectionItem>{},
+      .items = std::move(items),
       .sources = sources_,
       .handoffs = handoffs_,
       .active_catalog = active_catalog_,
@@ -886,6 +903,7 @@ SelectionActionResult SoftwareSelectionLifecycle::on_catalog_replaced(
             .message = "catalog projection is stale"};
   }
   catalog_ = std::move(projection.runtime);
+  declared_catalog_.reset();
   active_catalog_ = std::move(projection.active);
   impact_ = std::move(projection.impact);
   if (selection_.initialized) {
@@ -900,6 +918,23 @@ SelectionActionResult SoftwareSelectionLifecycle::on_catalog_replaced(
   }
   log_event("default-selection", ExecutionResult::succeeded);
   return {.code = SelectionActionCode::succeeded, .state_changed = true};
+}
+
+SelectionActionResult SoftwareSelectionLifecycle::on_declared_catalog_preview(
+    catalog_domain::RuntimeSoftwareCatalog runtime) {
+  if (mode_ != SelectionLifecycleMode::ready) {
+    return {.code = mode_ == SelectionLifecycleMode::read_only
+                        ? SelectionActionCode::read_only
+                        : SelectionActionCode::not_restored,
+            .message = error_};
+  }
+  if (catalog_.has_value()) {
+    return {.code = SelectionActionCode::rejected,
+            .message =
+                "a declared catalog preview cannot replace the current catalog"};
+  }
+  declared_catalog_ = std::move(runtime);
+  return {.code = SelectionActionCode::succeeded};
 }
 
 SelectionActionResult SoftwareSelectionLifecycle::select(
