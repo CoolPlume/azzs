@@ -598,7 +598,15 @@ struct Fixture final {
       StateSubject{"contract-user"}};
   auto const restored_result = restored.restore();
   auto const before = restored.snapshot();
-  auto const declared = restored.on_declared_catalog_preview(runtime);
+  auto const rejected_with_catalog = catalog::RuntimeCatalogLoad{
+      .outcome = catalog::RuntimeLoadOutcome::rejected,
+      .catalog = runtime,
+  };
+  passed &= expect(!rejected_with_catalog.accepted() &&
+                       rejected_with_catalog.catalog.has_value(),
+                   "a rejected runtime load may still carry a display catalog");
+  auto const declared = restored.on_declared_catalog_preview(
+      *rejected_with_catalog.catalog);
   auto const projected = restored.snapshot();
   auto const qq_item = std::ranges::find(
       projected.items, "qq", &selection::SelectionItem::software_id);
@@ -607,19 +615,19 @@ struct Fixture final {
   auto const core_item = std::ranges::find(
       projected.items, "core", &selection::SelectionItem::software_id);
   passed &= expect(restored_result.succeeded() && before.selection.initialized &&
-                       contains(before.selection.selected_software_ids, "core") &&
-                       declared.succeeded() && !projected.has_current_catalog &&
-                       !projected.active_catalog.has_value() &&
-                       core_item != projected.items.end() && !core_item->selected &&
-                       !core_item->available && !core_item->reason.empty() &&
-                       qq_item != projected.items.end() &&
-                       qq_music_item != projected.items.end() &&
-                       qq_item->display_name == "QQ" &&
-                       qq_music_item->display_name == "QQ音乐" &&
-                       !qq_item->selected && !qq_music_item->selected &&
-                       !qq_item->available && !qq_music_item->available &&
-                       qq_item->reason == "qq-install-profile-unavailable" &&
-                       qq_music_item->reason ==
+                        contains(before.selection.selected_software_ids, "core") &&
+                         declared.succeeded() && !projected.has_current_catalog &&
+                         !projected.active_catalog.has_value() &&
+                         core_item != projected.items.end() && !core_item->selected &&
+                         !core_item->available && !core_item->reason.empty() &&
+                         qq_item != projected.items.end() &&
+                         qq_music_item != projected.items.end() &&
+                         qq_item->display_name == "QQ" &&
+                         qq_music_item->display_name == "QQ音乐" &&
+                         !qq_item->selected && !qq_music_item->selected &&
+                         !qq_item->available && !qq_music_item->available &&
+                         qq_item->reason == "qq-install-profile-unavailable" &&
+                         qq_music_item->reason ==
                            "qq-music-install-profile-unavailable",
                    "declared runtime items must remain visible, unselected, and fail closed");
   auto const selection_result = restored.select("qq", true);
