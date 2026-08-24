@@ -538,6 +538,34 @@ struct Fixture final {
                 "catalog changes must retain selections as explicit blocked items");
 }
 
+[[nodiscard]] bool projected_items_expose_names_and_fail_closed_items() {
+  auto runtime = fixture_catalog();
+  auto qq = software("qq", catalog::SoftwareTier::normal, {},
+                     catalog::ItemAvailability::install_profile_unavailable);
+  qq.definition.name = "QQ";
+  auto qq_music = software(
+      "qq-music", catalog::SoftwareTier::normal, {},
+      catalog::ItemAvailability::install_profile_unavailable);
+  qq_music.definition.name = "QQ音乐";
+  runtime.software.push_back(std::move(qq));
+  runtime.software.push_back(std::move(qq_music));
+
+  auto const projected = selection::project_selection(
+      runtime, selection::default_selection(runtime));
+  auto const qq_item = std::ranges::find(
+      projected, "qq", &selection::SelectionItem::software_id);
+  auto const qq_music_item = std::ranges::find(
+      projected, "qq-music", &selection::SelectionItem::software_id);
+  return expect(
+      qq_item != projected.end() && qq_music_item != projected.end() &&
+          qq_item->display_name == "QQ" &&
+          qq_music_item->display_name == "QQ音乐" && !qq_item->selected &&
+          !qq_music_item->selected && !qq_item->available &&
+          !qq_music_item->available && !qq_item->reason.empty() &&
+          !qq_music_item->reason.empty(),
+      "QQ and QQ Music must be named, unselected by default, and visible as unavailable");
+}
+
 }  // namespace
 
 int main() {
@@ -547,6 +575,7 @@ int main() {
                       resolver_failure_never_switches_source_and_detection_is_explicit() &&
                       external_handoff_timeline_is_append_only() &&
                       catalog_projection_identity_is_memory_only_and_stale_is_rejected() &&
-                      catalog_changes_retain_but_block_selection();
+                      catalog_changes_retain_but_block_selection() &&
+                      projected_items_expose_names_and_fail_closed_items();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

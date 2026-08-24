@@ -24,6 +24,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <controls:PageHeader Grid.Row="0">
                 <controls:PageHeader.TitleContent>
@@ -45,13 +46,34 @@
                 Style="{StaticResource AzzsWarningStatusBandStyle}" />
             <controls:ReadOnlyPresentationSurface
                 x:Name="SoftwareSelectionStatus"
-                Grid.Row="2" />
+                Grid.Row="3" />
+            <StackPanel
+                Grid.Row="2"
+                AutomationProperties.AutomationId="AzzsSoftwareSelectionItems"
+                Spacing="{StaticResource AzzsSpaceSmall}">
+                <TextBlock
+                    x:Uid="SoftwareInstallationSelectionTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{StaticResource AzzsSectionTitleTextStyle}"
+                    TextWrapping="Wrap" />
+                <StackPanel
+                    x:Name="SoftwareSelectionItems"
+                    AutomationProperties.AutomationId="AzzsSoftwareSelectionItemsList"
+                    Spacing="{StaticResource AzzsSpaceSmall}" />
+                <TextBlock
+                    x:Name="SoftwareSelectionEmptyState"
+                    x:Uid="SoftwareInstallationSelectionEmpty"
+                    AutomationProperties.AutomationId="AzzsSoftwareSelectionEmpty"
+                    Style="{StaticResource AzzsMetadataTextStyle}"
+                    TextWrapping="Wrap"
+                    Visibility="Collapsed" />
+            </StackPanel>
             <controls:ReadOnlyPresentationSurface
                 x:Name="OfflinePackageCacheStatus"
-                Grid.Row="3" />
+                Grid.Row="4" />
             <controls:ReadOnlyPresentationSurface
                 x:Name="InstallationBatchStatus"
-                Grid.Row="4" />
+                Grid.Row="5" />
         </Grid>
     </ScrollViewer>
 </Page>

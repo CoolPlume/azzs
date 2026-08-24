@@ -6,6 +6,10 @@
 #include <string>
 #include <utility>
 
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
+#include <winrt/Microsoft.Windows.ApplicationModel.Resources.h>
+
 #include "DesignSystem/Controls/ReadOnlyPresentationSurface.xaml.h"
 #include "DesignSystem/presentation_contract.hpp"
 #include "DesignSystem/software_selection_presentation.hpp"
@@ -19,6 +23,14 @@ namespace {
 
 namespace batch = azzs::domain::installation_batch;
 namespace presentation = azzs::ui::presentation;
+
+using winrt::Microsoft::UI::Xaml::Application;
+using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
+using winrt::Microsoft::UI::Xaml::Controls::CheckBox;
+using winrt::Microsoft::UI::Xaml::Controls::StackPanel;
+using winrt::Microsoft::UI::Xaml::Controls::TextBlock;
+using winrt::Microsoft::UI::Xaml::Visibility;
+using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
 
 void add_batch_command(presentation::ComponentProjection& component,
                        std::string id,
@@ -228,6 +240,23 @@ void SoftwareInstallationPage::bind(
   refresh();
 }
 
+void SoftwareInstallationPage::OnSoftwareSelectionChanged(
+    winrt::Windows::Foundation::IInspectable const& sender,
+    Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  if (!services_ || projecting_) {
+    return;
+  }
+  auto const check_box = sender.try_as<CheckBox>();
+  if (!check_box || !check_box.Tag()) {
+    return;
+  }
+  auto const id = winrt::unbox_value<winrt::hstring>(check_box.Tag());
+  auto const checked = check_box.IsChecked();
+  static_cast<void>(services_->software_selection().select(
+      winrt::to_string(id), checked ? checked.Value() : false));
+  refresh();
+}
+
 void SoftwareInstallationPage::refresh() {
   if (!services_) {
     project({.mode = azzs::application::software_selection::SelectionLifecycleMode::not_restored},
@@ -245,6 +274,50 @@ void SoftwareInstallationPage::project(
     azzs::domain::installation_batch::InstallationBatchSnapshot const& batch) {
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   auto const resources = ResourceLoader{};
+  projecting_ = true;
+  SoftwareSelectionItems().Children().Clear();
+  auto const empty = snapshot.items.empty();
+  SoftwareSelectionEmptyState().Visibility(
+      empty ? Visibility::Visible : Visibility::Collapsed);
+  auto const check_box_style = Application::Current().Resources().Lookup(
+      winrt::box_value(L"AzzsCheckBoxStyle"))
+                                  .as<winrt::Microsoft::UI::Xaml::Style>();
+  auto const unavailable_reason = winrt::to_hstring(
+      resources.GetString(L"SoftwareInstallationSelectionUnavailableReason"));
+  for (auto const& item : snapshot.items) {
+    auto const display_name = winrt::to_hstring(
+        item.display_name.empty() ? item.software_id : item.display_name);
+    auto check_box = CheckBox{};
+    check_box.Style(check_box_style);
+    check_box.Content(winrt::box_value(display_name));
+    check_box.Tag(winrt::box_value(winrt::to_hstring(item.software_id)));
+    check_box.IsChecked(item.selected);
+    check_box.IsEnabled(item.available &&
+                        snapshot.mode ==
+                            azzs::application::software_selection::
+                                SelectionLifecycleMode::ready &&
+                        snapshot.has_current_catalog &&
+                        snapshot.subject_writable);
+    AutomationProperties::SetName(check_box, display_name);
+    AutomationProperties::SetAutomationId(
+        check_box,
+        winrt::to_hstring("AzzsSoftwareSelection-" + item.software_id));
+    check_box.Checked({this, &SoftwareInstallationPage::OnSoftwareSelectionChanged});
+    check_box.Unchecked({this, &SoftwareInstallationPage::OnSoftwareSelectionChanged});
+    SoftwareSelectionItems().Children().Append(check_box);
+    if (!item.available) {
+      auto reason = TextBlock{};
+      reason.Style(Application::Current().Resources().Lookup(
+          winrt::box_value(L"AzzsMetadataTextStyle"))
+                       .as<winrt::Microsoft::UI::Xaml::Style>());
+      reason.Text(winrt::to_hstring(item.reason.empty()
+                                        ? winrt::to_string(unavailable_reason)
+                                        : item.reason));
+      reason.TextWrapping(winrt::Microsoft::UI::Xaml::TextWrapping::Wrap);
+      SoftwareSelectionItems().Children().Append(reason);
+    }
+  }
+  projecting_ = false;
   LocalTrialInfoBar().IsOpen(
       snapshot.active_catalog.has_value() &&
       snapshot.active_catalog->identity ==

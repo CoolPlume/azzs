@@ -583,6 +583,32 @@ def verify_app_and_pages(root: Path) -> None:
     require(required_shell_ids <= set(automation_ids),
             "shell and seven navigation destinations need stable AutomationIds")
 
+    installation_xaml = read(ui_root / "Pages/SoftwareInstallationPage.xaml")
+    installation_cpp = read(ui_root / "Pages/SoftwareInstallationPage.xaml.cpp")
+    installation_header = read(ui_root / "Pages/SoftwareInstallationPage.xaml.h")
+    require(
+        'x:Name="SoftwareSelectionItems"' in installation_xaml and
+        'x:Name="SoftwareSelectionEmptyState"' in installation_xaml and
+        "snapshot.items" in installation_cpp and
+        "SoftwareSelectionItems().Children().Clear()" in installation_cpp and
+        "CheckBox" in installation_cpp and
+        "check_box.Tag" in installation_cpp and
+        "SoftwareSelection-" in installation_cpp and
+        "AutomationProperties::SetName" in installation_cpp and
+        "AutomationProperties::SetAutomationId" in installation_cpp and
+        "software_selection().select" in installation_cpp and
+        "projecting_" in installation_header and
+        "OnSoftwareSelectionChanged" in installation_header,
+        "software installation must project snapshot.items through stable native CheckBox controls",
+    )
+    require(
+        not any(token in installation_xaml + installation_cpp for token in (
+            "software_catalog()", "software_catalog_lifecycle",
+            "software_catalog.toml", "create_batch(", "InstallationBatchRequest{",
+        )),
+        "software installation selection UI must not read the catalog or create batches",
+    )
+
 
 def verify_fixture_xaml(root: Path) -> None:
     fixture_path = root / (

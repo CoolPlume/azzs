@@ -16,6 +16,9 @@ struct SoftwareInstallationPage
     : SoftwareInstallationPageT<SoftwareInstallationPage> {
   SoftwareInstallationPage();
   void bind(std::shared_ptr<azzs::application::WorkbenchServices> services);
+  void OnSoftwareSelectionChanged(
+      winrt::Windows::Foundation::IInspectable const& sender,
+      Microsoft::UI::Xaml::RoutedEventArgs const& args);
 
  private:
   void project(
@@ -27,6 +30,7 @@ struct SoftwareInstallationPage
       azzs::ui::presentation::PresentationIntent const& intent);
 
   std::shared_ptr<azzs::application::WorkbenchServices> services_;
+  bool projecting_{false};
 };
 
 }  // namespace winrt::Azzs::Ui::Pages::implementation

@@ -26,6 +26,7 @@ enum class SelectionBlocker {
 
 struct SelectionItem final {
   std::string software_id;
+  std::string display_name;
   bool selected{false};
   bool basic{false};
   bool available{false};

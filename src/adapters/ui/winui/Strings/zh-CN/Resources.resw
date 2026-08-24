@@ -185,6 +185,9 @@
   <data name="SystemSettingsRecoveryRestoreFailed" xml:space="preserve"><value>恢复失败，可重试</value></data>
   <data name="SystemSettingsRecoveryPending" xml:space="preserve"><value>正在保存或恢复，暂时不能删除</value></data>
   <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
+  <data name="SoftwareInstallationSelectionTitle.Text" xml:space="preserve"><value>选择要安装的软件</value></data>
+  <data name="SoftwareInstallationSelectionEmpty.Text" xml:space="preserve"><value>当前目录没有可呈现的软件项。</value></data>
+  <data name="SoftwareInstallationSelectionUnavailableReason" xml:space="preserve"><value>当前软件项不可用，已安全禁用。</value></data>
   <data name="InstallationBatchStatusAccessibleName" xml:space="preserve"><value>安装批次进度</value></data>
   <data name="InstallationBatchStatusTitle" xml:space="preserve"><value>安装批次进度</value></data>
   <data name="InstallationBatchNoActiveBody" xml:space="preserve"><value>当前没有正在处理的安装批次。</value></data>
