@@ -2084,6 +2084,7 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
 
     std::vector<DISPLAYCONFIG_PATH_INFO> paths;
     std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+    bool query_succeeded = false;
     for (std::uint32_t attempt = 0; attempt < 3; ++attempt) {
       paths.resize(path_count);
       modes.resize(mode_count);
@@ -2095,6 +2096,7 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
       if (status != ERROR_INSUFFICIENT_BUFFER) {
         path_count = queried_path_count;
         mode_count = queried_mode_count;
+        query_succeeded = status == ERROR_SUCCESS;
         break;
       }
       status = ::GetDisplayConfigBufferSizes(
@@ -2103,7 +2105,7 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
         return {};
       }
     }
-    if (status != ERROR_SUCCESS || path_count == 0 ||
+    if (!query_succeeded || status != ERROR_SUCCESS || path_count == 0 ||
         path_count > paths.size() || mode_count > modes.size()) {
       return result;
     }
