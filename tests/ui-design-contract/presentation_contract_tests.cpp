@@ -68,38 +68,46 @@ class InMemoryAdvancedViewPreferenceStore final
 [[nodiscard]] bool verify_relative_time_contract() {
   using azzs::application::WallClockTime;
   using azzs::ui::presentation::format_relative_time;
+  using azzs::ui::presentation::RelativeTimeLabels;
 
   bool passed = true;
+  RelativeTimeLabels const labels{
+      .just_now = L"刚刚",
+      .minutes = L"{count}分钟前",
+      .hours = L"{count}小时前",
+      .calendar = L"{month}月{day}日{hour}时",
+      .unavailable = L"日期不可用",
+  };
   auto const now = WallClockTime{1'787'000'000'000ms};
-  passed &= expect(format_relative_time(now - 30s, now) == L"刚刚",
+  passed &= expect(format_relative_time(now - 30s, now, labels) == L"刚刚",
                    "sub-minute update checks must read as just now");
-  passed &= expect(format_relative_time(now - 59s, now) == L"刚刚",
+  passed &= expect(format_relative_time(now - 59s, now, labels) == L"刚刚",
                    "the last second before one minute must read as just now");
-  passed &= expect(format_relative_time(now - 1min, now) == L"1分钟前",
+  passed &= expect(format_relative_time(now - 1min, now, labels) == L"1分钟前",
                    "one minute must switch to the minute label");
-  passed &= expect(format_relative_time(now - 5min, now) == L"5分钟前",
+  passed &= expect(format_relative_time(now - 5min, now, labels) == L"5分钟前",
                    "sub-hour update checks must read in minutes");
-  passed &= expect(format_relative_time(now - 59min, now) == L"59分钟前",
+  passed &= expect(format_relative_time(now - 59min, now, labels) == L"59分钟前",
                    "the last minute before one hour must use minutes");
-  passed &= expect(format_relative_time(now - 1h, now) == L"1小时前",
+  passed &= expect(format_relative_time(now - 1h, now, labels) == L"1小时前",
                    "one hour must switch to the hour label");
-  passed &= expect(format_relative_time(now - 2h, now) == L"2小时前",
+  passed &= expect(format_relative_time(now - 2h, now, labels) == L"2小时前",
                    "sub-day update checks must read in hours");
-  passed &= expect(format_relative_time(now - 23h - 59min, now) == L"23小时前",
+  passed &= expect(format_relative_time(now - 23h - 59min, now, labels) == L"23小时前",
                    "the last hour before one day must use hours");
-  auto const date_at_boundary = format_relative_time(now - 24h, now);
+  auto const date_at_boundary = format_relative_time(now - 24h, now, labels);
   passed &= expect(date_at_boundary.find(L"月") != std::wstring::npos &&
                        date_at_boundary.find(L"日") != std::wstring::npos &&
                        date_at_boundary.find(L"时") != std::wstring::npos,
-                   "one day must switch to the calendar label");
-  passed &= expect(format_relative_time(now + 5min, now) == L"刚刚",
+                   "one day must switch to month-day-hour text");
+  passed &= expect(format_relative_time(now + 5min, now, labels) == L"刚刚",
                    "future update check timestamps must fail soft to just now");
 
-  auto const date_text = format_relative_time(now - 25h, now);
+  auto const date_text = format_relative_time(now - 25h, now, labels);
   passed &= expect(date_text.find(L"月") != std::wstring::npos &&
                        date_text.find(L"日") != std::wstring::npos &&
                        date_text.find(L"时") != std::wstring::npos,
-                   "older update checks must expose local month, day, and hour");
+                   "older update checks must expose month, day, and hour");
   passed &= expect(date_text.find(L"分钟前") == std::wstring::npos &&
                        date_text.find(L"小时前") == std::wstring::npos,
                    "older update checks must not use a relative hour label");

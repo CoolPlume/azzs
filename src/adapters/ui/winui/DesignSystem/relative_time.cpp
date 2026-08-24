@@ -2,9 +2,18 @@
 
 #include <chrono>
 #include <ctime>
+#include <string_view>
 
 namespace azzs::ui::presentation {
 namespace {
+
+void replace_token(std::wstring& value, std::wstring_view token,
+                   std::wstring const& replacement) {
+  auto const position = value.find(token);
+  if (position != std::wstring::npos) {
+    value.replace(position, token.size(), replacement);
+  }
+}
 
 [[nodiscard]] bool local_calendar_time(std::time_t value, std::tm& result) {
 #if defined(_WIN32)
@@ -14,34 +23,44 @@ namespace {
 #endif
 }
 
-[[nodiscard]] std::wstring calendar_time_text(application::WallClockTime value) {
+[[nodiscard]] std::wstring calendar_time_text(
+    application::WallClockTime value, RelativeTimeLabels const& labels) {
   auto const time = std::chrono::system_clock::to_time_t(value);
   std::tm local{};
   if (!local_calendar_time(time, local)) {
-    return L"日期不可用";
+    return labels.unavailable;
   }
-  return std::to_wstring(local.tm_mon + 1) + L"月" +
-         std::to_wstring(local.tm_mday) + L"日" +
-         std::to_wstring(local.tm_hour) + L"时";
+  auto result = labels.calendar;
+  replace_token(result, L"{month}", std::to_wstring(local.tm_mon + 1));
+  replace_token(result, L"{day}", std::to_wstring(local.tm_mday));
+  replace_token(result, L"{hour}", std::to_wstring(local.tm_hour));
+  return result;
 }
 
 }  // namespace
 
 std::wstring format_relative_time(application::WallClockTime checked_at,
-                                  application::WallClockTime now) {
+                                  application::WallClockTime now,
+                                  RelativeTimeLabels const& labels) {
   using namespace std::chrono;
 
   auto const elapsed = now - checked_at;
   if (elapsed < minutes{1}) {
-    return L"刚刚";
+    return labels.just_now;
   }
   if (elapsed < hours{1}) {
-    return std::to_wstring(duration_cast<minutes>(elapsed).count()) + L"分钟前";
+    auto result = labels.minutes;
+    replace_token(result, L"{count}",
+                  std::to_wstring(duration_cast<minutes>(elapsed).count()));
+    return result;
   }
   if (elapsed < hours{24}) {
-    return std::to_wstring(duration_cast<hours>(elapsed).count()) + L"小时前";
+    auto result = labels.hours;
+    replace_token(result, L"{count}",
+                  std::to_wstring(duration_cast<hours>(elapsed).count()));
+    return result;
   }
-  return calendar_time_text(checked_at);
+  return calendar_time_text(checked_at, labels);
 }
 
 }  // namespace azzs::ui::presentation
