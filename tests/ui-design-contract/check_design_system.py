@@ -1089,6 +1089,22 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "src/application/include/azzs/application/workbench.hpp"
     ))
     workbench_cpp = read(root / "src/application/src/workbench.cpp")
+    literal_resource_keys = re.findall(
+        r'GetString\(\s*L"([^"]+)"\s*\)', drivers_cpp
+    )
+    require(
+        all(key in resource_names for key in literal_resource_keys) and
+        not any("/" in key for key in literal_resource_keys),
+        "drivers GetString literals must resolve to existing MRT keys",
+    )
+    copy_resource_keys = re.findall(
+        r'append_copy_row\(L"([^"]+)"', drivers_cpp
+    )
+    require(
+        all(key in resource_names for key in copy_resource_keys) and
+        not any("/" in key for key in copy_resource_keys),
+        "hardware copy rows must resolve to existing MRT keys",
+    )
     require("AzzsApplicationAdvancedView" in settings_xaml and
             "OnAdvancedViewToggled" in settings_cpp,
             "application settings must own the advanced-view toggle")
@@ -1252,8 +1268,12 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         resource_values.get("HardwareModelSummaryTitle.Text") == "机型" and
         resource_values.get("HardwareSystemSummaryTitle.Text") == "Windows 版本" and
         resource_values.get("HardwareDetailsTitle.Text") == "详细信息" and
-        'append_copy_row(L"HardwareModelSummaryTitle/Text"' in drivers_cpp and
-        'append_copy_row(L"HardwareSystemSummaryTitle/Text"' in drivers_cpp and
+        'resources.GetString(L"HardwareTableItemHeader.Text")' in drivers_cpp and
+        'resources.GetString(L"HardwareTableInformationHeader.Text")' in drivers_cpp and
+        'resources.GetString(L"HardwareTableItemHeader/Text")' not in drivers_cpp and
+        'resources.GetString(L"HardwareTableInformationHeader/Text")' not in drivers_cpp and
+        'append_copy_row(L"HardwareModelSummaryTitle.Text"' in drivers_cpp and
+        'append_copy_row(L"HardwareSystemSummaryTitle.Text"' in drivers_cpp and
         resource_values.get("HardwareTableItemHeader.Text") == "项目" and
         resource_values.get("HardwareTableInformationHeader.Text") == "信息" and
         resource_values.get("HardwareCopySection.Text") == "复制本节" and
@@ -1279,11 +1299,11 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "HardwareNpuLabel",
     )
     require(
-        all(f'L"{key}/Text"' in drivers_cpp
+        all(f'L"{key}.Text"' in drivers_cpp
             for key in hardware_copy_label_resources) and
-        not any(f'L"{key}"' in drivers_cpp
+        not any(f'L"{key}/Text"' in drivers_cpp
                 for key in hardware_copy_label_resources),
-        "hardware copy rows must use MRT /Text resource paths, never bare x:Uid keys",
+        "hardware copy rows must use MRT .Text resource paths, never slash paths",
     )
     obsolete_hardware_groups = (
         "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",

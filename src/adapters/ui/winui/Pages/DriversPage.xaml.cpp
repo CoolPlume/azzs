@@ -139,9 +139,9 @@ void DriversPage::OnCopyHardwareClicked(
 
   auto const resources = ResourceLoader{};
   std::wstring text{
-      resources.GetString(L"HardwareTableItemHeader/Text").c_str()};
+      resources.GetString(L"HardwareTableItemHeader.Text").c_str()};
   text += L"\t";
-  text += resources.GetString(L"HardwareTableInformationHeader/Text").c_str();
+  text += resources.GetString(L"HardwareTableInformationHeader.Text").c_str();
   for (auto const& [label, value] : hardware_copy_rows_) {
     text += L"\r\n";
     text += label.c_str();
@@ -198,12 +198,12 @@ void DriversPage::project(
                                                    winrt::hstring const& value) {
     hardware_copy_rows_.emplace_back(resources.GetString(resource_key), value);
   };
-  append_copy_row(L"HardwareModelSummaryTitle/Text", model_value);
-  append_copy_row(L"HardwareSystemSummaryTitle/Text", system_value);
-  append_copy_row(L"HardwareCpuLabel/Text", cpu_value);
-  append_copy_row(L"HardwareMotherboardLabel/Text", motherboard_value);
-  append_copy_row(L"HardwareMemoryLabel/Text", memory_value);
-  append_copy_row(L"HardwareGpuLabel/Text", gpu_value);
+  append_copy_row(L"HardwareModelSummaryTitle.Text", model_value);
+  append_copy_row(L"HardwareSystemSummaryTitle.Text", system_value);
+  append_copy_row(L"HardwareCpuLabel.Text", cpu_value);
+  append_copy_row(L"HardwareMotherboardLabel.Text", motherboard_value);
+  append_copy_row(L"HardwareMemoryLabel.Text", memory_value);
+  append_copy_row(L"HardwareGpuLabel.Text", gpu_value);
 
   auto const project_optional = [&append_copy_row](
                                     auto const& label, auto const& value,
@@ -214,23 +214,23 @@ void DriversPage::project(
     }
   };
   project_optional(DisplayLabel(), DisplayValue(), DisplayDivider(), facts.display,
-                   L"HardwareDisplayLabel/Text");
+                   L"HardwareDisplayLabel.Text");
   project_optional(SolidStateStorageLabel(), SolidStateStorageValue(),
                    SolidStateStorageDivider(), facts.solid_state_storage,
-                   L"HardwareSolidStateStorageLabel/Text");
+                   L"HardwareSolidStateStorageLabel.Text");
   project_optional(HardDiskStorageLabel(), HardDiskStorageValue(),
                    HardDiskStorageDivider(), facts.hard_disk_storage,
-                   L"HardwareHardDiskStorageLabel/Text");
+                   L"HardwareHardDiskStorageLabel.Text");
   project_optional(WiredNetworkLabel(), WiredNetworkValue(),
                    WiredNetworkDivider(), facts.wired_network_adapter,
-                   L"HardwareWiredNetworkLabel/Text");
+                   L"HardwareWiredNetworkLabel.Text");
   project_optional(WirelessNetworkLabel(), WirelessNetworkValue(),
                    WirelessNetworkDivider(), facts.wireless_network_adapter,
-                   L"HardwareWirelessNetworkLabel/Text");
+                   L"HardwareWirelessNetworkLabel.Text");
   project_optional(AudioLabel(), AudioValue(), AudioDivider(), facts.audio,
-                   L"HardwareAudioLabel/Text");
+                   L"HardwareAudioLabel.Text");
   project_optional(NpuLabel(), NpuValue(), NpuDivider(), facts.npu,
-                   L"HardwareNpuLabel/Text");
+                   L"HardwareNpuLabel.Text");
 
   auto const can_start =
       driver_snapshot.writable &&
