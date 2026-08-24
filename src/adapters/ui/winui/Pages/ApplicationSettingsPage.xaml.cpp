@@ -2,6 +2,9 @@
 
 #include "ApplicationSettingsPage.xaml.h"
 
+#include "../DesignSystem/relative_time.hpp"
+
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <string>
@@ -66,7 +69,22 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
     return L"\u4ECE\u672A\u68C0\u67E5";
   }
   if (name == L"ApplicationUpdateLastCheckValue") {
-    return L"\u4E0A\u6B21\u68C0\u67E5\uFF1A{time}\uFF08UTC \u6BEB\u79D2\uFF09";
+    return L"\u4E0A\u6B21\u68C0\u67E5\uFF1A{time}";
+  }
+  if (name == L"ApplicationUpdateRelativeTimeJustNow") {
+    return L"\u521A\u521A";
+  }
+  if (name == L"ApplicationUpdateRelativeTimeMinutes") {
+    return L"{count}\u5206\u949F\u524D";
+  }
+  if (name == L"ApplicationUpdateRelativeTimeHours") {
+    return L"{count}\u5C0F\u65F6\u524D";
+  }
+  if (name == L"ApplicationUpdateRelativeTimeCalendar") {
+    return L"{month}\u6708{day}\u65E5{hour}\u65F6";
+  }
+  if (name == L"ApplicationUpdateRelativeTimeUnavailable") {
+    return L"\u65E5\u671F\u4E0D\u53EF\u7528";
   }
   if (name == L"ApplicationUpdateCheckResultValue") {
     return L"\u68C0\u67E5\u7ED3\u679C\uFF1A{result}";
@@ -158,6 +176,22 @@ using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
     // the already constructed settings page from being displayed.
     return winrt::hstring{resource_fallback(key)};
   }
+}
+
+[[nodiscard]] azzs::ui::presentation::RelativeTimeLabels
+relative_time_labels() {
+  return {
+      .just_now = std::wstring{
+          resource_string(L"ApplicationUpdateRelativeTimeJustNow")},
+      .minutes = std::wstring{
+          resource_string(L"ApplicationUpdateRelativeTimeMinutes")},
+      .hours = std::wstring{
+          resource_string(L"ApplicationUpdateRelativeTimeHours")},
+      .calendar = std::wstring{
+          resource_string(L"ApplicationUpdateRelativeTimeCalendar")},
+      .unavailable = std::wstring{resource_string(
+          L"ApplicationUpdateRelativeTimeUnavailable")},
+  };
 }
 
 [[nodiscard]] std::int32_t update_schedule_index(
@@ -946,8 +980,12 @@ void ApplicationSettingsPage::project_update(
           ? resource_string(L"ApplicationUpdateLastCheckValue")
           : resource_string(L"ApplicationUpdateLastCheckNever")};
   if (snapshot.last_checked_at.has_value()) {
+    auto const now = azzs::application::WallClockTime{
+        std::chrono::floor<std::chrono::milliseconds>(
+            std::chrono::system_clock::now())};
     replace_token(last_check, L"{time}",
-                  std::to_wstring(snapshot.last_checked_at->time_since_epoch().count()));
+                  azzs::ui::presentation::format_relative_time(
+                      *snapshot.last_checked_at, now, relative_time_labels()));
   }
   ApplicationUpdateLastCheckText().Text(winrt::hstring{last_check});
 

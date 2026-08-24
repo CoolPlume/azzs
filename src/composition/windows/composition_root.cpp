@@ -953,6 +953,7 @@ class WindowsWorkbenchServices final
 
   [[nodiscard]] application::software_selection::SoftwareSelectionLifecycle&
   software_selection() noexcept override {
+    try_synchronize_catalog_selection_projection();
     return software_selection_;
   }
 
@@ -1026,17 +1027,57 @@ class WindowsWorkbenchServices final
   }
 
  private:
+  void try_synchronize_catalog_selection_projection() noexcept {
+    try {
+      synchronize_catalog_selection_projection();
+    } catch (...) {
+      // Accessors are a noexcept boundary for the UI. A failed preview must
+      // remain retryable on the next page entry instead of terminating the
+      // process or being recorded as a successful projection.
+    }
+  }
+
   void synchronize_catalog_selection_projection() {
     auto const catalog = software_catalog_.snapshot();
-    if (catalog.mode != application::software_catalog::CatalogLifecycleMode::ready ||
-        !catalog.current.has_value() || !catalog.current_catalog.has_value()) {
+    auto const selection = software_selection_.snapshot();
+    if (catalog.mode != application::software_catalog::CatalogLifecycleMode::ready) {
+      catalog_selection_projection_identity_.reset();
       return;
     }
-    static_cast<void>(software_selection_.on_catalog_replaced({
-        .runtime = *catalog.current_catalog,
-        .active = *catalog.current,
-        .impact = {},
-    }));
+    if (catalog.current.has_value()) {
+      catalog_selection_projection_identity_.reset();
+      if (!catalog.current_catalog.has_value()) {
+        return;
+      }
+      if (selection.has_current_catalog &&
+          selection.active_catalog.has_value() &&
+          *selection.active_catalog == *catalog.current) {
+        return;
+      }
+      auto const result = software_selection_.on_catalog_replaced({
+          .runtime = *catalog.current_catalog,
+          .active = *catalog.current,
+          .impact = {},
+      });
+      static_cast<void>(result);
+      return;
+    }
+    if (selection.has_current_catalog) {
+      catalog_selection_projection_identity_.reset();
+      return;
+    }
+    if (catalog_selection_projection_identity_.has_value()) {
+      return;
+    }
+    auto const preview = software_catalog_.preview_built_in();
+    if (!preview.runtime.catalog.has_value()) {
+      return;
+    }
+    auto const result = software_selection_.on_declared_catalog_preview(
+        *preview.runtime.catalog);
+    if (result.succeeded()) {
+      catalog_selection_projection_identity_ = preview.content_identity;
+    }
   }
 
   void synchronize_live_offline_package_cache() {
@@ -1153,6 +1194,7 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsExternalAddressLauncher external_launcher_;
   application::software_selection::SoftwareSelectionLifecycle
       software_selection_;
+  std::optional<std::string> catalog_selection_projection_identity_;
   adapters::infrastructure::LocalSoftwareOptimizationCatalogFile
       optimization_catalog_file_;
   ProductionSoftwareOptimizationCatalogDebugAuthorization

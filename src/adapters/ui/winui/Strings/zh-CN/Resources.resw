@@ -185,6 +185,9 @@
   <data name="SystemSettingsRecoveryRestoreFailed" xml:space="preserve"><value>恢复失败，可重试</value></data>
   <data name="SystemSettingsRecoveryPending" xml:space="preserve"><value>正在保存或恢复，暂时不能删除</value></data>
   <data name="SoftwareInstallationPageTitle.Text" xml:space="preserve"><value>软件安装</value></data>
+  <data name="SoftwareInstallationSelectionTitle.Text" xml:space="preserve"><value>选择要安装的软件</value></data>
+  <data name="SoftwareInstallationSelectionEmpty.Text" xml:space="preserve"><value>当前目录没有可呈现的软件项。</value></data>
+  <data name="SoftwareInstallationSelectionUnavailableReason" xml:space="preserve"><value>当前软件项不可用，已安全禁用。</value></data>
   <data name="InstallationBatchStatusAccessibleName" xml:space="preserve"><value>安装批次进度</value></data>
   <data name="InstallationBatchStatusTitle" xml:space="preserve"><value>安装批次进度</value></data>
   <data name="InstallationBatchNoActiveBody" xml:space="preserve"><value>当前没有正在处理的安装批次。</value></data>
@@ -319,7 +322,12 @@
   <data name="ApplicationUpdateScheduleDaily.Content" xml:space="preserve"><value>每日</value></data>
   <data name="ApplicationUpdateScheduleWeekly.Content" xml:space="preserve"><value>每周</value></data>
   <data name="ApplicationUpdateLastCheckNever" xml:space="preserve"><value>从未检查</value></data>
-  <data name="ApplicationUpdateLastCheckValue" xml:space="preserve"><value>上次检查：{time}（UTC 毫秒）</value></data>
+  <data name="ApplicationUpdateLastCheckValue" xml:space="preserve"><value>上次检查：{time}</value></data>
+  <data name="ApplicationUpdateRelativeTimeJustNow" xml:space="preserve"><value>刚刚</value></data>
+  <data name="ApplicationUpdateRelativeTimeMinutes" xml:space="preserve"><value>{count}分钟前</value></data>
+  <data name="ApplicationUpdateRelativeTimeHours" xml:space="preserve"><value>{count}小时前</value></data>
+  <data name="ApplicationUpdateRelativeTimeCalendar" xml:space="preserve"><value>{month}月{day}日{hour}时</value></data>
+  <data name="ApplicationUpdateRelativeTimeUnavailable" xml:space="preserve"><value>日期不可用</value></data>
   <data name="ApplicationUpdateCheckResultValue" xml:space="preserve"><value>检查结果：{result}</value></data>
   <data name="ApplicationUpdateCheckDetailValue" xml:space="preserve"><value>事实说明：{detail}</value></data>
   <data name="ApplicationUpdateCheckResultNever" xml:space="preserve"><value>尚未检查</value></data>

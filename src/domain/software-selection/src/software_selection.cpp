@@ -298,6 +298,9 @@ std::vector<SelectionItem> project_selection(
     }
     result.push_back({
         .software_id = software.definition.id,
+        .display_name = software.definition.name.empty()
+                            ? software.definition.id
+                            : software.definition.name,
         .selected = selected,
         .basic = software.definition.tier == catalog::SoftwareTier::basic,
         .available = blocker == SelectionBlocker::none,
@@ -313,6 +316,7 @@ std::vector<SelectionItem> project_selection(
     }
     result.push_back({
         .software_id = selected,
+        .display_name = selected,
         .selected = true,
         .available = false,
         .requires_reselection = true,

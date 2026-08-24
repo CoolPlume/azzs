@@ -538,6 +538,111 @@ struct Fixture final {
                 "catalog changes must retain selections as explicit blocked items");
 }
 
+[[nodiscard]] bool projected_items_expose_names_and_fail_closed_items() {
+  auto runtime = fixture_catalog();
+  auto qq = software("qq", catalog::SoftwareTier::normal, {},
+                     catalog::ItemAvailability::install_profile_unavailable);
+  qq.definition.name = "QQ";
+  auto qq_music = software(
+      "qq-music", catalog::SoftwareTier::normal, {},
+      catalog::ItemAvailability::install_profile_unavailable);
+  qq_music.definition.name = "QQ音乐";
+  runtime.software.push_back(std::move(qq));
+  runtime.software.push_back(std::move(qq_music));
+
+  auto const projected = selection::project_selection(
+      runtime, selection::default_selection(runtime));
+  auto const qq_item = std::ranges::find(
+      projected, "qq", &selection::SelectionItem::software_id);
+  auto const qq_music_item = std::ranges::find(
+      projected, "qq-music", &selection::SelectionItem::software_id);
+  return expect(
+      qq_item != projected.end() && qq_music_item != projected.end() &&
+          qq_item->display_name == "QQ" &&
+          qq_music_item->display_name == "QQ音乐" && !qq_item->selected &&
+          !qq_music_item->selected && !qq_item->available &&
+          !qq_music_item->available && !qq_item->reason.empty() &&
+          !qq_music_item->reason.empty(),
+      "QQ and QQ Music must be named, unselected by default, and visible as unavailable");
+}
+
+[[nodiscard]] bool declared_catalog_preview_is_read_only_and_unselected() {
+  auto runtime = fixture_catalog();
+  auto qq = software("qq", catalog::SoftwareTier::normal, {},
+                     catalog::ItemAvailability::install_profile_unavailable);
+  qq.definition.name = "QQ";
+  qq.reasons = {"qq-install-profile-unavailable"};
+  auto qq_music = software(
+      "qq-music", catalog::SoftwareTier::normal, {},
+      catalog::ItemAvailability::install_profile_unavailable);
+  qq_music.definition.name = "QQ音乐";
+  qq_music.reasons = {"qq-music-install-profile-unavailable"};
+  runtime.software.push_back(std::move(qq));
+  runtime.software.push_back(std::move(qq_music));
+
+  Fixture fixture;
+  bool passed = expect(fixture.lifecycle.restore().succeeded() &&
+                           fixture.lifecycle
+                               .on_catalog_replaced(catalog_projection(
+                                   runtime, "declared-preview-current"))
+                               .succeeded(),
+                       "declared catalog fixture must persist a current selection");
+  auto const selection_key = azzs::domain::StateKey::for_subject(
+      StateSubject{"contract-user"},
+      azzs::domain::AggregateId{"software-selection"});
+  auto const persisted_before = fixture.states.inspect(selection_key);
+
+  app_selection::SoftwareSelectionLifecycle restored{
+      fixture.states, fixture.clock, fixture.log, fixture.architectures,
+      fixture.resolver, fixture.network, fixture.detector, fixture.launcher,
+      StateSubject{"contract-user"}};
+  auto const restored_result = restored.restore();
+  auto const before = restored.snapshot();
+  auto const rejected_with_catalog = catalog::RuntimeCatalogLoad{
+      .outcome = catalog::RuntimeLoadOutcome::rejected,
+      .catalog = runtime,
+  };
+  passed &= expect(!rejected_with_catalog.accepted() &&
+                       rejected_with_catalog.catalog.has_value(),
+                   "a rejected runtime load may still carry a display catalog");
+  auto const declared = restored.on_declared_catalog_preview(
+      *rejected_with_catalog.catalog);
+  auto const projected = restored.snapshot();
+  auto const qq_item = std::ranges::find(
+      projected.items, "qq", &selection::SelectionItem::software_id);
+  auto const qq_music_item = std::ranges::find(
+      projected.items, "qq-music", &selection::SelectionItem::software_id);
+  auto const core_item = std::ranges::find(
+      projected.items, "core", &selection::SelectionItem::software_id);
+  passed &= expect(restored_result.succeeded() && before.selection.initialized &&
+                        contains(before.selection.selected_software_ids, "core") &&
+                         declared.succeeded() && !projected.has_current_catalog &&
+                         !projected.active_catalog.has_value() &&
+                         core_item != projected.items.end() && !core_item->selected &&
+                         !core_item->available && !core_item->reason.empty() &&
+                         qq_item != projected.items.end() &&
+                         qq_music_item != projected.items.end() &&
+                         qq_item->display_name == "QQ" &&
+                         qq_music_item->display_name == "QQ音乐" &&
+                         !qq_item->selected && !qq_music_item->selected &&
+                         !qq_item->available && !qq_music_item->available &&
+                         qq_item->reason == "qq-install-profile-unavailable" &&
+                         qq_music_item->reason ==
+                           "qq-music-install-profile-unavailable",
+                   "declared runtime items must remain visible, unselected, and fail closed");
+  auto const selection_result = restored.select("qq", true);
+  auto const after = restored.snapshot();
+  auto const persisted_after = fixture.states.inspect(selection_key);
+  passed &= expect(
+      selection_result.code == app_selection::SelectionActionCode::no_current_catalog &&
+          after.selection == before.selection && persisted_before.snapshot.has_value() &&
+          persisted_after.snapshot.has_value() &&
+          persisted_after.snapshot->state.value.payload ==
+              persisted_before.snapshot->state.value.payload,
+      "declared catalog preview must not enable, replace, or persist selection");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -547,6 +652,8 @@ int main() {
                       resolver_failure_never_switches_source_and_detection_is_explicit() &&
                       external_handoff_timeline_is_append_only() &&
                       catalog_projection_identity_is_memory_only_and_stale_is_rejected() &&
-                      catalog_changes_retain_but_block_selection();
+                      catalog_changes_retain_but_block_selection() &&
+                      projected_items_expose_names_and_fail_closed_items() &&
+                      declared_catalog_preview_is_read_only_and_unselected();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
