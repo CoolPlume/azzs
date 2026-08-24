@@ -200,10 +200,10 @@ void DriversPage::project(
   };
   append_copy_row(L"HardwareModelSummaryTitle.Text", model_value);
   append_copy_row(L"HardwareSystemSummaryTitle.Text", system_value);
-  append_copy_row(L"HardwareCpuLabel", cpu_value);
-  append_copy_row(L"HardwareMotherboardLabel", motherboard_value);
-  append_copy_row(L"HardwareMemoryLabel", memory_value);
-  append_copy_row(L"HardwareGpuLabel", gpu_value);
+  append_copy_row(L"HardwareCpuLabel.Text", cpu_value);
+  append_copy_row(L"HardwareMotherboardLabel.Text", motherboard_value);
+  append_copy_row(L"HardwareMemoryLabel.Text", memory_value);
+  append_copy_row(L"HardwareGpuLabel.Text", gpu_value);
 
   auto const project_optional = [&append_copy_row](
                                     auto const& label, auto const& value,
@@ -214,23 +214,23 @@ void DriversPage::project(
     }
   };
   project_optional(DisplayLabel(), DisplayValue(), DisplayDivider(), facts.display,
-                   L"HardwareDisplayLabel");
+                   L"HardwareDisplayLabel.Text");
   project_optional(SolidStateStorageLabel(), SolidStateStorageValue(),
                    SolidStateStorageDivider(), facts.solid_state_storage,
-                   L"HardwareSolidStateStorageLabel");
+                   L"HardwareSolidStateStorageLabel.Text");
   project_optional(HardDiskStorageLabel(), HardDiskStorageValue(),
                    HardDiskStorageDivider(), facts.hard_disk_storage,
-                   L"HardwareHardDiskStorageLabel");
+                   L"HardwareHardDiskStorageLabel.Text");
   project_optional(WiredNetworkLabel(), WiredNetworkValue(),
                    WiredNetworkDivider(), facts.wired_network_adapter,
-                   L"HardwareWiredNetworkLabel");
+                   L"HardwareWiredNetworkLabel.Text");
   project_optional(WirelessNetworkLabel(), WirelessNetworkValue(),
                    WirelessNetworkDivider(), facts.wireless_network_adapter,
-                   L"HardwareWirelessNetworkLabel");
+                   L"HardwareWirelessNetworkLabel.Text");
   project_optional(AudioLabel(), AudioValue(), AudioDivider(), facts.audio,
-                   L"HardwareAudioLabel");
+                   L"HardwareAudioLabel.Text");
   project_optional(NpuLabel(), NpuValue(), NpuDivider(), facts.npu,
-                   L"HardwareNpuLabel");
+                   L"HardwareNpuLabel.Text");
 
   auto const can_start =
       driver_snapshot.writable &&
