@@ -99,7 +99,7 @@ class InMemoryAdvancedViewPreferenceStore final
   passed &= expect(date_at_boundary.find(L"月") != std::wstring::npos &&
                        date_at_boundary.find(L"日") != std::wstring::npos &&
                        date_at_boundary.find(L"时") != std::wstring::npos,
-                   "one day must switch to month-day-hour text");
+                   "one day must switch to the calendar label");
   passed &= expect(format_relative_time(now + 5min, now, labels) == L"刚刚",
                    "future update check timestamps must fail soft to just now");
 
@@ -107,7 +107,7 @@ class InMemoryAdvancedViewPreferenceStore final
   passed &= expect(date_text.find(L"月") != std::wstring::npos &&
                        date_text.find(L"日") != std::wstring::npos &&
                        date_text.find(L"时") != std::wstring::npos,
-                   "older update checks must expose month, day, and hour");
+                   "older update checks must expose local month, day, and hour");
   passed &= expect(date_text.find(L"分钟前") == std::wstring::npos &&
                        date_text.find(L"小时前") == std::wstring::npos,
                    "older update checks must not use a relative hour label");
