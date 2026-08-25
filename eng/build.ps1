@@ -218,6 +218,22 @@ try {
         throw "The WinUI build completed without the expected executable: $executablePath"
     }
 
+    $runtimeCatalogLockContract = Join-Path $repositoryRoot "tests/runtime-catalog-lock-contract/check_runtime_catalog_lock.py"
+    if (-not (Test-Path -LiteralPath $runtimeCatalogLockContract -PathType Leaf)) {
+        throw "The runtime catalog lock contract was not found: $runtimeCatalogLockContract"
+    }
+    $pythonCommand = Get-Command python.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $pythonCommand) {
+        throw "python.exe was not found. The runtime catalog lock contract requires Python 3.9 or later."
+    }
+    $runtimeCatalogPayloadRoot = Join-Path $repositoryRoot "out/windows/$Architecture/Release"
+    Write-Log "Verifying the runtime catalog locks in the staged Windows payload."
+    Invoke-NativeCommand -FilePath $pythonCommand.Source -Arguments @(
+        $runtimeCatalogLockContract,
+        "--repository-root", $repositoryRoot,
+        "--payload-root", $runtimeCatalogPayloadRoot
+    )
+
     & $writeManifest -Architecture $Architecture -Result succeeded -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath -StartupDiagnosticDeviceDataRootEnabled $startupDiagnosticDeviceDataRootEnabled
     Write-Log "Build evidence: $manifestPath"
 } catch {

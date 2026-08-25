@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -117,12 +118,42 @@ def resource_map(content: dict[str, Any], artifact_id: str) -> dict[str, tuple[s
     return result
 
 
+def read_catalog_bytes(catalog_root: Path, context: str) -> dict[str, bytes]:
+    require(catalog_root.is_dir(), f"{context} root is not a directory: {catalog_root}")
+    result: dict[str, bytes] = {}
+    for resource_id, relative_path in EXPECTED_RESOURCES.items():
+        path = catalog_root / relative_path
+        try:
+            result[resource_id] = path.read_bytes()
+        except OSError as error:
+            raise ContractFailure(f"{context} {relative_path} is not readable: {error}") from error
+    return result
+
+
+def verify_catalog_bytes(
+    catalog_bytes: dict[str, bytes],
+    expected_resource_map: dict[str, tuple[str, int, str]],
+    context: str,
+) -> None:
+    for resource_id, expected_path in EXPECTED_RESOURCES.items():
+        try:
+            actual = catalog_bytes[resource_id]
+        except KeyError as error:
+            raise ContractFailure(f"{context} is missing {expected_path}") from error
+        require(isinstance(actual, bytes), f"{context} {expected_path} must contain bytes")
+        _, manifest_bytes, manifest_sha256 = expected_resource_map[resource_id]
+        actual_sha256 = hashlib.sha256(actual).hexdigest()
+        require((len(actual), actual_sha256) == (manifest_bytes, manifest_sha256),
+                f"{context} {expected_path} does not match the release content manifest")
+
+
 def verify(
     root: Path,
     *,
     runtime_source: str | None = None,
     manifest: dict[str, Any] | None = None,
     catalog_bytes: dict[str, bytes] | None = None,
+    payload_root: Path | None = None,
 ) -> None:
     source_path = root / "src/composition/windows/composition_root.cpp"
     manifest_path = root / "release/artifact-content-manifest.v1.json"
@@ -160,23 +191,19 @@ def verify(
                     f"artifact {artifact_id} catalog locks differ from the other x64 portable artifacts")
 
     require(expected_resource_map is not None, "x64 portable catalog resources are missing")
-    for resource_id, expected_path in EXPECTED_RESOURCES.items():
+    for resource_id in EXPECTED_RESOURCES:
         _, manifest_bytes, manifest_sha256 = expected_resource_map[resource_id]
         runtime_bytes, runtime_sha256 = runtime_locks[resource_id]
         require((runtime_bytes, runtime_sha256.hex()) == (manifest_bytes, manifest_sha256),
                 f"runtime lock for {resource_id} does not match the release content manifest")
 
-        if catalog_bytes is None:
-            source_path = root / expected_path
-            try:
-                actual = source_path.read_bytes()
-            except OSError as error:
-                raise ContractFailure(f"catalog source {expected_path} is not readable: {error}") from error
-        else:
-            actual = catalog_bytes[resource_id]
-        actual_sha256 = hashlib.sha256(actual).hexdigest()
-        require((len(actual), actual_sha256) == (manifest_bytes, manifest_sha256),
-                f"catalog source {expected_path} does not match the release content manifest")
+    if catalog_bytes is None:
+        catalog_bytes = read_catalog_bytes(root, "catalog source")
+    verify_catalog_bytes(catalog_bytes, expected_resource_map, "catalog source")
+
+    if payload_root is not None:
+        payload_bytes = read_catalog_bytes(payload_root, "catalog payload")
+        verify_catalog_bytes(payload_bytes, expected_resource_map, "catalog payload")
 
 
 def verify_drift_rejection(root: Path) -> None:
@@ -220,14 +247,36 @@ def verify_drift_rejection(root: Path) -> None:
     else:
         raise ContractFailure("catalog source drift was not rejected")
 
+    with tempfile.TemporaryDirectory(prefix="azzs-runtime-catalog-lock-") as temporary_directory:
+        payload_root = Path(temporary_directory)
+        for resource_id, path in EXPECTED_RESOURCES.items():
+            payload_path = payload_root / path
+            payload_path.parent.mkdir(parents=True, exist_ok=True)
+            payload_path.write_bytes(actual[resource_id])
+
+        payload_path = payload_root / EXPECTED_RESOURCES["software-catalog"]
+        payload_bytes = payload_path.read_bytes()
+        crlf_payload_bytes = payload_bytes.replace(b"\n", b"\r\n")
+        require(crlf_payload_bytes != payload_bytes,
+                "catalog payload drift fixture could not convert the source to CRLF")
+        payload_path.write_bytes(crlf_payload_bytes)
+        try:
+            verify(root, payload_root=payload_root)
+        except ContractFailure:
+            pass
+        else:
+            raise ContractFailure("catalog payload drift was not rejected")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository-root", required=True, type=Path)
+    parser.add_argument("--payload-root", type=Path)
     args = parser.parse_args()
     root = args.repository_root.resolve()
+    payload_root = args.payload_root.resolve() if args.payload_root is not None else None
     try:
-        verify(root)
+        verify(root, payload_root=payload_root)
         verify_drift_rejection(root)
     except (ContractFailure, OSError) as error:
         print(f"runtime catalog lock contract failed: {error}", file=sys.stderr)

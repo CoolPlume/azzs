@@ -109,6 +109,15 @@ try {
     Require ($buildScript.Contains('-StartupDiagnosticDeviceDataRootEnabled $startupDiagnosticDeviceDataRootEnabled')) "the build entry point must record the diagnostic mode in every build manifest"
     Require ($manifestScript.Contains('StartupDiagnosticDeviceDataRootEnabled = $false') -and
         $manifestScript.Contains('startupDiagnosticDeviceDataRoot = $StartupDiagnosticDeviceDataRootEnabled')) "the build manifest must record the diagnostic mode"
+    $hostArtifactCheckIndex = $buildScript.IndexOf('$executablePath = Join-Path $repositoryRoot "out/windows/$Architecture/Release/Azzs.WinUI.exe"')
+    $successManifestIndex = $buildScript.IndexOf('& $writeManifest -Architecture $Architecture -Result succeeded')
+    Require ($hostArtifactCheckIndex -ge 0 -and $successManifestIndex -gt $hostArtifactCheckIndex) "the build entry point must verify the staged WinUI host before recording success"
+    $runtimeCatalogGate = $buildScript.Substring($hostArtifactCheckIndex, $successManifestIndex - $hostArtifactCheckIndex)
+    Require ($runtimeCatalogGate.Contains('$runtimeCatalogLockContract = Join-Path $repositoryRoot "tests/runtime-catalog-lock-contract/check_runtime_catalog_lock.py"')) "the build entry point must use the shared runtime catalog lock contract"
+    Require ($runtimeCatalogGate.Contains('$runtimeCatalogPayloadRoot = Join-Path $repositoryRoot "out/windows/$Architecture/Release"')) "the runtime catalog lock gate must target the staged Windows Release payload"
+    Require ($runtimeCatalogGate.Contains('Get-Command python.exe -CommandType Application')) "the runtime catalog lock gate must resolve a Python interpreter"
+    Require ($runtimeCatalogGate -match '(?s)Invoke-NativeCommand\s+-FilePath\s+\$pythonCommand\.Source\s+-Arguments\s+@\(\s*\$runtimeCatalogLockContract,\s*"--repository-root",\s*\$repositoryRoot,\s*"--payload-root",\s*\$runtimeCatalogPayloadRoot\s*\)') "the runtime catalog lock gate must validate the repository and staged payload before recording success"
+    Require (-not $runtimeCatalogGate.Contains('SkipCoreSmoke')) "the staged runtime catalog lock gate must not be bypassed by -SkipCoreSmoke"
     $generatedDiagnosticInclude = '$(MSBuildThisFileDirectory)..\..\..\..\out\obj\winui\generated;'
     Require ($winuiProject.Contains($generatedDiagnosticInclude)) "the WinUI host must include the CMake-generated diagnostic guard through the controlled intermediate directory"
     Require ($rootCmake.Contains('out/obj/winui/generated') -and
