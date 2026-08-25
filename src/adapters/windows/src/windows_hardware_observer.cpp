@@ -2281,9 +2281,9 @@ enum class KeyboardPresentationType {
   if (normalized_pnp_id.empty() || virtual_pnp_id(normalized_pnp_id)) {
     return false;
   }
-  constexpr std::array<std::string_view, 9> physical_prefixes{
-      "acpi\\", "bth\\", "bluetooth\\", "hid\\", "i2c\\",
-      "spi\\", "usb\\", "sd\\", "swd\\",
+  constexpr std::array<std::string_view, 11> physical_prefixes{
+      "acpi\\", "bth\\", "bthenum\\", "bthledevice\\", "bluetooth\\",
+      "hid\\", "i2c\\", "spi\\", "usb\\", "sd\\", "swd\\",
   };
   return std::ranges::any_of(physical_prefixes, [&](auto const prefix) {
     return starts_with_ascii(normalized_pnp_id, prefix);
@@ -2319,6 +2319,8 @@ enum class KeyboardPresentationType {
                            starts_with_ascii(normalized_pnp_id, "spi\\");
   auto const usb_or_bluetooth = starts_with_ascii(normalized_pnp_id, "usb\\") ||
                                 starts_with_ascii(normalized_pnp_id, "bth\\") ||
+                                starts_with_ascii(normalized_pnp_id, "bthenum\\") ||
+                                starts_with_ascii(normalized_pnp_id, "bthledevice\\") ||
                                 starts_with_ascii(normalized_pnp_id, "bluetooth\\");
   internal = internal || acpi_or_i2c;
   external = external || usb_or_bluetooth;
@@ -2339,8 +2341,8 @@ input_device_type_for(std::string_view name, std::string_view pnp_class) {
   if (is_touchpad && !contains_ascii(name, "touchscreen")) {
     return application::HardwareInputDeviceType::touchpad;
   }
-  if (contains_ascii(pnp_class, "mouse") || contains_ascii(pnp_class, "hid") ||
-      contains_ascii(name, "mouse") || contains_ascii(name, "pointing device") ||
+  if (contains_ascii(pnp_class, "mouse") || contains_ascii(name, "mouse") ||
+      contains_ascii(name, "pointing device") ||
       contains_ascii(name, "trackball")) {
     return application::HardwareInputDeviceType::mouse;
   }

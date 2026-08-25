@@ -1664,9 +1664,14 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   raw_executor->expected[9].result.rows = {
       {"HID-compliant mouse", "Microsoft", "USB\\VID_046D&PID_C077",
        "OK", "0", "Mouse"},
+      {"Bluetooth mouse", "Microsoft",
+       "BTHENUM\\{00001124-0000-1000-8000-00805F9B34FB}", "OK", "0",
+       "HIDClass"},
       {"ELAN ClickPad", "ELAN", "ACPI\\ELAN0001", "OK", "0", "Mouse"},
       {"HID-compliant touch pad", "ELAN", "ACPI\\ELAN0002", "OK", "0",
        "HIDClass"},
+      {"HID Keyboard Device", "Microsoft", "USB\\VID_046D&PID_C31C", "OK",
+       "0", "HIDClass"},
   };
   raw_executor->expected[11].result.rows = {
       {"HID Keyboard Device", "USB\\VID_046D&PID_C31C", "OK", "0"},
@@ -1688,6 +1693,13 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                  device.input_device_connection == connection;
         });
   };
+  auto const count_inputs = [&](HardwareInputDeviceType type) {
+    return std::ranges::count_if(
+        observation.devices, [&](HardwareDeviceRecord const& device) {
+          return device.kind == HardwareDeviceKind::input_device &&
+                 device.input_device_type == type;
+        });
+  };
   return expect(has_input(HardwareInputDeviceType::keyboard,
                           HardwareInputDeviceConnection::external) &&
                     has_input(HardwareInputDeviceType::mouse,
@@ -1695,6 +1707,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     has_input(HardwareInputDeviceType::touchpad,
                               HardwareInputDeviceConnection::internal),
                 "USB keyboard/mouse and ACPI touchpad rows must retain their reliable connection facts") &&
+         expect(count_inputs(HardwareInputDeviceType::mouse) == 2 &&
+                    count_inputs(HardwareInputDeviceType::touchpad) == 2,
+                "USB and Bluetooth mouse rows plus ClickPad and touch-pad rows must project without HID keyboard false positives") &&
          expect(observation.keyboard == "外接键盘" &&
                     observation.mouse == "外接鼠标" &&
                     observation.touchpad.find("内建触控板") != std::string::npos,
