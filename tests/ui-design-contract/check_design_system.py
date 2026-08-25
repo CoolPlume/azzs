@@ -1284,6 +1284,9 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         ("HardwareMotherboardLabel", "AzzsHardwareMotherboard"),
         ("HardwareMemoryLabel", "AzzsHardwareMemory"),
         ("HardwareGpuLabel", "AzzsHardwareGpu"),
+        ("HardwareKeyboardLabel", "AzzsHardwareKeyboard"),
+        ("HardwareMouseLabel", "AzzsHardwareMouse"),
+        ("HardwareTouchpadLabel", "AzzsHardwareTouchpad"),
         ("HardwareDisplayLabel", "AzzsHardwareDisplay"),
         ("HardwareSolidStateStorageLabel", "AzzsHardwareSolidStateStorage"),
         ("HardwareHardDiskStorageLabel", "AzzsHardwareHardDiskStorage"),
@@ -1313,6 +1316,9 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         resource_values.get("HardwareDetailsTitle.Text") == "详细信息" and
         resource_values.get("HardwareTableItemHeader.Text") == "项目" and
         resource_values.get("HardwareTableInformationHeader.Text") == "信息" and
+        resource_values.get("HardwareKeyboardLabel.Text") == "键盘" and
+        resource_values.get("HardwareMouseLabel.Text") == "鼠标" and
+        resource_values.get("HardwareTouchpadLabel.Text") == "触控板" and
         resource_values.get("HardwareSolidStateStorageLabel.Text") == "固态硬盘" and
         resource_values.get("HardwareHardDiskStorageLabel.Text") == "机械硬盘" and
         resource_values.get("HardwareWiredNetworkLabel.Text") == "有线网卡" and
@@ -1398,6 +1404,9 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         ("HardwareGpuLabel", "GpuValue", "AzzsHardwareGpu"),
     )
     optional_hardware_rows = (
+        ("HardwareKeyboardLabel", "KeyboardLabel", "KeyboardValue", "KeyboardDivider", "AzzsHardwareKeyboard"),
+        ("HardwareMouseLabel", "MouseLabel", "MouseValue", "MouseDivider", "AzzsHardwareMouse"),
+        ("HardwareTouchpadLabel", "TouchpadLabel", "TouchpadValue", "TouchpadDivider", "AzzsHardwareTouchpad"),
         ("HardwareDisplayLabel", "DisplayLabel", "DisplayValue", "DisplayDivider", "AzzsHardwareDisplay"),
         ("HardwareSolidStateStorageLabel", "SolidStateStorageLabel", "SolidStateStorageValue", "SolidStateStorageDivider", "AzzsHardwareSolidStateStorage"),
         ("HardwareHardDiskStorageLabel", "HardDiskStorageLabel", "HardDiskStorageValue", "HardDiskStorageDivider", "AzzsHardwareHardDiskStorage"),
@@ -1412,7 +1421,7 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     ]
     require(len(detail_rows) == 1 + len(fixed_hardware_rows) + len(optional_hardware_rows) and
             all(row.attrib.get("Height") == "Auto" for row in detail_rows),
-            "the hardware table must retain one header, six fixed facts, and seven optional content-sized rows")
+            "the hardware table must retain one header, six fixed facts, and ten optional content-sized rows")
     table_headers = [
         element for element in details_grid.iter()
         if element.attrib.get(f"{{{X_NS}}}Uid") in
@@ -1517,7 +1526,7 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "facts.memory", "facts.display", "facts.solid_state_storage",
         "facts.hard_disk_storage", "facts.npu", "facts.audio",
         "facts.wired_network_adapter", "facts.wireless_network_adapter",
-        "facts.oem_model",
+        "facts.keyboard", "facts.mouse", "facts.touchpad", "facts.oem_model",
     ):
         require(field in drivers_cpp,
                 f"drivers page must project hardware detail field {field}")

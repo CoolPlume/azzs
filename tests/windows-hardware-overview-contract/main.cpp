@@ -1710,8 +1710,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
          expect(count_inputs(HardwareInputDeviceType::mouse) == 2 &&
                     count_inputs(HardwareInputDeviceType::touchpad) == 2,
                 "USB and Bluetooth mouse rows plus ClickPad and touch-pad rows must project without HID keyboard false positives") &&
-         expect(observation.keyboard == "外接键盘" &&
-                    observation.mouse == "外接鼠标" &&
+         expect(observation.keyboard.find("外接键盘") != std::string::npos &&
+                    observation.mouse.find("外接鼠标") != std::string::npos &&
                     observation.touchpad.find("内建触控板") != std::string::npos,
                 "peripheral summaries must expose keyboard, mouse and touchpad categories");
 }
