@@ -173,6 +173,11 @@ void DriversPage::project(
                                    auto const& divider, std::string_view fact) {
     project_optional_hardware_row(label, value, divider, fact);
   };
+  project_optional(KeyboardLabel(), KeyboardValue(), KeyboardDivider(),
+                   facts.keyboard);
+  project_optional(MouseLabel(), MouseValue(), MouseDivider(), facts.mouse);
+  project_optional(TouchpadLabel(), TouchpadValue(), TouchpadDivider(),
+                   facts.touchpad);
   project_optional(DisplayLabel(), DisplayValue(), DisplayDivider(), facts.display);
   project_optional(SolidStateStorageLabel(), SolidStateStorageValue(),
                    SolidStateStorageDivider(), facts.solid_state_storage);
