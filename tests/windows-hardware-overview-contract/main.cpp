@@ -25,11 +25,15 @@ using azzs::adapters::windows::WindowsDisplayEdid;
 using azzs::adapters::windows::WindowsDisplayConnection;
 using azzs::adapters::windows::WindowsDisplayPhysicalSize;
 using azzs::adapters::windows::WindowsGpuMemory;
+using azzs::adapters::windows::WindowsInputDeviceMetadata;
 using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareDisplayConnection;
 using azzs::application::HardwareDeviceRecord;
 using azzs::application::HardwareDeviceKind;
 using azzs::application::HardwareDeviceStatus;
+using azzs::application::HardwareInputDeviceConnection;
+using azzs::application::HardwareInputDeviceType;
+using azzs::application::HardwareObservationSource;
 using azzs::application::HardwareStorageMedia;
 using azzs::application::HardwareGpuComputeUnit;
 using azzs::application::HardwareGpuType;
@@ -66,7 +70,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   std::vector<WindowsDisplayEdid> edids;
   std::vector<WindowsDisplayConnection> connections;
   std::vector<WindowsDisplayPhysicalSize> physical_sizes;
+  std::vector<WindowsInputDeviceMetadata> input_metadata;
   std::vector<std::string> requested_display_pnp_ids;
+  std::vector<std::string> requested_input_device_pnp_ids;
   bool throw_display_edids{false};
   std::size_t calls{0};
   bool mismatch{false};
@@ -129,6 +135,13 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   [[nodiscard]] std::vector<WindowsDisplayPhysicalSize> display_physical_sizes(
       std::span<std::string const>, std::stop_token) override {
     return physical_sizes;
+  }
+
+  [[nodiscard]] std::vector<WindowsInputDeviceMetadata> input_device_metadata(
+      std::span<std::string const> pnp_device_ids, std::stop_token) override {
+    requested_input_device_pnp_ids.assign(pnp_device_ids.begin(),
+                                          pnp_device_ids.end());
+    return input_metadata;
   }
 };
 
@@ -241,6 +254,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
       {"Win32_OperatingSystem", {"Caption", "Version", "BuildNumber", "OSArchitecture"},
        {.code = WindowsHardwareQueryCode::succeeded,
         .rows = {{"Microsoft Windows 11 Pro", "10.0.26100", "26100", "64-bit"}}}},
+      {"Win32_Keyboard",
+       {"Description", "PNPDeviceID", "Status", "ConfigManagerErrorCode"},
+       {.code = WindowsHardwareQueryCode::succeeded, .rows = {}}},
   };
 }
 
@@ -260,7 +276,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   return expect(result.code == HardwareObservationCode::succeeded &&
                     result.observation.has_value(),
                 "complete WMI facts must produce a successful observation") &&
-          expect(!raw_executor->mismatch && raw_executor->calls == 11,
+          expect(!raw_executor->mismatch && raw_executor->calls == 12,
                  "the adapter must use exactly the approved read-only "
                  "model queries") &&
                  expect(result.observation->cpu.find("8核心16线程") !=
@@ -449,7 +465,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     result.observation->cpu.find("8核心16线程") !=
                         std::string::npos,
                 "a non-terminal probe failure must return usable partial facts") &&
-          expect(!raw_executor->mismatch && raw_executor->calls == 11,
+          expect(!raw_executor->mismatch && raw_executor->calls == 12,
                 "a partial failure must still collect independent model facts");
 }
 
@@ -483,7 +499,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                           return device.kind == HardwareDeviceKind::display &&
                                  device.status == HardwareDeviceStatus::disabled;
                         }) &&
-                    !raw_executor->mismatch && raw_executor->calls == 11,
+                    !raw_executor->mismatch && raw_executor->calls == 12,
                 "missing processor PNP ids, a concrete hosted board, and generic monitor rows must use concrete OEM WMI fallbacks");
 }
 
@@ -504,7 +520,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                           return device.kind ==
                                  HardwareDeviceKind::motherboard;
                         }) &&
-                    !raw_executor->mismatch && raw_executor->calls == 11,
+                    !raw_executor->mismatch && raw_executor->calls == 12,
                 "a baseboard without both manufacturer and product must not "
                 "be promoted from an empty-PNP WMI row");
 }
@@ -595,7 +611,7 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
     }
   }
   return expect(result.succeeded() && observation.has_value() &&
-                    !raw_executor->mismatch && raw_executor->calls == 11,
+                    !raw_executor->mismatch && raw_executor->calls == 12,
                 "real WMI field shapes must satisfy the approved query contract") &&
          expect(observation->cpu.find(
                     "24核心24线程；8性能核+16能效核+0低功耗能效核") !=
@@ -1478,6 +1494,165 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                 "memory summaries must render every matching module instead of two hard-coded entries");
 }
 
+[[nodiscard]] bool exact_keyboard_metadata_matches_are_projected() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[11].result.rows = {
+      {" Internal Keyboard ", "  ACPI\\KEYBOARD\\A  ", "OK", "0"},
+      {"built-in keyboard", "ACPI\\KEYBOARD\\B", "OK", "0"},
+  };
+  raw_executor->input_metadata = {
+      {.pnp_device_id = "acpi\\keyboard\\a",
+       .container_id = "keyboard-container-a",
+       .bus_reported_device_description = "Magic Keyboard 79-key"},
+      {.pnp_device_id = " ACPI\\KEYBOARD\\B ",
+       .container_id = "keyboard-container-b",
+       .bus_reported_device_description = "Butterfly Keyboard 80 key"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  if (!expect(result.succeeded() && result.observation.has_value() &&
+                  !raw_executor->mismatch && raw_executor->calls == 12,
+              "keyboard metadata must preserve the approved query contract")) {
+    return false;
+  }
+
+  auto const& observation = *result.observation;
+  auto const projected_keyboard_count = std::ranges::count_if(
+      observation.devices, [](HardwareDeviceRecord const& device) {
+        return device.kind == HardwareDeviceKind::input_device &&
+               device.input_device_type == HardwareInputDeviceType::keyboard &&
+               device.input_device_connection ==
+                   HardwareInputDeviceConnection::internal &&
+               device.source == HardwareObservationSource::setup_api &&
+               device.input_device_key_count != 0;
+      });
+  return expect(raw_executor->requested_input_device_pnp_ids ==
+                    std::vector<std::string>{"  ACPI\\KEYBOARD\\A  ",
+                                             "ACPI\\KEYBOARD\\B"},
+                "the metadata request must preserve each complete WMI PNP instance") &&
+         expect(projected_keyboard_count == 2 &&
+                    observation.keyboard.find("内建键盘 · 妙控键盘（79 键）") !=
+                        std::string::npos &&
+                    observation.keyboard.find("内建键盘 · 蝶式键盘（80 键）") !=
+                        std::string::npos,
+                "case and surrounding-space normalized same-device metadata must project only explicit keyboard facts") &&
+         expect(observation.keyboard.find("ACPI") == std::string::npos &&
+                    observation.keyboard.find("container") == std::string::npos,
+                "PNP and container identifiers must remain adapter-private");
+}
+
+[[nodiscard]] bool keyboard_identity_hints_cannot_forge_a_presentation_type() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[11].result.rows = {
+      {"Internal HID Keyboard Device 79-key", "ACPI\\KEYBOARD\\GENERIC", "OK", "0"},
+      {"Built-in Magic Keyboard 79 key", "ACPI\\KEYBOARD\\MODEL", "OK", "0"},
+      {"内建 Keyboard", "ACPI\\MAGIC_KEYBOARD\\FRAGMENT", "OK", "0"},
+  };
+  raw_executor->input_metadata = {
+      {.pnp_device_id = "ACPI\\KEYBOARD\\GENERIC",
+       .container_id = "generic-container",
+       .bus_reported_device_description = "Generic HID Keyboard Device 79-key"},
+      {.pnp_device_id = "ACPI\\KEYBOARD\\MODEL",
+       .container_id = "apple-container",
+       .bus_reported_device_description = "Apple MacBook Pro Keyboard 79 key"},
+      {.pnp_device_id = "ACPI\\MAGIC_KEYBOARD\\FRAGMENT",
+       .container_id = "fragment-container",
+       .bus_reported_device_description = "Apple MacBook Air Keyboard"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  if (!expect(result.succeeded() && result.observation.has_value(),
+              "explicit internal keyboard facts must remain observable")) {
+    return false;
+  }
+
+  auto const& observation = *result.observation;
+  auto const is_unspecified_internal_keyboard =
+      [](HardwareDeviceRecord const& device) {
+        return device.kind != HardwareDeviceKind::input_device ||
+               (device.name == "内建键盘" &&
+                device.input_device_type == HardwareInputDeviceType::keyboard &&
+                device.input_device_connection ==
+                    HardwareInputDeviceConnection::internal &&
+                device.input_device_key_count == 0);
+      };
+  auto const keyboard_count = std::ranges::count_if(
+      observation.devices, [](HardwareDeviceRecord const& device) {
+        return device.kind == HardwareDeviceKind::input_device;
+      });
+  return expect(keyboard_count == 3 &&
+                    std::ranges::all_of(observation.devices,
+                                        is_unspecified_internal_keyboard),
+                "generic HID, ordinary WMI text, Apple or Mac model text, and PNP fragments must not infer a concrete keyboard type or key count") &&
+         expect(observation.keyboard.find("妙控键盘") == std::string::npos &&
+                    observation.keyboard.find("蝶式键盘") == std::string::npos &&
+                    observation.keyboard.find("（") == std::string::npos,
+                "identity hints must retain only the generic internal keyboard presentation");
+}
+
+[[nodiscard]] bool keyboard_metadata_mismatch_and_conflicts_fail_closed() {
+  auto unmatched_executor = std::make_unique<FakeQueryExecutor>();
+  auto* unmatched_raw = unmatched_executor.get();
+  unmatched_raw->expected = full_queries();
+  unmatched_raw->expected[11].result.rows = {
+      {"Internal Keyboard", "ACPI\\KEYBOARD\\MATCH", "OK", "0"},
+  };
+  unmatched_raw->input_metadata = {
+      {.pnp_device_id = "ACPI\\KEYBOARD\\OTHER",
+       .container_id = "other-container",
+       .bus_reported_device_description = "Magic Keyboard 79-key"},
+  };
+  WindowsHardwareObserver unmatched_observer{std::move(unmatched_executor)};
+  auto const unmatched = unmatched_observer.observe({});
+
+  auto conflict_executor = std::make_unique<FakeQueryExecutor>();
+  auto* conflict_raw = conflict_executor.get();
+  conflict_raw->expected = full_queries();
+  conflict_raw->expected[11].result.rows = {
+      {"Built-in Keyboard", " ACPI\\KEYBOARD\\CONFLICT ", "OK", "0"},
+  };
+  conflict_raw->input_metadata = {
+      {.pnp_device_id = "acpi\\keyboard\\conflict",
+       .container_id = "conflict-container",
+        .bus_reported_device_description = "Magic Keyboard 80-key"},
+      {.pnp_device_id = "ACPI\\KEYBOARD\\CONFLICT",
+       .container_id = "conflict-container",
+       .bus_reported_device_description = "Butterfly Keyboard 80-key"},
+  };
+  WindowsHardwareObserver conflict_observer{std::move(conflict_executor)};
+  auto const conflict = conflict_observer.observe({});
+
+  auto const find_keyboard = [](auto const& result) -> HardwareDeviceRecord const* {
+    if (!result.observation.has_value()) {
+      return nullptr;
+    }
+    auto const found = std::ranges::find_if(
+        result.observation->devices, [](HardwareDeviceRecord const& device) {
+          return device.kind == HardwareDeviceKind::input_device &&
+                 device.input_device_type == HardwareInputDeviceType::keyboard;
+        });
+    return found == result.observation->devices.end() ? nullptr : &*found;
+  };
+  auto const* unmatched_keyboard = find_keyboard(unmatched);
+  auto const* conflict_keyboard = find_keyboard(conflict);
+  return expect(unmatched.succeeded() && unmatched_keyboard != nullptr &&
+                    unmatched_keyboard->name == "内建键盘" &&
+                    unmatched_keyboard->source == HardwareObservationSource::wmi &&
+                    unmatched_keyboard->input_device_key_count == 0,
+                "metadata from another complete PNP instance must not be borrowed") &&
+         expect(conflict.succeeded() && conflict_keyboard != nullptr &&
+                    conflict_keyboard->name == "内建键盘" &&
+                    conflict_keyboard->input_device_key_count == 0 &&
+                    conflict.observation->keyboard.find("（") ==
+                        std::string::npos &&
+                    !conflict_raw->mismatch && conflict_raw->calls == 12,
+                "conflicting same-device driver types must fail closed and omit the key-count presentation");
+}
+
 [[nodiscard]] bool permission_denial_and_cancellation_are_terminal() {
   auto denied_executor = std::make_unique<FakeQueryExecutor>();
   auto* denied_raw = denied_executor.get();
@@ -1523,9 +1698,9 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
   WindowsHardwareObserver partial_observer{std::move(partial_executor)};
   auto const partial = partial_observer.current_model_observation({});
 
-  return expect(complete.has_value() && complete_raw->calls == 11,
+  return expect(complete.has_value() && complete_raw->calls == 12,
                 "a complete read-only model probe may provide a cache key") &&
-          expect(!partial.has_value() && partial_raw->calls == 11,
+          expect(!partial.has_value() && partial_raw->calls == 12,
                 "partial probes must not falsely declare a hardware change");
 }
 
@@ -1559,6 +1734,9 @@ int main() {
   passed &= invalid_or_conflicting_edid_fails_closed();
   passed &= unknown_media_physical_storage_stays_device_only();
   passed &= memory_quantity_rendering_scales_past_two_modules();
+  passed &= exact_keyboard_metadata_matches_are_projected();
+  passed &= keyboard_identity_hints_cannot_forge_a_presentation_type();
+  passed &= keyboard_metadata_mismatch_and_conflicts_fail_closed();
   passed &= permission_denial_and_cancellation_are_terminal();
   passed &= model_change_probe_requires_complete_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;

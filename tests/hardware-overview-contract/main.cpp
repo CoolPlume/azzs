@@ -18,6 +18,8 @@ using azzs::application::HardwareObservationCode;
 using azzs::application::HardwareObservationResult;
 using azzs::application::HardwareDeviceKind;
 using azzs::application::HardwareDevicePhysicality;
+using azzs::application::HardwareInputDeviceConnection;
+using azzs::application::HardwareInputDeviceType;
 using azzs::application::HardwareObservationConfidence;
 using azzs::application::HardwareObservationSource;
 using azzs::application::HardwareVendor;
@@ -260,14 +262,47 @@ class FakeHardwareObserver final : public HardwareObserver {
   connection_changed.devices.back().display_connection =
       azzs::application::HardwareDisplayConnection::external;
 
+  auto input = observation();
+  input.devices.push_back({
+      .kind = HardwareDeviceKind::input_device,
+      .name = "内建键盘 · 妙控键盘",
+      .physicality = HardwareDevicePhysicality::confirmed_physical,
+      .source = HardwareObservationSource::setup_api,
+      .confidence = HardwareObservationConfidence::confirmed,
+      .status = azzs::application::HardwareDeviceStatus::enabled,
+      .vendor = HardwareVendor::unknown,
+      .physically_present = true,
+      .filter_reason = "contract fixture",
+      .input_device_type = HardwareInputDeviceType::keyboard,
+      .input_device_connection = HardwareInputDeviceConnection::internal,
+      .input_device_key_count = 79,
+  });
+  auto const unchanged_input = input;
+  auto input_type_changed = input;
+  input_type_changed.devices.back().input_device_type =
+      HardwareInputDeviceType::touchpad;
+  auto input_connection_changed = input;
+  input_connection_changed.devices.back().input_device_connection =
+      HardwareInputDeviceConnection::external;
+  auto input_key_count_changed = input;
+  input_key_count_changed.devices.back().input_device_key_count = 80;
+
   return expect(first.model_fingerprint() == unchanged.model_fingerprint() &&
                     first.model_fingerprint() !=
                         capability_changed.model_fingerprint() &&
                     first.model_fingerprint() !=
                         active_refresh_changed.model_fingerprint() &&
                     first.model_fingerprint() !=
-                        connection_changed.model_fingerprint(),
-                "the cache key must retain active and capability display facts without parsing presentation text");
+                        connection_changed.model_fingerprint() &&
+                    input.model_fingerprint() ==
+                        unchanged_input.model_fingerprint() &&
+                    input.model_fingerprint() !=
+                        input_type_changed.model_fingerprint() &&
+                    input.model_fingerprint() !=
+                        input_connection_changed.model_fingerprint() &&
+                    input.model_fingerprint() !=
+                        input_key_count_changed.model_fingerprint(),
+                "the cache key must retain structured display and input facts without parsing presentation text");
 }
 
 }  // namespace

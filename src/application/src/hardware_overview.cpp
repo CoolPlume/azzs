@@ -23,7 +23,7 @@ bool HardwareObservation::has_confirmed_physical_hardware() const noexcept {
 std::string HardwareObservation::model_fingerprint() const {
   // Keep the cache key limited to non-unique model text. Never add serial
   // numbers, MAC/IP addresses, computer names, or other device identifiers.
-  std::array<std::string_view, 16> const fields{
+  std::array<std::string_view, 19> const fields{
       cpu,
       gpu,
       motherboard,
@@ -37,6 +37,9 @@ std::string HardwareObservation::model_fingerprint() const {
       hard_disk_storage,
       npu,
       audio,
+      keyboard,
+      mouse,
+      touchpad,
       operating_system,
       oem_model,
       to_string(oem_vendor),
@@ -77,6 +80,9 @@ std::string HardwareObservation::model_fingerprint() const {
     append_field(to_string(device.gpu_compute_unit));
     append_field(std::to_string(device.gpu_compute_unit_count));
     append_field(std::to_string(device.gpu_shared_memory_bytes));
+    append_field(to_string(device.input_device_type));
+    append_field(to_string(device.input_device_connection));
+    append_field(std::to_string(device.input_device_key_count));
     append_field(std::to_string(device.quantity));
   }
   return result;
@@ -93,6 +99,7 @@ char const* to_string(HardwareDeviceKind value) noexcept {
     case HardwareDeviceKind::storage: return "storage";
     case HardwareDeviceKind::npu: return "npu";
     case HardwareDeviceKind::audio: return "audio";
+    case HardwareDeviceKind::input_device: return "input-device";
   }
   return "unknown";
 }
@@ -196,6 +203,25 @@ char const* to_string(HardwareDisplayConnection value) noexcept {
     case HardwareDisplayConnection::unknown: return "unknown";
     case HardwareDisplayConnection::internal: return "internal";
     case HardwareDisplayConnection::external: return "external";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareInputDeviceType value) noexcept {
+  switch (value) {
+    case HardwareInputDeviceType::unknown: return "unknown";
+    case HardwareInputDeviceType::keyboard: return "keyboard";
+    case HardwareInputDeviceType::mouse: return "mouse";
+    case HardwareInputDeviceType::touchpad: return "touchpad";
+  }
+  return "unknown";
+}
+
+char const* to_string(HardwareInputDeviceConnection value) noexcept {
+  switch (value) {
+    case HardwareInputDeviceConnection::unknown: return "unknown";
+    case HardwareInputDeviceConnection::internal: return "internal";
+    case HardwareInputDeviceConnection::external: return "external";
   }
   return "unknown";
 }
