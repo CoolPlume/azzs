@@ -87,6 +87,9 @@
   <data name="HardwareOperatingSystemLabel.Text" xml:space="preserve"><value>系统</value></data>
   <data name="HardwareMemoryLabel.Text" xml:space="preserve"><value>内存</value></data>
   <data name="HardwareDisplayLabel.Text" xml:space="preserve"><value>显示器</value></data>
+  <data name="HardwareKeyboardLabel.Text" xml:space="preserve"><value>键盘</value></data>
+  <data name="HardwareMouseLabel.Text" xml:space="preserve"><value>鼠标</value></data>
+  <data name="HardwareTouchpadLabel.Text" xml:space="preserve"><value>触控板</value></data>
   <data name="HardwareSolidStateStorageLabel.Text" xml:space="preserve"><value>固态硬盘</value></data>
   <data name="HardwareHardDiskStorageLabel.Text" xml:space="preserve"><value>机械硬盘</value></data>
   <data name="HardwareNpuLabel.Text" xml:space="preserve"><value>NPU</value></data>
