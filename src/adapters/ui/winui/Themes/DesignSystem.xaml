@@ -359,7 +359,9 @@
         <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>
 
-    <Style x:Key="AzzsCheckBoxStyle" TargetType="CheckBox">
+    <Style x:Key="AzzsCheckBoxStyle"
+           TargetType="CheckBox"
+           BasedOn="{StaticResource DefaultCheckBoxStyle}">
         <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>
 

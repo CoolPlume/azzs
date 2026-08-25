@@ -296,6 +296,34 @@ def verify_resource_dictionary(root: Path) -> None:
     require(corner_radii and max(corner_radii) <= 8,
             "design-system card radii must not exceed 8px")
 
+    check_box_style = next(
+        (element for element in theme_root
+         if element.attrib.get(X_KEY) == "AzzsCheckBoxStyle"),
+        None,
+    )
+    require(
+        check_box_style is not None and
+        local_name(check_box_style.tag) == "Style" and
+        check_box_style.attrib.get("TargetType") == "CheckBox",
+        "AzzsCheckBoxStyle must remain a dedicated CheckBox style",
+    )
+    require(
+        check_box_style is not None and
+        check_box_style.attrib.get("BasedOn") ==
+        "{StaticResource DefaultCheckBoxStyle}",
+        "AzzsCheckBoxStyle must inherit the framework CheckBox template",
+    )
+    check_box_setters = {
+        element.attrib.get("Property"): element.attrib.get("Value")
+        for element in (check_box_style if check_box_style is not None else ())
+        if local_name(element.tag) == "Setter"
+    }
+    require(
+        check_box_setters.get("CornerRadius") ==
+        "{StaticResource AzzsCornerRadiusSmall}",
+        "AzzsCheckBoxStyle must use the shared small corner radius",
+    )
+
 
 def verify_app_and_pages(root: Path) -> None:
     ui_root = root / "src/adapters/ui/winui"
@@ -608,6 +636,22 @@ def verify_app_and_pages(root: Path) -> None:
         )),
         "software installation selection UI must not read the catalog or create batches",
     )
+
+    dynamic_check_box_sources = {
+        "SoftwareInstallationPage.xaml.cpp": installation_cpp,
+        "SoftwareOptimizationPage.xaml.cpp": read(
+            ui_root / "Pages/SoftwareOptimizationPage.xaml.cpp"),
+        "SystemOptimizationPage.xaml.cpp": read(
+            ui_root / "Pages/SystemOptimizationPage.xaml.cpp"),
+    }
+    for page_name, source in dynamic_check_box_sources.items():
+        require(
+            re.search(
+                r'Lookup\(\s*winrt::box_value\(L"AzzsCheckBoxStyle"\)\s*\)',
+                source,
+            ) is not None,
+            f"{page_name} must apply AzzsCheckBoxStyle to dynamic CheckBox controls",
+        )
 
 
 def verify_fixture_xaml(root: Path) -> None:
