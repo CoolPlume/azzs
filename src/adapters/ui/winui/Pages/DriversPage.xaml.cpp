@@ -2,7 +2,6 @@
 
 #include "DriversPage.xaml.h"
 
-#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -130,29 +129,6 @@ void DriversPage::OnRefreshClicked(
   }
 }
 
-void DriversPage::OnCopyHardwareClicked(
-    winrt::Windows::Foundation::IInspectable const&,
-    winrt::Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
-  using winrt::Windows::ApplicationModel::DataTransfer::Clipboard;
-  using winrt::Windows::ApplicationModel::DataTransfer::DataPackage;
-
-  auto const resources = ResourceLoader{};
-  std::wstring text{
-      resources.GetString(L"HardwareTableItemHeader/Text").c_str()};
-  text += L"\t";
-  text += resources.GetString(L"HardwareTableInformationHeader/Text").c_str();
-  for (auto const& [label, value] : hardware_copy_rows_) {
-    text += L"\r\n";
-    text += label.c_str();
-    text += L"\t";
-    text += value.c_str();
-  }
-  DataPackage package;
-  package.SetText(winrt::hstring{text});
-  Clipboard::SetContent(package);
-}
-
 void DriversPage::project(
     azzs::application::HardwareOverviewSnapshot const& snapshot) {
   project(snapshot, {});
@@ -193,44 +169,21 @@ void DriversPage::project(
   MemoryValue().Text(memory_value);
   GpuValue().Text(gpu_value);
 
-  hardware_copy_rows_.clear();
-  auto const append_copy_row = [this, &resources](wchar_t const* resource_key,
-                                                   winrt::hstring const& value) {
-    hardware_copy_rows_.emplace_back(resources.GetString(resource_key), value);
+  auto const project_optional = [](auto const& label, auto const& value,
+                                   auto const& divider, std::string_view fact) {
+    project_optional_hardware_row(label, value, divider, fact);
   };
-  append_copy_row(L"HardwareModelSummaryTitle/Text", model_value);
-  append_copy_row(L"HardwareSystemSummaryTitle/Text", system_value);
-  append_copy_row(L"HardwareCpuLabel/Text", cpu_value);
-  append_copy_row(L"HardwareMotherboardLabel/Text", motherboard_value);
-  append_copy_row(L"HardwareMemoryLabel/Text", memory_value);
-  append_copy_row(L"HardwareGpuLabel/Text", gpu_value);
-
-  auto const project_optional = [&append_copy_row](
-                                    auto const& label, auto const& value,
-                                    auto const& divider, std::string_view fact,
-                                    wchar_t const* resource_key) {
-    if (project_optional_hardware_row(label, value, divider, fact)) {
-      append_copy_row(resource_key, value.Text());
-    }
-  };
-  project_optional(DisplayLabel(), DisplayValue(), DisplayDivider(), facts.display,
-                   L"HardwareDisplayLabel/Text");
+  project_optional(DisplayLabel(), DisplayValue(), DisplayDivider(), facts.display);
   project_optional(SolidStateStorageLabel(), SolidStateStorageValue(),
-                   SolidStateStorageDivider(), facts.solid_state_storage,
-                   L"HardwareSolidStateStorageLabel/Text");
+                   SolidStateStorageDivider(), facts.solid_state_storage);
   project_optional(HardDiskStorageLabel(), HardDiskStorageValue(),
-                   HardDiskStorageDivider(), facts.hard_disk_storage,
-                   L"HardwareHardDiskStorageLabel/Text");
+                   HardDiskStorageDivider(), facts.hard_disk_storage);
   project_optional(WiredNetworkLabel(), WiredNetworkValue(),
-                   WiredNetworkDivider(), facts.wired_network_adapter,
-                   L"HardwareWiredNetworkLabel/Text");
+                   WiredNetworkDivider(), facts.wired_network_adapter);
   project_optional(WirelessNetworkLabel(), WirelessNetworkValue(),
-                   WirelessNetworkDivider(), facts.wireless_network_adapter,
-                   L"HardwareWirelessNetworkLabel/Text");
-  project_optional(AudioLabel(), AudioValue(), AudioDivider(), facts.audio,
-                   L"HardwareAudioLabel/Text");
-  project_optional(NpuLabel(), NpuValue(), NpuDivider(), facts.npu,
-                   L"HardwareNpuLabel/Text");
+                   WirelessNetworkDivider(), facts.wireless_network_adapter);
+  project_optional(AudioLabel(), AudioValue(), AudioDivider(), facts.audio);
+  project_optional(NpuLabel(), NpuValue(), NpuDivider(), facts.npu);
 
   auto const can_start =
       driver_snapshot.writable &&

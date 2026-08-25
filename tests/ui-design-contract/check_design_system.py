@@ -1145,13 +1145,6 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         all(key in resource_loader_keys for key in literal_resource_keys),
         "drivers GetString literals must resolve to existing MRT resource paths",
     )
-    copy_resource_keys = re.findall(
-        r'append_copy_row\(L"([^"]+)"', drivers_cpp
-    )
-    require(
-        all(key in resource_loader_keys for key in copy_resource_keys),
-        "hardware copy rows must resolve to existing MRT resource paths",
-    )
     require("AzzsApplicationAdvancedView" in settings_xaml and
             "OnAdvancedViewToggled" in settings_cpp,
             "application settings must own the advanced-view toggle")
@@ -1315,42 +1308,13 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         resource_values.get("HardwareModelSummaryTitle.Text") == "机型" and
         resource_values.get("HardwareSystemSummaryTitle.Text") == "Windows 版本" and
         resource_values.get("HardwareDetailsTitle.Text") == "详细信息" and
-        'resources.GetString(L"HardwareTableItemHeader/Text")' in drivers_cpp and
-        'resources.GetString(L"HardwareTableInformationHeader/Text")' in drivers_cpp and
-        'resources.GetString(L"HardwareTableItemHeader.Text")' not in drivers_cpp and
-        'resources.GetString(L"HardwareTableInformationHeader.Text")' not in drivers_cpp and
-        'append_copy_row(L"HardwareModelSummaryTitle/Text"' in drivers_cpp and
-        'append_copy_row(L"HardwareSystemSummaryTitle/Text"' in drivers_cpp and
         resource_values.get("HardwareTableItemHeader.Text") == "项目" and
         resource_values.get("HardwareTableInformationHeader.Text") == "信息" and
-        resource_values.get("HardwareCopySection.Text") == "复制本节" and
         resource_values.get("HardwareSolidStateStorageLabel.Text") == "固态硬盘" and
         resource_values.get("HardwareHardDiskStorageLabel.Text") == "机械硬盘" and
         resource_values.get("HardwareWiredNetworkLabel.Text") == "有线网卡" and
         resource_values.get("HardwareWirelessNetworkLabel.Text") == "无线网卡",
         "hardware table headings and category labels must remain explicit Simplified Chinese",
-    )
-    hardware_copy_label_resources = (
-        "HardwareModelSummaryTitle",
-        "HardwareSystemSummaryTitle",
-        "HardwareCpuLabel",
-        "HardwareMotherboardLabel",
-        "HardwareMemoryLabel",
-        "HardwareGpuLabel",
-        "HardwareDisplayLabel",
-        "HardwareSolidStateStorageLabel",
-        "HardwareHardDiskStorageLabel",
-        "HardwareWiredNetworkLabel",
-        "HardwareWirelessNetworkLabel",
-        "HardwareAudioLabel",
-        "HardwareNpuLabel",
-    )
-    require(
-        all(f'L"{key}/Text"' in drivers_cpp
-            for key in hardware_copy_label_resources) and
-        not any(f'L"{key}.Text"' in drivers_cpp
-                for key in hardware_copy_label_resources),
-        "hardware copy rows must use MRT slash resource paths, never .Text source keys",
     )
     obsolete_hardware_groups = (
         "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",
@@ -1560,21 +1524,22 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "HardwareUnclassifiedStorageLabel.Text" not in resource_values,
         "unknown storage media must remain a structured device fact, not a rendered category",
     )
-    copy_buttons = [
-        element for element in drivers_root.iter()
-        if local_name(element.tag) == "Button" and
-        element.attrib.get("AutomationProperties.AutomationId") == "AzzsHardwareCopySection"
-    ]
-    require(len(copy_buttons) == 1 and
-            copy_buttons[0].attrib.get("Click") == "OnCopyHardwareClicked" and
-            "Symbol=\"Copy\"" in drivers_xaml and
-            'x:Uid="HardwareCopySection"' in drivers_xaml,
-            "hardware facts must expose a localized copy command with a familiar copy icon")
     require(
-        "void DriversPage::OnCopyHardwareClicked" in drivers_cpp and
-        "hardware_copy_rows_" in drivers_cpp and
-        "Clipboard::SetContent(package)" in drivers_cpp,
-        "copying hardware facts must use the projected rows and the platform clipboard")
+        not any(copy_artifact in drivers_xaml or
+                copy_artifact in drivers_cpp or
+                copy_artifact in drivers_header or
+                copy_artifact in resource_names
+                for copy_artifact in (
+                    "AzzsHardwareCopySection",
+                    "CopyHardwareButton",
+                    "HardwareCopySection",
+                    "OnCopyHardwareClicked",
+                )) and
+        "hardware_copy_rows_" not in drivers_cpp and
+        "append_copy_row" not in drivers_cpp and
+        "Clipboard::" not in drivers_cpp and
+        "DataPackage" not in drivers_cpp,
+        "drivers page must not retain the removed hardware copy command or clipboard path")
     require(
         resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
         "通用网卡驱动救援工具" and

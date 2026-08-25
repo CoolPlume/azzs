@@ -43,16 +43,6 @@
                 <controls:PageHeader.CommandContent>
                     <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
                         <Button
-                            x:Name="CopyHardwareButton"
-                            AutomationProperties.AutomationId="AzzsHardwareCopySection"
-                            Click="OnCopyHardwareClicked"
-                            Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
-                                <SymbolIcon Symbol="Copy" />
-                                <TextBlock x:Uid="HardwareCopySection" />
-                            </StackPanel>
-                        </Button>
-                        <Button
                             x:Name="RefreshHardwareButton"
                             AutomationProperties.AutomationId="AzzsHardwareRefresh"
                             Click="OnRefreshClicked"

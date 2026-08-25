@@ -77,7 +77,6 @@
   <data name="HardwareDetailsTitle.Text" xml:space="preserve"><value>详细信息</value></data>
   <data name="HardwareTableItemHeader.Text" xml:space="preserve"><value>项目</value></data>
   <data name="HardwareTableInformationHeader.Text" xml:space="preserve"><value>信息</value></data>
-  <data name="HardwareCopySection.Text" xml:space="preserve"><value>复制本节</value></data>
   <data name="HardwareCoreGroupTitle" xml:space="preserve"><value>核心组件</value></data>
   <data name="HardwareGraphicsGroupTitle" xml:space="preserve"><value>图形与显示</value></data>
   <data name="HardwareStorageGroupTitle" xml:space="preserve"><value>存储</value></data>
