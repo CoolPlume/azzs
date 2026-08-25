@@ -41,16 +41,28 @@
                         TextWrapping="Wrap" />
                 </controls:PageHeader.TitleContent>
                 <controls:PageHeader.CommandContent>
-                    <Button
-                        x:Name="RefreshHardwareButton"
-                        AutomationProperties.AutomationId="AzzsHardwareRefresh"
-                        Click="OnRefreshClicked"
-                        Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
-                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
-                            <SymbolIcon Symbol="Refresh" />
-                            <TextBlock x:Uid="DriversRefresh" />
-                        </StackPanel>
-                    </Button>
+                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
+                        <Button
+                            x:Name="CopyHardwareButton"
+                            AutomationProperties.AutomationId="AzzsHardwareCopySection"
+                            Click="OnCopyHardwareClicked"
+                            Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
+                                <SymbolIcon Symbol="Copy" />
+                                <TextBlock x:Uid="HardwareCopySection" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            x:Name="RefreshHardwareButton"
+                            AutomationProperties.AutomationId="AzzsHardwareRefresh"
+                            Click="OnRefreshClicked"
+                            Style="{StaticResource AzzsSecondaryCommandButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceSmall}">
+                                <SymbolIcon Symbol="Refresh" />
+                                <TextBlock x:Uid="DriversRefresh" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </controls:PageHeader.CommandContent>
             </controls:PageHeader>
             <InfoBar
@@ -100,41 +112,42 @@
                         <Border Grid.Row="4" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
                         <Border Grid.Row="5" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
                         <Border Grid.Row="6" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
-                        <Border Grid.Row="7" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
-                        <Border Grid.Row="8" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
-                        <Border Grid.Row="9" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
-                        <Border Grid.Row="10" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
-                        <Border Grid.Row="11" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
-                        <Border Grid.Row="12" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" />
+                        <Border x:Name="DisplayDivider" Grid.Row="7" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" Visibility="Collapsed" />
+                        <Border x:Name="SolidStateStorageDivider" Grid.Row="8" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" Visibility="Collapsed" />
+                        <Border x:Name="HardDiskStorageDivider" Grid.Row="9" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" Visibility="Collapsed" />
+                        <Border x:Name="WiredNetworkDivider" Grid.Row="10" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" Visibility="Collapsed" />
+                        <Border x:Name="WirelessNetworkDivider" Grid.Row="11" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" Visibility="Collapsed" />
+                        <Border x:Name="AudioDivider" Grid.Row="12" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" Visibility="Collapsed" />
+                        <Border x:Name="NpuDivider" Grid.Row="13" Grid.ColumnSpan="2" BorderBrush="{ThemeResource AzzsSurfaceBorderBrush}" BorderThickness="0,0,0,1" IsHitTestVisible="False" Visibility="Collapsed" />
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareModelSummaryTitle" AutomationProperties.AutomationId="AzzsHardwareModelSummary" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="ModelValue" AutomationProperties.AutomationId="AzzsHardwareModel" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareSystemSummaryTitle" AutomationProperties.AutomationId="AzzsHardwareSystemSummary" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="SystemValue" AutomationProperties.AutomationId="AzzsHardwareSystem" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareCpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="CpuValue" AutomationProperties.AutomationId="AzzsHardwareCpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="3" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareMotherboardLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="3" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="MotherboardValue" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="4" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareMemoryLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="4" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="MemoryValue" AutomationProperties.AutomationId="AzzsHardwareMemory" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="5" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareGpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="5" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="GpuValue" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="6" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareDisplayLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="DisplayValue" AutomationProperties.AutomationId="AzzsHardwareDisplay" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="7" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareNpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="7" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="NpuValue" AutomationProperties.AutomationId="AzzsHardwareNpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="8" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareSolidStateStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="8" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="SolidStateStorageValue" AutomationProperties.AutomationId="AzzsHardwareSolidStateStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="9" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareHardDiskStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="9" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="HardDiskStorageValue" AutomationProperties.AutomationId="AzzsHardwareHardDiskStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="10" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareUnclassifiedStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="10" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="UnclassifiedStorageValue" AutomationProperties.AutomationId="AzzsHardwareUnclassifiedStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="11" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareWiredNetworkLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="11" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="WiredNetworkValue" AutomationProperties.AutomationId="AzzsHardwareWiredNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="12" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareWirelessNetworkLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="12" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="WirelessNetworkValue" AutomationProperties.AutomationId="AzzsHardwareWirelessNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="13" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareAudioLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" />
-                        <TextBlock Grid.Row="13" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="AudioValue" AutomationProperties.AutomationId="AzzsHardwareAudio" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareTableItemHeader" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareTableInformationHeader" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareModelSummaryTitle" AutomationProperties.AutomationId="AzzsHardwareModelSummary" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="ModelValue" AutomationProperties.AutomationId="AzzsHardwareModel" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareSystemSummaryTitle" AutomationProperties.AutomationId="AzzsHardwareSystemSummary" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="SystemValue" AutomationProperties.AutomationId="AzzsHardwareSystem" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareCpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="CpuValue" AutomationProperties.AutomationId="AzzsHardwareCpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareMotherboardLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="MotherboardValue" AutomationProperties.AutomationId="AzzsHardwareMotherboard" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareMemoryLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="MemoryValue" AutomationProperties.AutomationId="AzzsHardwareMemory" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="6" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareGpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock Grid.Row="6" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Name="GpuValue" AutomationProperties.AutomationId="AzzsHardwareGpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="DisplayLabel" Grid.Row="7" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareDisplayLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="DisplayValue" Grid.Row="7" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" AutomationProperties.AutomationId="AzzsHardwareDisplay" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="SolidStateStorageLabel" Grid.Row="8" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareSolidStateStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="SolidStateStorageValue" Grid.Row="8" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" AutomationProperties.AutomationId="AzzsHardwareSolidStateStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="HardDiskStorageLabel" Grid.Row="9" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareHardDiskStorageLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="HardDiskStorageValue" Grid.Row="9" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" AutomationProperties.AutomationId="AzzsHardwareHardDiskStorage" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="WiredNetworkLabel" Grid.Row="10" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareWiredNetworkLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="WiredNetworkValue" Grid.Row="10" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" AutomationProperties.AutomationId="AzzsHardwareWiredNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="WirelessNetworkLabel" Grid.Row="11" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareWirelessNetworkLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="WirelessNetworkValue" Grid.Row="11" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" AutomationProperties.AutomationId="AzzsHardwareWirelessNetwork" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="AudioLabel" Grid.Row="12" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareAudioLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="AudioValue" Grid.Row="12" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" AutomationProperties.AutomationId="AzzsHardwareAudio" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="NpuLabel" Grid.Row="13" Grid.Column="0" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" x:Uid="HardwareNpuLabel" Style="{StaticResource AzzsMetadataTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+                        <TextBlock x:Name="NpuValue" Grid.Row="13" Grid.Column="1" Margin="{StaticResource AzzsHardwareRowTextMargin}" VerticalAlignment="Top" AutomationProperties.AutomationId="AzzsHardwareNpu" Style="{StaticResource AzzsBodyTextStyle}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
                     </Grid>
                 </StackPanel>
             </Border>

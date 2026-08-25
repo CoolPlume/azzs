@@ -73,6 +73,14 @@ struct ApplicationSettingsPage
   void OnApplicationUpdateDiagnosticClick(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void OnApplicationUpdateScheduleSelectionChanged(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const&);
+  void OnApplicationUpdateReleaseClick(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void project_update_snapshot(
+      azzs::application::UpdateSnapshot const& snapshot);
 
  private:
   void project(azzs::application::ApplicationSettingsSnapshot const& snapshot);

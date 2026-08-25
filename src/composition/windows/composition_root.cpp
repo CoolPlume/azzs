@@ -24,6 +24,7 @@
 #include "azzs/adapters/infrastructure/local_software_optimization_catalog_file.hpp"
 #include "azzs/adapters/infrastructure/software_catalog_file.hpp"
 #include "azzs/adapters/infrastructure/settings_catalog_file_adapter.hpp"
+#include "azzs/adapters/infrastructure/state_application_update_check_storage.hpp"
 #include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
 #include "azzs/adapters/infrastructure/state_operation_occupancy_storage.hpp"
 #include "azzs/adapters/infrastructure/structured_execution_log.hpp"
@@ -188,18 +189,18 @@ struct BundledCatalogResources final {
       software_optimization_catalog;
 };
 
-constexpr std::uintmax_t kSoftwareCatalogBytes = 8894;
+constexpr std::uintmax_t kSoftwareCatalogBytes = 9194;
 constexpr std::array<std::uint8_t, 32> kSoftwareCatalogSha256{
-    0xe2, 0x45, 0xe0, 0x95, 0xa2, 0xc5, 0x44, 0xbd,
-    0x37, 0x6a, 0x56, 0x4c, 0xe3, 0x26, 0x63, 0x22,
-    0x50, 0x38, 0x10, 0x51, 0xa8, 0x29, 0xac, 0x05,
-    0x0d, 0xf3, 0x36, 0xef, 0xc6, 0xd7, 0x67, 0x8a};
-constexpr std::uintmax_t kSoftwareOptimizationCatalogBytes = 18010;
+    0xe2, 0x88, 0x42, 0x98, 0xec, 0xda, 0x1d, 0x8e,
+    0x9c, 0x8d, 0x85, 0x51, 0x32, 0x46, 0xe2, 0xba,
+    0xc7, 0xc9, 0x30, 0x51, 0x81, 0x23, 0x06, 0x94,
+    0xb5, 0x60, 0x3f, 0xcf, 0xb2, 0x6b, 0xbd, 0xc2};
+constexpr std::uintmax_t kSoftwareOptimizationCatalogBytes = 17515;
 constexpr std::array<std::uint8_t, 32> kSoftwareOptimizationCatalogSha256{
-    0x59, 0x1b, 0xc9, 0x26, 0x97, 0x1a, 0x39, 0x05,
-    0xb6, 0x7b, 0x67, 0xc3, 0x21, 0x2d, 0x1e, 0xad,
-    0x8b, 0xf7, 0x5a, 0x8e, 0x4d, 0x28, 0x2b, 0x3c,
-    0xb8, 0xbd, 0xcf, 0x26, 0x3c, 0xa7, 0x14, 0x37};
+    0xd0, 0x62, 0xa7, 0xb2, 0xde, 0x04, 0xc9, 0xad,
+    0x49, 0xea, 0xff, 0x8b, 0x21, 0x6e, 0x10, 0x37,
+    0xee, 0xb5, 0xa1, 0xa8, 0xc9, 0xa9, 0x70, 0x0c,
+    0xf6, 0xcb, 0x8b, 0x97, 0x5c, 0xf1, 0x64, 0x98};
 
 [[nodiscard]] std::optional<std::filesystem::path> workbench_module_directory() {
   std::vector<wchar_t> buffer(512);
@@ -716,10 +717,11 @@ class WindowsWorkbenchServices final
                                system_settings_recovery_, occupancy_, log_),
         operation_activity_(occupancy_),
         application_update_health_storage_(states_),
+        application_update_check_storage_(states_),
         application_update_platform_(platform_info_,
                                      application_update_health_storage_),
         application_updates_(application_update_platform_, operation_activity_,
-                             log_, clock_),
+                             log_, clock_, &application_update_check_storage_),
         architecture_preferences_(std::move(architecture_preferences)),
         cache_retention_preferences_(std::move(cache_retention_preferences)),
         architecture_selection_(
@@ -951,6 +953,7 @@ class WindowsWorkbenchServices final
 
   [[nodiscard]] application::software_selection::SoftwareSelectionLifecycle&
   software_selection() noexcept override {
+    try_synchronize_catalog_selection_projection();
     return software_selection_;
   }
 
@@ -1024,17 +1027,57 @@ class WindowsWorkbenchServices final
   }
 
  private:
+  void try_synchronize_catalog_selection_projection() noexcept {
+    try {
+      synchronize_catalog_selection_projection();
+    } catch (...) {
+      // Accessors are a noexcept boundary for the UI. A failed preview must
+      // remain retryable on the next page entry instead of terminating the
+      // process or being recorded as a successful projection.
+    }
+  }
+
   void synchronize_catalog_selection_projection() {
     auto const catalog = software_catalog_.snapshot();
-    if (catalog.mode != application::software_catalog::CatalogLifecycleMode::ready ||
-        !catalog.current.has_value() || !catalog.current_catalog.has_value()) {
+    auto const selection = software_selection_.snapshot();
+    if (catalog.mode != application::software_catalog::CatalogLifecycleMode::ready) {
+      catalog_selection_projection_identity_.reset();
       return;
     }
-    static_cast<void>(software_selection_.on_catalog_replaced({
-        .runtime = *catalog.current_catalog,
-        .active = *catalog.current,
-        .impact = {},
-    }));
+    if (catalog.current.has_value()) {
+      catalog_selection_projection_identity_.reset();
+      if (!catalog.current_catalog.has_value()) {
+        return;
+      }
+      if (selection.has_current_catalog &&
+          selection.active_catalog.has_value() &&
+          *selection.active_catalog == *catalog.current) {
+        return;
+      }
+      auto const result = software_selection_.on_catalog_replaced({
+          .runtime = *catalog.current_catalog,
+          .active = *catalog.current,
+          .impact = {},
+      });
+      static_cast<void>(result);
+      return;
+    }
+    if (selection.has_current_catalog) {
+      catalog_selection_projection_identity_.reset();
+      return;
+    }
+    if (catalog_selection_projection_identity_.has_value()) {
+      return;
+    }
+    auto const preview = software_catalog_.preview_built_in();
+    if (!preview.runtime.catalog.has_value()) {
+      return;
+    }
+    auto const result = software_selection_.on_declared_catalog_preview(
+        *preview.runtime.catalog);
+    if (result.succeeded()) {
+      catalog_selection_projection_identity_ = preview.content_identity;
+    }
   }
 
   void synchronize_live_offline_package_cache() {
@@ -1118,6 +1161,8 @@ class WindowsWorkbenchServices final
   } operation_activity_;
   adapters::infrastructure::StateApplicationUpdateHealthStorage
       application_update_health_storage_;
+  adapters::infrastructure::StateApplicationUpdateCheckStorage
+      application_update_check_storage_;
   adapters::windows::WindowsApplicationUpdatePlatform
       application_update_platform_;
   application::ApplicationUpdateLifecycle application_updates_;
@@ -1149,6 +1194,7 @@ class WindowsWorkbenchServices final
   adapters::windows::WindowsExternalAddressLauncher external_launcher_;
   application::software_selection::SoftwareSelectionLifecycle
       software_selection_;
+  std::optional<std::string> catalog_selection_projection_identity_;
   adapters::infrastructure::LocalSoftwareOptimizationCatalogFile
       optimization_catalog_file_;
   ProductionSoftwareOptimizationCatalogDebugAuthorization

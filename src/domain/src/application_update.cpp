@@ -18,6 +18,8 @@ constexpr std::size_t kMaxTextBytes = 256;
 constexpr std::size_t kMaxVersionParts = 8;
 constexpr std::size_t kMaxPrereleaseParts = 8;
 constexpr std::size_t kMaxAssets = 64;
+constexpr std::size_t kMaxReleaseUrlBytes = 2048;
+constexpr std::size_t kMaxReleaseBodyBytes = 8192;
 
 [[nodiscard]] bool safe_text(std::string_view value,
                              std::size_t maximum = kMaxTextBytes) noexcept {
@@ -25,6 +27,16 @@ constexpr std::size_t kMaxAssets = 64;
          std::ranges::all_of(value, [](unsigned char byte) {
            return byte >= 0x20 && byte < 0x7f;
          });
+}
+
+[[nodiscard]] bool safe_metadata(std::string_view value,
+                                 std::size_t maximum) noexcept {
+  if (value.size() > maximum) {
+    return false;
+  }
+  return std::ranges::all_of(value, [](unsigned char byte) {
+    return byte == '\t' || byte == '\n' || byte == '\r' || byte >= 0x20;
+  });
 }
 
 struct ParsedVersion final {
@@ -147,12 +159,17 @@ bool BuildIdentity::valid() const noexcept {
 }
 
 bool GithubApplicationAsset::valid() const noexcept {
-  return safe_text(asset_id) && target.valid();
+  return safe_text(asset_id) && target.valid() &&
+         safe_metadata(name, kMaxTextBytes) &&
+         safe_metadata(download_url, kMaxReleaseUrlBytes);
 }
 
 bool GithubApplicationRelease::valid() const noexcept {
   if (!safe_text(release_id) || !safe_text(tag_name) || title.size() > 512 ||
-      assets.empty() || assets.size() > kMaxAssets) {
+      !safe_metadata(html_url, kMaxReleaseUrlBytes) ||
+      !safe_metadata(published_at, kMaxTextBytes) ||
+      !safe_metadata(body, kMaxReleaseBodyBytes) || assets.empty() ||
+      assets.size() > kMaxAssets) {
     return false;
   }
   return std::ranges::all_of(assets,
@@ -281,6 +298,10 @@ std::optional<Candidate> latest_matching_stable_candidate(
           .release_tag = release.tag_name,
           .asset_id = asset.asset_id,
           .target = asset.target,
+          .release_title = release.title,
+          .release_url = release.html_url,
+          .published_at = release.published_at,
+          .summary = release.body,
       };
     }
   }

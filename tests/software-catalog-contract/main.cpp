@@ -548,9 +548,25 @@ struct DebugModeCatalogEditorFixture final {
   passed &= expect(runtime.accepted() && runtime.catalog.has_value(),
                    "the draft authoritative catalog must runtime-load");
   passed &= expect(runtime.catalog.has_value() &&
-                       runtime.catalog->software.size() == 7 &&
+                       runtime.catalog->software.size() == 8 &&
                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
+  auto const qq_runtime = std::ranges::find_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id == "qq";
+      });
+  passed &= expect(qq_runtime != runtime.catalog->software.end() &&
+                       qq_runtime->availability ==
+                           catalog::ItemAvailability::install_profile_unavailable,
+                   "the declaration-only QQ profile must remain unavailable to execution");
+  auto const qq_music_runtime = std::ranges::find_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id == "qq-music";
+      });
+  passed &= expect(qq_music_runtime != runtime.catalog->software.end() &&
+                       qq_music_runtime->availability ==
+                           catalog::ItemAvailability::install_profile_unavailable,
+                   "the declaration-only QQ Music profile must remain unavailable to execution");
   auto const sogou_runtime = std::ranges::find_if(
       runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
         return item.definition.id == "sogou-input";
@@ -595,6 +611,7 @@ struct DebugModeCatalogEditorFixture final {
   auto policy = catalog::initial_software_catalog_policy();
   std::vector<std::string> expected_ids{
       "qq", "sogou-input", "game-cheats-manager", "cheat-engine",
+      "qq-music",
       "office-tool-plus", "internet-download-manager",
       "the-geometers-sketchpad", "java-runtime", "dotnet-runtime",
       "directx-runtime", "powershell-7"};
@@ -620,7 +637,23 @@ struct DebugModeCatalogEditorFixture final {
   std::ranges::sort(actual_ids);
   passed &= expect(actual_ids == expected_ids &&
                        std::ranges::adjacent_find(actual_ids) == actual_ids.end(),
-                   "the catalog must contain exactly eleven unique first-release software ids");
+                   "the catalog must contain exactly twelve unique first-release software ids");
+
+  auto const* qq_music = find_by_id(
+      decoded.document->software, "qq-music", &catalog::SoftwareDefinition::id);
+  auto const* qq_music_source =
+      qq_music == nullptr ? nullptr : primary_source(qq_music->sources);
+  passed &= expect(
+      qq_music != nullptr && qq_music->enabled &&
+          qq_music->name == "QQ音乐" &&
+          qq_music->tier == catalog::SoftwareTier::normal &&
+          qq_music->category_id == "media-tools" &&
+          qq_music->branch == "Windows 稳定桌面版" &&
+          qq_music->version_policy == catalog::VersionPolicy::latest_stable &&
+          qq_music->bundled_editions.empty() && qq_music_source != nullptr &&
+          qq_music_source->address == "https://y.qq.com/download/" &&
+          qq_music->install_profile == "qq-music-windows-defaults-v1",
+      "QQ Music must use the official stable Windows page without bundled installer content");
 
   for (auto const id : {"game-cheats-manager", "cheat-engine",
                         "office-tool-plus", "internet-download-manager",
@@ -635,8 +668,8 @@ struct DebugModeCatalogEditorFixture final {
 
   auto const profiles = catalog::initial_controlled_install_profiles();
   auto const facts = catalog::initial_software_install_facts();
-  passed &= expect(profiles.size() == 1 && facts.size() == 11,
-                   "initial declarations must cover one controlled profile and eleven software facts");
+  passed &= expect(profiles.size() == 3 && facts.size() == 12,
+                   "initial declarations must cover three controlled profiles and twelve software facts");
   passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
                        catalog::validate_software_install_facts(facts).accepted(),
                    "initial declaration registries must satisfy their value contracts");
@@ -660,7 +693,7 @@ struct DebugModeCatalogEditorFixture final {
   }
   std::ranges::sort(fact_ids);
   passed &= expect(fact_ids == expected_ids,
-                   "typed install facts must cover the same eleven software ids");
+                   "typed install facts must cover the same twelve software ids");
   auto const dotnet_facts = std::ranges::find(
       facts, "dotnet-runtime", &catalog::SoftwareInstallFacts::software_id);
   passed &= expect(dotnet_facts != facts.end() &&
@@ -734,12 +767,59 @@ struct DebugModeCatalogEditorFixture final {
                                                    inconsistent_completion_semantics),
         "restart completion semantics must not be inferred from process exit or mismatched facts");
   }
+  auto const qq_profile_iterator = std::ranges::find(
+      profiles, "qq-windows-defaults-v1", &catalog::ControlledInstallProfile::id);
+  auto const* qq_profile = qq_profile_iterator == profiles.end()
+                               ? nullptr
+                               : &*qq_profile_iterator;
+  passed &= expect(
+      qq_profile != nullptr && qq_profile->software_id == "qq" &&
+          qq_profile->execution_kind ==
+              catalog::ControlledWindowsExecutionKind::project_owned_windows_executor &&
+          qq_profile->execution ==
+              catalog::WindowsExecutionReadiness::declaration_only &&
+          qq_profile->completion_boundary ==
+              catalog::InstallationCompletionBoundary::
+                  post_install_then_result_detection &&
+          qq_profile->post_install_behavior == catalog::PostInstallBehavior::none &&
+          qq_profile->restart_verification ==
+              catalog::RestartVerification::not_required &&
+          qq_profile->result_detection ==
+              catalog::ResultDetectionStrategy::user_confirmation_only &&
+          qq_profile->interaction_scope ==
+              catalog::InstallerInteractionScope::official_identity_required &&
+          qq_profile->baselines.empty() && qq_profile->preferences.empty(),
+      "QQ must remain a declaration-only handoff profile without frozen installer details");
+  auto const qq_music_profile_iterator = std::ranges::find(
+      profiles, "qq-music-windows-defaults-v1",
+      &catalog::ControlledInstallProfile::id);
+  auto const* qq_music_profile = qq_music_profile_iterator == profiles.end()
+                                     ? nullptr
+                                     : &*qq_music_profile_iterator;
+  passed &= expect(
+      qq_music_profile != nullptr && qq_music_profile->software_id == "qq-music" &&
+          qq_music_profile->execution_kind ==
+              catalog::ControlledWindowsExecutionKind::project_owned_windows_executor &&
+          qq_music_profile->execution ==
+              catalog::WindowsExecutionReadiness::declaration_only &&
+          qq_music_profile->completion_boundary ==
+              catalog::InstallationCompletionBoundary::
+                  post_install_then_result_detection &&
+          qq_music_profile->post_install_behavior == catalog::PostInstallBehavior::none &&
+          qq_music_profile->restart_verification ==
+              catalog::RestartVerification::not_required &&
+          qq_music_profile->result_detection ==
+              catalog::ResultDetectionStrategy::user_confirmation_only &&
+          qq_music_profile->interaction_scope ==
+              catalog::InstallerInteractionScope::official_identity_required &&
+          qq_music_profile->baselines.empty() && qq_music_profile->preferences.empty(),
+      "QQ Music must remain a declaration-only handoff profile without frozen installer details");
 
   std::vector<std::string> required = policy.required_release_software;
   std::ranges::sort(required);
   passed &= expect(required == expected_ids && policy.supported_driver_hardware_kinds ==
                        std::vector<std::string>{"gpu"},
-                   "the initial policy must require all eleven software ids and the registered GPU kind");
+                   "the initial policy must require all twelve software ids and the registered GPU kind");
   std::vector<std::string> release_fact_ids;
   release_fact_ids.reserve(policy.required_release_install_facts.size());
   for (auto const& requirement : policy.required_release_install_facts) {
@@ -753,12 +833,43 @@ struct DebugModeCatalogEditorFixture final {
   auto const* sogou_profile = find_by_id(
       policy.install_profiles, "sogou-input-defaults-v1",
       &catalog::InstallProfileSupport::id);
-  passed &= expect(sogou_profile != nullptr &&
-                       sogou_profile->runtime_status ==
-                           catalog::InstallProfileRuntimeStatus::missing &&
-                       !sogou_profile->release_ready &&
-                       policy.required_install_profiles.size() == 1,
-                   "the Sogou profile must remain declaration-only and release-incomplete");
+  auto const* qq_profile_support = find_by_id(
+      policy.install_profiles, "qq-windows-defaults-v1",
+      &catalog::InstallProfileSupport::id);
+  auto const* qq_music_profile_support = find_by_id(
+      policy.install_profiles, "qq-music-windows-defaults-v1",
+      &catalog::InstallProfileSupport::id);
+  auto const required_sogou_profile = std::ranges::find_if(
+      policy.required_install_profiles, [](auto const& requirement) {
+        return requirement.software_id == "sogou-input" &&
+               requirement.profile_id == "sogou-input-defaults-v1";
+      });
+  auto const required_qq_profile = std::ranges::find_if(
+      policy.required_install_profiles, [](auto const& requirement) {
+        return requirement.software_id == "qq" &&
+               requirement.profile_id == "qq-windows-defaults-v1";
+      });
+  auto const required_qq_music_profile = std::ranges::find_if(
+      policy.required_install_profiles, [](auto const& requirement) {
+        return requirement.software_id == "qq-music" &&
+               requirement.profile_id == "qq-music-windows-defaults-v1";
+      });
+  passed &= expect(
+      sogou_profile != nullptr &&
+          sogou_profile->runtime_status ==
+              catalog::InstallProfileRuntimeStatus::missing &&
+          !sogou_profile->release_ready && qq_profile_support != nullptr &&
+          qq_profile_support->runtime_status ==
+              catalog::InstallProfileRuntimeStatus::missing &&
+          !qq_profile_support->release_ready && qq_music_profile_support != nullptr &&
+          qq_music_profile_support->runtime_status ==
+              catalog::InstallProfileRuntimeStatus::missing &&
+          !qq_music_profile_support->release_ready &&
+          policy.required_install_profiles.size() == 3 &&
+          required_sogou_profile != policy.required_install_profiles.end() &&
+          required_qq_profile != policy.required_install_profiles.end() &&
+          required_qq_music_profile != policy.required_install_profiles.end(),
+      "QQ, QQ Music, and Sogou profiles must remain required and release-incomplete");
 
   auto released = codec.decode(replace_once(
       file.bytes, "release_state = \"draft\"", "release_state = \"release\""));

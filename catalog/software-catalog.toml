@@ -14,6 +14,10 @@ id = "communication"
 name = "沟通"
 
 [[categories]]
+id = "media-tools"
+name = "影音工具"
+
+[[categories]]
 id = "input-method"
 name = "输入法"
 
@@ -54,12 +58,30 @@ category_id = "communication"
 branch = "Windows 个人版"
 version_policy = "latest_stable"
 dependencies = []
-bundled_editions = ["large_offline"]
-notice = ""
+bundled_editions = []
+notice = "当前仅交接 QQ 官方 Windows 页面；受控安装证据尚未冻结。"
+install_profile = "qq-windows-defaults-v1"
 
 [[software.sources]]
 purpose = "primary"
 address = "https://im.qq.com/index/#/windows"
+
+[[software]]
+id = "qq-music"
+enabled = true
+name = "QQ音乐"
+tier = "normal"
+category_id = "media-tools"
+branch = "Windows 稳定桌面版"
+version_policy = "latest_stable"
+dependencies = []
+bundled_editions = []
+notice = "当前仅交接 QQ 音乐官方 Windows 下载页；受控安装证据尚未冻结。"
+install_profile = "qq-music-windows-defaults-v1"
+
+[[software.sources]]
+purpose = "primary"
+address = "https://y.qq.com/download/"
 
 [[software]]
 id = "sogou-input"

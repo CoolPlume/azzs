@@ -159,6 +159,7 @@
     <ClInclude Include="DesignSystem\motion_contract.hpp" />
     <ClInclude Include="DesignSystem\motion_preferences.hpp" />
     <ClInclude Include="DesignSystem\presentation_contract.hpp" />
+    <ClInclude Include="DesignSystem\relative_time.hpp" />
     <ClInclude Include="DesignSystem\settings_navigation_recovery.hpp" />
     <ClInclude Include="DesignSystem\guided_initialization_presentation.hpp" />
     <ClInclude Include="DesignSystem\software_selection_presentation.hpp" />
@@ -203,6 +204,9 @@
     </ClCompile>
     <ClCompile Include="DesignSystem\motion_preferences.cpp" />
     <ClCompile Include="DesignSystem\presentation_contract.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="DesignSystem\relative_time.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="DesignSystem\guided_initialization_presentation.cpp">

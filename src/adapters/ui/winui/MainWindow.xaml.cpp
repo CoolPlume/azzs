@@ -153,6 +153,15 @@ bool MainWindow::show_initial_page() {
   // but a recoverable settings failure must still leave an activatable window.
   auto const initial_page = workbench_->snapshot().current_page;
   if (navigate_and_commit(initial_page)) {
+    auto const update_result = workbench_->check_application_update_if_due();
+    project(workbench_->snapshot());
+    if (initial_page == PageId::application_settings) {
+      if (auto page = ContentFrame().Content().try_as<
+              Pages::ApplicationSettingsPage>()) {
+        winrt::get_self<Pages::implementation::ApplicationSettingsPage>(page)
+            ->project_update_snapshot(update_result.snapshot);
+      }
+    }
     return true;
   }
   if (initial_page != PageId::application_settings) {
@@ -172,6 +181,8 @@ bool MainWindow::show_initial_page() {
     PrimaryNavigation().SelectedItem(navigation_item);
     restoring_navigation_selection_ = false;
   }
+  static_cast<void>(workbench_->check_application_update_if_due());
+  project(workbench_->snapshot());
   handle_settings_navigation_failure();
   return true;
 }
@@ -188,6 +199,13 @@ void MainWindow::confirm_started_healthy() {
           azzs::application::UpdateState::previous_pending_start_health) {
     static_cast<void>(workbench_->handle_update(
         azzs::application::UpdateUserIntent::confirm_started_healthy));
+  }
+  auto const update_result = workbench_->check_application_update_if_due();
+  project(workbench_->snapshot());
+  if (auto page = ContentFrame().Content().try_as<
+          Pages::ApplicationSettingsPage>()) {
+    winrt::get_self<Pages::implementation::ApplicationSettingsPage>(page)
+        ->project_update_snapshot(update_result.snapshot);
   }
 }
 
@@ -580,6 +598,9 @@ MainWindow::prepare_application_settings_page() {
   // an unavailable persisted value is represented as a degraded field so the
   // page can still open. Only construction/binding failures below abort the
   // transaction and restore the old page.
+  // Settings navigation is also a lightweight run-loop opportunity for daily
+  // and weekly checks, including a check deferred during startup.
+  static_cast<void>(workbench_->check_application_update_if_due());
   auto& settings = services->application_settings();
   azzs::application::WorkbenchSnapshot workbench_snapshot;
   azzs::application::ApplicationSettingsSnapshot settings_snapshot;
@@ -1081,6 +1102,13 @@ void MainWindow::OnSidebarResizeDragCompleted(
   }
   sidebar_drag_active_ = false;
   apply_sidebar_width(sidebar_drag_width_dip_, true);
+}
+
+void MainWindow::OnSidebarResizeDoubleTapped(
+    Windows::Foundation::IInspectable const&,
+    Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args) {
+  args.Handled(true);
+  apply_sidebar_width(azzs::application::kSidebarWidthDefaultDip, true);
 }
 
 void MainWindow::OnSidebarResizeKeyDown(

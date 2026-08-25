@@ -64,6 +64,64 @@
                             IsOpen="False"
                             Visibility="Collapsed"
                             Style="{StaticResource AzzsStatusBandStyle}" />
+                        <ComboBox
+                            x:Name="ApplicationUpdateScheduleComboBox"
+                            x:Uid="ApplicationUpdateSchedule"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateSchedule"
+                            SelectionChanged="OnApplicationUpdateScheduleSelectionChanged"
+                            Style="{StaticResource AzzsComboBoxStyle}">
+                            <ComboBoxItem
+                                x:Uid="ApplicationUpdateScheduleDisabled"
+                                Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem
+                                x:Uid="ApplicationUpdateScheduleStartup"
+                                Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem
+                                x:Uid="ApplicationUpdateScheduleDaily"
+                                Style="{StaticResource AzzsComboBoxItemStyle}" />
+                            <ComboBoxItem
+                                x:Uid="ApplicationUpdateScheduleWeekly"
+                                Style="{StaticResource AzzsComboBoxItemStyle}" />
+                        </ComboBox>
+                        <TextBlock
+                            x:Name="ApplicationUpdateLastCheckText"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateLastCheck"
+                            Style="{StaticResource AzzsMetadataTextStyle}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="ApplicationUpdateCheckResultText"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateCheckResult"
+                            Style="{StaticResource AzzsMetadataTextStyle}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="ApplicationUpdateCheckDetailText"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateCheckDetail"
+                            Style="{StaticResource AzzsMetadataTextStyle}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="ApplicationUpdateCandidateVersionText"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateCandidateVersion"
+                            Style="{StaticResource AzzsMetadataTextStyle}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+                        <TextBlock
+                            x:Name="ApplicationUpdateCandidateDateText"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateCandidateDate"
+                            Style="{StaticResource AzzsMetadataTextStyle}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+                        <TextBlock
+                            x:Name="ApplicationUpdateCandidateSummaryText"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateCandidateSummary"
+                            Style="{StaticResource AzzsMetadataTextStyle}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+                        <TextBlock
+                            x:Name="ApplicationUpdateCandidateReleaseText"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateCandidateRelease"
+                            Style="{StaticResource AzzsMetadataTextStyle}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AzzsSpaceCompact}">
                             <Button
                                 x:Name="ApplicationUpdateCommandButton"
@@ -93,6 +151,14 @@
                                 Click="OnApplicationUpdateDiagnosticClick"
                                 Style="{StaticResource AzzsSecondaryCommandButtonStyle}" />
                         </StackPanel>
+                        <Button
+                            x:Name="ApplicationUpdateCandidateButton"
+                            x:Uid="ApplicationUpdateCandidateButton"
+                            AutomationProperties.AutomationId="AzzsApplicationUpdateCandidateButton"
+                            Click="OnApplicationUpdateReleaseClick"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource AzzsSecondaryCommandButtonStyle}"
+                            Visibility="Collapsed" />
                     </StackPanel>
                 </Border>
 

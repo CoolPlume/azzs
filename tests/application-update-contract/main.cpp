@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "azzs/adapters/infrastructure/state_application_update_health_storage.hpp"
+#include "azzs/adapters/infrastructure/state_application_update_check_storage.hpp"
 #include "azzs/application/application_update.hpp"
 #include "azzs/application/device_state_store.hpp"
 #include "azzs/application/execution_log.hpp"
@@ -21,6 +22,8 @@ using azzs::application::ApplicationReleaseChannel;
 using azzs::application::ApplicationReleaseEdition;
 using azzs::application::ApplicationReleaseForm;
 using azzs::application::ApplicationUpdateCandidate;
+using azzs::application::ApplicationUpdateCheckOutcome;
+using azzs::application::ApplicationUpdateCheckSchedule;
 using azzs::application::ApplicationUpdateEffect;
 using azzs::application::ApplicationUpdateHealthPhase;
 using azzs::application::ApplicationUpdateHealthRead;
@@ -47,6 +50,7 @@ using azzs::application::UpdatePlatformResultCode;
 using azzs::application::UpdateState;
 using azzs::application::UpdateUserIntent;
 using azzs::adapters::infrastructure::StateApplicationUpdateHealthStorage;
+using azzs::adapters::infrastructure::StateApplicationUpdateCheckStorage;
 using azzs::domain::SystemArchitecture;
 using azzs::domain::application_update::VersionComparison;
 using azzs::testing::FixedClock;
@@ -270,6 +274,14 @@ class FakeUpdatePlatform final : public ApplicationUpdatePlatform {
     FakeUpdatePlatform& platform, FixedOperationActivity& activity,
     RecordingLog& log, FixedClock& clock) {
   return ApplicationUpdateLifecycle{platform, activity, log, clock};
+}
+
+[[nodiscard]] ApplicationUpdateLifecycle make_lifecycle(
+    FakeUpdatePlatform& platform, FixedOperationActivity& activity,
+    RecordingLog& log, FixedClock& clock,
+    azzs::application::ApplicationUpdateCheckStorage* check_storage) {
+  return ApplicationUpdateLifecycle{platform, activity, log, clock,
+                                    check_storage};
 }
 
 [[nodiscard]] bool has_stage(RecordingLog const& log, std::string_view stage) {
@@ -633,6 +645,249 @@ static_assert(
       "a failed retry whose failure fact cannot persist must fail closed before rollback");
 }
 
+[[nodiscard]] bool automatic_schedule_persistence_contract() {
+  using namespace std::chrono_literals;
+
+  bool passed = true;
+  for (auto const schedule :
+       {ApplicationUpdateCheckSchedule::disabled,
+        ApplicationUpdateCheckSchedule::startup,
+        ApplicationUpdateCheckSchedule::daily,
+        ApplicationUpdateCheckSchedule::weekly}) {
+    InMemoryStateFileSystem files;
+    FixedClock clock{azzs::application::WallClockTime{1'786'422'400'000ms}};
+    azzs::application::DeviceStateStore states{files, clock};
+    StateApplicationUpdateCheckStorage storage{states};
+    FakeUpdatePlatform platform;
+    platform.current = build("1.0.0");
+    FixedOperationActivity activity;
+    RecordingLog log;
+    auto lifecycle = make_lifecycle(platform, activity, log, clock, &storage);
+
+    auto const changed = lifecycle.set_check_schedule(schedule);
+    passed &= expect(
+        changed.code == azzs::application::UpdateCommandCode::accepted &&
+            changed.snapshot.check_schedule == schedule,
+        "each automatic update schedule must be accepted by the lifecycle");
+
+    azzs::application::DeviceStateStore restored_states{files, clock};
+    StateApplicationUpdateCheckStorage restored_storage{restored_states};
+    FixedOperationActivity restored_activity;
+    RecordingLog restored_log;
+    auto restored =
+        make_lifecycle(platform, restored_activity, restored_log, clock,
+                       &restored_storage);
+    passed &= expect(
+        restored.snapshot().check_schedule == schedule,
+        "the selected automatic update schedule must survive a restart");
+  }
+
+  {
+    InMemoryStateFileSystem files;
+    FixedClock clock{azzs::application::WallClockTime{1'786'422'400'000ms}};
+    azzs::application::DeviceStateStore states{files, clock};
+    StateApplicationUpdateCheckStorage storage{states};
+    FakeUpdatePlatform platform;
+    platform.current = build("1.0.0");
+    FixedOperationActivity activity;
+    RecordingLog log;
+    auto lifecycle = make_lifecycle(platform, activity, log, clock, &storage);
+    static_cast<void>(lifecycle.set_check_schedule(
+        ApplicationUpdateCheckSchedule::daily));
+    files.fail_next(azzs::testing::StateFileOperation::lock);
+    auto const failed = lifecycle.set_check_schedule(
+        ApplicationUpdateCheckSchedule::weekly);
+    auto const persisted = storage.read();
+    passed &= expect(
+        failed.code == azzs::application::UpdateCommandCode::rejected &&
+            failed.snapshot.check_schedule ==
+                ApplicationUpdateCheckSchedule::daily &&
+            persisted.state.has_value() &&
+            persisted.state->schedule == ApplicationUpdateCheckSchedule::daily,
+        "a failed schedule persistence must roll back both the in-memory and durable schedule");
+  }
+  return passed;
+}
+
+[[nodiscard]] FakeUpdatePlatform make_due_platform() {
+  FakeUpdatePlatform platform;
+  platform.current = build("1.0.0");
+  platform.releases = {
+      .code = GithubReleaseQueryResultCode::succeeded,
+      .releases = {release("stable", "v1.1.0", "正式版",
+                           {asset("asset", build("1.1.0"))})}};
+  return platform;
+}
+
+[[nodiscard]] bool automatic_due_and_manual_contract() {
+  using namespace std::chrono_literals;
+  using azzs::application::UpdateCommandCode;
+
+  bool passed = true;
+
+  {
+    InMemoryStateFileSystem files;
+    FixedClock clock{azzs::application::WallClockTime{1'786'422'400'000ms}};
+    azzs::application::DeviceStateStore states{files, clock};
+    StateApplicationUpdateCheckStorage storage{states};
+    auto platform = make_due_platform();
+    FixedOperationActivity activity;
+    RecordingLog log;
+    auto lifecycle = make_lifecycle(platform, activity, log, clock, &storage);
+    static_cast<void>(lifecycle.set_check_schedule(
+        ApplicationUpdateCheckSchedule::disabled));
+    passed &= expect(
+        lifecycle.check_if_due().code == UpdateCommandCode::accepted &&
+            platform.queries == 0,
+        "disabled automatic checks must not query release metadata");
+    passed &= expect(
+        lifecycle.handle(UpdateUserIntent::check_for_update).snapshot.state ==
+                UpdateState::update_available &&
+            platform.queries == 1 && platform.replace_calls == 0,
+        "manual checks must remain available when automatic checks are disabled");
+  }
+
+  {
+    InMemoryStateFileSystem files;
+    FixedClock clock{azzs::application::WallClockTime{1'786'422'400'000ms}};
+    azzs::application::DeviceStateStore states{files, clock};
+    StateApplicationUpdateCheckStorage storage{states};
+    auto platform = make_due_platform();
+    FixedOperationActivity activity;
+    RecordingLog log;
+    auto lifecycle = make_lifecycle(platform, activity, log, clock, &storage);
+    auto const first = lifecycle.check_if_due();
+    auto const second = lifecycle.check_if_due();
+    passed &= expect(
+        first.snapshot.state == UpdateState::update_available &&
+            first.snapshot.last_checked_at.has_value() &&
+            second.code == UpdateCommandCode::accepted && platform.queries == 1,
+        "startup checks must run once per process and remain not due afterwards");
+  }
+
+  for (auto const schedule : {ApplicationUpdateCheckSchedule::daily,
+                              ApplicationUpdateCheckSchedule::weekly}) {
+    InMemoryStateFileSystem files;
+    FixedClock clock{azzs::application::WallClockTime{1'786'422'400'000ms}};
+    azzs::application::DeviceStateStore states{files, clock};
+    StateApplicationUpdateCheckStorage storage{states};
+    auto platform = make_due_platform();
+    FixedOperationActivity activity;
+    RecordingLog log;
+    auto lifecycle = make_lifecycle(platform, activity, log, clock, &storage);
+    passed &= expect(
+        lifecycle.set_check_schedule(schedule).code == UpdateCommandCode::accepted,
+        "daily and weekly schedules must be set before checking due state");
+    static_cast<void>(lifecycle.check_if_due());
+    auto const interval = schedule == ApplicationUpdateCheckSchedule::daily
+                              ? 24h
+                              : 7 * 24h;
+    auto const before_due = lifecycle.check_if_due();
+    passed &= expect(
+        before_due.code == UpdateCommandCode::accepted && platform.queries == 1,
+        "a daily or weekly check must not repeat immediately");
+    clock.advance(interval - 1ms);
+    passed &= expect(
+        lifecycle.check_if_due().code == UpdateCommandCode::accepted &&
+            platform.queries == 1,
+        "a periodic update check must remain quiet before its interval expires");
+    clock.advance(1ms);
+    auto const due = lifecycle.check_if_due();
+    passed &= expect(
+        due.snapshot.state == UpdateState::update_available &&
+            platform.queries == 2 && platform.replace_calls == 0,
+        "a periodic update check must query only after its interval expires");
+  }
+
+  for (auto const schedule : {ApplicationUpdateCheckSchedule::startup,
+                              ApplicationUpdateCheckSchedule::daily,
+                              ApplicationUpdateCheckSchedule::weekly}) {
+    InMemoryStateFileSystem files;
+    FixedClock clock{azzs::application::WallClockTime{1'786'422'400'000ms}};
+    azzs::application::DeviceStateStore states{files, clock};
+    StateApplicationUpdateCheckStorage storage{states};
+    auto platform = make_due_platform();
+    FixedOperationActivity activity;
+    activity.snapshot.phase = InitializationOperationPhase::pending_recovery;
+    RecordingLog log;
+    auto lifecycle = make_lifecycle(platform, activity, log, clock, &storage);
+    if (schedule != ApplicationUpdateCheckSchedule::startup) {
+      passed &= expect(
+          lifecycle.set_check_schedule(schedule).code == UpdateCommandCode::accepted,
+          "periodic deferred-check contract must configure its schedule");
+    }
+    auto const deferred = lifecycle.check_if_due();
+    auto const persisted = storage.read();
+    passed &= expect(
+        deferred.code == UpdateCommandCode::deferred &&
+            deferred.snapshot.last_check_outcome ==
+                ApplicationUpdateCheckOutcome::deferred &&
+            deferred.snapshot.last_checked_at.has_value() &&
+            persisted.state.has_value() &&
+            persisted.state->last_checked_at == deferred.snapshot.last_checked_at &&
+            platform.queries == 0,
+        "an automatic check deferred by an active task must persist its observation time");
+    activity.snapshot.phase = InitializationOperationPhase::none;
+    auto const compensated = lifecycle.check_if_due();
+    passed &= expect(
+        compensated.snapshot.state == UpdateState::update_available &&
+            platform.queries == 1 && platform.replace_calls == 0,
+        "a deferred automatic check must be retried after the task ends for every schedule");
+  }
+
+  return passed;
+}
+
+[[nodiscard]] bool automatic_check_restart_state_contract() {
+  using namespace std::chrono_literals;
+
+  InMemoryStateFileSystem files;
+  FixedClock clock{azzs::application::WallClockTime{1'786'422'400'000ms}};
+  azzs::application::DeviceStateStore first_states{files, clock};
+  StateApplicationUpdateCheckStorage first_storage{first_states};
+  auto platform = make_due_platform();
+  FixedOperationActivity activity;
+  RecordingLog log;
+  auto first = make_lifecycle(platform, activity, log, clock, &first_storage);
+  bool passed = expect(
+      first.set_check_schedule(ApplicationUpdateCheckSchedule::daily).code ==
+          azzs::application::UpdateCommandCode::accepted,
+      "restart state contract must be configured with a periodic schedule");
+  auto const checked = first.check_if_due();
+  passed &= expect(
+      checked.snapshot.last_check_outcome ==
+              ApplicationUpdateCheckOutcome::update_available &&
+          checked.snapshot.candidate.has_value() && platform.queries == 1,
+      "automatic check result must be persisted with its candidate facts");
+
+  azzs::application::DeviceStateStore second_states{files, clock};
+  StateApplicationUpdateCheckStorage second_storage{second_states};
+  FixedOperationActivity restored_activity;
+  RecordingLog restored_log;
+  auto second =
+      make_lifecycle(platform, restored_activity, restored_log, clock,
+                     &second_storage);
+  auto const restored_snapshot = second.snapshot();
+  passed &= expect(
+      restored_snapshot.check_schedule == ApplicationUpdateCheckSchedule::daily &&
+          restored_snapshot.last_checked_at == checked.snapshot.last_checked_at &&
+          restored_snapshot.last_check_outcome ==
+              ApplicationUpdateCheckOutcome::update_available &&
+          restored_snapshot.candidate == checked.snapshot.candidate,
+      "automatic check facts must be restored by a new application instance");
+  clock.advance(24h - 1ms);
+  passed &= expect(
+      second.check_if_due().code == azzs::application::UpdateCommandCode::accepted &&
+          platform.queries == 1,
+      "restored periodic state must remain not due before its interval");
+  clock.advance(1ms);
+  passed &= expect(
+      second.check_if_due().snapshot.state == UpdateState::update_available &&
+          platform.queries == 2 && platform.replace_calls == 0,
+      "restored periodic state must become due at the persisted interval");
+  return passed;
+}
+
 [[nodiscard]] bool persistent_health_storage_contract() {
   using namespace std::chrono_literals;
 
@@ -687,6 +942,9 @@ int main() {
   passed &= dual_failure_is_read_only_and_manual_contract();
   passed &= first_start_health_requires_visible_records_contract();
   passed &= retry_failure_persistence_contract();
+  passed &= automatic_schedule_persistence_contract();
+  passed &= automatic_due_and_manual_contract();
+  passed &= automatic_check_restart_state_contract();
   passed &= persistent_health_storage_contract();
   if (!passed) {
     return EXIT_FAILURE;
