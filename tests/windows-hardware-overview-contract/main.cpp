@@ -820,13 +820,17 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                                  device.efficiency_core_count == 16 &&
                                  device.low_power_efficiency_core_count == 0;
                         }) &&
-                    std::ranges::any_of(
-                        result.observation->devices, [](auto const& device) {
-                          return device.kind == HardwareDeviceKind::gpu &&
-                                 device.gpu_type == HardwareGpuType::discrete &&
-                                 device.gpu_shared_memory_bytes == 0 &&
-                                 device.name.find("共享内存") == std::string::npos;
-                        }) &&
+                     std::ranges::any_of(
+                         result.observation->devices, [](auto const& device) {
+                           return device.kind == HardwareDeviceKind::gpu &&
+                                  device.gpu_type == HardwareGpuType::discrete &&
+                                  device.gpu_shared_memory_bytes == 0 &&
+                                  device.name.find("共享内存") == std::string::npos &&
+                                  device.name.find("计算单元") == std::string::npos &&
+                                  device.name.find(" CU") == std::string::npos &&
+                                  device.name.find(" EU") == std::string::npos &&
+                                  device.name.find(" Xe") == std::string::npos;
+                         }) &&
                     std::ranges::any_of(
                         result.observation->devices, [](auto const& device) {
                           return device.kind == HardwareDeviceKind::gpu &&
@@ -872,8 +876,8 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     intel.find("英特尔 Intel Graphics") != std::string::npos &&
                     amd.find("AMD Radeon 780M Graphics") != std::string::npos &&
                     amd.find("12 CU") != std::string::npos &&
-                    unknown.find("计算单元未读取") != std::string::npos &&
-                    low_end_discrete.find("核显") == std::string::npos,
+                     unknown.find("计算单元未读取") == std::string::npos &&
+                     low_end_discrete.find("核显") == std::string::npos,
                 "Intel, AMD and unknown GPU facts must remain tied to authoritative IDs or exact model text");
 }
 
@@ -1650,7 +1654,51 @@ class FakeQueryExecutor final : public WindowsHardwareQueryExecutor {
                     conflict.observation->keyboard.find("（") ==
                         std::string::npos &&
                     !conflict_raw->mismatch && conflict_raw->calls == 12,
-                "conflicting same-device driver types must fail closed and omit the key-count presentation");
+                 "conflicting same-device driver types must fail closed and omit the key-count presentation");
+}
+
+[[nodiscard]] bool external_keyboards_and_pnp_peripherals_are_projected() {
+  auto executor = std::make_unique<FakeQueryExecutor>();
+  auto* raw_executor = executor.get();
+  raw_executor->expected = full_queries();
+  raw_executor->expected[9].result.rows = {
+      {"HID-compliant mouse", "Microsoft", "USB\\VID_046D&PID_C077",
+       "OK", "0", "Mouse"},
+      {"ELAN ClickPad", "ELAN", "ACPI\\ELAN0001", "OK", "0", "Mouse"},
+      {"HID-compliant touch pad", "ELAN", "ACPI\\ELAN0002", "OK", "0",
+       "HIDClass"},
+  };
+  raw_executor->expected[11].result.rows = {
+      {"HID Keyboard Device", "USB\\VID_046D&PID_C31C", "OK", "0"},
+  };
+  WindowsHardwareObserver observer{std::move(executor)};
+  auto const result = observer.observe({});
+  if (!expect(result.succeeded() && result.observation.has_value() &&
+                  !raw_executor->mismatch && raw_executor->calls == 12,
+              "the peripheral projection must preserve the approved WMI query contract")) {
+    return false;
+  }
+  auto const& observation = *result.observation;
+  auto const has_input = [&](HardwareInputDeviceType type,
+                             HardwareInputDeviceConnection connection) {
+    return std::ranges::any_of(
+        observation.devices, [&](HardwareDeviceRecord const& device) {
+          return device.kind == HardwareDeviceKind::input_device &&
+                 device.input_device_type == type &&
+                 device.input_device_connection == connection;
+        });
+  };
+  return expect(has_input(HardwareInputDeviceType::keyboard,
+                          HardwareInputDeviceConnection::external) &&
+                    has_input(HardwareInputDeviceType::mouse,
+                              HardwareInputDeviceConnection::external) &&
+                    has_input(HardwareInputDeviceType::touchpad,
+                              HardwareInputDeviceConnection::internal),
+                "USB keyboard/mouse and ACPI touchpad rows must retain their reliable connection facts") &&
+         expect(observation.keyboard == "外接键盘" &&
+                    observation.mouse == "外接鼠标" &&
+                    observation.touchpad.find("内建触控板") != std::string::npos,
+                "peripheral summaries must expose keyboard, mouse and touchpad categories");
 }
 
 [[nodiscard]] bool permission_denial_and_cancellation_are_terminal() {
@@ -1737,6 +1785,7 @@ int main() {
   passed &= exact_keyboard_metadata_matches_are_projected();
   passed &= keyboard_identity_hints_cannot_forge_a_presentation_type();
   passed &= keyboard_metadata_mismatch_and_conflicts_fail_closed();
+  passed &= external_keyboards_and_pnp_peripherals_are_projected();
   passed &= permission_denial_and_cancellation_are_terminal();
   passed &= model_change_probe_requires_complete_facts();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
