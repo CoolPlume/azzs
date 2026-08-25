@@ -1048,6 +1048,9 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     settings_cpp = read(root / (
         "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.cpp"
     ))
+    settings_header = read(root / (
+        "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.h"
+    ))
     settings_service_header = read(root / (
         "src/application/application-settings/include/azzs/application/"
         "application_settings.hpp"
@@ -1714,6 +1717,51 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "set_update_status_open(ApplicationUpdateStatus()," in settings_cpp and
         "snapshot.state != UpdateState::idle" in settings_cpp,
         "idle update status must collapse instead of reserving a blank settings-page band",
+    )
+    update_command_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateCommandClick("
+    )
+    update_retry_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateRetryClick("
+    )
+    update_manual_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateManualClick("
+    )
+    update_diagnostic_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateDiagnosticClick("
+    )
+    require(
+        update_command_handler in settings_cpp and
+        update_retry_handler in settings_cpp and
+        update_manual_handler in settings_cpp and
+        update_diagnostic_handler in settings_cpp and
+        'Click="OnApplicationUpdateCommandClick"' in settings_xaml and
+        'Click="OnApplicationUpdateManualClick"' in settings_xaml,
+        "application update commands must retain separate settings-page handlers",
+    )
+    update_command_source = re.sub(
+        r"\s+", "", settings_cpp[
+            settings_cpp.index(update_command_handler):
+            settings_cpp.index(update_retry_handler)
+        ],
+    )
+    update_manual_source = re.sub(
+        r"\s+", "", settings_cpp[
+            settings_cpp.index(update_manual_handler):
+            settings_cpp.index(update_diagnostic_handler)
+        ],
+    )
+    require(
+        "UpdateUserIntent::check_for_update" in update_command_source and
+        "UpdateUserIntent::open_all_github_releases" not in update_command_source and
+        "UpdateUserIntent::open_all_github_releases" in update_manual_source and
+        "UpdateUserIntent::check_for_update" not in update_manual_source and
+        not any(
+            token in settings_xaml or token in settings_cpp or
+            token in settings_header
+            for token in ("DispatcherTimer", "DispatcherQueueTimer")
+        ),
+        "settings update checks must use the lifecycle query, keep GitHub handoff separate, and not own scheduling",
     )
     require("TextChanged=\"OnImportPathChanged\"" in catalog_editor_xaml and
             "AzzsSoftwareCatalogEditorImportPreview" in catalog_editor_xaml and
