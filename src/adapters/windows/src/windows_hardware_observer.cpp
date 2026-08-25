@@ -1465,18 +1465,23 @@ struct GpuPresentationFacts final {
       result += gpu_memory_size(memory->shared_system_memory, false);
     }
   }
-  result += "；";
-  if (facts.compute_unit != application::HardwareGpuComputeUnit::unknown &&
-      facts.compute_unit_count != 0) {
-    result += std::to_string(facts.compute_unit_count);
-    switch (facts.compute_unit) {
-      case application::HardwareGpuComputeUnit::cu: result += " CU"; break;
-      case application::HardwareGpuComputeUnit::eu: result += " EU"; break;
-      case application::HardwareGpuComputeUnit::xe: result += " Xe 核"; break;
-      case application::HardwareGpuComputeUnit::unknown: break;
+  // Compute-unit terminology is meaningful for an integrated GPU only. A
+  // discrete adapter must expose only dedicated VRAM and reliable board
+  // identity; shared-memory or CU/EU/Xe text would be misleading there.
+  if (facts.gpu_type == application::HardwareGpuType::integrated) {
+    result += "；";
+    if (facts.compute_unit != application::HardwareGpuComputeUnit::unknown &&
+        facts.compute_unit_count != 0) {
+      result += std::to_string(facts.compute_unit_count);
+      switch (facts.compute_unit) {
+        case application::HardwareGpuComputeUnit::cu: result += " CU"; break;
+        case application::HardwareGpuComputeUnit::eu: result += " EU"; break;
+        case application::HardwareGpuComputeUnit::xe: result += " Xe 核"; break;
+        case application::HardwareGpuComputeUnit::unknown: break;
+      }
+    } else {
+      result += "计算单元未读取";
     }
-  } else {
-    result += "计算单元未读取";
   }
   return result;
 }
@@ -2257,6 +2262,122 @@ enum class KeyboardPresentationType {
   return {};
 }
 
+[[nodiscard]] bool input_device_is_virtual(
+    std::string_view name, std::string_view pnp_id,
+    std::span<std::string const> driver_descriptions) {
+  auto const normalized_pnp_id = trim_ascii(pnp_id);
+  return virtual_pnp_id(normalized_pnp_id) || contains_ascii(name, "virtual") ||
+         contains_ascii(name, "remote") || contains_ascii(name, "rdp") ||
+         std::ranges::any_of(
+             driver_descriptions, [](std::string const& description) {
+               return contains_ascii(description, "virtual") ||
+                      contains_ascii(description, "remote") ||
+                      contains_ascii(description, "rdp");
+             });
+}
+
+[[nodiscard]] bool input_pnp_id_is_physical(std::string_view pnp_id) {
+  auto const normalized_pnp_id = trim_ascii(pnp_id);
+  if (normalized_pnp_id.empty() || virtual_pnp_id(normalized_pnp_id)) {
+    return false;
+  }
+  constexpr std::array<std::string_view, 9> physical_prefixes{
+      "acpi\\", "bth\\", "bluetooth\\", "hid\\", "i2c\\",
+      "spi\\", "usb\\", "sd\\", "swd\\",
+  };
+  return std::ranges::any_of(physical_prefixes, [&](auto const prefix) {
+    return starts_with_ascii(normalized_pnp_id, prefix);
+  });
+}
+
+[[nodiscard]] application::HardwareInputDeviceConnection input_connection_for(
+    std::string_view name, std::string_view pnp_id,
+    std::span<std::string const> descriptions) {
+  auto const normalized_pnp_id = trim_ascii(pnp_id);
+  auto internal = contains_ascii(name, "internal") ||
+                  contains_ascii(name, "built-in") ||
+                  contains_ascii(name, "built in") ||
+                  name.find("内建") != std::string_view::npos ||
+                  name.find("内置") != std::string_view::npos ||
+                  std::ranges::any_of(
+                      descriptions, [](std::string const& description) {
+                        return internal_keyboard_description(description);
+                      });
+  auto external = contains_ascii(name, "external") ||
+                  contains_ascii(name, "usb") ||
+                  contains_ascii(name, "bluetooth") ||
+                  contains_ascii(name, "wireless") ||
+                  std::ranges::any_of(
+                      descriptions, [](std::string const& description) {
+                        return contains_ascii(description, "external") ||
+                               contains_ascii(description, "usb") ||
+                               contains_ascii(description, "bluetooth") ||
+                               contains_ascii(description, "wireless");
+                      });
+  auto const acpi_or_i2c = starts_with_ascii(normalized_pnp_id, "acpi\\") ||
+                           starts_with_ascii(normalized_pnp_id, "i2c\\") ||
+                           starts_with_ascii(normalized_pnp_id, "spi\\");
+  auto const usb_or_bluetooth = starts_with_ascii(normalized_pnp_id, "usb\\") ||
+                                starts_with_ascii(normalized_pnp_id, "bth\\") ||
+                                starts_with_ascii(normalized_pnp_id, "bluetooth\\");
+  internal = internal || acpi_or_i2c;
+  external = external || usb_or_bluetooth;
+  if (internal == external) {
+    return application::HardwareInputDeviceConnection::unknown;
+  }
+  return internal ? application::HardwareInputDeviceConnection::internal
+                  : application::HardwareInputDeviceConnection::external;
+}
+
+[[nodiscard]] std::optional<application::HardwareInputDeviceType>
+input_device_type_for(std::string_view name, std::string_view pnp_class) {
+  auto const is_touchpad =
+      contains_ascii(name, "touchpad") || contains_ascii(name, "touch pad") ||
+      contains_ascii(name, "precision touchpad") ||
+      contains_ascii(name, "clickpad") || contains_ascii(name, "trackpad") ||
+      contains_ascii(name, "track pad");
+  if (is_touchpad && !contains_ascii(name, "touchscreen")) {
+    return application::HardwareInputDeviceType::touchpad;
+  }
+  if (contains_ascii(pnp_class, "mouse") || contains_ascii(pnp_class, "hid") ||
+      contains_ascii(name, "mouse") || contains_ascii(name, "pointing device") ||
+      contains_ascii(name, "trackball")) {
+    return application::HardwareInputDeviceType::mouse;
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] std::string input_device_category_name(
+    application::HardwareInputDeviceType type,
+    application::HardwareInputDeviceConnection connection) {
+  std::string result;
+  switch (connection) {
+    case application::HardwareInputDeviceConnection::internal:
+      result = "内建";
+      break;
+    case application::HardwareInputDeviceConnection::external:
+      result = "外接";
+      break;
+    case application::HardwareInputDeviceConnection::unknown:
+      break;
+  }
+  switch (type) {
+    case application::HardwareInputDeviceType::keyboard:
+      result += "键盘";
+      break;
+    case application::HardwareInputDeviceType::mouse:
+      result += "鼠标";
+      break;
+    case application::HardwareInputDeviceType::touchpad:
+      result += "触控板";
+      break;
+    case application::HardwareInputDeviceType::unknown:
+      result += "输入设备";
+      break;
+  }
+  return result;
+}
+
 void append_driver_reported_keyboard_key_counts(
     std::vector<std::uint32_t>& counts, std::string_view description) {
   auto const lowered = lower_ascii(description);
@@ -2315,21 +2436,14 @@ classify_keyboard(std::vector<std::string> const& row,
                   std::span<std::string const> driver_descriptions,
                   bool virtual_host) {
   auto const pnp_id = row_value(row, 1);
-  if (virtual_host || virtual_pnp_id(pnp_id) ||
-      contains_ascii(wmi_description, "virtual") ||
-      contains_ascii(wmi_description, "remote") ||
-      contains_ascii(wmi_description, "rdp") ||
-      std::ranges::any_of(driver_descriptions,
-                          [](std::string const& description) {
-                            return contains_ascii(description, "virtual") ||
-                                   contains_ascii(description, "remote") ||
-                                   contains_ascii(description, "rdp");
-                          }) ||
-      !(internal_keyboard_description(wmi_description) ||
-        std::ranges::any_of(driver_descriptions,
-                            [](std::string const& description) {
-                              return internal_keyboard_description(description);
-                            }))) {
+  if (virtual_host || !input_pnp_id_is_physical(pnp_id) ||
+      input_device_is_virtual(wmi_description, pnp_id,
+                              driver_descriptions)) {
+    return std::nullopt;
+  }
+  auto const connection = input_connection_for(
+      wmi_description, pnp_id, driver_descriptions);
+  if (connection == application::HardwareInputDeviceConnection::unknown) {
     return std::nullopt;
   }
 
@@ -2352,8 +2466,10 @@ classify_keyboard(std::vector<std::string> const& row,
     append_driver_reported_keyboard_key_counts(key_counts, description);
   }
 
-  std::string name{"内建键盘"};
-  if (!conflicting_type && type != KeyboardPresentationType::unknown) {
+  auto name = input_device_category_name(
+      application::HardwareInputDeviceType::keyboard, connection);
+  if (connection == application::HardwareInputDeviceConnection::internal &&
+      !conflicting_type && type != KeyboardPresentationType::unknown) {
     name += " · ";
     name += keyboard_presentation_name(type);
   }
@@ -2368,10 +2484,11 @@ classify_keyboard(std::vector<std::string> const& row,
       .status = device_status(row_value(row, 2), row_value(row, 3)),
       .physically_present = true,
       .filter_reason =
-          "explicit same-device internal keyboard fact",
+          connection == application::HardwareInputDeviceConnection::internal
+              ? "explicit same-device internal keyboard fact"
+              : "physical keyboard PNP id with explicit external bus fact",
       .input_device_type = application::HardwareInputDeviceType::keyboard,
-      .input_device_connection =
-          application::HardwareInputDeviceConnection::internal,
+      .input_device_connection = connection,
       // An unknown type is rendered only as "内建键盘". A key count is shown
       // only when the same driver evidence confirms one unambiguous layout.
       .input_device_key_count =
@@ -2379,6 +2496,37 @@ classify_keyboard(std::vector<std::string> const& row,
               key_counts.size() == 1
               ? key_counts.front()
               : 0,
+  };
+}
+
+[[nodiscard]] std::optional<application::HardwareDeviceRecord>
+classify_input_pnp(std::vector<std::string> const& row, bool virtual_host) {
+  auto const name = row_value(row, 0);
+  auto const manufacturer = row_value(row, 1);
+  auto const pnp_id = row_value(row, 2);
+  auto const pnp_class = row_value(row, 5);
+  if (name.empty() || virtual_host || !input_pnp_id_is_physical(pnp_id) ||
+      input_device_is_virtual(name, pnp_id, std::span<std::string const>{})) {
+    return std::nullopt;
+  }
+  auto const type = input_device_type_for(name, pnp_class);
+  if (!type.has_value()) {
+    return std::nullopt;
+  }
+  auto const connection =
+      input_connection_for(name, pnp_id, std::span<std::string const>{});
+  return application::HardwareDeviceRecord{
+      .kind = application::HardwareDeviceKind::input_device,
+      .name = input_device_category_name(*type, connection),
+      .physicality = application::HardwareDevicePhysicality::confirmed_physical,
+      .source = application::HardwareObservationSource::wmi,
+      .confidence = application::HardwareObservationConfidence::confirmed,
+      .status = device_status(row_value(row, 3), row_value(row, 4)),
+      .vendor = vendor_from_text(manufacturer.empty() ? name : manufacturer),
+      .physically_present = true,
+      .filter_reason = "physical input-device PNP id with explicit class/name",
+      .input_device_type = *type,
+      .input_device_connection = connection,
   };
 }
 
@@ -2421,6 +2569,19 @@ void append_grouped_device(std::vector<CollectedDevice>& devices,
   // instance, not a second drive. Only an exact non-empty PNP identity may
   // collapse it; equal model text is insufficient.
   if (record.kind == application::HardwareDeviceKind::storage &&
+      !device.stable_instance_key.empty()) {
+    for (auto const& existing : devices) {
+      if (existing.record.kind == record.kind &&
+          !existing.stable_instance_key.empty() &&
+          existing.stable_instance_key == device.stable_instance_key) {
+        return;
+      }
+    }
+  }
+  // A PnPEntity row can be surfaced more than once by the provider. Input
+  // devices are instance facts, so only the exact full PNP identity may merge
+  // them; equal category text is not sufficient.
+  if (record.kind == application::HardwareDeviceKind::input_device &&
       !device.stable_instance_key.empty()) {
     for (auto const& existing : devices) {
       if (existing.record.kind == record.kind &&
@@ -2943,6 +3104,14 @@ struct CollectedObservation final {
     }
   }
   for (auto const& row : rows_by_spec[9]) {
+    if (auto record = classify_input_pnp(row, virtual_host)) {
+      append_grouped_device(
+          devices,
+          {.record = std::move(*record),
+           .stable_instance_key = normalized_instance_key(row_value(row, 2))});
+    }
+  }
+  for (auto const& row : rows_by_spec[9]) {
     if (auto record = classify_npu(row, virtual_host)) {
       append_grouped_device(devices, {.record = std::move(*record)});
     }
@@ -3015,10 +3184,20 @@ struct CollectedObservation final {
   rebuild_summary(collected.observation.npu, collected.observation.devices,
                   application::HardwareDeviceKind::npu);
   rebuild_summary(collected.observation.keyboard,
+                   collected.observation.devices,
+                   application::HardwareDeviceKind::input_device, std::nullopt,
+                   std::nullopt,
+                   application::HardwareInputDeviceType::keyboard);
+  rebuild_summary(collected.observation.mouse,
                   collected.observation.devices,
                   application::HardwareDeviceKind::input_device, std::nullopt,
                   std::nullopt,
-                  application::HardwareInputDeviceType::keyboard);
+                  application::HardwareInputDeviceType::mouse);
+  rebuild_summary(collected.observation.touchpad,
+                  collected.observation.devices,
+                  application::HardwareDeviceKind::input_device, std::nullopt,
+                  std::nullopt,
+                  application::HardwareInputDeviceType::touchpad);
 
   if (!collected.observation.usable()) {
     if (collected.code == application::HardwareObservationCode::succeeded) {
