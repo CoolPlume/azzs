@@ -643,6 +643,100 @@ struct Fixture final {
   return passed;
 }
 
+[[nodiscard]] bool declared_catalog_preview_survives_read_only_restore() {
+  auto runtime = fixture_catalog();
+  auto qq = software("qq", catalog::SoftwareTier::normal, {},
+                     catalog::ItemAvailability::install_profile_unavailable);
+  qq.definition.name = "QQ";
+  qq.reasons = {"qq-install-profile-unavailable"};
+  auto qq_music = software(
+      "qq-music", catalog::SoftwareTier::normal, {},
+      catalog::ItemAvailability::install_profile_unavailable);
+  qq_music.definition.name = "QQ音乐";
+  qq_music.reasons = {"qq-music-install-profile-unavailable"};
+  runtime.software.push_back(std::move(qq));
+  runtime.software.push_back(std::move(qq_music));
+
+  Fixture fixture;
+  bool passed = expect(fixture.lifecycle.restore().succeeded() &&
+                           fixture.lifecycle
+                               .on_catalog_replaced(catalog_projection(
+                                   runtime, "read-only-preview-current"))
+                               .succeeded() &&
+                           fixture.lifecycle.select("helper", true).succeeded() &&
+                           fixture.lifecycle
+                               .begin_external_handoff(
+                                   "editor", primary(runtime, "editor"))
+                               .succeeded() &&
+                           fixture.lifecycle.detect_external_install("editor")
+                               .succeeded(),
+                       "read-only preview fixture must persist both state aggregates");
+  auto const subject_key = azzs::domain::StateKey::for_subject(
+      StateSubject{"contract-user"},
+      azzs::domain::AggregateId{"software-selection"});
+  auto const machine_key = azzs::domain::StateKey::machine(
+      azzs::domain::AggregateId{"software-source-handoff"});
+  fixture.files.corrupt(subject_key,
+                        azzs::application::StateFileSlot::current);
+  fixture.files.corrupt(subject_key,
+                        azzs::application::StateFileSlot::previous);
+  fixture.files.corrupt(machine_key,
+                        azzs::application::StateFileSlot::current);
+  fixture.files.corrupt(machine_key,
+                        azzs::application::StateFileSlot::previous);
+  auto const subject_current_before = fixture.files.raw_file(
+      subject_key, azzs::application::StateFileSlot::current);
+  auto const subject_previous_before = fixture.files.raw_file(
+      subject_key, azzs::application::StateFileSlot::previous);
+  auto const machine_current_before = fixture.files.raw_file(
+      machine_key, azzs::application::StateFileSlot::current);
+  auto const machine_previous_before = fixture.files.raw_file(
+      machine_key, azzs::application::StateFileSlot::previous);
+
+  app_selection::SoftwareSelectionLifecycle restored{
+      fixture.states, fixture.clock, fixture.log, fixture.architectures,
+      fixture.resolver, fixture.network, fixture.detector, fixture.launcher,
+      StateSubject{"contract-user"}};
+  auto const restored_result = restored.restore();
+  auto const before = restored.snapshot();
+  auto const declared = restored.on_declared_catalog_preview(runtime);
+  auto const projected = restored.snapshot();
+  auto const qq_item = std::ranges::find(
+      projected.items, "qq", &selection::SelectionItem::software_id);
+  auto const qq_music_item = std::ranges::find(
+      projected.items, "qq-music", &selection::SelectionItem::software_id);
+  passed &= expect(
+      restored_result.code == app_selection::SelectionActionCode::read_only &&
+          before.mode == app_selection::SelectionLifecycleMode::read_only &&
+          declared.succeeded() && !projected.has_current_catalog &&
+          qq_item != projected.items.end() && qq_music_item != projected.items.end() &&
+          qq_item->display_name == "QQ" && qq_music_item->display_name == "QQ音乐" &&
+          !qq_item->selected && !qq_music_item->selected && !qq_item->available &&
+          !qq_music_item->available && !qq_item->reason.empty() &&
+          !qq_music_item->reason.empty(),
+      "read-only restore must still expose declared software items without enabling them");
+
+  auto const selection_result = restored.select("qq", true);
+  auto const after = restored.snapshot();
+  passed &= expect(
+      selection_result.code == app_selection::SelectionActionCode::read_only &&
+          after.selection == before.selection &&
+          fixture.files.raw_file(subject_key,
+                                 azzs::application::StateFileSlot::current) ==
+              subject_current_before &&
+          fixture.files.raw_file(subject_key,
+                                 azzs::application::StateFileSlot::previous) ==
+              subject_previous_before &&
+          fixture.files.raw_file(machine_key,
+                                 azzs::application::StateFileSlot::current) ==
+              machine_current_before &&
+          fixture.files.raw_file(machine_key,
+                                 azzs::application::StateFileSlot::previous) ==
+              machine_previous_before,
+      "read-only preview selection must remain blocked and preserve persisted state");
+  return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -654,6 +748,7 @@ int main() {
                       catalog_projection_identity_is_memory_only_and_stale_is_rejected() &&
                       catalog_changes_retain_but_block_selection() &&
                       projected_items_expose_names_and_fail_closed_items() &&
-                      declared_catalog_preview_is_read_only_and_unselected();
+                      declared_catalog_preview_is_read_only_and_unselected() &&
+                      declared_catalog_preview_survives_read_only_restore();
   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
