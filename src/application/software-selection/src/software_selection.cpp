@@ -922,10 +922,9 @@ SelectionActionResult SoftwareSelectionLifecycle::on_catalog_replaced(
 
 SelectionActionResult SoftwareSelectionLifecycle::on_declared_catalog_preview(
     catalog_domain::RuntimeSoftwareCatalog runtime) {
-  if (mode_ != SelectionLifecycleMode::ready) {
-    return {.code = mode_ == SelectionLifecycleMode::read_only
-                        ? SelectionActionCode::read_only
-                        : SelectionActionCode::not_restored,
+  if (mode_ != SelectionLifecycleMode::ready &&
+      mode_ != SelectionLifecycleMode::read_only) {
+    return {.code = SelectionActionCode::not_restored,
             .message = error_};
   }
   if (catalog_.has_value()) {

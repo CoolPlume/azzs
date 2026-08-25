@@ -94,6 +94,15 @@ struct WindowsDisplayPhysicalSize final {
   std::uint32_t vertical_centimeters{0};
 };
 
+// Input identifiers are adapter-private matching data. The driver-reported
+// description comes from DEVPKEY_Device_BusReportedDeviceDesc for the same
+// complete PNP instance; ordinary Win32_Keyboard text is not a type source.
+struct WindowsInputDeviceMetadata final {
+  std::string pnp_device_id;
+  std::string container_id;
+  std::string bus_reported_device_description;
+};
+
 // The production implementation executes read-only WMI queries. Tests may
 // provide a deterministic implementation without touching a Windows host.
 class WindowsHardwareQueryExecutor {
@@ -127,6 +136,11 @@ class WindowsHardwareQueryExecutor {
 
   [[nodiscard]] virtual std::vector<WindowsDisplayPhysicalSize>
   display_physical_sizes(std::span<std::string const>, std::stop_token) {
+    return {};
+  }
+
+  [[nodiscard]] virtual std::vector<WindowsInputDeviceMetadata>
+  input_device_metadata(std::span<std::string const>, std::stop_token) {
     return {};
   }
 };

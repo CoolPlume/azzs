@@ -296,6 +296,34 @@ def verify_resource_dictionary(root: Path) -> None:
     require(corner_radii and max(corner_radii) <= 8,
             "design-system card radii must not exceed 8px")
 
+    check_box_style = next(
+        (element for element in theme_root
+         if element.attrib.get(X_KEY) == "AzzsCheckBoxStyle"),
+        None,
+    )
+    require(
+        check_box_style is not None and
+        local_name(check_box_style.tag) == "Style" and
+        check_box_style.attrib.get("TargetType") == "CheckBox",
+        "AzzsCheckBoxStyle must remain a dedicated CheckBox style",
+    )
+    require(
+        check_box_style is not None and
+        check_box_style.attrib.get("BasedOn") ==
+        "{StaticResource DefaultCheckBoxStyle}",
+        "AzzsCheckBoxStyle must inherit the framework CheckBox template",
+    )
+    check_box_setters = {
+        element.attrib.get("Property"): element.attrib.get("Value")
+        for element in (check_box_style if check_box_style is not None else ())
+        if local_name(element.tag) == "Setter"
+    }
+    require(
+        check_box_setters.get("CornerRadius") ==
+        "{StaticResource AzzsCornerRadiusSmall}",
+        "AzzsCheckBoxStyle must use the shared small corner radius",
+    )
+
 
 def verify_app_and_pages(root: Path) -> None:
     ui_root = root / "src/adapters/ui/winui"
@@ -608,6 +636,22 @@ def verify_app_and_pages(root: Path) -> None:
         )),
         "software installation selection UI must not read the catalog or create batches",
     )
+
+    dynamic_check_box_sources = {
+        "SoftwareInstallationPage.xaml.cpp": installation_cpp,
+        "SoftwareOptimizationPage.xaml.cpp": read(
+            ui_root / "Pages/SoftwareOptimizationPage.xaml.cpp"),
+        "SystemOptimizationPage.xaml.cpp": read(
+            ui_root / "Pages/SystemOptimizationPage.xaml.cpp"),
+    }
+    for page_name, source in dynamic_check_box_sources.items():
+        require(
+            re.search(
+                r'Lookup\(\s*winrt::box_value\(L"AzzsCheckBoxStyle"\)\s*\)',
+                source,
+            ) is not None,
+            f"{page_name} must apply AzzsCheckBoxStyle to dynamic CheckBox controls",
+        )
 
 
 def verify_fixture_xaml(root: Path) -> None:
@@ -1048,6 +1092,9 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     settings_cpp = read(root / (
         "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.cpp"
     ))
+    settings_header = read(root / (
+        "src/adapters/ui/winui/Pages/ApplicationSettingsPage.xaml.h"
+    ))
     settings_service_header = read(root / (
         "src/application/application-settings/include/azzs/application/"
         "application_settings.hpp"
@@ -1100,13 +1147,6 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
     require(
         all(key in resource_loader_keys for key in literal_resource_keys),
         "drivers GetString literals must resolve to existing MRT resource paths",
-    )
-    copy_resource_keys = re.findall(
-        r'append_copy_row\(L"([^"]+)"', drivers_cpp
-    )
-    require(
-        all(key in resource_loader_keys for key in copy_resource_keys),
-        "hardware copy rows must resolve to existing MRT resource paths",
     )
     require("AzzsApplicationAdvancedView" in settings_xaml and
             "OnAdvancedViewToggled" in settings_cpp,
@@ -1271,42 +1311,13 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         resource_values.get("HardwareModelSummaryTitle.Text") == "机型" and
         resource_values.get("HardwareSystemSummaryTitle.Text") == "Windows 版本" and
         resource_values.get("HardwareDetailsTitle.Text") == "详细信息" and
-        'resources.GetString(L"HardwareTableItemHeader/Text")' in drivers_cpp and
-        'resources.GetString(L"HardwareTableInformationHeader/Text")' in drivers_cpp and
-        'resources.GetString(L"HardwareTableItemHeader.Text")' not in drivers_cpp and
-        'resources.GetString(L"HardwareTableInformationHeader.Text")' not in drivers_cpp and
-        'append_copy_row(L"HardwareModelSummaryTitle/Text"' in drivers_cpp and
-        'append_copy_row(L"HardwareSystemSummaryTitle/Text"' in drivers_cpp and
         resource_values.get("HardwareTableItemHeader.Text") == "项目" and
         resource_values.get("HardwareTableInformationHeader.Text") == "信息" and
-        resource_values.get("HardwareCopySection.Text") == "复制本节" and
         resource_values.get("HardwareSolidStateStorageLabel.Text") == "固态硬盘" and
         resource_values.get("HardwareHardDiskStorageLabel.Text") == "机械硬盘" and
         resource_values.get("HardwareWiredNetworkLabel.Text") == "有线网卡" and
         resource_values.get("HardwareWirelessNetworkLabel.Text") == "无线网卡",
         "hardware table headings and category labels must remain explicit Simplified Chinese",
-    )
-    hardware_copy_label_resources = (
-        "HardwareModelSummaryTitle",
-        "HardwareSystemSummaryTitle",
-        "HardwareCpuLabel",
-        "HardwareMotherboardLabel",
-        "HardwareMemoryLabel",
-        "HardwareGpuLabel",
-        "HardwareDisplayLabel",
-        "HardwareSolidStateStorageLabel",
-        "HardwareHardDiskStorageLabel",
-        "HardwareWiredNetworkLabel",
-        "HardwareWirelessNetworkLabel",
-        "HardwareAudioLabel",
-        "HardwareNpuLabel",
-    )
-    require(
-        all(f'L"{key}/Text"' in drivers_cpp
-            for key in hardware_copy_label_resources) and
-        not any(f'L"{key}.Text"' in drivers_cpp
-                for key in hardware_copy_label_resources),
-        "hardware copy rows must use MRT slash resource paths, never .Text source keys",
     )
     obsolete_hardware_groups = (
         "HardwareCoreGroup", "HardwareGraphicsGroup", "HardwareStorageGroup",
@@ -1516,21 +1527,22 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "HardwareUnclassifiedStorageLabel.Text" not in resource_values,
         "unknown storage media must remain a structured device fact, not a rendered category",
     )
-    copy_buttons = [
-        element for element in drivers_root.iter()
-        if local_name(element.tag) == "Button" and
-        element.attrib.get("AutomationProperties.AutomationId") == "AzzsHardwareCopySection"
-    ]
-    require(len(copy_buttons) == 1 and
-            copy_buttons[0].attrib.get("Click") == "OnCopyHardwareClicked" and
-            "Symbol=\"Copy\"" in drivers_xaml and
-            'x:Uid="HardwareCopySection"' in drivers_xaml,
-            "hardware facts must expose a localized copy command with a familiar copy icon")
     require(
-        "void DriversPage::OnCopyHardwareClicked" in drivers_cpp and
-        "hardware_copy_rows_" in drivers_cpp and
-        "Clipboard::SetContent(package)" in drivers_cpp,
-        "copying hardware facts must use the projected rows and the platform clipboard")
+        not any(copy_artifact in drivers_xaml or
+                copy_artifact in drivers_cpp or
+                copy_artifact in drivers_header or
+                copy_artifact in resource_names
+                for copy_artifact in (
+                    "AzzsHardwareCopySection",
+                    "CopyHardwareButton",
+                    "HardwareCopySection",
+                    "OnCopyHardwareClicked",
+                )) and
+        "hardware_copy_rows_" not in drivers_cpp and
+        "append_copy_row" not in drivers_cpp and
+        "Clipboard::" not in drivers_cpp and
+        "DataPackage" not in drivers_cpp,
+        "drivers page must not retain the removed hardware copy command or clipboard path")
     require(
         resource_values.get("GenericNetworkDriverRescueDisplayName.Text") ==
         "通用网卡驱动救援工具" and
@@ -1714,6 +1726,51 @@ def verify_localization_and_workflow_boundary(root: Path) -> None:
         "set_update_status_open(ApplicationUpdateStatus()," in settings_cpp and
         "snapshot.state != UpdateState::idle" in settings_cpp,
         "idle update status must collapse instead of reserving a blank settings-page band",
+    )
+    update_command_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateCommandClick("
+    )
+    update_retry_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateRetryClick("
+    )
+    update_manual_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateManualClick("
+    )
+    update_diagnostic_handler = (
+        "void ApplicationSettingsPage::OnApplicationUpdateDiagnosticClick("
+    )
+    require(
+        update_command_handler in settings_cpp and
+        update_retry_handler in settings_cpp and
+        update_manual_handler in settings_cpp and
+        update_diagnostic_handler in settings_cpp and
+        'Click="OnApplicationUpdateCommandClick"' in settings_xaml and
+        'Click="OnApplicationUpdateManualClick"' in settings_xaml,
+        "application update commands must retain separate settings-page handlers",
+    )
+    update_command_source = re.sub(
+        r"\s+", "", settings_cpp[
+            settings_cpp.index(update_command_handler):
+            settings_cpp.index(update_retry_handler)
+        ],
+    )
+    update_manual_source = re.sub(
+        r"\s+", "", settings_cpp[
+            settings_cpp.index(update_manual_handler):
+            settings_cpp.index(update_diagnostic_handler)
+        ],
+    )
+    require(
+        "UpdateUserIntent::check_for_update" in update_command_source and
+        "UpdateUserIntent::open_all_github_releases" not in update_command_source and
+        "UpdateUserIntent::open_all_github_releases" in update_manual_source and
+        "UpdateUserIntent::check_for_update" not in update_manual_source and
+        not any(
+            token in settings_xaml or token in settings_cpp or
+            token in settings_header
+            for token in ("DispatcherTimer", "DispatcherQueueTimer")
+        ),
+        "settings update checks must use the lifecycle query, keep GitHub handoff separate, and not own scheduling",
     )
     require("TextChanged=\"OnImportPathChanged\"" in catalog_editor_xaml and
             "AzzsSoftwareCatalogEditorImportPreview" in catalog_editor_xaml and

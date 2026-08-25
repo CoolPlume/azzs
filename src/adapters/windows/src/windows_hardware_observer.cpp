@@ -9,6 +9,10 @@
 
 #include <windows.h>
 
+#include <initguid.h>
+#include <devguid.h>
+#include <devpkey.h>
+#include <setupapi.h>
 #include <wingdi.h>
 
 #include <dxgi1_6.h>
@@ -70,6 +74,27 @@ class RegistryKey final {
   HKEY key_;
 };
 
+class DeviceInfoSet final {
+ public:
+  explicit DeviceInfoSet(HDEVINFO handle = INVALID_HANDLE_VALUE) noexcept
+      : handle_(handle) {}
+  ~DeviceInfoSet() {
+    if (handle_ != INVALID_HANDLE_VALUE) {
+      ::SetupDiDestroyDeviceInfoList(handle_);
+    }
+  }
+  DeviceInfoSet(DeviceInfoSet const&) = delete;
+  DeviceInfoSet& operator=(DeviceInfoSet const&) = delete;
+
+  [[nodiscard]] HDEVINFO get() const noexcept { return handle_; }
+  [[nodiscard]] bool usable() const noexcept {
+    return handle_ != INVALID_HANDLE_VALUE;
+  }
+
+ private:
+  HDEVINFO handle_;
+};
+
 [[nodiscard]] std::string utf8_from_wide(std::wstring_view value) {
   if (value.empty()) {
     return {};
@@ -106,6 +131,81 @@ class RegistryKey final {
     return {};
   }
   return result;
+}
+
+[[nodiscard]] std::string setup_device_instance_id(
+    HDEVINFO device_info_set, SP_DEVINFO_DATA& device_info) {
+  DWORD required_characters = 0;
+  if (::SetupDiGetDeviceInstanceIdW(device_info_set, &device_info, nullptr, 0,
+                                    &required_characters) != FALSE ||
+      ::GetLastError() != ERROR_INSUFFICIENT_BUFFER ||
+      required_characters == 0) {
+    return {};
+  }
+  std::vector<wchar_t> buffer(required_characters);
+  if (::SetupDiGetDeviceInstanceIdW(
+          device_info_set, &device_info, buffer.data(),
+          static_cast<DWORD>(buffer.size()), &required_characters) == FALSE) {
+    return {};
+  }
+  auto length = buffer.size();
+  while (length != 0 && buffer[length - 1] == L'\0') {
+    --length;
+  }
+  return utf8_from_wide(std::wstring_view{buffer.data(), length});
+}
+
+[[nodiscard]] std::string setup_device_property_string(
+    HDEVINFO device_info_set, SP_DEVINFO_DATA& device_info,
+    DEVPROPKEY const& property_key) {
+  DEVPROPTYPE property_type = 0;
+  DWORD required_bytes = 0;
+  if (::SetupDiGetDevicePropertyW(device_info_set, &device_info, &property_key,
+                                  &property_type, nullptr, 0, &required_bytes,
+                                  0) != FALSE ||
+      ::GetLastError() != ERROR_INSUFFICIENT_BUFFER ||
+      required_bytes == 0 ||
+      required_bytes > 32 * 1024) {
+    return {};
+  }
+  auto const character_count =
+      (static_cast<std::size_t>(required_bytes) + sizeof(wchar_t) - 1) /
+      sizeof(wchar_t);
+  std::vector<wchar_t> buffer(character_count, L'\0');
+  if (::SetupDiGetDevicePropertyW(
+          device_info_set, &device_info, &property_key, &property_type,
+          reinterpret_cast<PBYTE>(buffer.data()), required_bytes,
+          &required_bytes, 0) == FALSE ||
+      property_type != DEVPROP_TYPE_STRING) {
+    return {};
+  }
+  auto length = buffer.size();
+  while (length != 0 && buffer[length - 1] == L'\0') {
+    --length;
+  }
+  return utf8_from_wide(std::wstring_view{buffer.data(), length});
+}
+
+[[nodiscard]] std::string setup_device_container_id(
+    HDEVINFO device_info_set, SP_DEVINFO_DATA& device_info) {
+  GUID value{};
+  DEVPROPTYPE property_type = 0;
+  DWORD required_bytes = 0;
+  if (::SetupDiGetDevicePropertyW(
+          device_info_set, &device_info, &DEVPKEY_Device_ContainerId,
+          &property_type, reinterpret_cast<PBYTE>(&value), sizeof(value),
+          &required_bytes, 0) == FALSE ||
+      property_type != DEVPROP_TYPE_GUID || required_bytes != sizeof(value)) {
+    return {};
+  }
+  std::array<wchar_t, 40> buffer{};
+  auto const characters = ::StringFromGUID2(
+      value, buffer.data(), static_cast<int>(buffer.size()));
+  if (characters <= 1) {
+    return {};
+  }
+  return utf8_from_wide(
+      std::wstring_view{buffer.data(), static_cast<std::size_t>(characters - 1)});
 }
 
 [[nodiscard]] std::string join_error(std::string current,
@@ -2107,6 +2207,181 @@ classify_display_pnp(std::vector<std::string> const& row,
   };
 }
 
+enum class KeyboardPresentationType {
+  unknown,
+  magic,
+  butterfly,
+};
+
+[[nodiscard]] bool internal_keyboard_description(
+    std::string_view description) {
+  return contains_ascii(description, "internal") ||
+         contains_ascii(description, "built-in") ||
+         contains_ascii(description, "built in") ||
+         description.find("内建") != std::string_view::npos ||
+         description.find("内置") != std::string_view::npos;
+}
+
+[[nodiscard]] bool generic_keyboard_description(
+    std::string_view description) {
+  constexpr std::array<std::string_view, 5> kGenericDescriptions{
+      "hid keyboard device", "generic", "standard ps/2 keyboard",
+      "standard 101/102-key", "standard keyboard",
+  };
+  return std::ranges::any_of(kGenericDescriptions, [&](auto const marker) {
+    return contains_ascii(description, marker);
+  });
+}
+
+[[nodiscard]] KeyboardPresentationType keyboard_presentation_type(
+    std::string_view description) {
+  if (generic_keyboard_description(description)) {
+    return KeyboardPresentationType::unknown;
+  }
+  if (contains_ascii(description, "magic keyboard")) {
+    return KeyboardPresentationType::magic;
+  }
+  if (contains_ascii(description, "butterfly keyboard")) {
+    return KeyboardPresentationType::butterfly;
+  }
+  return KeyboardPresentationType::unknown;
+}
+
+[[nodiscard]] std::string_view keyboard_presentation_name(
+    KeyboardPresentationType value) {
+  switch (value) {
+    case KeyboardPresentationType::magic: return "妙控键盘";
+    case KeyboardPresentationType::butterfly: return "蝶式键盘";
+    case KeyboardPresentationType::unknown: return {};
+  }
+  return {};
+}
+
+void append_driver_reported_keyboard_key_counts(
+    std::vector<std::uint32_t>& counts, std::string_view description) {
+  auto const lowered = lower_ascii(description);
+  constexpr std::string_view kChineseKey = "键";
+  for (std::size_t index = 0; index < lowered.size();) {
+    if (std::isdigit(static_cast<unsigned char>(lowered[index])) == 0) {
+      ++index;
+      continue;
+    }
+    auto const number_begin = index;
+    while (index < lowered.size() &&
+           std::isdigit(static_cast<unsigned char>(lowered[index])) != 0) {
+      ++index;
+    }
+    std::uint32_t count = 0;
+    if (!parse_integer(
+            std::string_view{lowered}.substr(number_begin, index - number_begin),
+            count) ||
+        count == 0) {
+      continue;
+    }
+    auto marker_begin = index;
+    while (marker_begin < lowered.size() &&
+           std::isspace(static_cast<unsigned char>(lowered[marker_begin])) != 0) {
+      ++marker_begin;
+    }
+    if (marker_begin < lowered.size() && lowered[marker_begin] == '-') {
+      ++marker_begin;
+      while (marker_begin < lowered.size() &&
+             std::isspace(static_cast<unsigned char>(lowered[marker_begin])) !=
+                 0) {
+        ++marker_begin;
+      }
+    }
+
+    auto recognized = false;
+    if (lowered.compare(marker_begin, 3, "key") == 0) {
+      auto marker_end = marker_begin + 3;
+      recognized = marker_end == lowered.size() ||
+                   std::isalnum(static_cast<unsigned char>(lowered[marker_end])) ==
+                       0;
+    } else if (lowered.compare(marker_begin, kChineseKey.size(),
+                               kChineseKey) == 0) {
+      recognized = true;
+    }
+    if (recognized &&
+        std::ranges::find(counts, count) == counts.end()) {
+      counts.push_back(count);
+    }
+  }
+}
+
+[[nodiscard]] std::optional<application::HardwareDeviceRecord>
+classify_keyboard(std::vector<std::string> const& row,
+                  std::string_view wmi_description,
+                  std::span<std::string const> driver_descriptions,
+                  bool virtual_host) {
+  auto const pnp_id = row_value(row, 1);
+  if (virtual_host || virtual_pnp_id(pnp_id) ||
+      contains_ascii(wmi_description, "virtual") ||
+      contains_ascii(wmi_description, "remote") ||
+      contains_ascii(wmi_description, "rdp") ||
+      std::ranges::any_of(driver_descriptions,
+                          [](std::string const& description) {
+                            return contains_ascii(description, "virtual") ||
+                                   contains_ascii(description, "remote") ||
+                                   contains_ascii(description, "rdp");
+                          }) ||
+      !(internal_keyboard_description(wmi_description) ||
+        std::ranges::any_of(driver_descriptions,
+                            [](std::string const& description) {
+                              return internal_keyboard_description(description);
+                            }))) {
+    return std::nullopt;
+  }
+
+  // Win32_Keyboard::Description may establish only that a keyboard is
+  // internal. It is a generic WMI name, so type and key count must come from
+  // an exact same-device driver description instead.
+  auto type = KeyboardPresentationType::unknown;
+  auto conflicting_type = false;
+  std::vector<std::uint32_t> key_counts;
+  for (auto const& description : driver_descriptions) {
+    auto const candidate_type = keyboard_presentation_type(description);
+    if (candidate_type == KeyboardPresentationType::unknown) {
+      continue;
+    }
+    if (type == KeyboardPresentationType::unknown) {
+      type = candidate_type;
+    } else if (type != candidate_type) {
+      conflicting_type = true;
+    }
+    append_driver_reported_keyboard_key_counts(key_counts, description);
+  }
+
+  std::string name{"内建键盘"};
+  if (!conflicting_type && type != KeyboardPresentationType::unknown) {
+    name += " · ";
+    name += keyboard_presentation_name(type);
+  }
+  return application::HardwareDeviceRecord{
+      .kind = application::HardwareDeviceKind::input_device,
+      .name = std::move(name),
+      .physicality = application::HardwareDevicePhysicality::confirmed_physical,
+      .source = !driver_descriptions.empty()
+                    ? application::HardwareObservationSource::setup_api
+                    : application::HardwareObservationSource::wmi,
+      .confidence = application::HardwareObservationConfidence::confirmed,
+      .status = device_status(row_value(row, 2), row_value(row, 3)),
+      .physically_present = true,
+      .filter_reason =
+          "explicit same-device internal keyboard fact",
+      .input_device_type = application::HardwareInputDeviceType::keyboard,
+      .input_device_connection =
+          application::HardwareInputDeviceConnection::internal,
+      // An unknown type is rendered only as "内建键盘". A key count is shown
+      // only when the same driver evidence confirms one unambiguous layout.
+      .input_device_key_count =
+          !conflicting_type && type != KeyboardPresentationType::unknown &&
+              key_counts.size() == 1
+              ? key_counts.front()
+              : 0,
+  };
+}
+
 struct CollectedDevice final {
   application::HardwareDeviceRecord record;
   // This key is deliberately confined to the Windows adapter because a full
@@ -2200,6 +2475,16 @@ void append_grouped_device(std::vector<CollectedDevice>& devices,
 
 [[nodiscard]] std::string grouped_name(
     application::HardwareDeviceRecord const& record) {
+  if (record.kind == application::HardwareDeviceKind::input_device &&
+      record.input_device_type == application::HardwareInputDeviceType::keyboard &&
+      record.input_device_connection ==
+          application::HardwareInputDeviceConnection::internal) {
+    auto result = record.name.empty() ? std::string{"内建键盘"} : record.name;
+    if (record.input_device_key_count != 0) {
+      result += "（" + std::to_string(record.input_device_key_count) + " 键）";
+    }
+    return result;
+  }
   if (record.kind == application::HardwareDeviceKind::display) {
     auto result = record.name;
     std::string facts;
@@ -2281,12 +2566,16 @@ void rebuild_summary(
     std::vector<application::HardwareDeviceRecord> const& devices,
     application::HardwareDeviceKind kind,
     std::optional<application::HardwareNetworkLink> link = std::nullopt,
-    std::optional<application::HardwareStorageMedia> media = std::nullopt) {
+    std::optional<application::HardwareStorageMedia> media = std::nullopt,
+    std::optional<application::HardwareInputDeviceType> input_type =
+        std::nullopt) {
   target.clear();
   for (auto const& device : devices) {
     if (device.kind != kind ||
         (link.has_value() && device.network_link != *link) ||
-        (media.has_value() && device.storage_media != *media)) {
+        (media.has_value() && device.storage_media != *media) ||
+        (input_type.has_value() &&
+         device.input_device_type != *input_type)) {
       continue;
     }
     if (!target.empty()) {
@@ -2329,7 +2618,7 @@ struct CollectedObservation final {
     std::array<std::string_view, 12> properties;
     std::size_t property_count;
   };
-  std::array<QuerySpec, 11> const specs{
+  std::array<QuerySpec, 12> const specs{
       QuerySpec{"Win32_Processor",
                 {"Name", "Manufacturer", "PNPDeviceID", "Status",
                  "ConfigManagerErrorCode", "NumberOfCores",
@@ -2370,6 +2659,10 @@ struct CollectedObservation final {
                 6},
       QuerySpec{"Win32_OperatingSystem",
                 {"Caption", "Version", "BuildNumber", "OSArchitecture"}, 4},
+      QuerySpec{"Win32_Keyboard",
+                {"Description", "PNPDeviceID", "Status",
+                 "ConfigManagerErrorCode"},
+                4},
   };
 
   // Keep one row matrix per approved query so classification consumes the
@@ -2441,6 +2734,7 @@ struct CollectedObservation final {
   std::vector<WindowsDisplayEdid> display_edids;
   std::vector<WindowsDisplayConnection> display_connections;
   std::vector<WindowsDisplayPhysicalSize> display_physical_sizes;
+  std::vector<WindowsInputDeviceMetadata> input_device_metadata;
   // Optional capabilities are isolated: one unavailable platform source must
   // not erase facts already obtained from another source.
   try {
@@ -2487,6 +2781,26 @@ struct CollectedObservation final {
         std::span<std::string const>{display_pnp_ids}, cancellation);
   } catch (...) {
     display_physical_sizes.clear();
+  }
+  std::vector<std::string> keyboard_pnp_ids;
+  for (auto const& row : rows_by_spec[11]) {
+    auto const pnp_device_id = row_value(row, 1);
+    auto const normalized_key = normalized_instance_key(pnp_device_id);
+    if (normalized_key.empty() ||
+        std::ranges::any_of(
+            keyboard_pnp_ids, [&](std::string const& existing_pnp_device_id) {
+              return normalized_instance_key(existing_pnp_device_id) ==
+                     normalized_key;
+            })) {
+      continue;
+    }
+    keyboard_pnp_ids.push_back(pnp_device_id);
+  }
+  try {
+    input_device_metadata = executor.input_device_metadata(
+        std::span<std::string const>{keyboard_pnp_ids}, cancellation);
+  } catch (...) {
+    input_device_metadata.clear();
   }
   if (cancellation.stop_requested()) {
     collected.code = application::HardwareObservationCode::cancelled;
@@ -2633,6 +2947,30 @@ struct CollectedObservation final {
       append_grouped_device(devices, {.record = std::move(*record)});
     }
   }
+  for (auto const& row : rows_by_spec[11]) {
+    auto const wmi_description = row_value(row, 0);
+    std::vector<std::string> driver_descriptions;
+    auto const stable_instance_key = normalized_instance_key(row_value(row, 1));
+    if (!stable_instance_key.empty()) {
+      for (auto const& metadata : input_device_metadata) {
+        if (normalized_instance_key(metadata.pnp_device_id) !=
+            stable_instance_key) {
+          continue;
+        }
+        if (!metadata.bus_reported_device_description.empty()) {
+          driver_descriptions.push_back(metadata.bus_reported_device_description);
+        }
+      }
+    }
+    if (auto record = classify_keyboard(
+            row, wmi_description,
+            std::span<std::string const>{driver_descriptions}, virtual_host)) {
+      append_grouped_device(
+          devices,
+          {.record = std::move(*record),
+           .stable_instance_key = stable_instance_key});
+    }
+  }
 
   collected.observation.devices.reserve(devices.size());
   for (auto& device : devices) {
@@ -2676,6 +3014,11 @@ struct CollectedObservation final {
                   application::HardwareDeviceKind::audio);
   rebuild_summary(collected.observation.npu, collected.observation.devices,
                   application::HardwareDeviceKind::npu);
+  rebuild_summary(collected.observation.keyboard,
+                  collected.observation.devices,
+                  application::HardwareDeviceKind::input_device, std::nullopt,
+                  std::nullopt,
+                  application::HardwareInputDeviceType::keyboard);
 
   if (!collected.observation.usable()) {
     if (collected.code == application::HardwareObservationCode::succeeded) {
@@ -2976,6 +3319,57 @@ class WmiHardwareQueryExecutor final : public WindowsHardwareQueryExecutor {
           .instance_ordinal = instance_ordinal,
           .horizontal_centimeters = horizontal_centimeters,
           .vertical_centimeters = vertical_centimeters,
+      });
+    }
+    return result;
+  }
+
+  [[nodiscard]] std::vector<WindowsInputDeviceMetadata>
+  input_device_metadata(std::span<std::string const> pnp_device_ids,
+                        std::stop_token cancellation) override {
+    std::vector<std::string> requested_instance_keys;
+    requested_instance_keys.reserve(pnp_device_ids.size());
+    for (auto const& pnp_device_id : pnp_device_ids) {
+      auto const normalized_key = normalized_instance_key(pnp_device_id);
+      if (normalized_key.empty() ||
+          std::ranges::find(requested_instance_keys, normalized_key) !=
+              requested_instance_keys.end()) {
+        continue;
+      }
+      requested_instance_keys.push_back(normalized_key);
+    }
+    if (requested_instance_keys.empty() || cancellation.stop_requested()) {
+      return {};
+    }
+
+    DeviceInfoSet devices{::SetupDiGetClassDevsW(
+        &GUID_DEVCLASS_KEYBOARD, nullptr, nullptr, DIGCF_PRESENT)};
+    if (!devices.usable()) {
+      return {};
+    }
+
+    std::vector<WindowsInputDeviceMetadata> result;
+    for (DWORD index = 0; !cancellation.stop_requested(); ++index) {
+      SP_DEVINFO_DATA device_info{};
+      device_info.cbSize = sizeof(device_info);
+      if (::SetupDiEnumDeviceInfo(devices.get(), index, &device_info) == FALSE) {
+        if (::GetLastError() == ERROR_NO_MORE_ITEMS) {
+          break;
+        }
+        continue;
+      }
+      auto pnp_device_id = setup_device_instance_id(devices.get(), device_info);
+      if (std::ranges::find(requested_instance_keys,
+                            normalized_instance_key(pnp_device_id)) ==
+          requested_instance_keys.end()) {
+        continue;
+      }
+      result.push_back(WindowsInputDeviceMetadata{
+          .pnp_device_id = std::move(pnp_device_id),
+          .container_id = setup_device_container_id(devices.get(), device_info),
+          .bus_reported_device_description = setup_device_property_string(
+              devices.get(), device_info,
+              DEVPKEY_Device_BusReportedDeviceDesc),
       });
     }
     return result;

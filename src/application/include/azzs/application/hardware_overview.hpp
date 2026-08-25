@@ -26,6 +26,7 @@ enum class HardwareDeviceKind {
   storage,
   npu,
   audio,
+  input_device,
 };
 
 enum class HardwareNetworkLink {
@@ -54,6 +55,19 @@ enum class HardwareGpuComputeUnit {
 };
 
 enum class HardwareDisplayConnection {
+  unknown,
+  internal,
+  external,
+};
+
+enum class HardwareInputDeviceType {
+  unknown,
+  keyboard,
+  mouse,
+  touchpad,
+};
+
+enum class HardwareInputDeviceConnection {
   unknown,
   internal,
   external,
@@ -143,6 +157,12 @@ struct HardwareDeviceRecord final {
   // Zero means the raw monitor capability data did not provide a trustworthy
   // physical vertical-field-rate upper bound.
   std::uint32_t physical_refresh_rate_limit_hz{0};
+  HardwareInputDeviceType input_device_type{
+      HardwareInputDeviceType::unknown};
+  HardwareInputDeviceConnection input_device_connection{
+      HardwareInputDeviceConnection::unknown};
+  // Zero means the input device did not expose one unambiguous key count.
+  std::uint32_t input_device_key_count{0};
 
   [[nodiscard]] bool confirmed_physical() const noexcept {
     return physically_present &&
@@ -170,6 +190,9 @@ struct HardwareObservation final {
   std::string hard_disk_storage;
   std::string npu;
   std::string audio;
+  std::string keyboard;
+  std::string mouse;
+  std::string touchpad;
   std::string operating_system;
   std::string oem_model;
   HardwareVendor oem_vendor{HardwareVendor::unknown};
@@ -256,6 +279,9 @@ enum class HardwareOverviewTrigger {
 [[nodiscard]] char const* to_string(HardwareGpuType value) noexcept;
 [[nodiscard]] char const* to_string(HardwareGpuComputeUnit value) noexcept;
 [[nodiscard]] char const* to_string(HardwareDisplayConnection value) noexcept;
+[[nodiscard]] char const* to_string(HardwareInputDeviceType value) noexcept;
+[[nodiscard]] char const* to_string(
+    HardwareInputDeviceConnection value) noexcept;
 
 // Owns the session-only ten-minute cache and the user-visible hardware state.
 // Calls are synchronous and must be made by the application/use-case layer;
