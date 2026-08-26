@@ -56,6 +56,7 @@ version_policy = "latest_stable"
 dependencies = []
 bundled_editions = ["large_offline"]
 notice = ""
+install_profile = "qq-windows-v1"
 
 [[software.sources]]
 purpose = "primary"

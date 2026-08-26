@@ -551,6 +551,17 @@ struct DebugModeCatalogEditorFixture final {
                        runtime.catalog->software.size() == 7 &&
                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
+  auto const qq_runtime = std::ranges::find_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id == "qq";
+      });
+  passed &= expect(qq_runtime != runtime.catalog->software.end() &&
+                       qq_runtime->definition.tier == catalog::SoftwareTier::normal &&
+                       qq_runtime->availability ==
+                           catalog::ItemAvailability::install_profile_unavailable &&
+                       qq_runtime->reasons == std::vector<std::string>{
+                           "project-owned controlled install executor is not registered"},
+                   "QQ must remain visible as a normal software item while the project-owned executor is unregistered");
   auto const sogou_runtime = std::ranges::find_if(
       runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
         return item.definition.id == "sogou-input";
@@ -635,8 +646,8 @@ struct DebugModeCatalogEditorFixture final {
 
   auto const profiles = catalog::initial_controlled_install_profiles();
   auto const facts = catalog::initial_software_install_facts();
-  passed &= expect(profiles.size() == 1 && facts.size() == 11,
-                   "initial declarations must cover one controlled profile and eleven software facts");
+  passed &= expect(profiles.size() == 2 && facts.size() == 11,
+                   "initial declarations must cover two controlled profiles and eleven software facts");
   passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
                        catalog::validate_software_install_facts(facts).accepted(),
                    "initial declaration registries must satisfy their value contracts");
@@ -668,8 +679,36 @@ struct DebugModeCatalogEditorFixture final {
                            catalog::FactKnowledge::unknown &&
                        dotnet_facts->capabilities.architectures.values.empty(),
                    "unobserved .NET installer architecture must remain unknown");
-  if (!profiles.empty()) {
-    auto const& profile = profiles.front();
+  auto const qq_profile = std::ranges::find(
+      profiles, "qq-windows-v1", &catalog::ControlledInstallProfile::id);
+  passed &= expect(qq_profile != profiles.end() &&
+                       qq_profile->software_id == "qq" &&
+                       qq_profile->execution_kind ==
+                           catalog::ControlledWindowsExecutionKind::
+                               project_owned_windows_executor &&
+                       qq_profile->execution ==
+                           catalog::WindowsExecutionReadiness::declaration_only &&
+                       qq_profile->completion_boundary ==
+                           catalog::InstallationCompletionBoundary::
+                               post_install_then_result_detection &&
+                       qq_profile->post_install_behavior ==
+                           catalog::PostInstallBehavior::none &&
+                       qq_profile->restart_verification ==
+                           catalog::RestartVerification::not_required &&
+                       qq_profile->result_detection ==
+                           catalog::ResultDetectionStrategy::
+                               project_owned_presence_probe &&
+                       qq_profile->interaction_scope ==
+                           catalog::InstallerInteractionScope::
+                               non_identity_preferences_only &&
+                       qq_profile->baselines.empty() &&
+                       qq_profile->preferences.empty(),
+                   "QQ must declare only the project-owned fail-closed boundary until source and executor facts are observed");
+  auto const sogou_profile_declaration = std::ranges::find(
+      profiles, "sogou-input-defaults-v1",
+      &catalog::ControlledInstallProfile::id);
+  if (sogou_profile_declaration != profiles.end()) {
+    auto const& profile = *sogou_profile_declaration;
     passed &= expect(profile.id == "sogou-input-defaults-v1" &&
                          profile.software_id == "sogou-input" &&
                          profile.execution_kind ==
@@ -750,15 +789,28 @@ struct DebugModeCatalogEditorFixture final {
   std::ranges::sort(release_fact_ids);
   passed &= expect(release_fact_ids == expected_ids,
                    "the release policy must consume install facts for every required software id");
+  auto const* qq_profile_support = find_by_id(
+      policy.install_profiles, "qq-windows-v1",
+      &catalog::InstallProfileSupport::id);
+  auto const qq_required_profile = std::ranges::find(
+      policy.required_install_profiles, "qq",
+      &catalog::RequiredInstallProfile::software_id);
   auto const* sogou_profile = find_by_id(
       policy.install_profiles, "sogou-input-defaults-v1",
       &catalog::InstallProfileSupport::id);
-  passed &= expect(sogou_profile != nullptr &&
+  passed &= expect(qq_profile_support != nullptr &&
+                       qq_profile_support->runtime_status ==
+                           catalog::InstallProfileRuntimeStatus::missing &&
+                       !qq_profile_support->release_ready &&
+                       qq_required_profile !=
+                           policy.required_install_profiles.end() &&
+                       qq_required_profile->profile_id == "qq-windows-v1" &&
+                       sogou_profile != nullptr &&
                        sogou_profile->runtime_status ==
                            catalog::InstallProfileRuntimeStatus::missing &&
                        !sogou_profile->release_ready &&
-                       policy.required_install_profiles.size() == 1,
-                   "the Sogou profile must remain declaration-only and release-incomplete");
+                       policy.required_install_profiles.size() == 2,
+                   "QQ and Sogou profiles must remain declaration-only and release-incomplete");
 
   auto released = codec.decode(replace_once(
       file.bytes, "release_state = \"draft\"", "release_state = \"release\""));

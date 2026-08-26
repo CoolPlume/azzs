@@ -690,11 +690,15 @@ RuntimeCatalogLoad validate_for_runtime(
       continue;
     }
     software.availability = ItemAvailability::install_profile_unavailable;
-    std::string reason =
-        profile == nullptr ||
-                profile->runtime_status == InstallProfileRuntimeStatus::missing
-            ? "install profile reference is missing"
-            : "install profile is not applicable to this software and workbench";
+    std::string reason;
+    if (profile == nullptr) {
+      reason = "install profile reference is missing";
+    } else if (profile->runtime_status ==
+               InstallProfileRuntimeStatus::missing) {
+      reason = "project-owned controlled install executor is not registered";
+    } else {
+      reason = "install profile is not applicable to this software and workbench";
+    }
     software.reasons.push_back(reason);
     add_issue(issues, CatalogIssueScope::item,
               CatalogIssueCode::install_profile_unavailable,
