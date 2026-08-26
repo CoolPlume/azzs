@@ -96,7 +96,7 @@ struct MainWindow : MainWindowT<MainWindow> {
       azzs::ui::presentation::SettingsNavigationFailure const& failure) noexcept;
   void handle_settings_navigation_failure() noexcept;
   void clear_settings_navigation_failure() noexcept;
-  void refresh_drivers_page();
+  void refresh_hardware_information_page();
   void begin_driver_handoff(
       azzs::application::driver_acquisition::DriverEntrypoint entrypoint);
   void begin_rescue_folder_handoff(

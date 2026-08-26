@@ -208,6 +208,7 @@ int main() {
 
   constexpr std::array pages{
       PageId::overview,
+      PageId::hardware_information,
       PageId::drivers,
       PageId::system_optimization,
       PageId::software_installation,

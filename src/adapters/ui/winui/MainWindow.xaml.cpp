@@ -14,6 +14,7 @@
 #include "DesignSystem/motion_preferences.hpp"
 #include "Pages/ApplicationSettingsPage.xaml.h"
 #include "Pages/DriversPage.xaml.h"
+#include "Pages/HardwareInformationPage.xaml.h"
 #include "Pages/HistoryAndLogsPage.xaml.h"
 #include "Pages/OverviewPage.xaml.h"
 #include "Pages/SoftwareInstallationPage.xaml.h"
@@ -368,6 +369,9 @@ std::optional<PageId> MainWindow::page_for_item(
   if (item == OverviewItem()) {
     return PageId::overview;
   }
+  if (item == HardwareInformationItem()) {
+    return PageId::hardware_information;
+  }
   if (item == DriversItem()) {
     return PageId::drivers;
   }
@@ -397,6 +401,8 @@ NavigationViewItem MainWindow::navigation_item_for_page(PageId page) {
   switch (page) {
     case PageId::overview:
       return OverviewItem();
+    case PageId::hardware_information:
+      return HardwareInformationItem();
     case PageId::drivers:
       return DriversItem();
     case PageId::system_optimization:
@@ -785,6 +791,26 @@ bool MainWindow::navigate_to(PageId page) {
             });
       }
       break;
+    case PageId::hardware_information:
+      if (!ContentFrame().Navigate(
+              xaml_typename<Pages::HardwareInformationPage>(), nullptr,
+              transition)) {
+        return false;
+      }
+      if (auto const hardware_page =
+              ContentFrame().Content().try_as<Pages::HardwareInformationPage>()) {
+        auto const hardware = workbench_->observe_hardware(
+            azzs::application::HardwareOverviewTrigger::page_entered);
+        auto weak_this = get_weak();
+        winrt::get_self<Pages::implementation::HardwareInformationPage>(
+            hardware_page)
+            ->bind(hardware, [weak_this] {
+              if (auto self = weak_this.get()) {
+                self->refresh_hardware_information_page();
+              }
+            });
+      }
+      break;
     case PageId::drivers:
       if (!ContentFrame().Navigate(xaml_typename<Pages::DriversPage>(), nullptr,
                                    transition)) {
@@ -792,17 +818,10 @@ bool MainWindow::navigate_to(PageId page) {
       }
       if (auto const drivers_page =
               ContentFrame().Content().try_as<Pages::DriversPage>()) {
-        auto const hardware =
-            workbench_->observe_hardware(
-                azzs::application::HardwareOverviewTrigger::page_entered);
         auto weak_this = get_weak();
         winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
-            ->bind(hardware, workbench_->snapshot().driver_acquisition,
-                   [weak_this] {
-              if (auto self = weak_this.get()) {
-                self->refresh_drivers_page();
-              }
-            }, [weak_this](auto entrypoint) {
+            ->bind(workbench_->snapshot().driver_acquisition,
+                   [weak_this](auto entrypoint) {
               if (auto self = weak_this.get()) {
                 self->begin_driver_handoff(entrypoint);
               }
@@ -1109,15 +1128,15 @@ void MainWindow::OnSidebarResizeKeyDown(
   apply_sidebar_width(next, true);
 }
 
-void MainWindow::refresh_drivers_page() {
+void MainWindow::refresh_hardware_information_page() {
   if (!workbench_) {
     return;
   }
   auto const hardware = workbench_->refresh_hardware();
-  if (auto const drivers_page =
-          ContentFrame().Content().try_as<Pages::DriversPage>()) {
-    winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
-        ->project(hardware, workbench_->snapshot().driver_acquisition);
+  if (auto const hardware_page =
+          ContentFrame().Content().try_as<Pages::HardwareInformationPage>()) {
+    winrt::get_self<Pages::implementation::HardwareInformationPage>(hardware_page)
+        ->project(hardware);
   }
 }
 
@@ -1164,9 +1183,8 @@ void MainWindow::project_drivers_page(
   }
   if (auto const drivers_page =
           ContentFrame().Content().try_as<Pages::DriversPage>()) {
-    auto const snapshot = workbench_->snapshot();
     winrt::get_self<Pages::implementation::DriversPage>(drivers_page)
-        ->project(snapshot.hardware_overview, driver_snapshot);
+        ->project(driver_snapshot);
   }
 }
 

@@ -2,12 +2,10 @@
 
 #include "DriversPage.xaml.h"
 
-#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "azzs/application/driver_acquisition.hpp"
-#include "azzs/application/hardware_overview.hpp"
 
 #if __has_include("Pages/DriversPage.g.cpp")
 #include "Pages/DriversPage.g.cpp"
@@ -15,11 +13,6 @@
 
 namespace winrt::Azzs::Ui::Pages::implementation {
 namespace {
-
-[[nodiscard]] winrt::hstring display_value(std::string_view value,
-                                            winrt::hstring const& fallback) {
-  return value.empty() ? fallback : winrt::to_hstring(value);
-}
 
 [[nodiscard]] winrt::hstring entrypoint_text(
     winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader const&
@@ -66,27 +59,6 @@ void set_visibility(winrt::Microsoft::UI::Xaml::FrameworkElement const& element,
                              : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
 }
 
-[[nodiscard]] bool has_confirmed_physical_hardware(
-    azzs::application::HardwareOverviewSnapshot const& snapshot) noexcept {
-  return snapshot.state == azzs::application::HardwareOverviewState::ready &&
-         snapshot.observation.has_value() &&
-         snapshot.observation->has_confirmed_physical_hardware();
-}
-
-[[nodiscard]] bool has_degraded_physical_hardware(
-    azzs::application::HardwareOverviewSnapshot const& snapshot) noexcept {
-  if (!snapshot.observation.has_value()) {
-    return false;
-  }
-  for (auto const& device : snapshot.observation->devices) {
-    if (device.confirmed_physical() &&
-        device.status != azzs::application::HardwareDeviceStatus::enabled) {
-      return true;
-    }
-  }
-  return false;
-}
-
 }  // namespace
 
 DriversPage::DriversPage() {
@@ -94,74 +66,25 @@ DriversPage::DriversPage() {
 }
 
 void DriversPage::bind(
-    azzs::application::HardwareOverviewSnapshot const& snapshot,
     azzs::application::driver_acquisition::DriverAcquisitionSnapshot const&
         driver_snapshot,
-    RefreshHandler refresh_handler, HandoffHandler handoff_handler,
+    HandoffHandler handoff_handler,
     RescueHandoffHandler rescue_handoff_handler,
     ReturnedHandler returned_handler, DecisionHandler decision_handler) {
-  refresh_handler_ = std::move(refresh_handler);
   handoff_handler_ = std::move(handoff_handler);
   rescue_handoff_handler_ = std::move(rescue_handoff_handler);
   returned_handler_ = std::move(returned_handler);
   decision_handler_ = std::move(decision_handler);
-  project(snapshot, driver_snapshot);
-}
-
-void DriversPage::OnRefreshClicked(
-    winrt::Windows::Foundation::IInspectable const&,
-    winrt::Microsoft::UI::Xaml::RoutedEventArgs const&) {
-  if (refresh_handler_) {
-    refresh_handler_();
-  }
+  project(driver_snapshot);
 }
 
 void DriversPage::project(
-    azzs::application::HardwareOverviewSnapshot const& snapshot) {
-  project(snapshot, {});
-}
-
-void DriversPage::project(
-    azzs::application::HardwareOverviewSnapshot const& snapshot,
     azzs::application::driver_acquisition::DriverAcquisitionSnapshot const&
         driver_snapshot) {
   using winrt::Microsoft::Windows::ApplicationModel::Resources::ResourceLoader;
   using azzs::application::driver_acquisition::DriverAcquisitionState;
 
   auto const resources = ResourceLoader{};
-  auto const unrecognized_value =
-      resources.GetString(L"HardwareUnrecognizedValue");
-  auto const unrecognized =
-      snapshot.state == azzs::application::HardwareOverviewState::unrecognized;
-  HardwareStatus().IsOpen(unrecognized);
-  if (unrecognized) {
-    HardwareStatus().Title(resources.GetString(L"HardwareStatusTitle"));
-    HardwareStatus().Message(resources.GetString(L"HardwareStatusMessage"));
-  }
-
-  auto const facts = snapshot.observation.value_or(
-      azzs::application::HardwareObservation{});
-  ModelValue().Text(display_value(facts.oem_model, unrecognized_value));
-  SystemValue().Text(
-      display_value(facts.operating_system, unrecognized_value));
-  CpuValue().Text(display_value(facts.cpu, unrecognized_value));
-  GpuValue().Text(display_value(facts.gpu, unrecognized_value));
-  MotherboardValue().Text(display_value(facts.motherboard, unrecognized_value));
-  MemoryValue().Text(display_value(facts.memory, unrecognized_value));
-  DisplayValue().Text(display_value(facts.display, unrecognized_value));
-  SolidStateStorageValue().Text(
-      display_value(facts.solid_state_storage, unrecognized_value));
-  HardDiskStorageValue().Text(
-      display_value(facts.hard_disk_storage, unrecognized_value));
-  UnclassifiedStorageValue().Text(
-      display_value(facts.unclassified_storage, unrecognized_value));
-  NpuValue().Text(display_value(facts.npu, unrecognized_value));
-  AudioValue().Text(display_value(facts.audio, unrecognized_value));
-  WiredNetworkValue().Text(
-      display_value(facts.wired_network_adapter, unrecognized_value));
-  WirelessNetworkValue().Text(
-      display_value(facts.wireless_network_adapter, unrecognized_value));
-
   auto const can_start =
       driver_snapshot.writable &&
       driver_snapshot.state == DriverAcquisitionState::ready;
@@ -183,7 +106,6 @@ void DriversPage::project(
 
   auto const has_recommendation =
       !driver_snapshot.recommended_entrypoints.empty();
-  auto const has_physical_hardware = has_confirmed_physical_hardware(snapshot);
   DriverRecommendation().IsOpen(true);
   DriverRecommendation().Severity(
       has_recommendation
@@ -196,18 +118,12 @@ void DriversPage::project(
                                   driver_snapshot.recommended_entrypoints)
                                   .c_str()};
     message += resources.GetString(L"DriverRecommendationHandoffSuffix").c_str();
-    if (has_degraded_physical_hardware(snapshot)) {
-      message += L" ";
-      message += resources.GetString(L"DriverRecommendationDegradedHardwareSuffix")
-                     .c_str();
-    }
     DriverRecommendation().Message(winrt::hstring{message});
   } else {
     DriverRecommendation().Title(
         resources.GetString(L"DriverRecommendationUnavailableTitle"));
-    DriverRecommendation().Message(resources.GetString(
-        has_physical_hardware ? L"DriverRecommendationNoMatchMessage"
-                              : L"DriverRecommendationNoPhysicalMessage"));
+    DriverRecommendation().Message(
+        resources.GetString(L"DriverRecommendationNoMatchMessage"));
   }
 
   auto show_surface = false;

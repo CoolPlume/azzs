@@ -136,6 +136,7 @@
     <Page Include="MainWindow.xaml" />
     <Page Include="Pages\ApplicationSettingsPage.xaml" />
     <Page Include="Pages\DriversPage.xaml" />
+    <Page Include="Pages\HardwareInformationPage.xaml" />
     <Page Include="Pages\HistoryAndLogsPage.xaml" />
     <Page Include="Pages\OverviewPage.xaml" />
     <Page Include="Pages\SoftwareInstallationPage.xaml" />
@@ -166,6 +167,7 @@
     <ClInclude Include="DesignSystem\presentation_contract.hpp" />
     <ClInclude Include="DesignSystem\settings_navigation_recovery.hpp" />
     <ClInclude Include="DesignSystem\guided_initialization_presentation.hpp" />
+    <ClInclude Include="DesignSystem\hardware_information_presentation.hpp" />
     <ClInclude Include="DesignSystem\software_selection_presentation.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="native_resource_fallback.hpp" />
@@ -175,6 +177,9 @@
     </ClInclude>
     <ClInclude Include="Pages\DriversPage.xaml.h">
       <DependentUpon>DriversPage.xaml</DependentUpon>
+    </ClInclude>
+    <ClInclude Include="Pages\HardwareInformationPage.xaml.h">
+      <DependentUpon>HardwareInformationPage.xaml</DependentUpon>
     </ClInclude>
     <ClInclude Include="Pages\HistoryAndLogsPage.xaml.h">
       <DependentUpon>HistoryAndLogsPage.xaml</DependentUpon>
@@ -213,6 +218,9 @@
     <ClCompile Include="DesignSystem\guided_initialization_presentation.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="DesignSystem\hardware_information_presentation.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="DesignSystem\software_selection_presentation.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -222,6 +230,7 @@
     </ClCompile>
     <ClCompile Include="Pages\ApplicationSettingsPage.xaml.cpp" />
     <ClCompile Include="Pages\DriversPage.xaml.cpp" />
+    <ClCompile Include="Pages\HardwareInformationPage.xaml.cpp" />
     <ClCompile Include="Pages\HistoryAndLogsPage.xaml.cpp" />
     <ClCompile Include="Pages\OverviewPage.xaml.cpp" />
     <ClCompile Include="Pages\SoftwareInstallationPage.xaml.cpp" />
@@ -237,6 +246,7 @@
     <Midl Include="MainWindow.idl" />
     <Midl Include="Pages\ApplicationSettingsPage.idl" />
     <Midl Include="Pages\DriversPage.idl" />
+    <Midl Include="Pages\HardwareInformationPage.idl" />
     <Midl Include="Pages\HistoryAndLogsPage.idl" />
     <Midl Include="Pages\OverviewPage.idl" />
     <Midl Include="Pages\SoftwareInstallationPage.idl" />
