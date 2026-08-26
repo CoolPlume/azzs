@@ -7,6 +7,8 @@ default_locale = "zh-CN"
 # 这是软件目录的权威维护文件，工作台直接读取并校验它。
 # 维护者只填写产品信息、来源用途和地址，不填写网址的技术类型。
 # enabled = false 的条目是待补充的未启用软件条目；工作台不向用户展示，也不能执行。
+# controlled_install_availability = "controlled_unavailable" 的条目保持可见，
+# 但没有来源、安装档案或执行器，不能执行也不能进入正式发行。
 # release_state = "draft" 的目录不能进入正式发行包。
 
 [[categories]]
@@ -61,6 +63,17 @@ install_profile = "qq-windows-v1"
 [[software.sources]]
 purpose = "primary"
 address = "https://im.qq.com/index/#/windows"
+
+[[software]]
+id = "qq-music"
+enabled = true
+controlled_install_availability = "controlled_unavailable"
+name = "QQ音乐"
+tier = "normal"
+category_id = "communication"
+dependencies = []
+bundled_editions = []
+notice = "来源与受控安装尚未确认，当前不可安装。"
 
 [[software]]
 id = "sogou-input"
@@ -266,7 +279,7 @@ notice = "仅交接 NVIDIA 官方驱动页面；工作台不匹配、下载或�
 purpose = "primary"
 address = "https://www.nvidia.com/Download/index.aspx"
 
-# 新增软件时复制下面的注释模板。一个启用的软件必须恰好有一个 primary 来源。
+# 新增可安装软件时复制下面的注释模板。一个启用的可安装软件必须恰好有一个 primary 来源。
 # [[software]]
 # id = "stable-id"
 # enabled = true

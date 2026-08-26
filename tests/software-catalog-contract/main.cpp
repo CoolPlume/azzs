@@ -548,7 +548,7 @@ struct DebugModeCatalogEditorFixture final {
   passed &= expect(runtime.accepted() && runtime.catalog.has_value(),
                    "the draft authoritative catalog must runtime-load");
   passed &= expect(runtime.catalog.has_value() &&
-                       runtime.catalog->software.size() == 7 &&
+                       runtime.catalog->software.size() == 8 &&
                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
   auto const qq_runtime = std::ranges::find_if(
@@ -562,6 +562,18 @@ struct DebugModeCatalogEditorFixture final {
                        qq_runtime->reasons == std::vector<std::string>{
                            "project-owned controlled install executor is not registered"},
                    "QQ must remain visible as a normal software item while the project-owned executor is unregistered");
+  auto const qq_music_runtime = std::ranges::find_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id == "qq-music";
+      });
+  passed &= expect(
+      qq_music_runtime != runtime.catalog->software.end() &&
+          qq_music_runtime->definition.tier == catalog::SoftwareTier::normal &&
+          qq_music_runtime->availability ==
+              catalog::ItemAvailability::controlled_install_unavailable &&
+          qq_music_runtime->reasons == std::vector<std::string>{
+              "controlled installation is not declared"},
+      "QQ Music must remain visible as normal software while controlled installation is undeclared");
   auto const sogou_runtime = std::ranges::find_if(
       runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
         return item.definition.id == "sogou-input";
@@ -605,6 +617,11 @@ struct DebugModeCatalogEditorFixture final {
 
   auto policy = catalog::initial_software_catalog_policy();
   std::vector<std::string> expected_ids{
+      "qq", "qq-music", "sogou-input", "game-cheats-manager", "cheat-engine",
+      "office-tool-plus", "internet-download-manager",
+      "the-geometers-sketchpad", "java-runtime", "dotnet-runtime",
+      "directx-runtime", "powershell-7"};
+  std::vector<std::string> expected_installable_ids{
       "qq", "sogou-input", "game-cheats-manager", "cheat-engine",
       "office-tool-plus", "internet-download-manager",
       "the-geometers-sketchpad", "java-runtime", "dotnet-runtime",
@@ -615,7 +632,9 @@ struct DebugModeCatalogEditorFixture final {
     actual_ids.push_back(software.id);
     passed &= expect(item_has_no_prohibited_identity(software),
                      "software catalog must exclude prohibited resource identities");
-    if (software.enabled) {
+    if (software.enabled &&
+        software.controlled_install_availability ==
+            catalog::ControlledInstallAvailability::available) {
       passed &= expect(!software.category_id.empty() && !software.branch.empty() &&
                            software.version_policy.has_value() &&
                            software.dependencies_declared &&
@@ -628,10 +647,24 @@ struct DebugModeCatalogEditorFixture final {
     }
   }
   std::ranges::sort(expected_ids);
+  std::ranges::sort(expected_installable_ids);
   std::ranges::sort(actual_ids);
   passed &= expect(actual_ids == expected_ids &&
                        std::ranges::adjacent_find(actual_ids) == actual_ids.end(),
-                   "the catalog must contain exactly eleven unique first-release software ids");
+                   "the catalog must contain exactly twelve unique software ids");
+
+  auto const* qq_music = find_by_id(
+      decoded.document->software, "qq-music", &catalog::SoftwareDefinition::id);
+  passed &= expect(
+      qq_music != nullptr && qq_music->enabled &&
+          qq_music->tier == catalog::SoftwareTier::normal &&
+          qq_music->controlled_install_availability ==
+              catalog::ControlledInstallAvailability::controlled_unavailable &&
+          qq_music->dependencies_declared && qq_music->dependencies.empty() &&
+          qq_music->bundled_editions_declared && qq_music->bundled_editions.empty() &&
+          qq_music->branch.empty() && !qq_music->version_policy.has_value() &&
+          !qq_music->install_profile.has_value() && qq_music->sources.empty(),
+      "QQ Music must declare only a visible normal controlled-unavailable item without source or install profile");
 
   for (auto const id : {"game-cheats-manager", "cheat-engine",
                         "office-tool-plus", "internet-download-manager",
@@ -670,8 +703,8 @@ struct DebugModeCatalogEditorFixture final {
         "unobserved install capabilities must remain unknown");
   }
   std::ranges::sort(fact_ids);
-  passed &= expect(fact_ids == expected_ids,
-                   "typed install facts must cover the same eleven software ids");
+  passed &= expect(fact_ids == expected_installable_ids,
+                   "typed install facts must exclude QQ Music until a controlled installation is declared");
   auto const dotnet_facts = std::ranges::find(
       facts, "dotnet-runtime", &catalog::SoftwareInstallFacts::software_id);
   passed &= expect(dotnet_facts != facts.end() &&
@@ -776,7 +809,7 @@ struct DebugModeCatalogEditorFixture final {
 
   std::vector<std::string> required = policy.required_release_software;
   std::ranges::sort(required);
-  passed &= expect(required == expected_ids && policy.supported_driver_hardware_kinds ==
+  passed &= expect(required == expected_installable_ids && policy.supported_driver_hardware_kinds ==
                        std::vector<std::string>{"gpu"},
                    "the initial policy must require all eleven software ids and the registered GPU kind");
   std::vector<std::string> release_fact_ids;
@@ -787,8 +820,8 @@ struct DebugModeCatalogEditorFixture final {
                      "unknown initial installation facts must not be release-ready");
   }
   std::ranges::sort(release_fact_ids);
-  passed &= expect(release_fact_ids == expected_ids,
-                   "the release policy must consume install facts for every required software id");
+  passed &= expect(release_fact_ids == expected_installable_ids,
+                   "the release policy must consume install facts for every declared installable software id");
   auto const* qq_profile_support = find_by_id(
       policy.install_profiles, "qq-windows-v1",
       &catalog::InstallProfileSupport::id);
@@ -834,12 +867,16 @@ struct DebugModeCatalogEditorFixture final {
                 return issue.scope == catalog::CatalogIssueScope::release &&
                        issue.code ==
                            catalog::CatalogIssueCode::unknown_execution_semantics;
-              })) == expected_ids.size() &&
+              })) == expected_installable_ids.size() &&
           has_issue_for_item(
               release_only.second.issues,
               catalog::CatalogIssueCode::unknown_execution_semantics, "qq",
-              catalog::CatalogIssueScope::release),
-      "changing only release_state must leave every unknown first-release install fact blocked");
+              catalog::CatalogIssueScope::release) &&
+          has_issue_for_item(
+              release_only.second.issues,
+              catalog::CatalogIssueCode::controlled_install_unavailable,
+              "qq-music", catalog::CatalogIssueScope::release),
+      "changing only release_state must leave unknown install facts and QQ Music controlled unavailability blocked");
 
   auto sogou_ready_policy = policy;
   auto sogou_profile_support = std::ranges::find(
