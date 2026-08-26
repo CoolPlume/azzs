@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -38,6 +39,17 @@ std::array<SoftwareInstallFacts, 11> const k_initial_facts{{
          },
      }},
 }};
+
+std::array<OfficialSoftwareSourceObservation, 1> const
+    k_initial_official_source_observations{{
+        {
+            .software_id = "qq-music",
+            .product_branch = "Windows PC",
+            .official_download_page = "https://y.qq.com/download/download.html",
+            .observed_version = "22.5.2",
+            .observed_on = "2026-08-26",
+        },
+    }};
 
 std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
     {
@@ -199,12 +211,56 @@ std::array<ControlledInstallProfile, 1> const k_initial_profiles{{
   return false;
 }
 
+[[nodiscard]] bool valid_observed_on(std::string_view value) noexcept {
+  if (value.size() != 10 || value[4] != '-' || value[7] != '-') {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    if (index != 4 && index != 7 &&
+        (value[index] < '0' || value[index] > '9')) {
+      return false;
+    }
+  }
+  auto const number = [&](std::size_t first, std::size_t count) {
+    unsigned parsed{};
+    for (std::size_t index = first; index < first + count; ++index) {
+      parsed = parsed * 10U + static_cast<unsigned>(value[index] - '0');
+    }
+    return parsed;
+  };
+  auto const year = number(0, 4);
+  auto const month = number(5, 2);
+  auto const day = number(8, 2);
+  if (year == 0 || month == 0 || month > 12) {
+    return false;
+  }
+  static constexpr std::array<unsigned, 12> days_per_month{
+      31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+  };
+  auto maximum_day = days_per_month[month - 1];
+  if (month == 2 && (year % 4U == 0U &&
+                     (year % 100U != 0U || year % 400U == 0U))) {
+    maximum_day = 29;
+  }
+  return day != 0 && day <= maximum_day;
+}
+
 void add_issue(ControlledInstallProfileValidation& validation,
                ControlledInstallProfileIssueCode code,
                std::string profile_id, std::string message) {
   validation.issues.push_back({
       .code = code,
       .profile_id = std::move(profile_id),
+      .message = std::move(message),
+  });
+}
+
+void add_issue(OfficialSoftwareSourceObservationValidation& validation,
+               OfficialSoftwareSourceObservationIssueCode code,
+               std::string software_id, std::string message) {
+  validation.issues.push_back({
+      .code = code,
+      .software_id = std::move(software_id),
       .message = std::move(message),
   });
 }
@@ -282,6 +338,11 @@ std::span<SoftwareInstallFacts const> initial_software_install_facts() noexcept 
   return k_initial_facts;
 }
 
+std::span<OfficialSoftwareSourceObservation const>
+initial_official_software_source_observations() noexcept {
+  return k_initial_official_source_observations;
+}
+
 ControlledInstallProfileValidation validate_software_install_facts(
     std::span<SoftwareInstallFacts const> facts) {
   ControlledInstallProfileValidation validation;
@@ -300,6 +361,54 @@ ControlledInstallProfileValidation validate_software_install_facts(
                 "software install facts must identify each software once");
     }
     validate_facts(fact.software_id, fact.capabilities, validation);
+  }
+  return validation;
+}
+
+OfficialSoftwareSourceObservationValidation
+validate_official_software_source_observations(
+    std::span<OfficialSoftwareSourceObservation const> observations) {
+  OfficialSoftwareSourceObservationValidation validation;
+  std::unordered_set<std::string> software_ids;
+  for (auto const& observation : observations) {
+    if (!valid_stable_id(observation.software_id)) {
+      add_issue(validation,
+                OfficialSoftwareSourceObservationIssueCode::invalid_stable_id,
+                observation.software_id,
+                "official source observations require a stable software identifier");
+    }
+    if (!software_ids.insert(observation.software_id).second) {
+      add_issue(validation,
+                OfficialSoftwareSourceObservationIssueCode::duplicate_software_id,
+                observation.software_id,
+                "official source observations must identify each software once");
+    }
+    if (observation.product_branch.empty()) {
+      add_issue(validation,
+                OfficialSoftwareSourceObservationIssueCode::invalid_product_branch,
+                observation.software_id,
+                "official source observations require a product branch");
+    }
+    if (!observation.official_download_page.starts_with("https://") ||
+        !valid_http_address(observation.official_download_page)) {
+      add_issue(
+          validation,
+          OfficialSoftwareSourceObservationIssueCode::invalid_official_download_page,
+          observation.software_id,
+          "official source observations require an HTTPS download page");
+    }
+    if (observation.observed_version.empty()) {
+      add_issue(validation,
+                OfficialSoftwareSourceObservationIssueCode::invalid_observed_version,
+                observation.software_id,
+                "official source observations require an observed version");
+    }
+    if (!valid_observed_on(observation.observed_on)) {
+      add_issue(validation,
+                OfficialSoftwareSourceObservationIssueCode::invalid_observed_on,
+                observation.software_id,
+                "official source observations require an ISO 8601 observation date");
+    }
   }
   return validation;
 }

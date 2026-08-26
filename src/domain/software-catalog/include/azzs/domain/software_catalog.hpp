@@ -28,6 +28,13 @@ enum class SoftwareTier {
   normal,
 };
 
+// A visible item can explicitly remain non-executable until project-owned
+// installation facts exist. It must not stand in for a source or profile.
+enum class ControlledInstallAvailability {
+  available,
+  controlled_unavailable,
+};
+
 enum class VersionPolicy {
   latest_stable,
   latest_stable_with_history,
@@ -98,6 +105,8 @@ struct SoftwareDefinition final {
   std::string id;
   bool enabled{false};
   bool enabled_declared{false};
+  ControlledInstallAvailability controlled_install_availability{
+      ControlledInstallAvailability::available};
   std::string name;
   std::optional<SoftwareTier> tier;
   std::string category_id;
@@ -181,6 +190,7 @@ enum class CatalogIssueCode {
   release_dependency_error,
   install_profile_unavailable,
   install_profile_not_release_ready,
+  controlled_install_unavailable,
   prohibited_content,
 };
 
@@ -273,6 +283,7 @@ struct SoftwareCatalogPolicy final {
 
 enum class ItemAvailability {
   available,
+  controlled_install_unavailable,
   install_profile_unavailable,
   missing_dependency,
   dependency_cycle,
