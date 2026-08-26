@@ -537,7 +537,36 @@ RuntimeCatalogLoad validate_for_runtime(
         add_issue(issues, CatalogIssueScope::package,
                   CatalogIssueCode::unknown_execution_semantics,
                   location + ".install_profile", software.id,
-                  "install profile execution semantics are unavailable");
+                    "install profile execution semantics are unavailable");
+      }
+    }
+    auto const controlled_unavailable =
+        software.controlled_install_availability ==
+        ControlledInstallAvailability::controlled_unavailable;
+    if (controlled_unavailable) {
+      if (software.install_profile.has_value()) {
+        add_issue(issues, CatalogIssueScope::package,
+                  CatalogIssueCode::invalid_field,
+                  location + ".install_profile", software.id,
+                  "controlled-unavailable software must not declare an install profile");
+      }
+      if (!software.sources.empty()) {
+        add_issue(issues, CatalogIssueScope::package,
+                  CatalogIssueCode::invalid_field, location + ".sources",
+                  software.id,
+                  "controlled-unavailable software must not declare installation sources");
+      }
+      if (!software.branch.empty() || software.version_policy.has_value() ||
+          software.fixed_version.has_value()) {
+        add_issue(issues, CatalogIssueScope::package,
+                  CatalogIssueCode::invalid_field, location, software.id,
+                  "controlled-unavailable software must not declare source or version facts");
+      }
+      if (software.education.has_value()) {
+        add_issue(issues, CatalogIssueScope::package,
+                  CatalogIssueCode::invalid_field, location + ".education",
+                  software.id,
+                  "controlled-unavailable software must not declare an external resource");
       }
     }
     if (software.enabled) {
@@ -563,15 +592,14 @@ RuntimeCatalogLoad validate_for_runtime(
       validate_source(software.sources[source_index],
                       location + ".sources[" +
                           std::to_string(source_index) + "]",
-                      software.id, software.enabled, issues);
+                      software.id, software.enabled && !controlled_unavailable,
+                      issues);
     }
     if (!software.enabled) {
       continue;
     }
     if (software.name.empty() || !software.tier.has_value() ||
-        software.category_id.empty() ||
-        software.branch.empty() || !software.version_policy.has_value() ||
-        !software.dependencies_declared ||
+        software.category_id.empty() || !software.dependencies_declared ||
         !software.bundled_editions_declared) {
       add_issue(issues, CatalogIssueScope::package,
                 CatalogIssueCode::missing_required_field, location,
@@ -584,6 +612,15 @@ RuntimeCatalogLoad validate_for_runtime(
                 CatalogIssueCode::invalid_reference,
                 location + ".category_id", software.id,
                 "enabled software references a missing category");
+    }
+    if (controlled_unavailable) {
+      continue;
+    }
+    if (software.branch.empty() || !software.version_policy.has_value()) {
+      add_issue(issues, CatalogIssueScope::package,
+                CatalogIssueCode::missing_required_field, location,
+                software.id,
+                "enabled software is missing required source product fields");
     }
     if (software.version_policy == VersionPolicy::fixed &&
         (!software.fixed_version.has_value() ||
@@ -680,6 +717,18 @@ RuntimeCatalogLoad validate_for_runtime(
     }
   }
   for (auto& software : runtime.software) {
+    if (software.definition.controlled_install_availability ==
+        ControlledInstallAvailability::controlled_unavailable) {
+      software.availability = ItemAvailability::controlled_install_unavailable;
+      auto reason = std::string{"controlled installation is not declared"};
+      software.reasons.push_back(reason);
+      add_issue(issues, CatalogIssueScope::item,
+                CatalogIssueCode::controlled_install_unavailable,
+                "software." + software.definition.id +
+                    ".controlled_install_availability",
+                software.definition.id, std::move(reason));
+      continue;
+    }
     if (!software.definition.install_profile.has_value()) {
       continue;
     }
@@ -733,6 +782,19 @@ SoftwareCatalogReleaseGate evaluate_release_gate(
     add_issue(issues, CatalogIssueScope::release,
               CatalogIssueCode::release_dependency_error, "dependencies", {},
               "local dependency errors block formal catalog release");
+  }
+
+  for (auto const& software : document.software) {
+    if (!software.enabled ||
+        software.controlled_install_availability !=
+            ControlledInstallAvailability::controlled_unavailable) {
+      continue;
+    }
+    add_issue(issues, CatalogIssueScope::release,
+              CatalogIssueCode::controlled_install_unavailable,
+              "software." + software.id + ".controlled_install_availability",
+              software.id,
+              "controlled-unavailable software cannot pass formal release");
   }
 
   for (auto const& required_id : policy.required_release_software) {

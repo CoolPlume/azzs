@@ -117,6 +117,18 @@ struct SoftwareInstallFacts final {
   auto operator<=>(SoftwareInstallFacts const&) const = default;
 };
 
+// Official-page observations are research facts only. They intentionally do
+// not provide an install source, package identity, or execution capability.
+struct OfficialSoftwareSourceObservation final {
+  std::string software_id;
+  std::string product_branch;
+  std::string official_download_page;
+  std::string observed_version;
+  std::string observed_on;
+
+  auto operator<=>(OfficialSoftwareSourceObservation const&) const = default;
+};
+
 struct InstallerBaseline final {
   std::string id;
   std::string version;
@@ -181,6 +193,15 @@ enum class ControlledInstallProfileIssueCode {
   inconsistent_completion_semantics,
 };
 
+enum class OfficialSoftwareSourceObservationIssueCode {
+  invalid_stable_id,
+  duplicate_software_id,
+  invalid_product_branch,
+  invalid_official_download_page,
+  invalid_observed_version,
+  invalid_observed_on,
+};
+
 struct ControlledInstallProfileIssue final {
   ControlledInstallProfileIssueCode code{
       ControlledInstallProfileIssueCode::invalid_stable_id};
@@ -196,14 +217,37 @@ struct ControlledInstallProfileValidation final {
   [[nodiscard]] bool accepted() const noexcept { return issues.empty(); }
 };
 
+struct OfficialSoftwareSourceObservationIssue final {
+  OfficialSoftwareSourceObservationIssueCode code{
+      OfficialSoftwareSourceObservationIssueCode::invalid_stable_id};
+  std::string software_id;
+  std::string message;
+
+  auto operator<=>(OfficialSoftwareSourceObservationIssue const&) const =
+      default;
+};
+
+struct OfficialSoftwareSourceObservationValidation final {
+  std::vector<OfficialSoftwareSourceObservationIssue> issues;
+
+  [[nodiscard]] bool accepted() const noexcept { return issues.empty(); }
+};
+
 [[nodiscard]] std::span<ControlledInstallProfile const>
 initial_controlled_install_profiles() noexcept;
 
 [[nodiscard]] std::span<SoftwareInstallFacts const>
 initial_software_install_facts() noexcept;
 
+[[nodiscard]] std::span<OfficialSoftwareSourceObservation const>
+initial_official_software_source_observations() noexcept;
+
 [[nodiscard]] ControlledInstallProfileValidation
 validate_software_install_facts(std::span<SoftwareInstallFacts const> facts);
+
+[[nodiscard]] OfficialSoftwareSourceObservationValidation
+validate_official_software_source_observations(
+    std::span<OfficialSoftwareSourceObservation const> observations);
 
 [[nodiscard]] ControlledInstallProfileValidation
 validate_controlled_install_profiles(

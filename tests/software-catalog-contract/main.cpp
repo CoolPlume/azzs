@@ -173,6 +173,16 @@ static_assert(!ProfileExposesForbiddenExecutionField<
       });
 }
 
+[[nodiscard]] bool has_official_source_observation_issue(
+    catalog::OfficialSoftwareSourceObservationValidation const& validation,
+    catalog::OfficialSoftwareSourceObservationIssueCode code) {
+  return std::ranges::any_of(
+      validation.issues,
+      [&](catalog::OfficialSoftwareSourceObservationIssue const& issue) {
+        return issue.code == code;
+      });
+}
+
 [[nodiscard]] bool has_impact(
     lifecycle::CatalogSelectionImpact const& impact, std::string_view id,
     lifecycle::CatalogSelectionImpactReason reason) {
@@ -548,9 +558,21 @@ struct DebugModeCatalogEditorFixture final {
   passed &= expect(runtime.accepted() && runtime.catalog.has_value(),
                    "the draft authoritative catalog must runtime-load");
   passed &= expect(runtime.catalog.has_value() &&
-                       runtime.catalog->software.size() == 7 &&
+                       runtime.catalog->software.size() == 8 &&
                        runtime.catalog->drivers.size() == 3,
                    "enabled initial software and driver entries must enter one runtime package");
+  auto const qq_music_runtime = std::ranges::find_if(
+      runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
+        return item.definition.id == "qq-music";
+      });
+  passed &= expect(
+      qq_music_runtime != runtime.catalog->software.end() &&
+          qq_music_runtime->definition.tier == catalog::SoftwareTier::normal &&
+          qq_music_runtime->availability ==
+              catalog::ItemAvailability::controlled_install_unavailable &&
+          qq_music_runtime->reasons == std::vector<std::string>{
+              "controlled installation is not declared"},
+      "QQ Music must remain visible as normal software while controlled installation is undeclared");
   auto const sogou_runtime = std::ranges::find_if(
       runtime.catalog->software, [](catalog::RuntimeSoftware const& item) {
         return item.definition.id == "sogou-input";
@@ -594,6 +616,11 @@ struct DebugModeCatalogEditorFixture final {
 
   auto policy = catalog::initial_software_catalog_policy();
   std::vector<std::string> expected_ids{
+      "qq", "qq-music", "sogou-input", "game-cheats-manager", "cheat-engine",
+      "office-tool-plus", "internet-download-manager",
+      "the-geometers-sketchpad", "java-runtime", "dotnet-runtime",
+      "directx-runtime", "powershell-7"};
+  std::vector<std::string> expected_installable_ids{
       "qq", "sogou-input", "game-cheats-manager", "cheat-engine",
       "office-tool-plus", "internet-download-manager",
       "the-geometers-sketchpad", "java-runtime", "dotnet-runtime",
@@ -604,7 +631,9 @@ struct DebugModeCatalogEditorFixture final {
     actual_ids.push_back(software.id);
     passed &= expect(item_has_no_prohibited_identity(software),
                      "software catalog must exclude prohibited resource identities");
-    if (software.enabled) {
+    if (software.enabled &&
+        software.controlled_install_availability ==
+            catalog::ControlledInstallAvailability::available) {
       passed &= expect(!software.category_id.empty() && !software.branch.empty() &&
                            software.version_policy.has_value() &&
                            software.dependencies_declared &&
@@ -617,10 +646,27 @@ struct DebugModeCatalogEditorFixture final {
     }
   }
   std::ranges::sort(expected_ids);
+  std::ranges::sort(expected_installable_ids);
   std::ranges::sort(actual_ids);
   passed &= expect(actual_ids == expected_ids &&
                        std::ranges::adjacent_find(actual_ids) == actual_ids.end(),
-                   "the catalog must contain exactly eleven unique first-release software ids");
+                   "the catalog must contain exactly twelve unique software ids");
+
+  auto const* qq_music = find_by_id(
+      decoded.document->software, "qq-music", &catalog::SoftwareDefinition::id);
+  passed &= expect(
+      qq_music != nullptr && qq_music->enabled &&
+          qq_music->name == "QQ音乐" &&
+          qq_music->tier == catalog::SoftwareTier::normal &&
+          qq_music->controlled_install_availability ==
+              catalog::ControlledInstallAvailability::controlled_unavailable &&
+          qq_music->dependencies_declared && qq_music->dependencies.empty() &&
+          qq_music->bundled_editions_declared &&
+          qq_music->bundled_editions.empty() && qq_music->branch.empty() &&
+          !qq_music->version_policy.has_value() &&
+          !qq_music->install_profile.has_value() && qq_music->sources.empty() &&
+          !qq_music->education.has_value(),
+      "QQ Music must declare only a visible normal controlled-unavailable item without source or install profile");
 
   for (auto const id : {"game-cheats-manager", "cheat-engine",
                         "office-tool-plus", "internet-download-manager",
@@ -635,11 +681,71 @@ struct DebugModeCatalogEditorFixture final {
 
   auto const profiles = catalog::initial_controlled_install_profiles();
   auto const facts = catalog::initial_software_install_facts();
+  auto const observations =
+      catalog::initial_official_software_source_observations();
   passed &= expect(profiles.size() == 1 && facts.size() == 11,
                    "initial declarations must cover one controlled profile and eleven software facts");
   passed &= expect(catalog::validate_controlled_install_profiles(profiles).accepted() &&
-                       catalog::validate_software_install_facts(facts).accepted(),
+                       catalog::validate_software_install_facts(facts).accepted() &&
+                       catalog::validate_official_software_source_observations(
+                           observations)
+                           .accepted(),
                    "initial declaration registries must satisfy their value contracts");
+  passed &= expect(
+      observations.size() == 1 && observations.front().software_id == "qq-music" &&
+          observations.front().product_branch == "Windows PC" &&
+          observations.front().official_download_page ==
+              "https://y.qq.com/download/download.html" &&
+          observations.front().observed_version == "22.5.2" &&
+          observations.front().observed_on == "2026-08-26",
+      "QQ Music official-page observation must remain separate from executable catalog data");
+  if (!observations.empty()) {
+    auto invalid_observation = observations.front();
+    invalid_observation.software_id = "QQ Music";
+    invalid_observation.product_branch.clear();
+    invalid_observation.official_download_page = "http://y.qq.com/download";
+    invalid_observation.observed_version.clear();
+    invalid_observation.observed_on = "2026-02-30";
+    auto const invalid_observations =
+        catalog::validate_official_software_source_observations(
+            std::span<catalog::OfficialSoftwareSourceObservation const>{
+                &invalid_observation, 1});
+    passed &= expect(
+        !invalid_observations.accepted() &&
+            has_official_source_observation_issue(
+                invalid_observations,
+                catalog::OfficialSoftwareSourceObservationIssueCode::
+                    invalid_stable_id) &&
+            has_official_source_observation_issue(
+                invalid_observations,
+                catalog::OfficialSoftwareSourceObservationIssueCode::
+                    invalid_product_branch) &&
+            has_official_source_observation_issue(
+                invalid_observations,
+                catalog::OfficialSoftwareSourceObservationIssueCode::
+                    invalid_official_download_page) &&
+            has_official_source_observation_issue(
+                invalid_observations,
+                catalog::OfficialSoftwareSourceObservationIssueCode::
+                    invalid_observed_version) &&
+            has_official_source_observation_issue(
+                invalid_observations,
+                catalog::OfficialSoftwareSourceObservationIssueCode::
+                    invalid_observed_on),
+        "official source observations must validate only their recorded facts");
+    std::vector<catalog::OfficialSoftwareSourceObservation>
+        duplicate_observations{observations.front(), observations.front()};
+    auto const duplicate_validation =
+        catalog::validate_official_software_source_observations(
+            duplicate_observations);
+    passed &= expect(
+        !duplicate_validation.accepted() &&
+            has_official_source_observation_issue(
+                duplicate_validation,
+                catalog::OfficialSoftwareSourceObservationIssueCode::
+                    duplicate_software_id),
+        "official source observations must not duplicate one software id");
+  }
   std::vector<std::string> fact_ids;
   fact_ids.reserve(facts.size());
   for (auto const& fact : facts) {
@@ -659,8 +765,8 @@ struct DebugModeCatalogEditorFixture final {
         "unobserved install capabilities must remain unknown");
   }
   std::ranges::sort(fact_ids);
-  passed &= expect(fact_ids == expected_ids,
-                   "typed install facts must cover the same eleven software ids");
+  passed &= expect(fact_ids == expected_installable_ids,
+                   "typed install facts must exclude QQ Music until a controlled installation is declared");
   auto const dotnet_facts = std::ranges::find(
       facts, "dotnet-runtime", &catalog::SoftwareInstallFacts::software_id);
   passed &= expect(dotnet_facts != facts.end() &&
@@ -737,7 +843,7 @@ struct DebugModeCatalogEditorFixture final {
 
   std::vector<std::string> required = policy.required_release_software;
   std::ranges::sort(required);
-  passed &= expect(required == expected_ids && policy.supported_driver_hardware_kinds ==
+  passed &= expect(required == expected_installable_ids && policy.supported_driver_hardware_kinds ==
                        std::vector<std::string>{"gpu"},
                    "the initial policy must require all eleven software ids and the registered GPU kind");
   std::vector<std::string> release_fact_ids;
@@ -748,8 +854,8 @@ struct DebugModeCatalogEditorFixture final {
                      "unknown initial installation facts must not be release-ready");
   }
   std::ranges::sort(release_fact_ids);
-  passed &= expect(release_fact_ids == expected_ids,
-                   "the release policy must consume install facts for every required software id");
+  passed &= expect(release_fact_ids == expected_installable_ids,
+                   "the release policy must consume install facts for every declared installable software id");
   auto const* sogou_profile = find_by_id(
       policy.install_profiles, "sogou-input-defaults-v1",
       &catalog::InstallProfileSupport::id);
@@ -782,12 +888,16 @@ struct DebugModeCatalogEditorFixture final {
                 return issue.scope == catalog::CatalogIssueScope::release &&
                        issue.code ==
                            catalog::CatalogIssueCode::unknown_execution_semantics;
-              })) == expected_ids.size() &&
+              })) == expected_installable_ids.size() &&
           has_issue_for_item(
               release_only.second.issues,
               catalog::CatalogIssueCode::unknown_execution_semantics, "qq",
-              catalog::CatalogIssueScope::release),
-      "changing only release_state must leave every unknown first-release install fact blocked");
+              catalog::CatalogIssueScope::release) &&
+          has_issue_for_item(
+              release_only.second.issues,
+              catalog::CatalogIssueCode::controlled_install_unavailable,
+              "qq-music", catalog::CatalogIssueScope::release),
+      "changing only release_state must leave unknown install facts and QQ Music controlled unavailability blocked");
 
   auto sogou_ready_policy = policy;
   auto sogou_profile_support = std::ranges::find(
@@ -1161,6 +1271,42 @@ display_locale = "English driver"
                        has_issue(incomplete_runtime.issues,
                                  catalog::CatalogIssueCode::missing_required_field),
                    "enabled entries missing product facts must reject the package");
+
+  auto unavailable = codec.decode(one_item_catalog(1, "release"));
+  auto unavailable_document = *unavailable.document;
+  auto& unavailable_software = unavailable_document.software.front();
+  unavailable_software.controlled_install_availability =
+      catalog::ControlledInstallAvailability::controlled_unavailable;
+  unavailable_software.branch.clear();
+  unavailable_software.version_policy.reset();
+  unavailable_software.sources.clear();
+  unavailable_software.install_profile.reset();
+  passed &= expect(
+      catalog::validate_for_runtime(unavailable_document, policy).accepted(),
+      "a controlled-unavailable item may remain visible without executable product facts");
+  auto unavailable_with_source = unavailable_document;
+  unavailable_with_source.software.front().sources.push_back({
+      .purpose = catalog::SourcePurpose::primary,
+      .address = "https://example.test/unavailable",
+  });
+  auto unavailable_with_source_runtime =
+      catalog::validate_for_runtime(unavailable_with_source, policy);
+  passed &= expect(
+      !unavailable_with_source_runtime.accepted() &&
+          has_issue_for_item(unavailable_with_source_runtime.issues,
+                             catalog::CatalogIssueCode::invalid_field, "core",
+                             catalog::CatalogIssueScope::package),
+      "controlled-unavailable items carrying installation sources must reject the package");
+  auto unavailable_with_profile = unavailable_document;
+  unavailable_with_profile.software.front().install_profile = "profile-v1";
+  auto unavailable_with_profile_runtime =
+      catalog::validate_for_runtime(unavailable_with_profile, policy);
+  passed &= expect(
+      !unavailable_with_profile_runtime.accepted() &&
+          has_issue_for_item(unavailable_with_profile_runtime.issues,
+                             catalog::CatalogIssueCode::invalid_field, "core",
+                             catalog::CatalogIssueScope::package),
+      "controlled-unavailable items carrying install profiles must reject the package");
 
   auto invalid_dependency = codec.decode(replace_once(
       one_item_catalog(1, "release"), "dependencies = []",

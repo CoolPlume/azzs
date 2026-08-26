@@ -817,6 +817,22 @@ void collect_extensions(ParsedCatalog& parsed, ParsedTable const& table,
   return std::nullopt;
 }
 
+[[nodiscard]] catalog::ControlledInstallAvailability
+parse_controlled_install_availability(ParsedCatalog& parsed,
+                                      ParsedTable const& table) {
+  auto value = text_value(parsed, table, "controlled_install_availability");
+  if (!value.has_value()) {
+    return catalog::ControlledInstallAvailability::available;
+  }
+  if (*value == "controlled_unavailable") {
+    return catalog::ControlledInstallAvailability::controlled_unavailable;
+  }
+  add_issue(parsed, catalog::CatalogIssueCode::invalid_field,
+            table.location + ".controlled_install_availability",
+            "controlled_install_availability must be controlled_unavailable");
+  return catalog::ControlledInstallAvailability::available;
+}
+
 [[nodiscard]] std::optional<catalog::VersionPolicy> parse_version_policy(
     ParsedCatalog& parsed, ParsedTable const& table) {
   auto value = text_value(parsed, table, "version_policy");
@@ -971,6 +987,8 @@ void collect_extensions(ParsedCatalog& parsed, ParsedTable const& table,
         .id = text_value(parsed, input.table, "id").value_or(""),
         .enabled = enabled.value_or(false),
         .enabled_declared = enabled.has_value(),
+        .controlled_install_availability =
+            parse_controlled_install_availability(parsed, input.table),
         .name = text_value(parsed, input.table, "name").value_or(""),
         .tier = parse_tier(parsed, input.table),
         .category_id =
@@ -989,10 +1007,10 @@ void collect_extensions(ParsedCatalog& parsed, ParsedTable const& table,
     };
     collect_extensions(
         parsed, input.table,
-        {"id", "enabled", "name", "tier", "category_id", "branch",
-         "version_policy", "fixed_version", "dependencies",
-         "bundled_editions", "notice", "optimization_note",
-         "install_profile"},
+        {"id", "enabled", "controlled_install_availability", "name",
+         "tier", "category_id", "branch", "version_policy",
+         "fixed_version", "dependencies", "bundled_editions", "notice",
+         "optimization_note", "install_profile"},
         software.display_extensions);
     for (auto const& source : input.sources) {
       software.sources.push_back(convert_source(parsed, source));
@@ -1136,6 +1154,13 @@ void write_extensions(std::ostringstream& output,
   return value == catalog::SoftwareTier::basic ? "basic" : "normal";
 }
 
+[[nodiscard]] std::string_view controlled_install_availability_name(
+    catalog::ControlledInstallAvailability value) {
+  return value == catalog::ControlledInstallAvailability::available
+             ? "available"
+             : "controlled_unavailable";
+}
+
 [[nodiscard]] std::string_view version_policy_name(
     catalog::VersionPolicy value) {
   switch (value) {
@@ -1251,6 +1276,12 @@ std::string TomlSoftwareCatalogCodec::encode(
     write_text(output, "id", software.id);
     if (software.enabled_declared) {
       output << "enabled = " << (software.enabled ? "true" : "false") << '\n';
+    }
+    if (software.controlled_install_availability !=
+        catalog::ControlledInstallAvailability::available) {
+      write_text(output, "controlled_install_availability",
+                 controlled_install_availability_name(
+                     software.controlled_install_availability));
     }
     write_text(output, "name", software.name);
     if (software.tier.has_value()) {
