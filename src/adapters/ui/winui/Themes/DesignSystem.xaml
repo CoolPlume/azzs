@@ -237,7 +237,7 @@
 
     <Style x:Key="AzzsSidebarResizeThumbStyle" TargetType="primitives:Thumb">
         <Setter Property="Width" Value="8" />
-        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Background" Value="{ThemeResource AzzsSurfaceBorderBrush}" />
         <Setter Property="Opacity" Value="0.85" />
         <Setter Property="CornerRadius" Value="{StaticResource AzzsCornerRadiusSmall}" />
     </Style>

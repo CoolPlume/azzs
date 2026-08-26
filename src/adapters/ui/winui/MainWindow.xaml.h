@@ -5,6 +5,7 @@
 
 #include "MainWindow.g.h"
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include "azzs/application/page_id.hpp"
 #include "azzs/application/workbench.hpp"
@@ -70,6 +71,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   void OnSidebarResizeDragCompleted(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::Controls::Primitives::DragCompletedEventArgs const&);
+  void OnSidebarResizeDoubleTapped(
+      Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const&);
   void OnSidebarResizeKeyDown(
       Windows::Foundation::IInspectable const&,
       Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const&);
