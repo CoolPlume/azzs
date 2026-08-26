@@ -1,0 +1,8 @@
+namespace Azzs.Ui.Pages
+{
+    [default_interface]
+    runtimeclass HardwareInformationPage : Microsoft.UI.Xaml.Controls.Page
+    {
+        HardwareInformationPage();
+    }
+}

@@ -4,6 +4,7 @@ namespace azzs::application {
 
 enum class PageId {
   overview,
+  hardware_information,
   drivers,
   system_optimization,
   software_installation,

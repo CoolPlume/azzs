@@ -6,14 +6,9 @@
 #include "Pages/DriversPage.g.h"
 #include "azzs/application/driver_acquisition.hpp"
 
-namespace azzs::application {
-struct HardwareOverviewSnapshot;
-}
-
 namespace winrt::Azzs::Ui::Pages::implementation {
 
 struct DriversPage : DriversPageT<DriversPage> {
-  using RefreshHandler = std::function<void()>;
   using HandoffHandler = std::function<void(
       azzs::application::driver_acquisition::DriverEntrypoint)>;
   using RescueHandoffHandler = std::function<void(
@@ -23,19 +18,13 @@ struct DriversPage : DriversPageT<DriversPage> {
       azzs::application::driver_acquisition::DriverHandoffDecision)>;
 
   DriversPage();
-  void bind(azzs::application::HardwareOverviewSnapshot const& snapshot,
-            azzs::application::driver_acquisition::DriverAcquisitionSnapshot
+  void bind(azzs::application::driver_acquisition::DriverAcquisitionSnapshot
                 const& driver_snapshot,
-            RefreshHandler refresh_handler, HandoffHandler handoff_handler,
+            HandoffHandler handoff_handler,
             RescueHandoffHandler rescue_handoff_handler,
             ReturnedHandler returned_handler, DecisionHandler decision_handler);
-  void project(azzs::application::HardwareOverviewSnapshot const& snapshot);
-  void project(azzs::application::HardwareOverviewSnapshot const& snapshot,
-               azzs::application::driver_acquisition::DriverAcquisitionSnapshot
+  void project(azzs::application::driver_acquisition::DriverAcquisitionSnapshot
                    const& driver_snapshot);
-  void OnRefreshClicked(
-      winrt::Windows::Foundation::IInspectable const&,
-      winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
   void OnDriverAssistantClicked(
       winrt::Windows::Foundation::IInspectable const&,
       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
@@ -81,7 +70,6 @@ struct DriversPage : DriversPageT<DriversPage> {
       azzs::application::driver_acquisition::DriverEntrypoint entrypoint);
   void request_rescue_handoff(
       azzs::application::driver_acquisition::RescueToolTarget target);
-  RefreshHandler refresh_handler_;
   HandoffHandler handoff_handler_;
   RescueHandoffHandler rescue_handoff_handler_;
   ReturnedHandler returned_handler_;

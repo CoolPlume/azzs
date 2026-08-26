@@ -24,10 +24,18 @@
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem
+                x:Name="HardwareInformationItem"
+                x:Uid="NavigationHardwareInformation"
+                AutomationProperties.AutomationId="AzzsNavigationHardwareInformation"
+                TabIndex="1"
+                Style="{StaticResource AzzsNavigationItemStyle}">
+                <NavigationViewItem.Icon><SymbolIcon Symbol="SystemInformation" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem
                 x:Name="DriversItem"
                 x:Uid="NavigationDrivers"
                 AutomationProperties.AutomationId="AzzsNavigationDrivers"
-                TabIndex="1"
+                TabIndex="2"
                 Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Manage" /></NavigationViewItem.Icon>
             </NavigationViewItem>
@@ -35,7 +43,7 @@
                 x:Name="SystemOptimizationItem"
                 x:Uid="NavigationSystemOptimization"
                 AutomationProperties.AutomationId="AzzsNavigationSystemOptimization"
-                TabIndex="2"
+                TabIndex="3"
                 Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Repair" /></NavigationViewItem.Icon>
             </NavigationViewItem>
@@ -43,7 +51,7 @@
                 x:Name="SoftwareInstallationItem"
                 x:Uid="NavigationSoftwareInstallation"
                 AutomationProperties.AutomationId="AzzsNavigationSoftwareInstallation"
-                TabIndex="3"
+                TabIndex="4"
                 Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Download" /></NavigationViewItem.Icon>
             </NavigationViewItem>
@@ -51,7 +59,7 @@
                 x:Name="SoftwareOptimizationItem"
                 x:Uid="NavigationSoftwareOptimization"
                 AutomationProperties.AutomationId="AzzsNavigationSoftwareOptimization"
-                TabIndex="4"
+                TabIndex="5"
                 Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
             </NavigationViewItem>
@@ -59,7 +67,7 @@
                 x:Name="HistoryAndLogsItem"
                 x:Uid="NavigationHistoryAndLogs"
                 AutomationProperties.AutomationId="AzzsNavigationHistoryAndLogs"
-                TabIndex="5"
+                TabIndex="6"
                 Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Clock" /></NavigationViewItem.Icon>
             </NavigationViewItem>
@@ -67,7 +75,7 @@
                 x:Name="ApplicationSettingsItem"
                 x:Uid="NavigationApplicationSettings"
                 AutomationProperties.AutomationId="AzzsNavigationApplicationSettings"
-                TabIndex="6"
+                TabIndex="7"
                 Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
             </NavigationViewItem>
@@ -75,7 +83,7 @@
                 x:Name="SoftwareCatalogEditorItem"
                 x:Uid="NavigationSoftwareCatalogEditor"
                 AutomationProperties.AutomationId="AzzsNavigationSoftwareCatalogEditor"
-                TabIndex="7"
+                TabIndex="8"
                 Visibility="Collapsed"
                 Style="{StaticResource AzzsNavigationItemStyle}">
                 <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
