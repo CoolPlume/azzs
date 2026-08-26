@@ -113,6 +113,7 @@ azzs_project_target(
     oleaut32
     rpcrt4
     shell32
+    setupapi
     user32
     wbemuuid
     winhttp

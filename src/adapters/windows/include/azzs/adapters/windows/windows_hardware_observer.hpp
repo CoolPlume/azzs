@@ -28,12 +28,14 @@ struct WindowsHardwareQueryResult final {
   std::string error;
 };
 
-// CPU-set topology is optional: older Windows builds or restricted sessions
+// Processor topology is optional: older Windows builds or restricted sessions
 // may not expose efficiency classes. The observer must then keep the ordinary
-// WMI core/thread counts and label the P/E split as unavailable.
+// WMI core/thread counts and label the P/E split as unavailable. A single
+// efficiency class is homogeneous, not a P-core label.
 struct WindowsCpuTopology final {
   std::uint32_t performance_cores{0};
   std::uint32_t efficiency_cores{0};
+  std::uint32_t low_power_efficiency_cores{0};
   std::uint32_t logical_processors{0};
   bool split_known{false};
 };
@@ -46,6 +48,12 @@ struct WindowsGpuMemory final {
   std::string model_name;
   std::uint64_t dedicated_video_memory{0};
   std::uint64_t shared_system_memory{0};
+  application::HardwareGpuType gpu_type{application::HardwareGpuType::unknown};
+  application::HardwareGpuComputeUnit compute_unit{
+      application::HardwareGpuComputeUnit::unknown};
+  std::uint32_t compute_unit_count{0};
+  std::uint32_t vendor_id{0};
+  std::uint32_t device_id{0};
 };
 
 // Raw EDID remains inside the Windows adapter. The observer projects only the
@@ -53,7 +61,46 @@ struct WindowsGpuMemory final {
 // so serial descriptors and instance identifiers never cross the boundary.
 struct WindowsDisplayEdid final {
   std::string model_key;
+  // A 1-based ordinal into the request's PNP-device-id span. It is valid
+  // only for this observation; zero means the fact is model-scoped.
+  std::uint32_t instance_ordinal{0};
   std::vector<std::uint8_t> bytes;
+};
+
+// DisplayConfig facts are already associated with an active target path.  The
+// adapter exposes only the normalized model key and validated presentation
+// facts; Win32 handles, paths, and instance identifiers stay private.
+struct WindowsDisplayConnection final {
+  std::string model_key;
+  // A 1-based ordinal into the request's PNP-device-id span. It is valid
+  // only for this observation; zero means the fact is model-scoped.
+  std::uint32_t instance_ordinal{0};
+  application::HardwareDisplayConnection connection{
+      application::HardwareDisplayConnection::unknown};
+  std::uint32_t width{0};
+  std::uint32_t height{0};
+  std::uint32_t refresh_rate_hz{0};
+};
+
+// WMI physical dimensions are associated with one active PNP display
+// instance. The adapter exposes only the normalized model key and the
+// observation-local ordinal, so complete instance identifiers remain private.
+struct WindowsDisplayPhysicalSize final {
+  std::string model_key;
+  // A 1-based ordinal into the request's PNP-device-id span. Zero is invalid
+  // for this fact: physical dimensions must never be shared by model alone.
+  std::uint32_t instance_ordinal{0};
+  std::uint32_t horizontal_centimeters{0};
+  std::uint32_t vertical_centimeters{0};
+};
+
+// Input identifiers are adapter-private matching data. The driver-reported
+// description comes from DEVPKEY_Device_BusReportedDeviceDesc for the same
+// complete PNP instance; ordinary Win32_Keyboard text is not a type source.
+struct WindowsInputDeviceMetadata final {
+  std::string pnp_device_id;
+  std::string container_id;
+  std::string bus_reported_device_description;
 };
 
 // The production implementation executes read-only WMI queries. Tests may
@@ -79,6 +126,21 @@ class WindowsHardwareQueryExecutor {
 
   [[nodiscard]] virtual std::vector<WindowsDisplayEdid> display_edids(
       std::span<std::string const>, std::stop_token) {
+    return {};
+  }
+
+  [[nodiscard]] virtual std::vector<WindowsDisplayConnection>
+  display_connections(std::span<std::string const>, std::stop_token) {
+    return {};
+  }
+
+  [[nodiscard]] virtual std::vector<WindowsDisplayPhysicalSize>
+  display_physical_sizes(std::span<std::string const>, std::stop_token) {
+    return {};
+  }
+
+  [[nodiscard]] virtual std::vector<WindowsInputDeviceMetadata>
+  input_device_metadata(std::span<std::string const>, std::stop_token) {
     return {};
   }
 };

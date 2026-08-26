@@ -26,6 +26,7 @@ enum class HardwareDeviceKind {
   storage,
   npu,
   audio,
+  input_device,
 };
 
 enum class HardwareNetworkLink {
@@ -40,7 +41,33 @@ enum class HardwareStorageMedia {
   hard_disk,
 };
 
+enum class HardwareGpuType {
+  unknown,
+  integrated,
+  discrete,
+};
+
+enum class HardwareGpuComputeUnit {
+  unknown,
+  cu,
+  eu,
+  xe,
+};
+
 enum class HardwareDisplayConnection {
+  unknown,
+  internal,
+  external,
+};
+
+enum class HardwareInputDeviceType {
+  unknown,
+  keyboard,
+  mouse,
+  touchpad,
+};
+
+enum class HardwareInputDeviceConnection {
   unknown,
   internal,
   external,
@@ -103,23 +130,39 @@ struct HardwareDeviceRecord final {
   HardwareNetworkLink network_link{HardwareNetworkLink::unknown};
   HardwareStorageMedia storage_media{HardwareStorageMedia::unknown};
   std::uint32_t quantity{1};
-  // Optional topology and media facts are kept structured so UI consumers can
-  // present them without parsing display strings. Zero/empty means the
-  // Windows source did not expose that fact.
+  // Optional topology and display facts are kept structured so UI consumers
+  // can present them without parsing display strings. Zero means the Windows
+  // source did not expose that fact.
   std::uint32_t core_count{0};
   std::uint32_t thread_count{0};
   std::uint32_t performance_core_count{0};
   std::uint32_t efficiency_core_count{0};
+  std::uint32_t low_power_efficiency_core_count{0};
+  HardwareGpuType gpu_type{HardwareGpuType::unknown};
+  HardwareGpuComputeUnit gpu_compute_unit{
+      HardwareGpuComputeUnit::unknown};
+  std::uint32_t gpu_compute_unit_count{0};
+  // Shared system memory is only projected for an integrated GPU.
+  std::uint64_t gpu_shared_memory_bytes{0};
   HardwareDisplayConnection display_connection{
       HardwareDisplayConnection::unknown};
   std::uint32_t display_width{0};
   std::uint32_t display_height{0};
+  // Zero means the active display mode did not expose a trustworthy refresh
+  // rate. This is distinct from the EDID capability upper bound below.
+  std::uint32_t display_refresh_rate_hz{0};
+  // Exact-instance EDID or WMI physical dimensions converted to tenths of an
+  // inch. Zero means the monitor did not expose a trustworthy physical size.
+  std::uint32_t display_size_tenths_inch{0};
   // Zero means the raw monitor capability data did not provide a trustworthy
   // physical vertical-field-rate upper bound.
   std::uint32_t physical_refresh_rate_limit_hz{0};
-  std::string storage_interface;
-  std::string pcie_generation;
-  std::string nand_type;
+  HardwareInputDeviceType input_device_type{
+      HardwareInputDeviceType::unknown};
+  HardwareInputDeviceConnection input_device_connection{
+      HardwareInputDeviceConnection::unknown};
+  // Zero means the input device did not expose one unambiguous key count.
+  std::uint32_t input_device_key_count{0};
 
   [[nodiscard]] bool confirmed_physical() const noexcept {
     return physically_present &&
@@ -145,9 +188,11 @@ struct HardwareObservation final {
   std::string storage;
   std::string solid_state_storage;
   std::string hard_disk_storage;
-  std::string unclassified_storage;
   std::string npu;
   std::string audio;
+  std::string keyboard;
+  std::string mouse;
+  std::string touchpad;
   std::string operating_system;
   std::string oem_model;
   HardwareVendor oem_vendor{HardwareVendor::unknown};
@@ -231,7 +276,12 @@ enum class HardwareOverviewTrigger {
 [[nodiscard]] char const* to_string(HardwareVendor value) noexcept;
 [[nodiscard]] char const* to_string(HardwareNetworkLink value) noexcept;
 [[nodiscard]] char const* to_string(HardwareStorageMedia value) noexcept;
+[[nodiscard]] char const* to_string(HardwareGpuType value) noexcept;
+[[nodiscard]] char const* to_string(HardwareGpuComputeUnit value) noexcept;
 [[nodiscard]] char const* to_string(HardwareDisplayConnection value) noexcept;
+[[nodiscard]] char const* to_string(HardwareInputDeviceType value) noexcept;
+[[nodiscard]] char const* to_string(
+    HardwareInputDeviceConnection value) noexcept;
 
 // Owns the session-only ten-minute cache and the user-visible hardware state.
 // Calls are synchronous and must be made by the application/use-case layer;
