@@ -36,7 +36,9 @@ jobs:
 
       - name: Build and test
         shell: pwsh
-        run: ./eng/build.ps1 -Architecture '${{ matrix.architecture }}'
+        # This validation job intentionally produces an unsigned development
+        # build. Release signing is a separate, certificate-backed gate.
+        run: ./eng/build.ps1 -Architecture '${{ matrix.architecture }}' -DevelopmentBuild
 
       - name: Print structured evidence
         if: always()

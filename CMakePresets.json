@@ -33,20 +33,20 @@
       "name": "windows-x64",
       "displayName": "Windows x64",
       "generator": "Visual Studio 18 2026",
-      "binaryDir": "${sourceDir}/out/build/windows-x64",
+      "binaryDir": "${sourceDir}/out/b/x",
       "architecture": "x64",
       "toolset": "v145",
       "cacheVariables": {
         "CMAKE_SYSTEM_VERSION": "10.0.28000.0",
         "AZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT": "OFF",
-        "BUILD_TESTING": "ON"
+        "BUILD_TESTING": "OFF"
       }
     },
     {
       "name": "windows-arm64",
       "displayName": "Windows ARM64",
       "generator": "Visual Studio 18 2026",
-      "binaryDir": "${sourceDir}/out/build/windows-arm64",
+      "binaryDir": "${sourceDir}/out/b/a",
       "architecture": "ARM64",
       "toolset": "v145",
       "cacheVariables": {

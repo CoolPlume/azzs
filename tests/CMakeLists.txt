@@ -32,6 +32,8 @@ add_subdirectory(product-identity-contract)
 add_subdirectory(release-version-contract)
 add_subdirectory(portable-package-contract)
 add_subdirectory(installer-build-manifest-contract)
+add_subdirectory(release-signing-contract)
+add_subdirectory(windows-build-layout-contract)
 
 if(WIN32)
   add_subdirectory(runtime-catalog-lock-contract)

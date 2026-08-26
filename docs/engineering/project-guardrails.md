@@ -8,7 +8,7 @@
 cmake --workflow --preset host-guardrails
 ```
 
-该命令完成 host Debug 配置、构建和当前全部 CTest 门禁，不启动 WinUI 3，不要求管理员权限或网络，也不修改真实系统状态。Windows x64 的现有 `eng/build.ps1` 默认执行无筛选 CTest，因此自动包含同一组门禁；历史参数 `-SkipCoreSmoke` 会跳过整个 CTest 调用，带该参数的构建不构成门禁证据。ARM64 保持编译与链接检查，不在 x64 runner 上执行 ARM64 测试。
+该命令完成 host Debug 配置、构建和当前全部 CTest 门禁，不启动 WinUI 3，不要求管理员权限或网络，也不修改真实系统状态。Windows `eng/build.ps1` 默认使用 `BUILD_TESTING=OFF`，只生成并构建发布载荷；x64 核心 smoke 与合同测试必须显式传入 `-RunCoreSmoke` 才会配置和执行，ARM64 仍只做编译与链接检查，不在 x64 runner 上执行 ARM64 测试。Windows 发布候选还必须明确选择 `-DevelopmentBuild` 或受信签名门禁，不能把默认构建当作签名发行证据。
 
 ## 自动检查
 

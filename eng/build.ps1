@@ -3,13 +3,39 @@ param(
     [ValidateSet("x64", "ARM64")]
     [string]$Architecture = "x64",
 
+    [switch]$RunCoreSmoke,
+
     [switch]$SkipCoreSmoke,
 
-    [switch]$EnableStartupDiagnosticDeviceDataRoot
+    [switch]$DevelopmentBuild,
+
+    [switch]$EnableStartupDiagnosticDeviceDataRoot,
+
+    [string]$SigningCertificateThumbprint = "",
+
+    [string]$TimestampUrl = "https://timestamp.digicert.com",
+
+    [switch]$RequireAuthenticodeSignature
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if (([bool]$RequireAuthenticodeSignature) -eq ([bool]$DevelopmentBuild)) {
+    throw "Specify exactly one of DevelopmentBuild or RequireAuthenticodeSignature."
+}
+if ($RequireAuthenticodeSignature -and [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    throw "Release builds that require Authenticode must provide SigningCertificateThumbprint."
+}
+if ($DevelopmentBuild -and -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    throw "Development builds cannot supply a signing certificate. Use RequireAuthenticodeSignature for a release build."
+}
+if ($RunCoreSmoke -and $SkipCoreSmoke) {
+    throw "RunCoreSmoke and SkipCoreSmoke cannot be used together."
+}
+if ($RunCoreSmoke -and $Architecture -ne "x64") {
+    throw "RunCoreSmoke is supported only for x64 builds on this hosted build machine."
+}
 
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
 . (Join-Path $PSScriptRoot "msbuild-arguments.ps1")
@@ -63,6 +89,44 @@ New-Item -ItemType File -Path $logPath -Force | Out-Null
 function Write-Log {
     param([Parameter(Mandatory = $true)][string]$Message)
     $Message | Tee-Object -FilePath $script:logPath -Append
+}
+
+function Remove-NativeContractExecutables {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryDirectory
+    )
+
+    $repositoryRootFullPath = [System.IO.Path]::GetFullPath($repositoryRoot).TrimEnd('\', '/')
+    $binaryDirectoryFullPath = [System.IO.Path]::GetFullPath($BinaryDirectory).TrimEnd('\', '/')
+    if (-not $binaryDirectoryFullPath.StartsWith(
+            ($repositoryRootFullPath + [System.IO.Path]::DirectorySeparatorChar),
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Native contract cleanup path must remain below the repository root: $BinaryDirectory"
+    }
+    Assert-PathChainWithoutReparsePoint `
+        -Path $binaryDirectoryFullPath `
+        -Context "Native contract cleanup directory"
+    if (-not (Test-Path -LiteralPath $binaryDirectoryFullPath -PathType Container)) {
+        return
+    }
+
+    $testsDirectory = Join-Path $binaryDirectoryFullPath "tests"
+    if (-not (Test-Path -LiteralPath $testsDirectory -PathType Container)) {
+        return
+    }
+    Assert-NoReparsePointsBelow `
+        -Path $testsDirectory `
+        -Context "Native contract cleanup tests directory"
+    $testExecutables = @(
+        Get-ChildItem -LiteralPath $testsDirectory -File -Recurse -Filter *.exe
+    )
+    foreach ($testExecutable in $testExecutables) {
+        Remove-Item -LiteralPath $testExecutable.FullName -Force
+    }
+    if ($testExecutables.Count -gt 0) {
+        Write-Log ("Removed {0} stale native contract executable(s) from {1}." -f $testExecutables.Count, $testsDirectory)
+    }
 }
 
 function Invoke-NativeCommand {
@@ -163,8 +227,22 @@ try {
     $configurePreset = "windows-$presetArchitecture"
     $buildPreset = "$configurePreset-release"
     $startupDiagnosticDeviceDataRoot = if ($startupDiagnosticDeviceDataRootEnabled) { "ON" } else { "OFF" }
-    $coreLibraryDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/lib/Release"
-    $winuiVersionedResourceDirectory = Join-Path $repositoryRoot "out/build/$configurePreset/generated/winui"
+    $buildTesting = if ($RunCoreSmoke) { "ON" } else { "OFF" }
+    $cmakeBinaryDirectoryByArchitecture = @{
+        "x64" = "out/b/x"
+        "ARM64" = "out/b/a"
+    }
+    $cmakeBinaryDirectory = Join-Path $repositoryRoot $cmakeBinaryDirectoryByArchitecture[$Architecture]
+    $coreLibraryDirectory = Join-Path $cmakeBinaryDirectory "lib/Release"
+    $winuiVersionedResourceDirectory = Join-Path $cmakeBinaryDirectory "generated/winui"
+    if (-not $RunCoreSmoke) {
+        Remove-NativeContractExecutables -BinaryDirectory $cmakeBinaryDirectory
+        $historicalBinaryDirectory = Join-Path $repositoryRoot "out/build/windows-$presetArchitecture"
+        if (Test-Path -LiteralPath $historicalBinaryDirectory -PathType Container) {
+            Write-Log "Historical CMake output detected at $historicalBinaryDirectory; it is not used for this build. Only stale contract-test executables are removed."
+        }
+        Remove-NativeContractExecutables -BinaryDirectory $historicalBinaryDirectory
+    }
 
     Write-Log "Restoring the locked C++/WinRT and XAML host packages."
     Invoke-NativeCommand -FilePath $msbuildPath -Arguments @(
@@ -180,17 +258,20 @@ try {
     Invoke-NativeCommand -FilePath $cmakePath -Arguments @(
         "--preset", $configurePreset,
         "-DCMAKE_GENERATOR_INSTANCE=$visualStudioPath",
-        "-DAZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT=$startupDiagnosticDeviceDataRoot"
+        "-DAZZS_ENABLE_STARTUP_DIAGNOSTIC_DEVICE_DATA_ROOT=$startupDiagnosticDeviceDataRoot",
+        "-DBUILD_TESTING=$buildTesting"
     )
     Invoke-NativeCommand -FilePath $cmakePath -Arguments @("--build", "--preset", $buildPreset)
 
-    if ($Architecture -eq "x64" -and -not $SkipCoreSmoke) {
+    if ($RunCoreSmoke) {
         Write-Log "Running the x64 headless core smoke test."
         Invoke-NativeCommand -FilePath $ctestPath -Arguments @(
             "--preset", "windows-x64-release",
             "--no-tests=error",
             "--output-junit", $testResultPath
         )
+    } elseif ($Architecture -eq "x64") {
+        Write-Log "Core smoke tests were not requested; the default build does not generate native contract-test executables."
     } elseif ($Architecture -eq "ARM64") {
         Write-Log "ARM64 is compile-and-link only on the hosted x64 build machine; no ARM64 test is executed."
     }
@@ -217,6 +298,41 @@ try {
     if (-not (Test-Path -LiteralPath $executablePath)) {
         throw "The WinUI build completed without the expected executable: $executablePath"
     }
+
+    $signingScript = Join-Path $PSScriptRoot "sign-release.ps1"
+    $verificationScript = Join-Path $PSScriptRoot "verify-authenticode.ps1"
+    $payloadDirectory = Join-Path $repositoryRoot "out/windows/$Architecture/Release"
+    if ($RequireAuthenticodeSignature) {
+        Write-Log "Signing the Windows payload with the supplied Authenticode certificate."
+        & $signingScript -PayloadDirectory $payloadDirectory -AllowedUnsignedFileName "Azzs.WinUI.exe" -CertificateThumbprint $SigningCertificateThumbprint -TimestampUrl $TimestampUrl |
+            Tee-Object -FilePath $script:logPath -Append
+    } else {
+        Write-Log "Development build: Authenticode signing was explicitly not requested."
+    }
+    if ($RequireAuthenticodeSignature) {
+        & $verificationScript `
+            -PayloadDirectory $payloadDirectory `
+            -RequireRfc3161Timestamp `
+            -ExpectedSignerThumbprint $SigningCertificateThumbprint `
+            -ExpectedSignerFileName "Azzs.WinUI.exe" |
+            Tee-Object -FilePath $script:logPath -Append
+    }
+
+    $runtimeCatalogLockContract = Join-Path $repositoryRoot "tests/runtime-catalog-lock-contract/check_runtime_catalog_lock.py"
+    if (-not (Test-Path -LiteralPath $runtimeCatalogLockContract -PathType Leaf)) {
+        throw "The runtime catalog lock contract was not found: $runtimeCatalogLockContract"
+    }
+    $pythonCommand = Get-Command python.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $pythonCommand) {
+        throw "python.exe was not found. The runtime catalog lock contract requires Python 3.9 or later."
+    }
+    $runtimeCatalogPayloadRoot = Join-Path $repositoryRoot "out/windows/$Architecture/Release"
+    Write-Log "Verifying the runtime catalog locks in the staged Windows payload."
+    Invoke-NativeCommand -FilePath $pythonCommand.Source -Arguments @(
+        $runtimeCatalogLockContract,
+        "--repository-root", $repositoryRoot,
+        "--payload-root", $runtimeCatalogPayloadRoot
+    )
 
     & $writeManifest -Architecture $Architecture -Result succeeded -RepositoryRoot $repositoryRoot -VisualStudioPath $visualStudioPath -VisualStudioVersion $visualStudioVersion -MSBuildPath $msbuildPath -CMakePath $cmakePath -WindowsSdkRelease $windowsSdkRelease -OutputPath $manifestPath -StartupDiagnosticDeviceDataRootEnabled $startupDiagnosticDeviceDataRootEnabled
     Write-Log "Build evidence: $manifestPath"

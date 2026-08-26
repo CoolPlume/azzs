@@ -5,12 +5,30 @@ param(
 
     [switch]$SkipBuild,
 
-    [switch]$AcceptWixEula
+    [switch]$AcceptWixEula,
+
+    [switch]$DevelopmentBuild,
+
+    [switch]$RequireAuthenticodeSignature,
+
+    [string]$SigningCertificateThumbprint = "",
+
+    [string]$TimestampUrl = "https://timestamp.digicert.com"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $wixTermsError = "WiX Toolset 7 requires an explicit terms decision. Re-run with -AcceptWixEula only after confirming the WiX 7 terms for this use."
+
+if (([bool]$RequireAuthenticodeSignature) -eq ([bool]$DevelopmentBuild)) {
+    throw "Specify exactly one of DevelopmentBuild or RequireAuthenticodeSignature."
+}
+if ($RequireAuthenticodeSignature -and [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    throw "Installer release packaging that requires Authenticode must provide SigningCertificateThumbprint."
+}
+if ($DevelopmentBuild -and -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    throw "Development packaging cannot supply a signing certificate. Use RequireAuthenticodeSignature for a release package."
+}
 
 . (Join-Path $PSScriptRoot "portable-artifact-content.ps1")
 
@@ -82,11 +100,27 @@ if (-not $SkipBuild -and -not $AcceptWixEula) {
     throw $wixTermsError
 }
 if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot "build.ps1") -Architecture $Architecture
+    $buildArguments = @("-Architecture", $Architecture)
+    if ($RequireAuthenticodeSignature) {
+        $buildArguments += "-RequireAuthenticodeSignature"
+    } else {
+        $buildArguments += "-DevelopmentBuild"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+        $buildArguments += @("-SigningCertificateThumbprint", $SigningCertificateThumbprint, "-TimestampUrl", $TimestampUrl)
+    }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
 }
 
 if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
     throw "Installer packaging requires a completed $Architecture Release build."
+}
+if ($RequireAuthenticodeSignature) {
+    & (Join-Path $PSScriptRoot "verify-authenticode.ps1") `
+        -PayloadDirectory $payloadDirectory `
+        -RequireRfc3161Timestamp `
+        -ExpectedSignerThumbprint $SigningCertificateThumbprint `
+        -ExpectedSignerFileName "Azzs.WinUI.exe"
 }
 Test-PortableBuildManifest -RepositoryRoot $repositoryRoot -Architecture $Architecture | Out-Null
 
@@ -104,6 +138,13 @@ Assert-NoReparsePointsBelow `
     -Path $stagingDirectory `
     -Context "Installer staging payload"
 Get-ChildItem -LiteralPath $stagingDirectory -File -Recurse -Include *.pdb, *.ilk, *.iobj, *.ipdb, *.exp, *.lib | Remove-Item -Force
+if ($RequireAuthenticodeSignature) {
+    & (Join-Path $PSScriptRoot "verify-authenticode.ps1") `
+        -PayloadDirectory $stagingDirectory `
+        -RequireRfc3161Timestamp `
+        -ExpectedSignerThumbprint $SigningCertificateThumbprint `
+        -ExpectedSignerFileName "Azzs.WinUI.exe"
+}
 
 $vswherePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/Installer/vswhere.exe"
 if (-not (Test-Path -LiteralPath $vswherePath)) {
@@ -136,6 +177,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 if (-not (Test-Path -LiteralPath $packagePath)) {
     throw "WiX completed without the expected MSI: $packagePath"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    & (Join-Path $PSScriptRoot "sign-release.ps1") -FilePath $packagePath -AllowedUnsignedFileName (Split-Path -Leaf $packagePath) -CertificateThumbprint $SigningCertificateThumbprint -TimestampUrl $TimestampUrl
+} elseif ($RequireAuthenticodeSignature) {
+    throw "The machine installer is unsigned and no signing certificate was supplied."
+}
+if ($RequireAuthenticodeSignature) {
+    & (Join-Path $PSScriptRoot "verify-authenticode.ps1") `
+        -FilePath $packagePath `
+        -RequireRfc3161Timestamp `
+        -ExpectedSignerThumbprint $SigningCertificateThumbprint `
+        -ExpectedSignerFileName (Split-Path -Leaf $packagePath)
 }
 
 & (Join-Path $PSScriptRoot "write-package-manifest.ps1") -Kind machine-installer -Architecture $Architecture -RepositoryRoot $repositoryRoot -PayloadDirectory $stagingDirectory -PackagePath $packagePath -OutputPath $manifestPath

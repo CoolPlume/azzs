@@ -5,7 +5,15 @@ param(
     [ValidateSet("x64", "ARM64")]
     [string]$Architecture,
 
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+
+    [switch]$DevelopmentBuild,
+
+    [switch]$RequireAuthenticodeSignature,
+
+    [string]$SigningCertificateThumbprint = "",
+
+    [string]$TimestampUrl = "https://timestamp.digicert.com"
 )
 
 Set-StrictMode -Version Latest
@@ -34,6 +42,15 @@ if (-not $supportedArtifactEditions.ContainsKey($ArtifactId)) {
 }
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if (([bool]$RequireAuthenticodeSignature) -eq ([bool]$DevelopmentBuild)) {
+    throw "Specify exactly one of DevelopmentBuild or RequireAuthenticodeSignature."
+}
+if ($RequireAuthenticodeSignature -and [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    throw "Portable release packaging that requires Authenticode must provide SigningCertificateThumbprint."
+}
+if ($DevelopmentBuild -and -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+    throw "Development packaging cannot supply a signing certificate. Use RequireAuthenticodeSignature for a release package."
+}
 $expectedEdition = [string]$supportedArtifactEditions[$ArtifactId]
 $architecture = "x64"
 $stagingDirectory = Join-Path $repositoryRoot "out/staging/portable/$ArtifactId"
@@ -95,7 +112,16 @@ try {
         Test-LargeOfflineArtifactContent -LargeDefinition $definition -LargeInputs $contentInputs -RescueInputs $rescueInputs -RepositoryRoot $repositoryRoot
     }
     if (-not $SkipBuild) {
-        & (Join-Path $PSScriptRoot "build.ps1") -Architecture $architecture
+        $buildArguments = @("-Architecture", $architecture)
+        if ($RequireAuthenticodeSignature) {
+            $buildArguments += "-RequireAuthenticodeSignature"
+        } else {
+            $buildArguments += "-DevelopmentBuild"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+            $buildArguments += @("-SigningCertificateThumbprint", $SigningCertificateThumbprint, "-TimestampUrl", $TimestampUrl)
+        }
+        & (Join-Path $PSScriptRoot "build.ps1") @buildArguments
     }
     Test-PortableBuildManifest -RepositoryRoot $repositoryRoot -Architecture $architecture | Out-Null
 
@@ -103,6 +129,13 @@ try {
     $executablePath = Join-Path $payloadDirectory "Azzs.WinUI.exe"
     if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
         throw "Portable packaging requires a completed $architecture Release build."
+    }
+    if ($RequireAuthenticodeSignature) {
+        & (Join-Path $PSScriptRoot "verify-authenticode.ps1") `
+            -PayloadDirectory $payloadDirectory `
+            -RequireRfc3161Timestamp `
+            -ExpectedSignerThumbprint $SigningCertificateThumbprint `
+            -ExpectedSignerFileName "Azzs.WinUI.exe"
     }
     Assert-NoReparsePointsBelow `
         -Path $payloadDirectory `
@@ -175,6 +208,15 @@ try {
     # deliberately empty and do not make any rescue artifact an input.
     foreach ($folderName in $fixedRescueFolderNames) {
         New-Item -ItemType Directory -Path (Join-Path $stagingDirectory "rescue-tools/$folderName") -Force | Out-Null
+    }
+
+    if ($RequireAuthenticodeSignature) {
+        # Locked catalog and offline inputs are part of the shipped payload too.
+        & (Join-Path $PSScriptRoot "verify-authenticode.ps1") `
+            -PayloadDirectory $stagingDirectory `
+            -RequireRfc3161Timestamp `
+            -ExpectedSignerThumbprint $SigningCertificateThumbprint `
+            -ExpectedSignerFileName "Azzs.WinUI.exe"
     }
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem

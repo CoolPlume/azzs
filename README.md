@@ -44,13 +44,13 @@ python3 eng/generate-product-assets.py --check
 Windows 11 构建机使用统一 PowerShell 入口生成 x64 可运行候选或 ARM64 编译链接候选：
 
 ```powershell
-pwsh ./eng/build.ps1 -Architecture x64
-pwsh ./eng/build.ps1 -Architecture ARM64
-pwsh ./eng/package-portable.ps1 -Architecture x64 -SkipBuild
-pwsh ./eng/package-installer.ps1 -Architecture x64 -SkipBuild -AcceptWixEula
+pwsh ./eng/build.ps1 -Architecture x64 -DevelopmentBuild
+pwsh ./eng/build.ps1 -Architecture ARM64 -DevelopmentBuild
+pwsh ./eng/package-portable.ps1 -Architecture x64 -SkipBuild -DevelopmentBuild
+pwsh ./eng/package-installer.ps1 -Architecture x64 -SkipBuild -DevelopmentBuild -AcceptWixEula
 ```
 
-安装入口固定使用 WiX Toolset SDK 7.0.0，只有显式传入 `-AcceptWixEula` 才会还原并构建；该参数表示执行者已经按实际用途完成 WiX 7 条款确认。生成入口不代表安装生命周期、干净机启动或目标 Windows 版本已经验证。
+上述命令生成未签名的本地开发候选；所有入口都要求显式声明 `-DevelopmentBuild` 或正式签名参数，省略其一会失败关闭。正式发布必须使用受信证书和 `-RequireAuthenticodeSignature`，不能用开发构建替代。安装入口固定使用 WiX Toolset SDK 7.0.0，只有显式传入 `-AcceptWixEula` 才会还原并构建；该参数表示执行者已经按实际用途完成 WiX 7 条款确认。生成入口不代表安装生命周期、干净机启动或目标 Windows 版本已经验证。
 
 ## 参与贡献
 
